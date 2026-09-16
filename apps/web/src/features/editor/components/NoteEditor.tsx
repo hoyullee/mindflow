@@ -7,7 +7,7 @@
 // 팬·줌·미니맵·그리기·레이아웃이 없다(에디터가 `isNote`로 그 UI를 통째로 걷어낸다).
 // 대신 다루는 것이 순서와 글이고, 규칙은 전부 코어 `note.ts`에 있다.
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
 import type { Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, NotePage, RichRun } from '@mindflow/mindmap-core';
 import {
@@ -24,6 +24,7 @@ import {
   pageExcerpt,
   pageText,
   runsText,
+  textRuns,
   blockText,
 } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
@@ -907,7 +908,13 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
         flexDirection: 'column',
         minHeight: 0,
         overflow: 'hidden',
-        transform: collapsed ? 'translateX(-24px)' : 'translateX(0)',
+        // **펼쳐져 있을 때는 `transform`을 걸지 않는다.** 값이 `translateX(0)`이어도
+        // 변형이 있으면 그 요소가 `position: fixed` 자손의 **컨테이닝 블록**이 되고,
+        // 그러면 `overflow: hidden`이 화면 좌표로 띄운 팝업까지 잘라 낸다 — 페이지
+        // 우클릭 메뉴의 단축키 칸이 목록 너비에서 싹둑 잘려 있었다(프로브에서 잡았다).
+        // 접힐 때만 걸면 미끄러지는 animation은 그대로고(없음→변형도 보간된다) 잘림은
+        // 사라진다. 접히는 동안에는 메뉴가 열려 있지 않다.
+        ...(collapsed ? { transform: 'translateX(-24px)' } : {}),
         opacity: collapsed ? 0 : 1,
         transition: 'width .26s cubic-bezier(.2,.9,.3,1), transform .26s cubic-bezier(.2,.9,.3,1), opacity .18s ease',
       }}
@@ -1076,6 +1083,26 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
   );
 }
 
+/**
+ * 커서 자리에 뜨는 메뉴 — 화면 밖으로 나가지 않게 당긴다.
+ *
+ * `anchoredStyle`은 **기준 사각형**(단추) 아래에 붙이는 자리고, 우클릭 메뉴는 기준이
+ * 점(마우스)이라 셈이 다르다. 오른쪽·아래에 자리가 모자라면 그만큼 끌어올린다.
+ */
+function cursorStyle(at: { x: number; y: number }, width: number, height: number): CSSProperties {
+  const vw = typeof window === 'undefined' ? 1280 : window.innerWidth;
+  const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
+  return {
+    position: 'fixed',
+    left: Math.max(8, Math.min(at.x + 2, vw - width - 8)),
+    top: Math.max(8, Math.min(at.y + 2, vh - height - 8)),
+    width,
+  };
+}
+
+/** 페이지 우클릭 메뉴의 너비 — 날개(`다른 공책으로 이동`)가 이 값만큼 옆으로 붙는다. */
+const PAGE_MENU_W = 212;
+
 function PageRow({ controller, page, index, active, hit, cover }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null; cover: string }) {
   // 검색 중이면 **걸린 줄**을 보여 준다 — 첫 줄은 왜 걸렸는지를 말해 주지 못한다.
   const excerpt = hit ?? pageExcerpt(page, 90);
@@ -1087,10 +1114,28 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
    * 본문 머리의 메타 줄에 복제·삭제 단추를 얹어 뒀었는데, 그 줄은 태그·사람·시각을
    * 읽는 자리라 조작이 끼면 읽기가 끊긴다(요청으로 뺐다). 지울 페이지를 **고르는**
    * 자리가 목록이므로 메뉴도 여기 있는 것이 맞다.
+   *
+   * 메뉴가 말하는 단축키(F2·⌘D·⌫)는 **실제로 동작한다** — 줄에 포커스가 있을 때
+   * 같은 일을 한다. 적어 놓고 안 되는 단축키는 메뉴를 거짓말로 만든다.
    */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const last = controller.notePages.length <= 1;
-  useAnchored(!!menu, () => setMenu(null));
+  const [moving, setMoving] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const pages = controller.notePages;
+  const last = pages.length <= 1;
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    setMoving(false);
+  }, []);
+  useAnchored(!!menu, closeMenu);
+  const rename = () => {
+    setRenaming(true);
+    closeMenu();
+  };
+  const reorder = (delta: number) => {
+    controller.moveNotePage(page.id, index + delta);
+    closeMenu();
+  };
   return (
     <div
       data-note-page-row={page.id}
@@ -1109,6 +1154,18 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           controller.setNotePageId(page.id);
+          return;
+        }
+        if (controller.readOnly || renaming) return;
+        if (e.key === 'F2') {
+          e.preventDefault();
+          setRenaming(true);
+        } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
+          e.preventDefault();
+          controller.duplicateNotePage(page.id);
+        } else if ((e.key === 'Backspace' || e.key === 'Delete') && !last) {
+          e.preventDefault();
+          controller.removeNotePage(page.id);
         }
       }}
       style={{
@@ -1130,22 +1187,65 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
           <span style={{ flex: '0 0 auto', fontFamily: 'ui-monospace, monospace', fontSize: 10, fontWeight: 700, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>
             {String(index + 1).padStart(2, '0')}
           </span>
-          <span
-            style={{
-              flex: 1,
-              minWidth: 0,
-              fontSize: 13,
-              fontWeight: active ? 800 : 700,
-              letterSpacing: '-.015em',
-              color: 'var(--mf-text)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {page.title.trim() || '제목 없는 페이지'}
-          </span>
-          {page.updatedAt && (
+          {/* 이름 바꾸기는 **그 자리에서** 한다 — 별도 대화상자를 띄우면 어느 페이지를
+              고쳤는지 목록에서 눈을 떼야 한다. Enter로 확정, Esc로 되돌린다. */}
+          {renaming ? (
+            <input
+              data-note-page-rename={page.id}
+              autoFocus
+              defaultValue={page.title}
+              placeholder="페이지 이름"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                controller.setNotePageTitle(page.id, e.currentTarget.value.trim());
+                setRenaming(false);
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  controller.setNotePageTitle(page.id, e.currentTarget.value.trim());
+                  setRenaming(false);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setRenaming(false);
+                }
+              }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 24,
+                padding: '0 7px',
+                border: '1px solid var(--mf-border-hover)',
+                borderRadius: 8,
+                background: 'var(--mf-panel)',
+                color: 'var(--mf-text)',
+                fontFamily: 'inherit',
+                fontSize: 13,
+                fontWeight: 800,
+                letterSpacing: '-.015em',
+                outline: 'none',
+              }}
+            />
+          ) : (
+            <span
+              style={{
+                flex: 1,
+                minWidth: 0,
+                fontSize: 13,
+                fontWeight: active ? 800 : 700,
+                letterSpacing: '-.015em',
+                color: 'var(--mf-text)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {page.title.trim() || '제목 없는 페이지'}
+            </span>
+          )}
+          {page.updatedAt && !renaming && (
             <span style={{ flex: '0 0 auto', fontSize: 10, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{formatLastEdited(page.updatedAt)}</span>
           )}
         </div>
@@ -1174,15 +1274,29 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
           data-note-page-menu
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
-          style={{ ...POP, position: 'fixed', top: menu.y + 4, left: menu.x + 4, width: 176, display: 'flex', flexDirection: 'column', gap: 1 }}
+          style={{ ...POP, ...cursorStyle(menu, PAGE_MENU_W, 246), display: 'flex', flexDirection: 'column', gap: 1 }}
         >
+          {/* 어느 페이지의 메뉴인지 — 목록에서 우클릭은 **줄을 겨냥한** 동작이라
+              이름이 없으면 옆줄을 지웠는지 알 수 없다(디자인 1번 이미지의 머리). */}
+          <span style={{ ...POP_HEAD, textTransform: 'none', letterSpacing: '-.01em', fontSize: 11, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {page.title.trim() || '제목 없는 페이지'}
+          </span>
+          <button type="button" data-note-page-rename-open className="btn mf-note-item" onClick={rename} style={MENU_ITEM}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+            </svg>
+            이름 바꾸기
+            <span style={{ flex: 1 }} />
+            <span style={POP_KEY}>F2</span>
+          </button>
           <button
             type="button"
             data-note-page-dup
             className="btn mf-note-item"
             onClick={() => {
               controller.duplicateNotePage(page.id);
-              setMenu(null);
+              closeMenu();
             }}
             style={MENU_ITEM}
           >
@@ -1190,8 +1304,63 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
               <rect x="9" y="9" width="11" height="11" rx="2" />
               <path d="M5 15V6a1 1 0 0 1 1-1h9" />
             </svg>
-            페이지 복제
+            복제
+            <span style={{ flex: 1 }} />
+            <span style={POP_KEY}>⌘D</span>
           </button>
+          <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px 4px' }} />
+          {/* 순서 바꾸기 — 끌어 옮기기는 좁은 목록에서 정확히 놓기가 어렵다.
+              한 칸씩 움직이는 항목이 대신한다(끝에 닿으면 꺼진다). */}
+          <button
+            type="button"
+            data-note-page-up
+            className="btn mf-note-item"
+            disabled={index === 0}
+            onClick={() => reorder(-1)}
+            style={{ ...MENU_ITEM, color: index === 0 ? 'var(--mf-faint)' : 'var(--mf-text)', cursor: index === 0 ? 'default' : 'pointer' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto', opacity: index === 0 ? 0.6 : 1 }}>
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
+            위로
+            <span style={{ flex: 1 }} />
+            <span style={POP_KEY}>↑</span>
+          </button>
+          <button
+            type="button"
+            data-note-page-down
+            className="btn mf-note-item"
+            disabled={index >= pages.length - 1}
+            onClick={() => reorder(1)}
+            style={{ ...MENU_ITEM, color: index >= pages.length - 1 ? 'var(--mf-faint)' : 'var(--mf-text)', cursor: index >= pages.length - 1 ? 'default' : 'pointer' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto', opacity: index >= pages.length - 1 ? 0.6 : 1 }}>
+              <path d="M12 5v14M6 13l6 6 6-6" />
+            </svg>
+            아래로
+            <span style={{ flex: 1 }} />
+            <span style={POP_KEY}>↓</span>
+          </button>
+          <button
+            type="button"
+            data-note-page-move
+            aria-expanded={moving}
+            className="btn mf-note-item"
+            disabled={last}
+            title={last ? '공책에는 페이지가 한 장 이상 있어야 해요' : undefined}
+            onClick={() => setMoving((v) => !v)}
+            style={{ ...MENU_ITEM, color: last ? 'var(--mf-faint)' : 'var(--mf-text)', cursor: last ? 'default' : 'pointer', background: moving ? 'var(--mf-accent-soft)' : 'transparent' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto', opacity: last ? 0.6 : 1 }}>
+              <path d="M4 19V6a2 2 0 0 1 2-2h5l2 3h5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+            </svg>
+            다른 공책으로 이동
+            <span style={{ flex: 1 }} />
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </button>
+          <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px 4px' }} />
           {/* 마지막 한 장은 지울 수 없다(코어 `removePage`) — 누를 수는 있는데 아무
               일도 안 나는 항목은 고장으로 읽히므로 끄고 이유를 툴팁으로 붙인다. */}
           <button
@@ -1202,7 +1371,7 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
             title={last ? '공책에는 페이지가 한 장 이상 있어야 해요' : undefined}
             onClick={() => {
               controller.removeNotePage(page.id);
-              setMenu(null);
+              closeMenu();
             }}
             style={{ ...MENU_ITEM, color: last ? 'var(--mf-faint)' : 'var(--mf-danger)', cursor: last ? 'default' : 'pointer' }}
           >
@@ -1210,9 +1379,90 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
               <path d="M4 7h16M10 11v6M14 11v6" />
               <path d="M6 7l1 13h10l1-13M9 7V4h6v3" />
             </svg>
-            페이지 삭제
+            삭제
+            <span style={{ flex: 1 }} />
+            <span style={POP_KEY}>⌫</span>
           </button>
+          {moving && !last && <MovePageMenu controller={controller} pageId={page.id} anchor={cursorStyle(menu, PAGE_MENU_W, 246)} onDone={closeMenu} />}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * `다른 공책으로 이동 ›`의 날개 — 이 스페이스의 다른 공책들.
+ *
+ * 열렸을 때만 붙는 컴포넌트다(목록 조회가 그때 한 번 나간다 — `useNotebooks`).
+ * 옮기기는 **받는 쪽에 먼저 쓰고** 성공했을 때만 여기서 뺀다(`moveNotePageTo`);
+ * 그 공책을 다른 탭에서 고치는 중이면 잠금에 걸려 실패하는데, 그때 조용히 닫히면
+ * 옮겨진 줄 알게 되므로 자리에 남아 이유를 말한다.
+ */
+function MovePageMenu({ controller, pageId, anchor, onDone }: { controller: EditorController; pageId: string; anchor: CSSProperties; onDone: () => void }) {
+  const { rows, loading } = useNotebooks(controller, true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const others = rows.filter((r) => r.docId !== controller.docId);
+  const vw = typeof window === 'undefined' ? 1280 : window.innerWidth;
+  const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
+  const width = 252;
+  // **부모 메뉴가 실제로 놓인 자리**를 기준으로 붙인다 — 커서 좌표를 다시 쓰면 화면
+  // 밖으로 나가지 않으려 위로 당겨진 부모와 어긋나 한참 아래에 뜬다(프로브에서 봤다).
+  const left = typeof anchor.left === 'number' ? anchor.left : 8;
+  const top = typeof anchor.top === 'number' ? anchor.top : 8;
+  // 오른쪽에 자리가 없으면 부모 메뉴의 **왼쪽**으로 넘긴다.
+  const rightFits = left + PAGE_MENU_W + width + 16 < vw;
+  return (
+    <div
+      data-note-page-move-menu
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        ...POP,
+        position: 'fixed',
+        left: rightFits ? left + PAGE_MENU_W + 6 : Math.max(8, left - width - 6),
+        top,
+        width,
+        maxHeight: Math.max(160, Math.min(300, vh - top - 12)),
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+      }}
+    >
+      <span style={POP_HEAD}>공책 고르기</span>
+      {loading && <span style={{ padding: '8px 9px', fontSize: 12, color: 'var(--mf-faint)' }}>공책을 찾는 중…</span>}
+      {!loading && others.length === 0 && <span style={{ padding: '8px 9px', fontSize: 12, color: 'var(--mf-faint)' }}>이 스페이스에 다른 공책이 없어요</span>}
+      {others.map((r) => (
+        <button
+          key={r.docId}
+          type="button"
+          data-note-page-move-to={r.docId}
+          className="btn mf-note-item"
+          disabled={busy !== null}
+          onClick={() => {
+            setBusy(r.docId);
+            setFailed(false);
+            void controller.moveNotePageTo(pageId, r.docId).then((ok) => {
+              setBusy(null);
+              if (ok) onDone();
+              else setFailed(true);
+            });
+          }}
+          style={{ ...MENU_ITEM, height: 40, gap: 9 }}
+        >
+          <BookTile cover={r.cover} size="sm" />
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{r.pages} 페이지</span>
+          </span>
+          {busy === r.docId && <span style={{ flex: '0 0 auto', fontSize: 10.5, color: 'var(--mf-faint)' }}>옮기는 중…</span>}
+        </button>
+      ))}
+      {failed && (
+        <span data-note-page-move-failed style={{ padding: '6px 9px', fontSize: 11, lineHeight: 1.5, color: 'var(--mf-danger)', wordBreak: 'keep-all' }}>
+          옮기지 못했어요 — 그 공책을 다른 곳에서 고치는 중일 수 있어요. 잠시 뒤 다시 시도해 주세요.
+        </span>
       )}
     </div>
   );
@@ -2324,59 +2574,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   }
 
   if (shape === 'table') {
-    const rows = block.rows ?? [];
-    return (
-      <div className="mf-note-table" data-note-block={block.id} data-note-kind="table" style={blockFlow(block)}>
-        <div style={{ overflowX: 'auto', border: '1px solid var(--mf-border-soft)', borderRadius: 13 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
-            <tbody>
-              {rows.map((row, ri) => (
-                <tr key={ri}>
-                  {row.map((cell, ci) => {
-                    const head = ri === 0;
-                    return (
-                      <td
-                        key={ci}
-                        style={{
-                          border: '1px solid var(--mf-border-soft)',
-                          padding: '7px 10px',
-                          verticalAlign: 'top',
-                          background: head ? 'var(--mf-panel2)' : 'transparent',
-                          fontWeight: head ? 700 : 400,
-                          minWidth: 90,
-                        }}
-                      >
-                        <NoteLine
-                          onFocusLine={focusBox}
-                          lineKey={`${block.id}:r${ri}c${ci}`}
-                          runs={cell}
-                          readOnly={readOnly}
-                          placeholder={head ? '머리' : ''}
-                          onChange={(runs) => controller.setNoteCell(block.id, ri, ci, runs)}
-                          style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--mf-text)' }}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {/* 행·열 추가는 **표에 마우스를 얹었을 때만** 뜬다(`editor.css`) — 디자인의
-            표는 종이에 그린 표처럼 보여야 하고, 늘 붙어 있는 버튼 둘이 그 인상을 깬다. */}
-        {!readOnly && (
-          <div className="mf-note-tableact" style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            <button type="button" data-note-table-row className="btn" onClick={() => controller.addNoteTableRow(block.id)} style={GHOST_BTN}>
-              행 추가
-            </button>
-            <button type="button" data-note-table-col className="btn" onClick={() => controller.addNoteTableCol(block.id)} style={GHOST_BTN}>
-              열 추가
-            </button>
-          </div>
-        )}
-      </div>
-    );
+    return <TableBlock controller={controller} block={block} focusBox={focusBox} />;
   }
 
   // 글 한 덩이(문단·제목·인용·코드) — 종류가 겉모습만 정한다.
@@ -2420,6 +2618,266 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
           섞여 보인다(스크롤하며 훑을 때 눈이 걸릴 자리가 없다). */}
       {heading && <span aria-hidden="true" style={{ width: 3, height: block.kind === 'h1' ? 21 : 17, flex: '0 0 auto', borderRadius: 999, background: accent, display: 'block' }} />}
       {line}
+    </div>
+  );
+}
+
+/** 표에서 지금 고른 것 — 칸 하나, 또는 손잡이로 고른 행·열 전체. */
+type TablePick = { kind: 'cell' | 'row' | 'col'; r: number; c: number };
+
+/**
+ * 표 블록 — 칸을 고르고, 행·열을 넣고 빼고 옮긴다(요청: "셀 별 선택, 열 제거, 행 제거").
+ *
+ * 손잡이를 **표의 일부로** 그린다(맨 위의 손잡이 줄, 각 행 맨 앞의 손잡이 칸). 겹쳐
+ * 띄우는 방식은 열 너비가 글에 따라 달라지는 표에서 어긋나고, 가로로 스크롤되는 표
+ * (`overflow-x:auto`)에서는 따로 논다 — 표 안에 있으면 배치가 저절로 맞는다.
+ *
+ * 메뉴는 세 자리에서 같은 일을 한다: 열 손잡이(열 기준) · 행 손잡이(행 기준) · 칸 안
+ * 우클릭(행과 열을 함께). 마지막 한 행·한 열은 지우지 못한다 — 0칸짜리 표는 화면에서
+ * 사라져 되돌릴 손잡이조차 없어진다(표 자체를 지우려면 블록을 지운다).
+ */
+function TableBlock({ controller, block, focusBox }: { controller: EditorController; block: NoteBlock; focusBox: (el: HTMLElement) => void }) {
+  const readOnly = controller.readOnly;
+  const rows = block.rows ?? [];
+  const width = rows[0]?.length ?? 0;
+  const [pick, setPick] = useState<TablePick | null>(null);
+  const [menu, setMenu] = useState<{ pick: TablePick; at: { x: number; y: number } } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  useAnchored(!!menu, closeMenu);
+  const openAt = (e: { clientX: number; clientY: number }, p: TablePick) => {
+    setPick(p);
+    setMenu({ pick: p, at: { x: e.clientX, y: e.clientY } });
+  };
+  /** 이 칸이 고른 것에 드는가 — 칸 하나, 또는 고른 행·열 전체. */
+  const picked = (r: number, c: number) =>
+    !!pick && (pick.kind === 'cell' ? pick.r === r && pick.c === c : pick.kind === 'row' ? pick.r === r : pick.c === c);
+  const handle: CSSProperties = {
+    border: 0,
+    padding: 0,
+    background: 'transparent',
+    display: 'block',
+    width: '100%',
+    height: '100%',
+    cursor: 'pointer',
+  };
+  return (
+    <div className="mf-note-table" data-note-block={block.id} data-note-kind="table" style={blockFlow(block)}>
+      <div style={{ overflowX: 'auto', border: '1px solid var(--mf-border-soft)', borderRadius: 13 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+          <tbody>
+            {/* 열 손잡이 줄 — 표에 마우스를 얹어야 보인다(`editor.css`). 종이에 그린
+                표라는 인상을 늘 붙어 있는 회색 띠 두 줄이 깨뜨린다. */}
+            {!readOnly && (
+              <tr className="mf-note-thandle-row">
+                <td style={{ width: 14, padding: 0, border: 0 }} />
+                {Array.from({ length: width }, (_, ci) => (
+                  <td key={ci} style={{ height: 11, padding: 0, border: 0 }}>
+                    <button
+                      type="button"
+                      data-note-table-colhandle={ci}
+                      aria-label={`${ci + 1}번째 열`}
+                      title="열 설정"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => openAt(e, { kind: 'col', r: 0, c: ci })}
+                      style={{ ...handle, height: 9 }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          height: 4,
+                          margin: '0 3px',
+                          borderRadius: 999,
+                          background: pick && pick.kind === 'col' && pick.c === ci ? 'var(--mf-accent)' : 'var(--mf-border)',
+                        }}
+                      />
+                    </button>
+                  </td>
+                ))}
+              </tr>
+            )}
+            {rows.map((row, ri) => (
+              <tr key={ri}>
+                {!readOnly && (
+                  <td style={{ width: 14, padding: 0, border: 0 }}>
+                    <button
+                      type="button"
+                      data-note-table-rowhandle={ri}
+                      aria-label={`${ri + 1}번째 행`}
+                      title="행 설정"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => openAt(e, { kind: 'row', r: ri, c: 0 })}
+                      style={{ ...handle, padding: '0 3px' }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          width: 4,
+                          height: '100%',
+                          minHeight: 18,
+                          borderRadius: 999,
+                          background: pick && pick.kind === 'row' && pick.r === ri ? 'var(--mf-accent)' : 'var(--mf-border)',
+                        }}
+                      />
+                    </button>
+                  </td>
+                )}
+                {row.map((cell, ci) => {
+                  const head = ri === 0;
+                  const on = picked(ri, ci);
+                  return (
+                    <td
+                      key={ci}
+                      data-note-table-cell={`${ri}:${ci}`}
+                      data-picked={on ? '1' : undefined}
+                      onClick={() => !readOnly && setPick({ kind: 'cell', r: ri, c: ci })}
+                      onContextMenu={(e) => {
+                        if (readOnly) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openAt(e, { kind: 'cell', r: ri, c: ci });
+                      }}
+                      style={{
+                        border: '1px solid var(--mf-border-soft)',
+                        padding: '7px 10px',
+                        verticalAlign: 'top',
+                        // 고른 **칸 하나**는 테두리가 아니라 안쪽 선으로 표시한다 —
+                        // 테두리를 굵히면 그 줄만 1px 밀려 표 전체가 흔들린다. 행·열을
+                        // 고른 것은 칸마다 선을 두르면 시끄러워 배경 한 톤으로 말한다.
+                        boxShadow: on && pick?.kind === 'cell' ? 'inset 0 0 0 2px var(--mf-accent)' : undefined,
+                        background: on && pick?.kind !== 'cell' ? 'var(--mf-accent-soft)' : head ? 'var(--mf-panel2)' : 'transparent',
+                        fontWeight: head ? 700 : 400,
+                        minWidth: 90,
+                      }}
+                    >
+                      <NoteLine
+                        onFocusLine={focusBox}
+                        lineKey={`${block.id}:r${ri}c${ci}`}
+                        runs={cell}
+                        readOnly={readOnly}
+                        placeholder={head ? '머리' : ''}
+                        onChange={(runs) => controller.setNoteCell(block.id, ri, ci, runs)}
+                        style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--mf-text)' }}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* 행·열 추가는 **표에 마우스를 얹었을 때만** 뜬다(`editor.css`) — 디자인의
+          표는 종이에 그린 표처럼 보여야 하고, 늘 붙어 있는 버튼 둘이 그 인상을 깬다. */}
+      {!readOnly && (
+        <div className="mf-note-tableact" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <button type="button" data-note-table-row className="btn" onClick={() => controller.addNoteTableRow(block.id)} style={GHOST_BTN}>
+            행 추가
+          </button>
+          <button type="button" data-note-table-col className="btn" onClick={() => controller.addNoteTableCol(block.id)} style={GHOST_BTN}>
+            열 추가
+          </button>
+          <span style={{ fontSize: 10.5, color: 'var(--mf-faint2)' }}>행·열 손잡이나 칸 우클릭으로 넣고 지울 수 있어요</span>
+        </div>
+      )}
+      {menu && (
+        <TableMenu
+          controller={controller}
+          block={block}
+          pick={menu.pick}
+          at={menu.at}
+          rows={rows.length}
+          cols={width}
+          onDone={() => {
+            setMenu(null);
+            setPick(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 표 메뉴 한 줄 — 아이콘 없이 글과 단축 설명만(항목이 많아 아이콘이 오히려 시끄럽다). */
+function TableMenuItem({ label, danger, disabled, onClick, mark }: { label: string; danger?: boolean; disabled?: boolean; onClick: () => void; mark?: string }) {
+  return (
+    <button
+      type="button"
+      data-note-table-act={mark}
+      className="btn mf-note-item"
+      disabled={disabled}
+      onClick={onClick}
+      style={{ ...MENU_ITEM, height: 30, color: disabled ? 'var(--mf-faint)' : danger ? 'var(--mf-danger)' : 'var(--mf-text)', cursor: disabled ? 'default' : 'pointer' }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * 행·열·칸 메뉴 — 고른 것이 무엇이냐에 따라 묶음이 달라진다.
+ *
+ * 칸에서 우클릭하면 **행과 열을 함께** 보여 준다: 그 자리에서 하고 싶은 일이 둘 중
+ * 어느 쪽인지는 사람만 안다. 손잡이로 열었으면 그쪽 묶음만 — 이미 무엇을 고를지
+ * 말한 셈이라 나머지는 방해다.
+ */
+function TableMenu({
+  controller,
+  block,
+  pick,
+  at,
+  rows,
+  cols,
+  onDone,
+}: {
+  controller: EditorController;
+  block: NoteBlock;
+  pick: TablePick;
+  at: { x: number; y: number };
+  rows: number;
+  cols: number;
+  onDone: () => void;
+}) {
+  const showRow = pick.kind !== 'col';
+  const showCol = pick.kind !== 'row';
+  const run = (fn: () => void) => () => {
+    fn();
+    onDone();
+  };
+  const height = (showRow && showCol ? 320 : 180) + 24;
+  return (
+    <div
+      data-note-table-menu
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{ ...POP, ...cursorStyle(at, 196, height), display: 'flex', flexDirection: 'column', gap: 1 }}
+    >
+      {showRow && (
+        <>
+          <span style={POP_HEAD}>행 {pick.r + 1}</span>
+          <TableMenuItem mark="row-above" label="위에 행 넣기" onClick={run(() => controller.addNoteTableRow(block.id, pick.r))} />
+          <TableMenuItem mark="row-below" label="아래에 행 넣기" onClick={run(() => controller.addNoteTableRow(block.id, pick.r + 1))} />
+          <TableMenuItem mark="row-up" label="행 위로 옮기기" disabled={pick.r === 0} onClick={run(() => controller.moveNoteTableRow(block.id, pick.r, -1))} />
+          <TableMenuItem mark="row-down" label="행 아래로 옮기기" disabled={pick.r >= rows - 1} onClick={run(() => controller.moveNoteTableRow(block.id, pick.r, 1))} />
+          <TableMenuItem mark="row-del" label="행 지우기" danger disabled={rows <= 1} onClick={run(() => controller.removeNoteTableRow(block.id, pick.r))} />
+        </>
+      )}
+      {showRow && showCol && <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px' }} />}
+      {showCol && (
+        <>
+          <span style={POP_HEAD}>열 {pick.c + 1}</span>
+          <TableMenuItem mark="col-left" label="왼쪽에 열 넣기" onClick={run(() => controller.addNoteTableCol(block.id, pick.c))} />
+          <TableMenuItem mark="col-right" label="오른쪽에 열 넣기" onClick={run(() => controller.addNoteTableCol(block.id, pick.c + 1))} />
+          <TableMenuItem mark="col-left-move" label="열 왼쪽으로 옮기기" disabled={pick.c === 0} onClick={run(() => controller.moveNoteTableCol(block.id, pick.c, -1))} />
+          <TableMenuItem mark="col-right-move" label="열 오른쪽으로 옮기기" disabled={pick.c >= cols - 1} onClick={run(() => controller.moveNoteTableCol(block.id, pick.c, 1))} />
+          <TableMenuItem mark="col-del" label="열 지우기" danger disabled={cols <= 1} onClick={run(() => controller.removeNoteTableCol(block.id, pick.c))} />
+        </>
+      )}
+      {pick.kind === 'cell' && (
+        <>
+          <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px' }} />
+          <TableMenuItem mark="cell-clear" label="칸 비우기" onClick={run(() => controller.setNoteCell(block.id, pick.r, pick.c, textRuns('')))} />
+        </>
+      )}
     </div>
   );
 }
