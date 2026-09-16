@@ -68,7 +68,7 @@ function installShell(state?: DesktopBackground): Shell | null {
   return shell;
 }
 
-function renderHome() {
+function renderHome(notificationStore: LocalNotificationStore = new LocalNotificationStore()) {
   const backend: Backend = {
     auth: new LocalAuth(),
     docStore: new LocalDocStore(),
@@ -77,7 +77,7 @@ function renderHome() {
     feedbackStore: new LocalFeedbackStore(),
     imageStore: new LocalImageStore(),
     commentStore: new LocalCommentStore(),
-    notificationStore: new LocalNotificationStore(),
+    notificationStore,
     eventStore: new LocalEventStore(),
     mode: 'local',
   };
@@ -432,5 +432,52 @@ describe('설치형 앱 — 새 설치 버전 확인', () => {
     // 셸이 없으면 `UpdatePrompt`가 버전 파일을 묻지 않아 이 값은 언제나 비어 있다
     // (그 계약은 `pwa/UpdatePrompt.test.tsx`가 본다).
     expect(dialog.querySelector('[data-update-row]')!.textContent).not.toContain('설치 버전');
+  });
+});
+
+// ── 설치형 앱의 멘션 배너 스위치(요청: 앱을 닫아 둬도 멘션 알림) ──────────────
+//
+// 이 앱에서는 **웹 푸시를 쓸 수 없다**(Electron에 푸시 서비스 채널이 없다) — 그래서
+// `멘션 푸시` 행은 그려지지 않는다. 그 자리를 대신하는 것이 이 행이고, 없으면
+// 설치형 앱 사용자는 **자기에게 뜨는 배너를 끌 길이 없다**.
+describe('설치형 앱: 멘션 알림 스위치', () => {
+  // 이 `describe`는 위 블록 **밖**이라 세션·셸 정리를 스스로 해야 한다(처음에 그걸
+  // 빠뜨려 앞 테스트의 셸이 남고 로그인 세션이 없어 `pointer-events: none`으로 깨졌다).
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+  });
+  afterEach(() => {
+    cleanup();
+    delete (window as unknown as { geurio?: unknown }).geurio;
+  });
+
+  it('푸시 행 대신 `멘션 알림` 행이 서고, 끄면 저장된다', async () => {
+    installShell({ supported: true, enabled: true, openAtLogin: false, loginSupported: true });
+    const user = userEvent.setup();
+    const store = new LocalNotificationStore();
+    renderHome(store);
+    const dialog = await openNotify(user);
+
+    // 푸시 행은 없다(셸에서는 구독이 불가능하다).
+    expect(dialog.querySelector('[data-mention-push-row]')).toBeNull();
+    const row = await waitFor(() => {
+      const el = dialog.querySelector('[data-mention-shell-row]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await waitFor(() => expect(row.querySelector('[data-mention-shell-note]')!.textContent).toContain('창을 닫아 둬도'));
+
+    await user.click(within(row).getByRole('switch'));
+    await waitFor(() => expect(row.querySelector('[data-mention-shell-note]')!.textContent).toContain('배너로 알리지 않아요'));
+    await waitFor(async () => expect((await store.loadPrefs()).pushMentions).toBe(false));
+  });
+
+  it('브라우저에서는 그 행이 없다(그쪽은 푸시 행이 맡는다)', async () => {
+    const user = userEvent.setup();
+    renderHome();
+    const dialog = await openNotify(user);
+    expect(dialog.querySelector('[data-mention-shell-row]')).toBeNull();
   });
 });

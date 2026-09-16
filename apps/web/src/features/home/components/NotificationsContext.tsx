@@ -29,6 +29,16 @@ function byNewest(list: AppNotification[]): AppNotification[] {
 interface NotificationsValue {
   items: AppNotification[];
   unread: number;
+  /**
+   * 첫 조회가 끝났는가. **`items`가 비었다는 것만으로는 "알림이 없다"인지 "아직 안
+   * 읽었다"인지 알 수 없다** — 마운트 직후 한 프레임은 언제나 빈 배열이다.
+   *
+   * 설치형 앱의 멘션 배너(`DesktopMentionNotifier`)가 이 값을 쓴다: 첫 목록을
+   * **기준선**으로 삼아야 앱을 켤 때 밀린 멘션이 우르르 뜨지 않는데, 빈 첫 렌더를
+   * 기준선으로 잡으면 곧이어 도착한 진짜 목록이 통째로 "새 알림"이 된다
+   * (실제로 그렇게 깨졌고, 테스트가 그 자리를 못박는다).
+   */
+  loaded: boolean;
   /** 패널이 열려 있는 동안은 주기 확인을 쉰다(읽는 중에 목록이 움직이지 않게). */
   setPaused: (paused: boolean) => void;
   /** 지금 목록을 다시 읽고 그 결과를 돌려준다(열 때 쓴다). */
@@ -42,6 +52,7 @@ const Ctx = createContext<NotificationsValue | null>(null);
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const store = useNotificationStore();
   const [items, setItems] = useState<AppNotification[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [paused, setPaused] = useState(false);
   const lastLoadRef = useRef(0);
 
@@ -59,11 +70,15 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     try {
       const list = byNewest([...(await store.list()), ...local]);
       setItems(list);
+      setLoaded(true);
       return list;
     } catch {
       /* 알림은 부가 기능 — 홈을 방해하지 않는다 */
       const only = byNewest(local);
       setItems(only);
+      // 실패도 **한 번 본 것**이다 — 서버가 조용해도 기기 기록은 확정이므로,
+      // 여기서 `loaded`를 세우지 않으면 배너가 영영 기준선을 못 잡는다.
+      setLoaded(true);
       return only;
     }
   }, [store]);
@@ -108,11 +123,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setItems((cur) => cur.map((i) => ({ ...i, read: true })));
   }, [store]);
 
-  return <Ctx.Provider value={{ items, unread: items.filter((i) => !i.read).length, setPaused, refresh, markAllRead }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ items, unread: items.filter((i) => !i.read).length, loaded, setPaused, refresh, markAllRead }}>{children}</Ctx.Provider>;
 }
 
 /** 공급자 밖(테스트 조각 등)에서도 깨지지 않게 빈 값으로 물러선다. */
-const EMPTY: NotificationsValue = { items: [], unread: 0, setPaused: () => {}, refresh: async () => [], markAllRead: () => {} };
+const EMPTY: NotificationsValue = { items: [], unread: 0, loaded: false, setPaused: () => {}, refresh: async () => [], markAllRead: () => {} };
 
 export function useNotifications(): NotificationsValue {
   return useContext(Ctx) ?? EMPTY;

@@ -16,6 +16,7 @@ import { isDesktopShell } from './platform/desktopBridge';
 import { ReminderHost } from './features/reminders/ReminderHost';
 import { NotificationsProvider } from './features/home/components/NotificationsContext';
 import { DesktopBadgeHost } from './platform/DesktopBadgeHost';
+import { DesktopMentionNotifier } from './platform/DesktopMentionNotifier';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
 // M4: `/home` and `/editor` are gated behind `RequireAuth` — but ONLY when a
@@ -68,6 +69,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     <NotificationsProvider>
       <ReminderHost />
       <DesktopBadgeHost />
+      {/* 설치형 앱에서 창을 닫아 둬도 멘션이 배너로 뜨게 — 배지와 **같은 자리**에
+          둔다(같은 이유다: 그때 열려 있는 화면이 에디터일 수 있다). 브라우저·PWA에서는
+          스스로 아무 일도 하지 않는다(그쪽은 웹 푸시가 맡는다). */}
+      <DesktopMentionNotifier />
       {children}
     </NotificationsProvider>
   );
