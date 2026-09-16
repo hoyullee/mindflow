@@ -363,14 +363,15 @@ describe('공책 2판 — 공책 안에서 찾기 · 고급 블록 · 협업', (
 
   it('캔버스 전용 도구는 뜨지 않는다 — 스타일·삽입·맵 검색', async () => {
     localStorage.setItem('mindflow_doc_ns10', JSON.stringify(NOTE));
-    renderEditor('/editor?map=ns10&title=x');
-    await waitFor(() => expect(screen.getByRole('button', { name: '공유' })).toBeTruthy());
+    const { container } = renderEditor('/editor?map=ns10&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-share]')).toBeTruthy());
 
     expect(screen.queryByRole('button', { name: '삽입' })).toBeNull();
     expect(screen.queryByRole('button', { name: '스타일' })).toBeNull();
     expect(screen.queryByRole('button', { name: '맵에서 검색' })).toBeNull();
-    // 공유는 남는다(보기 권한으로 부르는 길 — 요청).
-    expect(screen.getByRole('button', { name: '공유' })).toBeTruthy();
+    // 공유는 남는다(보기 권한으로 부르는 길 — 요청). GNB와 공책 상단 바 **둘 다**에
+    // 있다(요청: "상단 바에 공유도 다시 넣어줘") — 그래서 하나만 찾으면 안 된다.
+    expect(screen.getAllByRole('button', { name: '공유' }).length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -460,6 +461,33 @@ describe('공책 3판 — 디자인 이식', () => {
       const blocks = saved('ns24').pages[0].blocks as { align?: string }[];
       expect('align' in blocks[blocks.length - 1]!).toBe(false);
     });
+  });
+
+  it('**목록이 어둡고 본문이 밝다** — 디자인의 밝기 관계(제보: 뒤집혀 있었다)', async () => {
+    localStorage.setItem('mindflow_doc_ns26', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns26&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+
+    const root = container.querySelector('[data-note-editor]') as HTMLElement;
+    // 공책 색은 **에디터 테마에서 만들어** 이 트리에만 깐다 — 홈 테마를 바꿔도
+    // 한 화면에 팔레트가 둘이 되지 않는다.
+    expect(root.style.getPropertyValue('--mf-panel')).toBeTruthy();
+    // 목록(`--mf-panel`)과 본문/툴바(`--mf-card`)가 **서로 다른 값**이고,
+    // 본문 바탕은 더 이상 마인드맵 캔버스 색이 아니다.
+    expect(root.style.getPropertyValue('--mf-panel')).not.toBe(root.style.getPropertyValue('--mf-card'));
+    expect(root.style.background).not.toContain('245, 236, 229');
+  });
+
+  it('상단 바에 **공유**가 있다(요청) — GNB의 것과 별개로', async () => {
+    localStorage.setItem('mindflow_doc_ns27', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns27&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-topbar]')).toBeTruthy());
+
+    const share = container.querySelector('[data-note-share]') as HTMLElement;
+    expect(share).toBeTruthy();
+    expect(container.querySelector('[data-note-topbar]')!.contains(share)).toBe(true);
+    expect(container.querySelector('[data-note-tab="댓글"]')).toBeTruthy();
+    expect(container.querySelector('[data-note-tab="기록"]')).toBeTruthy();
   });
 
   it('본문 끝에 **글의 부피**가 적힌다', async () => {

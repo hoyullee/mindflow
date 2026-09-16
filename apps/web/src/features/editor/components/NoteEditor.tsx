@@ -71,6 +71,52 @@ const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; c
   { kind: 'k', label: '<>', name: '인라인 코드', css: { fontFamily: 'ui-monospace, monospace', fontSize: 11 } },
 ];
 
+/**
+ * 공책 UI가 쓰는 색 — **에디터 테마에서 만들어** 이 화면에만 깐다.
+ *
+ * 공책 UI는 홈에서 옮겨 온 코드라 `--mf-*`(홈 토큰)로 색을 적는다. 그런데 그 토큰은
+ * `main.tsx`가 **홈 테마**로 document에 깔아 둔 값이라, 에디터 안에서 쓰면 한 화면에
+ * 팔레트가 둘이 된다(본문은 문서 테마, 목록은 홈 테마). 홈 테마를 다크로 바꾸면
+ * 밝은 목록 위에 어두운 행이 앉는 식으로 어긋난다.
+ *
+ * 그래서 같은 이름을 **여기서 다시 정의해** 하위 트리에서만 덮는다 — 106군데를 고치지
+ * 않고도 공책 전체가 문서 테마를 따른다.
+ *
+ * 밝기 관계는 디자인 원본을 그대로 옮겼다: **목록이 어둡고(크림 `#FBF7F1`) 본문·툴바가
+ * 밝다(종이 `#FDFBF8`/`#FFFDFB`)**. 우리는 이게 뒤집혀 있었다 — 목록이 순백(홈
+ * `--mf-panel`)이고 본문이 **마인드맵 캔버스 색**(`canvasBg` `#f5ece5`)이었다. 공책에는
+ * 캔버스가 없으므로 그 색을 쓸 이유가 처음부터 없었다(제보).
+ */
+function noteTokens(t: Theme): CSSProperties {
+  const mix = (a: string, pct: number, b: string) => `color-mix(in srgb, ${a} ${pct}%, ${b})`;
+  return {
+    '--mf-panel': t.appBg, // 페이지 목록 — 본문보다 **어둡다**
+    '--mf-card': t.panel, // 종이(본문·툴바·팝업·고른 행)
+    '--mf-panel2': t.panel2, // 가라앉은 면(세그먼트 트랙·표 머리·코드)
+    '--mf-border': t.border,
+    '--mf-border-soft': mix(t.border, 55, t.panel),
+    '--mf-border-hover': mix(t.accent, 14, t.border),
+    '--mf-hairline': mix(t.border, 70, t.panel),
+    '--mf-text': t.text,
+    '--mf-subtext': t.subtext,
+    '--mf-muted': t.subtext,
+    '--mf-faint': mix(t.subtext, 72, t.panel),
+    '--mf-faint2': mix(t.subtext, 52, t.panel),
+    '--mf-accent': t.accent,
+    '--mf-accent-ink': t.accentInk,
+    '--mf-accent-soft': mix(t.accent, 14, t.panel),
+    '--mf-accent-mute': mix(t.accent, 32, t.panel),
+    '--mf-accent-deep': mix(t.accent, 78, t.text),
+    // 어조·위험은 **테마를 따르지 않는다** — 초록은 결정, 파랑은 질문, 빨강은 삭제라는
+    // 뜻이 색에 실려 있어 테마마다 달라지면 그 뜻이 흐려진다(맵 에디터와 같은 규칙).
+    '--mf-success': '#4e8c67',
+    '--mf-success-soft': mix('#4e8c67', 12, t.panel),
+    '--mf-info': '#3f8fd0',
+    '--mf-info-soft': mix('#3f8fd0', 12, t.panel),
+    '--mf-danger': '#c0563a',
+  } as CSSProperties;
+}
+
 /** 넣기 — 디자인 원본의 `TOOL_ICONS`. 아이콘은 그 파일의 path를 그대로 옮겼다. */
 const INSERTS: { kind: NoteBlockKind; name: string; icon: JSX.Element }[] = [
   { kind: 'ul', name: '글머리 목록', icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none" /></>) },
@@ -147,7 +193,7 @@ export function NoteEditor({ controller, theme }: Props) {
   return (
     <div
       data-note-editor
-      style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', background: theme.canvasBg, overflow: 'hidden' }}
+      style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', background: theme.panel, overflow: 'hidden', ...noteTokens(theme) }}
     >
       <PageList controller={controller} />
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -279,11 +325,25 @@ export function NoteTopBar({ controller, theme }: Props) {
           {page?.title?.trim() || '제목 없는 페이지'}
         </span>
       </nav>
-      {/* 오른쪽 — 디자인은 [공유 · 댓글 · 기록]을 한 알약에 묶는다. 우리는 **공유를 빼고**
-          둘만 둔다: 디자인의 공책 화면에는 GNB가 없지만 우리에겐 있고 거기 이미 공유가
-          있다. 같은 일을 하는 단추가 한 화면에 둘이면 어느 쪽이 무엇인지 되레 흐려진다
-          (댓글·기록은 GNB 메뉴 안에 있어 이 자리에서 값을 한다). */}
+      {/* 오른쪽 — 디자인 그대로 [공유 · 댓글 · 기록]을 한 알약에 묶는다(요청).
+          GNB에도 공유가 있지만 공책에서는 **이 줄이 문서 단위 조작이 모이는 자리**다 —
+          경로 바로 옆에서 "이 공책을 누구와"가 이어지는 편이 메뉴를 거치는 것보다 짧다. */}
       <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, height: 40, padding: '0 8px', borderRadius: 14, background: theme.panel, border: `1px solid ${theme.border}` }}>
+        <button
+          type="button"
+          className="mf-ed-btn"
+          data-note-share
+          onClick={controller.openShare}
+          title="공유"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 11px', borderRadius: 10, border: 0, background: 'transparent', color: theme.subtext, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="9" cy="8" r="3" />
+            <path d="M3 19a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M21 19a5 5 0 0 0-4-4.9" />
+          </svg>
+          공유
+        </button>
+        <span aria-hidden="true" style={{ width: 1, height: 20, background: theme.border, display: 'block', flex: '0 0 auto' }} />
         <span style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 11, background: theme.panel2, border: `1px solid ${theme.border}` }}>
           {tabs.map((t) => (
             <button
@@ -906,7 +966,7 @@ function FormatToolbar({
         flexWrap: 'wrap',
         padding: '8px 14px',
         borderBottom: '1px solid var(--mf-border-soft)',
-        background: 'var(--mf-panel)',
+        background: 'var(--mf-card)',
       }}
     >
       <BlockTypeMenu controller={controller} rememberBox={rememberBox} boxRef={boxRef} />
