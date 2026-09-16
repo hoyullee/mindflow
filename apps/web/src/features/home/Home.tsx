@@ -227,10 +227,13 @@ export function Home() {
                   maxHeight: view.recentCollapsed ? 0 : 460,
                   opacity: view.recentCollapsed ? 0 : 1,
                   transform: view.recentCollapsed ? 'translateY(-6px)' : 'none',
-                  // 접힐 때 아래 여백까지 함께 걷어야 빈 자리가 남지 않는다.
-                  marginBottom: view.recentCollapsed ? -34 : 0,
+                  // ⚠️ 여기 **음수 마진을 쓰지 않는다**(제보: 검색 제목이 잘린다).
+                  // 예전에는 접힐 때 `-34`로 당겨 빈 자리를 없앴는데, 그 34px은 이 상자
+                  // **안쪽** 여백이라 `max-height: 0`이 이미 걷어 간다 — 그래서 한 번 더
+                  // 당기면 뒤따르는 검색 제목이 위 툴바 아래로 밀려 들어가 윗부분이
+                  // 잘렸다. 높이만 0으로 만들면 그 자리는 정확히 사라진다.
                   pointerEvents: view.recentCollapsed ? 'none' : undefined,
-                  transition: 'max-height .36s cubic-bezier(.4,0,.2,1), opacity .22s ease, transform .3s ease, margin-bottom .36s cubic-bezier(.4,0,.2,1)',
+                  transition: 'max-height .36s cubic-bezier(.4,0,.2,1), opacity .22s ease, transform .3s ease',
                 }}
               >
                 <RecentStrip cards={view.recentCards} controller={controller} />

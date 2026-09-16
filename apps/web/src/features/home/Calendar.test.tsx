@@ -1223,6 +1223,22 @@ describe('일정 화면', () => {
    * 읽으므로(`mf_events`) 저장까지 이어지는 흐름을 그대로 본다.
    */
   describe('Geurio 일정', () => {
+    /**
+     * **시계를 낮으로 고정한다** — 이 구획의 새 일정은 `nextTimeSlot()`(지금 기준 다음
+     * 눈금)에서 시작하는데, 저녁 늦게 돌리면 `start + 120`이 23:59로 잘려 `2시간`이
+     * `1시간 59분`이 된다. 실제로 23:35 KST에 CI가 깨졌다(밤에만 깨지는 테스트 —
+     * `docs/probe-pitfalls.md` F5와 같은 계열). 오프셋이 아니라 **앵커**를 쓴다.
+     */
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const anchor = new Date();
+      anchor.setHours(10, 5, 0, 0);
+      vi.setSystemTime(anchor);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     const events = (): Array<Record<string, unknown>> => JSON.parse(localStorage.getItem('mf_events') ?? '[]') as Array<Record<string, unknown>>;
     const newEv = (): HTMLElement => document.querySelector('[data-new-event]') as HTMLElement;
     const evDetail = (): HTMLElement => document.querySelector('[data-event-detail]') as HTMLElement;

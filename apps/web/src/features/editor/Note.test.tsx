@@ -515,3 +515,70 @@ describe('공책 3판 — 디자인 이식', () => {
     expect(stats.textContent).not.toMatch(/읽기/);
   });
 });
+
+// ── 4판(제보 15건 중 1판: 팝업 위치·닫힘과 작은 수정) ────────────────────────
+describe('공책 4판 — 팝업이 잘리지 않고, 바깥을 누르면 닫힌다', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('공책 전환 팝업은 **화면 좌표**로 뜬다 — 본문 상자에 잘리지 않게', async () => {
+    localStorage.setItem('mindflow_doc_ns30', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns30&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-book-switch]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-book-switch]')!);
+    const menu = (await waitFor(() => container.querySelector('[data-note-book-menu]'))) as HTMLElement;
+    // `absolute`면 `overflow:hidden`인 조상(상단 바·본문)에 잘린다 — 그게 제보였다.
+    expect(menu.style.position).toBe('fixed');
+  });
+
+  it('바깥을 누르면 닫힌다 — 모든 팝업에 같은 규칙', async () => {
+    localStorage.setItem('mindflow_doc_ns31', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns31&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-blocktype]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-blocktype]')!);
+    await waitFor(() => expect(container.querySelector('[data-note-blocktype-menu]')).toBeTruthy());
+    // 바깥 아무 곳이나 누르면 닫힌다(Esc도 같은 길).
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(container.querySelector('[data-note-blocktype-menu]')).toBeNull());
+
+    fireEvent.click(container.querySelector('[data-note-blocktype]')!);
+    await waitFor(() => expect(container.querySelector('[data-note-blocktype-menu]')).toBeTruthy());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('[data-note-blocktype-menu]')).toBeNull());
+  });
+
+  it('`/` 목록은 **누른 단추**를 기준으로 뜬다 — 본문 맨 아래가 아니라', async () => {
+    localStorage.setItem('mindflow_doc_ns32', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns32&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-btn]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-slash-btn]')!);
+    const pop = (await waitFor(() => container.querySelector('[data-note-slash] > div'))) as HTMLElement;
+    expect(pop.style.position).toBe('fixed');
+  });
+
+  it('태그를 안 고른 페이지는 목록에 **태그 없음**으로 선다', async () => {
+    const noTag = { ...NOTE, pages: [{ ...NOTE.pages[0], tag: undefined }, NOTE.pages[1]] };
+    localStorage.setItem('mindflow_doc_ns33', JSON.stringify(noTag));
+    const { container } = renderEditor('/editor?map=ns33&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-page-tag]')).toBeTruthy());
+
+    // 자리를 비우지 않는다 — 빈 자리는 "안 정했다"인지 "줄이 없다"인지 말해 주지 않는다.
+    expect(container.querySelector('[data-note-page-tag]')!.textContent).toContain('태그 없음');
+  });
+
+  it('머리와 본문 사이에 구분선이 있다', async () => {
+    localStorage.setItem('mindflow_doc_ns34', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns34&title=x');
+    const head = await waitFor(() => container.querySelector('.mf-note-head') as HTMLElement);
+    const line = head.nextElementSibling as HTMLElement;
+    expect(line.getAttribute('aria-hidden')).toBe('true');
+    expect(line.style.height).toBe('1px');
+  });
+});
