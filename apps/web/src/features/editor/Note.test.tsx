@@ -394,11 +394,14 @@ describe('공책 3판 — 디자인 이식', () => {
     await waitFor(() => expect(container.querySelector('[data-note-topbar]')).toBeTruthy());
 
     const chip = container.querySelector('[data-doc-chip]') as HTMLElement;
-    // 겹침의 원인이던 `position: absolute`가 아니라 줄 안에 선다.
-    expect(chip.style.position).toBe('relative');
+    // 겹침의 원인이던 `position: absolute`가 아니라 **줄 안에** 선다.
+    expect(chip.style.position).not.toBe('absolute');
     expect(container.querySelector('[data-note-topbar]')!.contains(chip)).toBe(true);
     // 그래서 목록의 검색칸이 가려지지 않고 실제로 있다.
     expect(container.querySelector('[data-note-search]')).toBeTruthy();
+    // 칩 안에 공책 이름과 저장 단추가 함께 있다(디자인의 알약 한 덩이).
+    expect(chip.querySelector('[data-note-book-title]')).toBeTruthy();
+    expect(chip.querySelector('[data-note-save]')).toBeTruthy();
   });
 
   it('목록의 정렬을 **제목순**으로 바꾸면 순서가 바뀐다', async () => {
@@ -468,14 +471,18 @@ describe('공책 3판 — 디자인 이식', () => {
     const { container } = renderEditor('/editor?map=ns26&title=x');
     await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
 
-    const root = container.querySelector('[data-note-editor]') as HTMLElement;
-    // 공책 색은 **에디터 테마에서 만들어** 이 트리에만 깐다 — 홈 테마를 바꿔도
-    // 한 화면에 팔레트가 둘이 되지 않는다.
-    expect(root.style.getPropertyValue('--mf-panel')).toBeTruthy();
-    // 목록(`--mf-panel`)과 본문/툴바(`--mf-card`)가 **서로 다른 값**이고,
-    // 본문 바탕은 더 이상 마인드맵 캔버스 색이 아니다.
-    expect(root.style.getPropertyValue('--mf-panel')).not.toBe(root.style.getPropertyValue('--mf-card'));
-    expect(root.style.background).not.toContain('245, 236, 229');
+    // 색은 상단 바와 본문을 **함께 감싸는 한 겹**에 깔린다(둘이 같은 팔레트를 봐야 한다).
+    const surface = container.querySelector('[data-note-topbar]')!.parentElement as HTMLElement;
+    expect(surface.style.getPropertyValue('--mf-panel')).toBeTruthy();
+    // 디자인의 종이 값 — 목록은 크림, 면은 종이, 본문은 그 사이, 상단은 한 톤 짙다.
+    expect(surface.style.getPropertyValue('--mf-panel')).toBe('#fbf7f1');
+    expect(surface.style.getPropertyValue('--mf-card')).toBe('#fffdfb');
+    expect(surface.style.getPropertyValue('--mf-note-body')).toBe('#fdfbf8');
+    expect(surface.style.getPropertyValue('--mf-note-bar')).toBe('#f6f0e8');
+    // 상단 바에는 14px 도트 무늬가 깔린다(제보: "배경 패턴").
+    const bar = container.querySelector('[data-note-topbar]') as HTMLElement;
+    expect(bar.style.backgroundImage).toContain('radial-gradient');
+    expect(bar.style.backgroundSize).toBe('14px 14px');
   });
 
   it('상단 바에 **공유**가 있다(요청) — GNB의 것과 별개로', async () => {

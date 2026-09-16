@@ -500,3 +500,33 @@ input[type='search']::-webkit-search-results-decoration {
 [data-note-title]:focus {
   border-bottom-color: var(--mf-accent) !important;
 }
+
+/* ── 공책 — 디자인 원본의 상호작용 ─────────────────────────────────────────── */
+/* 팝업이 뜨는 모양 — 위에서 살짝 내려오며 커진다(디자인의 `ghPop`). */
+@keyframes mf-note-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-note-editor] [style*='mf-note-pop'] { animation: none !important; }
+}
+/* 툴바 단추 — 평소엔 글리프만, 마우스를 얹으면 옅은 면이 깔린다(디자인). */
+.mf-note-tb:hover {
+  background: var(--mf-note-hover) !important;
+  color: var(--mf-text) !important;
+}
+/* 상단 바의 글자 단추(경로·공유·탭)도 같은 결로 */
+.mf-note-crumb:hover,
+.mf-note-pill-btn:hover {
+  background: var(--mf-note-hover);
+  color: var(--mf-text);
+}
+/* 메뉴 한 줄 */
+.mf-note-item:hover {
+  background: var(--mf-note-hover);
+}
+/* 공책 이름 — 눌러서 고칠 수 있음을 밑줄이 알린다(제목과 같은 규칙) */
+[data-note-book-title]:hover { border-bottom-color: var(--mf-border) !important; }
+[data-note-book-title]:focus { border-bottom-color: var(--mf-accent) !important; }
+/* 스와치 — 얹으면 살짝 커진다(디자인) */
+[data-note-editor] [style*='border-radius: 7px']:hover { transform: none; }
