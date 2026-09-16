@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue } from '@mindflow/mindmap-core';
+import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -167,12 +167,19 @@ interface Snapshot {
   cards: KanbanCard[];
   /** 칸반 분류 목록 — 열·카드와 같은 이유로 스냅샷에 싣는다(undo가 되돌려야 한다). */
   tags: KanbanTag[];
+  /** 공책 페이지 — 공책 문서에서만 채워진다(다른 종류는 빈 배열). undo가 글과
+   *  페이지 추가·삭제를 함께 되돌려야 하므로 스냅샷에 싣는다. */
+  pages: NotePage[];
+  /** 공책 표지 — 표지 색·스케치·태그도 되돌릴 대상이다(우클릭 메뉴에서 바꾼다). */
+  cover: NoteCover | null;
 }
 
 /** 칸반이 아닌 문서에서 열·카드를 읽을 때 쓰는 빈 배열(참조가 매 렌더 바뀌지 않게). */
 const EMPTY_COLUMNS: KanbanColumn[] = [];
 const EMPTY_CARDS: KanbanCard[] = [];
 const EMPTY_TAGS: KanbanTag[] = [];
+/** 공책이 아닌 문서에서 페이지를 읽을 때 쓰는 빈 배열(참조가 매 렌더 바뀌지 않게). */
+const EMPTY_PAGES: NotePage[] = [];
 
 /** 프레임을 내용에 맞출 때 주는 여백(캔버스 단위) — 라벨 알약이 위쪽 바깥에
  * 걸리므로 위도 같은 값이면 충분하다. */
@@ -774,6 +781,37 @@ export interface EditorController {
   isBoard: boolean;
   /** 칸반 문서인가 — 에디터가 캔버스 대신 칸반 화면을 그린다. */
   isKanban: boolean;
+  /* ── 공책(문서 종류 'note') ──
+   * 캔버스가 아니라 **페이지의 글**이다. 좌표·줌·레이아웃이 없고, 다루는 것은
+   * 순서(페이지·블록 배열)와 런이다. 규칙은 코어 `note.ts`에 있고 여기 있는 것은
+   * 문서에 커밋하는 길뿐이다. */
+  isNote: boolean;
+  notePages: NotePage[];
+  /** 지금 열려 있는 페이지(없는 id를 가리키면 첫 장으로 떨어진다). */
+  notePage: NotePage | null;
+  notePageId: string | null;
+  setNotePageId: (id: string | null) => void;
+  setNotePageTitle: (pageId: string, title: string) => void;
+  /** 새 페이지를 지금 장 뒤에 넣고 그리로 옮긴다. 새 id를 돌려준다. */
+  addNotePage: (templateBlocks?: NoteBlock[]) => string | null;
+  /** 마지막 한 장은 지우지 않는다 — 막혔으면 `false`. */
+  removeNotePage: (pageId: string) => boolean;
+  moveNotePage: (pageId: string, index: number) => void;
+  duplicateNotePage: (pageId: string) => void;
+  addNoteBlock: (kind?: NoteBlockKind, after?: string) => string | null;
+  removeNoteBlock: (blockId: string) => void;
+  retypeNoteBlock: (blockId: string, kind: NoteBlockKind) => void;
+  moveNoteBlock: (blockId: string, index: number) => void;
+  setNoteBlockRuns: (blockId: string, runs: RichRun[]) => void;
+  setNoteItemRuns: (blockId: string, itemId: string, runs: RichRun[]) => void;
+  toggleNoteCheck: (blockId: string, itemId: string) => void;
+  addNoteItem: (blockId: string, after?: string) => string | null;
+  removeNoteItem: (blockId: string, itemId: string) => void;
+  setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
+  addNoteTableRow: (blockId: string) => void;
+  addNoteTableCol: (blockId: string) => void;
+  setNoteCover: (patch: Partial<NoteCover>) => void;
+  setNotePageTag: (pageId: string, tag: string | null) => void;
   /** 칸반 열(왼→오 순서) / 카드(열 안 순서는 `pos`). */
   columns: KanbanColumn[];
   cards: KanbanCard[];
@@ -1175,6 +1213,8 @@ export function useEditorState(): EditorController {
               columns: res.doc.columns ?? [],
               cards: res.doc.cards ?? [],
               tags: res.doc.tags ?? [],
+              pages: res.doc.pages ?? [],
+              cover: res.doc.cover ?? null,
             });
             setHistoryTick((t) => t + 1);
           }
@@ -1457,6 +1497,13 @@ export function useEditorState(): EditorController {
   const isBoard = doc.kind === 'board';
   /** 칸반 문서 — 캔버스가 아니라 전용 화면(열·카드)으로 그린다. */
   const isKanban = doc.kind === 'kanban';
+  /**
+   * 공책 문서 — 캔버스도 열도 아니라 **페이지의 글**이다.
+   *
+   * 칸반과 같은 자리에서 갈린다: 팬/줌·미니맵·그리기·레이아웃이 통째로 뜻이 없으므로
+   * 에디터는 이 깃발로 그 UI를 전부 걷어내고 전용 화면 하나만 그린다.
+   */
+  const isNote = doc.kind === 'note';
   // 문서 테마는 종류를 가리지 않는다 — 화이트보드의 흰 배경은 덮어쓰기가 아니라
   // `white` 테마(새 보드의 기본값)라, 스타일 메뉴에서 고른 테마가 그대로 먹는다.
   const theme = themeOf(doc.themeKey);
@@ -1644,7 +1691,7 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     if (historyInitRef.current) return;
     historyInitRef.current = true;
-    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], commentPins: doc.commentPins ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [], tags: doc.tags ?? [] });
+    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], commentPins: doc.commentPins ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [], tags: doc.tags ?? [], pages: doc.pages ?? [], cover: doc.cover ?? null });
     // deliberately empty deps: only the initial (mount-time) doc/edgeStyle matter here
   }, []);
 
@@ -1672,10 +1719,13 @@ export function useEditorState(): EditorController {
         // (커밋은 도는데 "바뀐 게 없다"로 판정돼 setDoc이 prev를 돌려준다).
         next.columns !== prev.columns ||
         next.cards !== prev.cards ||
-        next.tags !== prev.tags;
+        next.tags !== prev.tags ||
+        // 공책 페이지·표지 — 위 칸반과 **같은 이유로** 반드시 여기 있어야 한다.
+        next.pages !== prev.pages ||
+        next.cover !== prev.cover;
       if (changed) {
         historyRef.current!.record(
-          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] },
+          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [], pages: next.pages ?? [], cover: next.cover ?? null },
           continuous,
         );
         setHistoryTick((t) => t + 1);
@@ -1698,14 +1748,14 @@ export function useEditorState(): EditorController {
       const changed =
         next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions || next.commentPins !== prev.commentPins;
       if (changed) {
-        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] });
+        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [], pages: next.pages ?? [], cover: next.cover ?? null });
       }
       return changed ? next : prev;
     });
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, commentPins: snap.commentPins?.length ? snap.commentPins : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [], tags: snap.tags ?? [] } : {}) }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, commentPins: snap.commentPins?.length ? snap.commentPins : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [], tags: snap.tags ?? [] } : {}), ...(prev.kind === 'note' ? { pages: snap.pages ?? [], cover: snap.cover ?? undefined } : {}) }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
@@ -2183,7 +2233,7 @@ export function useEditorState(): EditorController {
     // up — `docSignature` includes `edgeStyle`, so this dirties the doc.
     setDoc((prev) => (prev.edgeStyle === s ? prev : { ...prev, edgeStyle: s }));
     const d = docRef.current;
-    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [], commentPins: d.commentPins ?? [], columns: d.columns ?? [], cards: d.cards ?? [], tags: d.tags ?? [] }, false);
+    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [], commentPins: d.commentPins ?? [], columns: d.columns ?? [], cards: d.cards ?? [], tags: d.tags ?? [], pages: d.pages ?? [], cover: d.cover ?? null }, false);
     setHistoryTick((t) => t + 1);
   }, []);
 
@@ -6215,6 +6265,354 @@ export function useEditorState(): EditorController {
     });
   }, []);
 
+  // ---- 공책(문서 종류 'note') — 페이지·블록 ----
+  //
+  // 캔버스가 없으므로 이 아래에는 좌표가 한 번도 나오지 않는다. 대신 다루는 것이
+  // **순서**(페이지·블록 배열)와 **글**(런)이고, 둘 다 코어(`note.ts`)가 규칙을
+  // 들고 있어 여기서는 문서에 커밋하는 일만 한다.
+
+  const notePages = doc.pages ?? EMPTY_PAGES;
+
+  /**
+   * 지금 열려 있는 페이지 id. **문서가 아니라 보는 사람의 상태**다(칸반의
+   * `kanbanView`와 같은 판단) — 문서에 넣으면 한 사람이 페이지를 넘길 때 같은
+   * 공책을 열어 둔 모두의 화면이 따라 움직인다.
+   */
+  const [notePageId, setNotePageId] = useState<string | null>(null);
+  /** 없는 페이지를 가리키고 있으면(삭제·첫 진입) 첫 장으로 떨어진다. */
+  const notePage = notePages.find((pg) => pg.id === notePageId) ?? notePages[0] ?? null;
+
+  /** 페이지 본문을 고친다 — `updatedAt`을 함께 찍어 목록의 "몇 분 전"이 맞게 한다. */
+  const commitPage = useCallback(
+    (pageId: string, updater: (pg: NotePage) => NotePage, continuous = false) => {
+      commitDoc((d) => {
+        const pages = d.pages ?? [];
+        let touched = false;
+        const next = pages.map((pg) => {
+          if (pg.id !== pageId) return pg;
+          const out = updater(pg);
+          if (out === pg) return pg;
+          touched = true;
+          return { ...out, updatedAt: new Date().toISOString() };
+        });
+        return touched ? { ...d, pages: next } : d;
+      }, continuous);
+    },
+    [commitDoc],
+  );
+
+  /** 블록 하나를 고친다(가장 잦은 경로 — 글자 입력이 여기로 온다). */
+  const commitBlock = useCallback(
+    (pageId: string, blockId: string, updater: (b: NoteBlock) => NoteBlock, continuous = true) => {
+      commitPage(
+        pageId,
+        (pg) => {
+          let touched = false;
+          const blocks = pg.blocks.map((b) => {
+            if (b.id !== blockId) return b;
+            const out = updater(b);
+            if (out === b) return b;
+            touched = true;
+            return out;
+          });
+          return touched ? { ...pg, blocks } : pg;
+        },
+        // 글자 입력은 **한 덩이의 undo**여야 한다 — 한 글자마다 단계를 만들면
+        // ⌘Z 한 번이 한 글자를 지운다(노드 편집과 같은 규칙).
+        continuous,
+      );
+    },
+    [commitPage],
+  );
+
+  /** 페이지 제목. 빈 제목을 허용한다 — 목록이 `제목 없는 페이지`로 보여 준다. */
+  const setNotePageTitle = useCallback(
+    (pageId: string, title: string) => {
+      commitPage(pageId, (pg) => (pg.title === title ? pg : { ...pg, title }), true);
+    },
+    [commitPage],
+  );
+
+  /** 새 페이지 — 지금 페이지 **바로 뒤**에 넣고 그리로 옮긴다(글의 흐름을 따른다). */
+  const addNotePage = useCallback(
+    (templateBlocks?: NoteBlock[]): string | null => {
+      if (readOnlyRef.current) return null;
+      const page = newPage('', templateBlocks);
+      commitDoc((d) => {
+        const pages = d.pages ?? [];
+        const at = pages.findIndex((pg) => pg.id === notePageId);
+        const to = at < 0 ? pages.length : at + 1;
+        return { ...d, pages: [...pages.slice(0, to), page, ...pages.slice(to)] };
+      });
+      setNotePageId(page.id);
+      return page.id;
+    },
+    [commitDoc, notePageId],
+  );
+
+  /**
+   * 페이지를 지운다. **마지막 한 장은 지우지 않는다**(코어 `removePage`) — 열 것이
+   * 없는 공책이 되기 때문이다. 막혔으면 `false`를 돌려 호출부가 안내를 띄운다.
+   */
+  const removeNotePage = useCallback(
+    (pageId: string): boolean => {
+      if (readOnlyRef.current) return false;
+      const pages = docRef.current.pages ?? [];
+      const next = removePage(pages, pageId);
+      if (next === pages) return false;
+      // 지운 장을 보고 있었으면 **그 자리의 다음 장**으로 옮긴다(맨 끝이면 앞 장).
+      if (pageId === notePage?.id) {
+        const at = pages.findIndex((pg) => pg.id === pageId);
+        const fallback = next[Math.min(at, next.length - 1)];
+        setNotePageId(fallback ? fallback.id : null);
+      }
+      commitDoc((d) => ({ ...d, pages: next }));
+      return true;
+    },
+    [commitDoc, notePage?.id],
+  );
+
+  /** 페이지 순서 바꾸기 — 목록에서 끌어 옮긴다. */
+  const moveNotePage = useCallback(
+    (pageId: string, index: number) => {
+      commitDoc((d) => {
+        const pages = d.pages ?? [];
+        const next = movePage(pages, pageId, index);
+        return next === pages ? d : { ...d, pages: next };
+      });
+    },
+    [commitDoc],
+  );
+
+  /** 페이지 복제 — 회의록처럼 **같은 틀을 반복해 쓰는** 글에서 가장 잦은 요청이다. */
+  const duplicateNotePage = useCallback(
+    (pageId: string) => {
+      if (readOnlyRef.current) return;
+      const src = (docRef.current.pages ?? []).find((pg) => pg.id === pageId);
+      if (!src) return;
+      // 블록·항목 id를 **모두 새로** 준다 — 그대로 복제하면 한 문서 안에 같은 id가
+      // 둘 생겨 한쪽을 고칠 때 다른 쪽도 함께 바뀐다.
+      const copy: NotePage = {
+        ...src,
+        id: noteId('pg'),
+        title: src.title ? `${src.title} 사본` : '',
+        blocks: src.blocks.map((b) => ({
+          ...b,
+          id: noteId('bk'),
+          ...(b.items ? { items: b.items.map((it) => ({ ...it, id: noteId('it') })) } : {}),
+        })),
+        updatedAt: new Date().toISOString(),
+      };
+      commitDoc((d) => {
+        const pages = d.pages ?? [];
+        const at = pages.findIndex((pg) => pg.id === pageId);
+        const to = at < 0 ? pages.length : at + 1;
+        return { ...d, pages: [...pages.slice(0, to), copy, ...pages.slice(to)] };
+      });
+      setNotePageId(copy.id);
+    },
+    [commitDoc],
+  );
+
+  /** 블록 추가 — `after` 뒤(없으면 맨 끝). 새 블록 id를 돌려준다(캐럿을 옮긴다). */
+  const addNoteBlock = useCallback(
+    (kind: NoteBlockKind = 'p', after?: string): string | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const block = emptyBlock(kind);
+      commitPage(
+        notePage.id,
+        (pg) => {
+          const at = after ? pg.blocks.findIndex((b) => b.id === after) : -1;
+          const to = at < 0 ? pg.blocks.length : at + 1;
+          return { ...pg, blocks: [...pg.blocks.slice(0, to), block, ...pg.blocks.slice(to)] };
+        },
+        false,
+      );
+      return block.id;
+    },
+    [commitPage, notePage],
+  );
+
+  /**
+   * 블록을 지운다 — **마지막 블록은 비우기만 한다.**
+   *
+   * 블록이 하나도 없는 페이지는 캐럿을 놓을 자리가 없어 글을 시작할 수 없다
+   * (코어 `normalizePages`가 읽을 때도 같은 이유로 빈 문단을 세운다).
+   */
+  const removeNoteBlock = useCallback(
+    (blockId: string) => {
+      if (readOnlyRef.current || !notePage) return;
+      commitPage(
+        notePage.id,
+        (pg) => {
+          if (pg.blocks.length <= 1) {
+            const only = pg.blocks[0];
+            if (!only || (only.kind === 'p' && runsText(only.runs) === '')) return pg;
+            return { ...pg, blocks: [emptyBlock('p')] };
+          }
+          return { ...pg, blocks: pg.blocks.filter((b) => b.id !== blockId) };
+        },
+        false,
+      );
+    },
+    [commitPage, notePage],
+  );
+
+  /** 블록 종류 바꾸기 — 글은 살린다(코어 `retypeBlock`). */
+  const retypeNoteBlock = useCallback(
+    (blockId: string, kind: NoteBlockKind) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => retypeBlock(b, kind), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 블록 순서 바꾸기. */
+  const moveNoteBlock = useCallback(
+    (blockId: string, index: number) => {
+      if (!notePage) return;
+      commitPage(
+        notePage.id,
+        (pg) => {
+          const next = moveBlock(pg.blocks, blockId, index);
+          return next === pg.blocks ? pg : { ...pg, blocks: next };
+        },
+        false,
+      );
+    },
+    [commitPage, notePage],
+  );
+
+  /** 문단·제목·인용·코드·콜아웃·토글의 글. */
+  const setNoteBlockRuns = useCallback(
+    (blockId: string, runs: RichRun[]) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, runs: normalizeRuns(runs) }));
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 목록 항목의 글. */
+  const setNoteItemRuns = useCallback(
+    (blockId: string, itemId: string, runs: RichRun[]) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({
+        ...b,
+        items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, runs: normalizeRuns(runs) } : it)),
+      }));
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 체크 켜고 끄기 — 한 번의 조작이라 **연속 커밋이 아니다**(undo 한 단계). */
+  const toggleNoteCheck = useCallback(
+    (blockId: string, itemId: string) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => ({ ...b, items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, done: !it.done } : it)) }),
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 목록 항목 추가 — `after` 뒤(없으면 맨 끝). 새 항목 id를 돌려준다. */
+  const addNoteItem = useCallback(
+    (blockId: string, after?: string): string | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const item = emptyItem();
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const items = b.items ?? [];
+          const at = after ? items.findIndex((it) => it.id === after) : -1;
+          const to = at < 0 ? items.length : at + 1;
+          // 체크리스트의 새 항목은 **꺼진 채로** 시작한다(켜진 채면 한 번 더 눌러야 한다).
+          const fresh = b.kind === 'ck' ? { ...item, done: false } : item;
+          return { ...b, items: [...items.slice(0, to), fresh, ...items.slice(to)] };
+        },
+        false,
+      );
+      return item.id;
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 목록 항목 지우기 — **마지막 항목은 남긴다**(블록과 같은 이유: 캐럿 자리). */
+  const removeNoteItem = useCallback(
+    (blockId: string, itemId: string) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const items = b.items ?? [];
+          if (items.length <= 1) return b;
+          return { ...b, items: items.filter((it) => it.id !== itemId) };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 표의 한 칸. */
+  const setNoteCell = useCallback(
+    (blockId: string, row: number, col: number, runs: RichRun[]) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => {
+        const rows = (b.rows ?? []).map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? normalizeRuns(runs) : c)) : r));
+        return { ...b, rows };
+      });
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 표에 행·열 더하기(빈 칸으로). */
+  const addNoteTableRow = useCallback(
+    (blockId: string) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const rows = b.rows ?? [];
+          const width = rows[0]?.length ?? 2;
+          return { ...b, rows: [...rows, Array.from({ length: width }, () => textRuns(''))] };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  const addNoteTableCol = useCallback(
+    (blockId: string) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, rows: (b.rows ?? []).map((r) => [...r, textRuns('')]) }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 공책 표지·태그 — 우클릭 메뉴(홈)와 에디터 머리가 같은 길을 쓴다. */
+  const setNoteCover = useCallback(
+    (patchCover: Partial<NoteCover>) => {
+      commitDoc((d) => ({ ...d, cover: { ...(d.cover ?? {}), ...patchCover } }));
+    },
+    [commitDoc],
+  );
+
+  /** 페이지 태그(공책 태그와 별개 — 페이지마다 다를 수 있다). */
+  const setNotePageTag = useCallback(
+    (pageId: string, tag: string | null) => {
+      commitPage(pageId, (pg) => ((pg.tag ?? null) === tag ? pg : { ...pg, tag }), false);
+    },
+    [commitPage],
+  );
+
   // ---- keyboard shortcuts — port of `Component#onKey` (MindFlow.dc.html:2838-2905):
   // the map-view branch (Editor-b), plus the outline-view branch and the multi-select
   // (marquee) Delete/Escape branch (Editor-c). ----
@@ -6647,6 +7045,31 @@ export function useEditorState(): EditorController {
     docTitle,
     isBoard,
     isKanban,
+    // ---- 공책 ----
+    isNote,
+    notePages,
+    notePage,
+    notePageId: notePage?.id ?? null,
+    setNotePageId,
+    setNotePageTitle,
+    addNotePage,
+    removeNotePage,
+    moveNotePage,
+    duplicateNotePage,
+    addNoteBlock,
+    removeNoteBlock,
+    retypeNoteBlock,
+    moveNoteBlock,
+    setNoteBlockRuns,
+    setNoteItemRuns,
+    toggleNoteCheck,
+    addNoteItem,
+    removeNoteItem,
+    setNoteCell,
+    addNoteTableRow,
+    addNoteTableCol,
+    setNoteCover,
+    setNotePageTag,
     cardClipboardSize: cardClipboard.length,
     copyCard,
     cutCard,

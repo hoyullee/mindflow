@@ -55,6 +55,7 @@ describe('home theme', () => {
       '--mf-doc-map': '#d9482b',
       '--mf-doc-board': '#3f9e6a',
       '--mf-doc-kanban': '#8a63d2',
+      '--mf-doc-note': '#c2557f',
       '--mf-star': '#e0a53c',
       // 홈 리디자인에서 더한 카드 입체감 토큰(디자인 원본의 그늘·hover·미리보기 바탕).
       '--mf-card-shadow': '0 16px 32px -26px rgba(46,42,38,.42)',

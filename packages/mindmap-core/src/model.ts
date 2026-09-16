@@ -44,6 +44,19 @@ export interface RichRun {
    * 이 필드는 알림·강조의 근거다. **값이 있을 때만** 직렬화에 실린다(`href`와
    * 같은 규칙 — 옛 문서·골든·CRDT 무회귀). */
   m?: string;
+  /**
+   * 아래 셋은 **공책**(`DocKind` `'note'`)의 본문 서식이다 — 밑줄 · 인라인 코드 ·
+   * 형광펜 색. 맵·보드의 노드에는 이 서식을 넣는 길이 없지만 런 타입을 갈라 두지
+   * 않는다: 같은 글을 두 모델로 들면 마크다운 변환·검색·CRDT 병합이 두 벌이 된다.
+   *
+   * `href`와 **같은 규칙**으로 값이 있을 때만 직렬화에 실리므로, 이 셋이 생겨도
+   * 기존 맵 저장본과 골든 픽스처는 바이트 하나 변하지 않는다.
+   */
+  u?: boolean;
+  /** 인라인 코드(고정폭). `b`/`i`와 겹쳐 쓸 수 있다. */
+  k?: boolean;
+  /** 형광펜 — 약속된 색 키(`noteHighlightColor`가 실제 색으로 바꾼다). */
+  hl?: string;
 }
 
 /**
@@ -253,11 +266,122 @@ export const VOTE_EMOJI = '\u25CF';
 
 /**
  * 문서 종류(post-dc 순수 추가). `'board'` = 화이트보드 — 트리(nodes) 없이
- * 메모·이미지 플로트만 자유 배치하는 보드(`nodes`는 빈 객체). 부재 = 기존
- * 마인드맵. 값이 `'board'`일 때만 직렬화·CRDT 전파되므로(`RichRun.href`와
+ * 메모·이미지 플로트만 자유 배치하는 보드(`nodes`는 빈 객체). `'kanban'` = 열과
+ * 카드. `'note'` = **공책** — 캔버스가 아니라 **페이지 여러 장의 글**이다
+ * (`nodes`·`floats`가 비고 {@link NotePage} 목록이 본문이다). 부재 = 기존
+ * 마인드맵. 값이 기본이 아닐 때만 직렬화·CRDT 전파되므로(`RichRun.href`와
  * 같은 규칙) 기존 문서·골든 픽스처는 바이트 하나 변하지 않는다.
  */
-export type DocKind = 'map' | 'board' | 'kanban';
+export type DocKind = 'map' | 'board' | 'kanban' | 'note';
+
+/* ── 공책 ───────────────────────────────────────────────────────────────────
+ * 문서 종류 `'note'`. 다른 셋과 근본적으로 다른 점 하나: **캔버스가 아니다.**
+ * 좌표도 줌도 없고, 한 문서(=공책 한 권) 안에 **페이지 여러 장**이 순서대로 있고
+ * 페이지가 블록의 목록이다. 그래서 `nodes`·`floats`·`lines`·`zones`는 빈 채로 남고
+ * 레이아웃 알고리즘도 지나지 않는다.
+ */
+
+/**
+ * 블록 종류. **한 번에 다 적어 두는 이유**: 직렬화 모양이 곧 저장본이라, 나중에
+ * 종류를 더하면 옛 공책을 읽는 길을 또 만들어야 한다. 렌더·편집이 아직 닿지 않는
+ * 종류가 있어도(2판 몫) 모델은 여기서 확정한다 — 만드는 길이 없으면 문서에 들어갈
+ * 일도 없으므로 안전하고, 그때 형식을 갈아엎지 않아도 된다.
+ */
+export type NoteBlockKind =
+  | 'p'
+  | 'h1'
+  | 'h2'
+  | 'h3'
+  | 'ul'
+  | 'ol'
+  | 'ck'
+  | 'q'
+  | 'code'
+  | 'hr'
+  | 'table'
+  | 'link'
+  | 'callout'
+  | 'toggle'
+  | 'img';
+
+/** 콜아웃 어조 — 디자인의 `주의 · 결정 · 질문`. */
+export type NoteCalloutTone = 'warn' | 'decide' | 'ask';
+
+/** 표지 스케치 — 디자인의 `SKETCHES`. */
+export type NoteSketch = 'grid' | 'list' | 'clip' | 'bulb' | 'chart' | 'none';
+
+/** 목록·체크리스트의 한 항목. */
+export interface NoteListItem {
+  id: string;
+  runs: RichRun[];
+  /** 체크리스트(`'ck'`)에서만 뜻이 있다 — 켜짐 여부. */
+  done?: boolean;
+}
+
+/**
+ * 페이지 본문의 한 덩이.
+ *
+ * 종류마다 쓰는 칸이 다르다(전부 선택) — 한 인터페이스로 두는 것은 블록 목록이
+ * **한 배열**이어야 순서를 다루기 쉽고, 종류별 유니온으로 가르면 순서 바꾸기·
+ * 종류 바꾸기가 타입 분기 덩어리가 되기 때문이다. 어느 칸을 보는지는
+ * `noteBlockShape`가 한곳에서 답한다.
+ */
+export interface NoteBlock {
+  id: string;
+  kind: NoteBlockKind;
+  /** 문단·제목·인용·코드·콜아웃·토글 머리의 본문. */
+  runs?: RichRun[];
+  /** `ul`·`ol`·`ck`의 항목들. */
+  items?: NoteListItem[];
+  /** `table` — 행 × 칸. **첫 행이 머리**다(디자인의 `tb`와 같은 모양). */
+  rows?: RichRun[][][];
+  /** `link` — 이 앱의 다른 문서 id(마인드맵·화이트보드·칸반). */
+  docId?: string;
+  /** `img` — 이미지 참조(`mfimg:<경로>` 또는 데이터 URL. 맵의 규칙과 같다). */
+  src?: string;
+  /** `callout`의 어조. */
+  tone?: NoteCalloutTone;
+  /** `toggle`이 펼쳐져 있는가(문서에 저장되는 기본 상태). */
+  open?: boolean;
+  /** 가로 정렬(없으면 왼쪽). */
+  align?: 'left' | 'center' | 'right';
+  /** 들여쓰기 단계(없으면 0). */
+  indent?: number;
+}
+
+/**
+ * 공책 안의 한 페이지. **글의 단위**이고, 스페이스 카드에 보이는 것은 이 페이지들의
+ * 첫 줄이다(디자인의 공책 카드가 그렇게 그려진다).
+ */
+export interface NotePage {
+  id: string;
+  title: string;
+  blocks: NoteBlock[];
+  /** 페이지 태그(공책 표지의 태그와 **별개** — 페이지마다 다를 수 있다). */
+  tag?: string | null;
+  /** 이 페이지가 가리키는 문서 id — 디자인의 "연결 보드". */
+  linkedDocId?: string | null;
+  /** 마지막 수정 시각(ISO). 목록의 `18분 전`이 이 값에서 나온다. */
+  updatedAt?: string;
+  /** 마지막으로 고친 사람의 표시 이름. */
+  updatedBy?: string;
+}
+
+/**
+ * 공책 표지 — 색 · 스케치 · 태그.
+ *
+ * 태그를 표지에 함께 두는 이유는 디자인이 그렇게 엮어 두었기 때문이다: **태그가
+ * 있으면 태그별 기본 표지 색과 스케치가 정해지고**, 사용자가 직접 고르면 그 값이
+ * 이긴다(`noteCoverColor`·`noteCoverSketch`가 그 우선순위를 판단한다).
+ */
+export interface NoteCover {
+  /** 공책 태그(`'회의록'` 등). 빈 문자열은 "태그 없음"이라는 **명시적** 선택이다. */
+  tag?: string | null;
+  /** 사용자가 직접 고른 표지 색(없으면 태그 기본). */
+  color?: string | null;
+  /** 사용자가 직접 고른 스케치(없으면 태그 기본). */
+  sketch?: NoteSketch | null;
+}
 
 /**
  * 칸반 열 — 문서 종류 `'kanban'`에서만 쓰인다.
@@ -369,6 +493,16 @@ export interface Doc {
   cards?: KanbanCard[];
   /** 칸반 분류 목록 — 열·카드와 같은 규칙(칸반일 때만). */
   tags?: KanbanTag[];
+  /**
+   * 공책 페이지 — `kind === 'note'`일 때만(칸반 열·카드와 같은 규칙).
+   *
+   * **비어 있지 않다**: 페이지가 없는 공책은 열 것이 없으므로, 만들 때 한 장을
+   * 함께 만들고 마지막 한 장은 지우지 못하게 한다(디자인도 그렇게 막는다 —
+   * "공책에는 페이지가 한 장 이상 있어야 해요").
+   */
+  pages?: NotePage[];
+  /** 공책 표지(색·스케치·태그) — 페이지와 같은 규칙. */
+  cover?: NoteCover;
 }
 
 /**

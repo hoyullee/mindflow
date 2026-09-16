@@ -53,7 +53,13 @@ export function runsToHtml(n: RichTextValue): string {
       if (r.c) st += 'color:' + r.c + ';';
       if (r.i) st += 'font-style:italic;';
       if (r.s) st += 'text-decoration:line-through;';
-      const inner = st ? `<span style="${st}">${conv(r.t)}</span>` : conv(r.t);
+      let inner = st ? `<span style="${st}">${conv(r.t)}</span>` : conv(r.t);
+      // 아래 셋은 공책의 서식(`RichRun.u`/`k`/`hl`). **요소로 감싼다** — 인라인
+      // 스타일로 심으면 `domToRuns`가 되읽을 때 링크의 밑줄·코드의 배경과 뒤섞여
+      // 무엇이 서식이고 무엇이 표시용인지 갈리지 않는다(링크·멘션과 같은 판단).
+      if (r.hl) inner = `<span class="mf-hl" data-hl="${escHtml(r.hl)}">${inner}</span>`;
+      if (r.k) inner = `<code>${inner}</code>`;
+      if (r.u) inner = `<u>${inner}</u>`;
       // 링크는 `data-href`를 가진 span으로 — 편집 박스(contentEditable) 안에서는
       // 실제 `<a href>`가 브라우저 기본 동작(드래그로 링크 끌기 등)을 끌어들이고,
       // 무엇보다 저장된 주소를 그대로 DOM 속성에 싣지 않아도 왕복이 된다.
@@ -86,17 +92,46 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     s: boolean;
     href: string | null;
     m: string | null;
+    /** 공책의 서식 셋 — 밑줄·인라인 코드·형광펜 키. */
+    u: boolean;
+    k: boolean;
+    hl: string | null;
+    /**
+     * 이 가지가 **링크의 표시 잔해**인가.
+     *
+     * 링크 글자를 통째로 지우고 새로 타이핑하면 크롬이 그 자리의 계산된 모양을
+     * 굳혀 넣는다 — 실브라우저에서 `<font color="#1a63d8"><u>X</u></font>`로
+     * 재현했다(아래 링크색 필터의 주석). 색은 링크 잉크라고 걸러 내는데 **밑줄은
+     * 그대로 남아** 사용자가 긋지 않은 밑줄이 저장된다. 링크 잉크를 걸러 낸
+     * 가지에서는 밑줄도 함께 잔해로 본다.
+     */
+    linkInk: boolean;
   }
   const push = (t: string, st: St): void => {
     if (!t) return;
     const last = runs[runs.length - 1];
-    if (last && !!last.b === st.b && (last.c || null) === (st.c || null) && !!last.i === st.i && !!last.s === st.s && (last.href || null) === (st.href || null) && (last.m || null) === (st.m || null)) last.t += t;
+    if (
+      last &&
+      !!last.b === st.b &&
+      (last.c || null) === (st.c || null) &&
+      !!last.i === st.i &&
+      !!last.s === st.s &&
+      (last.href || null) === (st.href || null) &&
+      (last.m || null) === (st.m || null) &&
+      !!last.u === st.u &&
+      !!last.k === st.k &&
+      (last.hl || null) === (st.hl || null)
+    )
+      last.t += t;
     else {
       const r: RichRun = { t, b: st.b, c: st.c || null };
       if (st.i) r.i = true;
       if (st.s) r.s = true;
       if (st.href) r.href = st.href;
       if (st.m) r.m = st.m;
+      if (st.u) r.u = true;
+      if (st.k) r.k = true;
+      if (st.hl) r.hl = st.hl;
       runs.push(r);
     }
   };
@@ -116,7 +151,17 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (tag === 'B' || tag === 'STRONG') next.b = true;
     if (tag === 'I' || tag === 'EM') next.i = true;
     if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') next.s = true;
-    if (tag === 'FONT' && el2.getAttribute('color') && !isLinkInk(el2.getAttribute('color') || '')) next.c = el2.getAttribute('color');
+    // 공책의 서식 — 우리가 심은 요소, 그리고 붙여넣기로 들어온 같은 뜻의 요소도 받는다.
+    if ((tag === 'U' || tag === 'INS') && !next.linkInk) next.u = true;
+    if (tag === 'CODE' || tag === 'KBD' || tag === 'SAMP') next.k = true;
+    if (tag === 'MARK') next.hl = next.hl || 'yellow';
+    const hlAttr = el2.getAttribute('data-hl');
+    if (hlAttr) next.hl = hlAttr;
+    if (tag === 'FONT' && el2.getAttribute('color')) {
+      const attr = el2.getAttribute('color') || '';
+      if (isLinkInk(attr)) next.linkInk = true;
+      else next.c = attr;
+    }
     // 링크: 우리가 심은 `data-href`, 그리고 붙여넣기로 들어온 진짜 `<a href>`도 받는다.
     const linkAttr = el2.getAttribute('data-href') || (tag === 'A' ? el2.getAttribute('href') : null);
     if (linkAttr) next.href = normalizeUrl(linkAttr);
@@ -135,7 +180,8 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
         // 계산된 색을 인라인 span으로 굳혀 넣는다(typing style). 그대로 읽으면
         // 링크를 떼도 파란 글자가 남는다 — 실브라우저에서 재현. 색 선택은 스와치
         // 전용이고 두 링크색은 어느 테마 팔레트에도 없어, 걸러도 잃는 게 없다.
-        if (hex && !isLinkInk(hex)) next.c = hex;
+        if (hex && isLinkInk(hex)) next.linkInk = true;
+        else if (hex) next.c = hex;
       }
       const fs = el2.style.fontStyle;
       if (fs === 'italic' || fs === 'oblique') next.i = true;
@@ -145,12 +191,19 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
       const td = el2.style.textDecoration || el2.style.textDecorationLine || '';
       if (/line-through/.test(td)) next.s = true;
       else if (td === 'none') next.s = false;
+      // 밑줄도 shorthand에 섞여 온다. 다만 **링크 안에서는 무시한다** — 링크는
+      // 표시용으로 밑줄을 그으므로(`runsToHtml`), 그걸 읽으면 링크를 뗀 뒤에도
+      // 밑줄이 남는다(링크 파랑을 걸러 내는 것과 같은 함정).
+      if (!next.href && !next.linkInk) {
+        if (/underline/.test(td)) next.u = true;
+        else if (td === 'none') next.u = false;
+      }
     }
     const isBlock = tag === 'DIV' || tag === 'P';
     if (isBlock && runs.length && runs[runs.length - 1]!.t.slice(-1) !== '\n') push('\n', st);
     el2.childNodes.forEach((child) => walk(child, next));
   };
-  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null, m: null }));
+  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, linkInk: false }));
   if (!keepTrailing) {
     while (runs.length && /^\n+$/.test(runs[runs.length - 1]!.t)) runs.pop();
     if (runs.length) runs[runs.length - 1]!.t = runs[runs.length - 1]!.t.replace(/\n+$/, '');

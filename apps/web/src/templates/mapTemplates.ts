@@ -11,8 +11,8 @@
 // 자유 도형인 메모(플로트)뿐이라, 메모는 트리가 반드시 비켜 가는 자리에만 둔다
 // (아래 `memo` 주석 참고).
 
-import type { Doc, Float, LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
-import { DEFAULT_EDGE_STYLE, DEFAULT_KANBAN_COLUMNS, DEFAULT_THEME_KEY, ROOT_ID } from '@mindflow/mindmap-core';
+import type { Doc, Float, LayoutMode, Node, NodeMap, NoteBlock } from '@mindflow/mindmap-core';
+import { DEFAULT_EDGE_STYLE, DEFAULT_KANBAN_COLUMNS, DEFAULT_THEME_KEY, ROOT_ID, newPage, textRuns } from '@mindflow/mindmap-core';
 
 /** 화이트보드의 기본 테마 — 순백 캔버스(`THEMES.white`). 마인드맵의 기본값
  * (`DEFAULT_THEME_KEY` = 코랄)과 갈리는 유일한 지점이다. */
@@ -298,6 +298,154 @@ export const KANBAN_TEMPLATES: KanbanTemplate[] = [
   },
 ];
 
+/* ── 공책 템플릿 ───────────────────────────────────────────────────────────── */
+
+/**
+ * 공책 템플릿의 한 줄 = 블록 하나. `['h', '결정한 것']`처럼 **짧게 적는다** —
+ * 실제 블록 모양(`NoteBlock`)은 id가 필요해 리터럴로 쓰기 번거롭고, 그 id는
+ * 만들 때 붙이면 되므로 정의에는 뜻만 남긴다.
+ *
+ * 디자인의 `NOTE_BODY`와 같은 약칭을 쓴다: `p` 문단 · `h`/`h3` 소제목 ·
+ * `ul` 목록 · `ck` 체크리스트 · `tb` 표(첫 행이 머리) · `q` 인용 · `code`.
+ */
+export type NoteTemplateLine =
+  | ['p' | 'h' | 'h3' | 'q' | 'code', string]
+  | ['ul' | 'ck', string[]]
+  | ['tb', string[], string[][]];
+
+export interface NoteTemplate {
+  id: string;
+  name: string;
+  desc: string;
+  /** 첫 페이지의 제목(빈 문자열이면 사용자가 적는다). */
+  pageTitle: string;
+  /** 공책 태그 — 표지 색·스케치의 기본값을 이 값이 정한다(`noteCoverColor`). */
+  tag?: string;
+  lines: NoteTemplateLine[];
+}
+
+/**
+ * 공책 템플릿 넷(디자인 원본과 같은 구성).
+ *
+ * **공책에 템플릿이 왜 필요한가**: 이 템플릿이 만드는 것은 공책 껍데기가 아니라
+ * **첫 페이지의 뼈대**다 — 회의록이라면 `안건 · 결정한 것 · 담당과 기한(표)`이
+ * 미리 깔린다. 빈 문서에서 그 구조를 매번 다시 세우는 것이 실제로 가장 귀찮은
+ * 일이라, 마인드맵·칸반의 템플릿과 같은 이유로 값이 있다.
+ */
+export const NOTE_TEMPLATES: NoteTemplate[] = [
+  {
+    id: 'note-meeting',
+    name: '회의록',
+    desc: '안건 · 결정한 것 · 담당과 기한',
+    pageTitle: '회의록',
+    tag: '회의록',
+    lines: [
+      ['p', '언제 · 누가 · 무엇을 이야기했는지 한 줄로 적어 두면 나중에 찾기 쉬워요.'],
+      ['h', '안건'],
+      ['ul', ['', '']],
+      ['h', '결정한 것'],
+      ['ck', ['', '']],
+      ['h', '담당과 기한'],
+      ['tb', ['할 일', '담당', '기한'], [['', '', ''], ['', '', '']]],
+    ],
+  },
+  {
+    id: 'note-retro',
+    name: '주간 회고',
+    desc: 'Keep · Problem · Try 를 글로 정리',
+    pageTitle: '주간 회고',
+    tag: '회고',
+    lines: [
+      ['p', 'Keep / Problem / Try 를 그대로 쓰되, Try에는 담당과 기한을 붙입니다.'],
+      ['h', 'Keep'],
+      ['ul', ['', '']],
+      ['h', 'Problem'],
+      ['ul', ['', '']],
+      ['h', 'Try'],
+      ['tb', ['시도할 것', '담당', '기한'], [['', '', ''], ['', '', '']]],
+    ],
+  },
+  {
+    id: 'note-policy',
+    name: '정책·기준 문서',
+    desc: '기준과 예외를 한 문서로 모아요',
+    pageTitle: '정책·기준',
+    tag: '정책',
+    lines: [
+      ['p', '무엇을 정하는 문서인지, 언제부터 적용되는지 먼저 적어요.'],
+      ['h', '기본 규칙'],
+      ['ul', ['', '']],
+      ['h', '예외'],
+      ['ul', ['']],
+      ['h', '확인이 필요한 것'],
+      ['ck', ['']],
+      ['q', '기준이 바뀌면 이 문서를 먼저 고치고, 화면 문구를 따라 고칩니다.'],
+    ],
+  },
+  {
+    id: 'note-research',
+    name: '리서치 기록',
+    desc: '인터뷰 발췌와 관찰을 남겨요',
+    pageTitle: '리서치 기록',
+    tag: '리서치',
+    lines: [
+      ['p', '누구와 · 언제 · 어떤 방법으로 이야기했는지 적어 두세요.'],
+      ['h', '관찰'],
+      ['ul', ['', '']],
+      ['h', '그대로 옮긴 말'],
+      ['q', ''],
+      ['h', '다음에 물어볼 것'],
+      ['ck', ['', '']],
+    ],
+  },
+];
+
+export function findNoteTemplate(id: string | null | undefined): NoteTemplate | null {
+  if (!id) return null;
+  return NOTE_TEMPLATES.find((t) => t.id === id) ?? null;
+}
+
+/** 템플릿 한 줄 → 블록 하나. id는 여기서 붙인다(정의에는 뜻만 적는다). */
+function noteTemplateBlock(line: NoteTemplateLine, i: number): NoteBlock {
+  const id = `nb${i + 1}`;
+  const [kind] = line;
+  if (kind === 'ul' || kind === 'ck') {
+    const items = (line[1] as string[]).map((t, j) => ({
+      id: `ni${i + 1}_${j + 1}`,
+      runs: textRuns(t),
+      ...(kind === 'ck' ? { done: false } : {}),
+    }));
+    return { id, kind, items };
+  }
+  if (kind === 'tb') {
+    const head = (line[1] as string[]).map((t) => textRuns(t));
+    const body = (line[2] as string[][]).map((row) => row.map((t) => textRuns(t)));
+    return { id, kind: 'table', rows: [head, ...body] };
+  }
+  // 소제목은 h2를 기본으로 쓴다 — 페이지 제목이 h1 자리를 이미 쓰고 있다.
+  return { id, kind: kind === 'h' ? 'h2' : kind === 'h3' ? 'h3' : kind, runs: textRuns(line[1] as string) };
+}
+
+/** 공책 템플릿 → 새 문서. 페이지 한 장에 그 뼈대가 깔린 채로 열린다. */
+export function buildNoteDoc(templateId: string | null | undefined, now = new Date()): Doc {
+  const t = findNoteTemplate(templateId);
+  const blocks = t ? t.lines.map(noteTemplateBlock) : undefined;
+  const page = newPage(t ? t.pageTitle : '', blocks, now);
+  return {
+    v: 1,
+    nodes: {},
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: BOARD_THEME_KEY,
+    edgeStyle: DEFAULT_EDGE_STYLE,
+    kind: 'note',
+    pages: [page],
+    ...(t?.tag ? { cover: { tag: t.tag } } : {}),
+  };
+}
+
 export function findKanbanTemplate(id: string | null | undefined): KanbanTemplate | null {
   if (!id) return null;
   return KANBAN_TEMPLATES.find((t) => t.id === id) ?? null;
@@ -350,6 +498,9 @@ export function buildTemplateDoc(id: string | null | undefined): Doc | null {
     ];
     return { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'kanban', columns, cards };
   }
+
+  // 공책 — 네 번째 종류(`kind: 'note'`). 캔버스가 아니라 페이지의 글이다.
+  if (id === 'note' || findNoteTemplate(id)) return buildNoteDoc(id === 'note' ? null : id);
 
   const kt = findKanbanTemplate(id);
   if (kt) {

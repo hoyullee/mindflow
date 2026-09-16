@@ -1,7 +1,8 @@
 // Serialization core — ports of `serializeDoc()` / `loadDoc()` / `cloneNodes()`
 // from `MindFlow.dc.html`. Pure, no localStorage: callers own persistence.
 
-import type { Doc, DocKind, EdgeStyle, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LayoutMode, NodeMap, Reaction, Stroke, Zone, CommentPin } from './model';
+import { emptyBlock, newPage } from './note';
+import type { Doc, DocKind, EdgeStyle, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LayoutMode, NodeMap, NoteCover, NotePage, Reaction, Stroke, Zone, CommentPin } from './model';
 import { DEFAULT_EDGE_STYLE, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
 
 /**
@@ -24,6 +25,8 @@ export interface SerializableState {
   columns?: KanbanColumn[] | null;
   cards?: KanbanCard[] | null;
   tags?: KanbanTag[] | null;
+  pages?: NotePage[] | null;
+  cover?: NoteCover | null;
 }
 
 /**
@@ -46,9 +49,14 @@ export function serializeDoc(state: SerializableState): Doc {
     // 문서 종류는 'board'일 때만 기록한다 — edgeStyle처럼 항상 쓰면 골든
     // 픽스처와 기존 저장본이 전부 갈리므로, RichRun.href의 "값이 있을 때만"
     // 규칙을 따른다(기본값 = 마인드맵).
-    ...(state.kind === 'board' || state.kind === 'kanban' ? { kind: state.kind } : {}),
+    ...(state.kind === 'board' || state.kind === 'kanban' || state.kind === 'note' ? { kind: state.kind } : {}),
     // 칸반 열·카드 — 칸반 문서에서만(다른 종류의 저장본은 한 글자도 달라지지 않는다).
     ...(state.kind === 'kanban' ? { columns: state.columns ?? [], cards: state.cards ?? [], tags: state.tags ?? [] } : {}),
+    // 공책 페이지·표지 — 공책 문서에서만. 페이지는 **항상** 싣는다(빈 배열이라도):
+    // 페이지가 본문 전체라, 비었다고 생략하면 "아직 안 읽었다"와 "글이 없다"가
+    // 구분되지 않는다(칸반 열·카드와 같은 판단). 표지는 고른 것이 있을 때만.
+    ...(state.kind === 'note' ? { pages: state.pages ?? [] } : {}),
+    ...(state.kind === 'note' && state.cover ? { cover: state.cover } : {}),
     // 그리기 획 — 비어 있지 않을 때만(kind와 같은 규칙: 골든·기존 저장본 무변경).
     ...(state.strokes && state.strokes.length ? { strokes: state.strokes } : {}),
     ...(state.commentPins && state.commentPins.length ? { commentPins: state.commentPins } : {}),
@@ -109,10 +117,36 @@ export function parseDoc(raw: unknown): Doc | null {
           tags: Array.isArray(d.tags) ? (d.tags as KanbanTag[]) : [],
         }
       : {}),
+    ...(d.kind === 'note'
+      ? {
+          kind: 'note' as const,
+          // 읽는 쪽에서 정규화한다 — **페이지가 없는 공책은 열 것이 없으므로**
+          // 빈 목록이면 빈 페이지 한 장을 세워 준다(저장본이 어떤 이유로 비었어도
+          // 사용자는 빈 화면 대신 쓸 수 있는 페이지를 본다).
+          pages: normalizePages(d.pages),
+          ...(d.cover && typeof d.cover === 'object' ? { cover: d.cover as NoteCover } : {}),
+        }
+      : {}),
     ...(Array.isArray(d.strokes) && d.strokes.length ? { strokes: d.strokes as Stroke[] } : {}),
     ...(Array.isArray(d.commentPins) && d.commentPins.length ? { commentPins: d.commentPins as CommentPin[] } : {}),
     ...(Array.isArray(d.reactions) && d.reactions.length ? { reactions: d.reactions as Reaction[] } : {}),
   };
+}
+
+/**
+ * 저장본의 페이지 목록을 쓸 수 있는 모양으로.
+ *
+ * 블록이 없는 페이지에는 빈 문단 하나를 세운다 — 편집기가 캐럿을 놓을 자리가
+ * 없으면 글을 시작할 수 없다. 목록 자체가 비면 페이지 한 장을 만든다.
+ */
+function normalizePages(raw: unknown): NotePage[] {
+  const list = (Array.isArray(raw) ? (raw as NotePage[]) : []).filter((p) => p && typeof p.id === 'string');
+  const pages = list.map((p) => ({
+    ...p,
+    title: typeof p.title === 'string' ? p.title : '',
+    blocks: Array.isArray(p.blocks) && p.blocks.length ? p.blocks : [emptyBlock('p')],
+  }));
+  return pages.length ? pages : [newPage()];
 }
 
 /**

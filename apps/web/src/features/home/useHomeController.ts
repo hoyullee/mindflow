@@ -2,7 +2,7 @@ import { prepareAvatar } from './avatarImage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { CardMetaPatch, Doc, KanbanCard } from '@mindflow/mindmap-core';
+import type { CardMetaPatch, Doc, KanbanCard, NoteCover, NoteSketch } from '@mindflow/mindmap-core';
 import { ROOT_ID, collectImageRefs, moveCard, parseDoc, patchCardMeta, patchCardText, serializeDoc, shiftCardDates, toMarkdown } from '@mindflow/mindmap-core';
 import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
@@ -21,7 +21,7 @@ import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
 import { useBackend } from '../../adapters/BackendContext';
 import { cachedImageUrls, rememberImageUrls } from '../../adapters/imageUrlCache';
-import { findBoardTemplate, findKanbanTemplate, findTemplate } from '../../templates/mapTemplates';
+import { findBoardTemplate, findKanbanTemplate, findNoteTemplate, findTemplate } from '../../templates/mapTemplates';
 import {
   DRIVE_FILES,
   SPACE_COLORS,
@@ -1575,6 +1575,84 @@ export function useHomeController() {
   };
 
   /**
+   * 홈에서 **공책의 표지·태그를 고친다** — 공책을 열지 않고 카드 우클릭으로.
+   *
+   * `writeCalendarDoc`과 **같은 몸통**이다(낙관 반영 → 전문 로드 → 저장 → 충돌 한 번
+   * 재시도 → 실패하면 되돌리고 안내). 다른 것은 고치는 칸뿐이다: 카드가 아니라
+   * `cover`. 표지는 **카드 겉모습을 정하는 값**이라 낙관 반영이 특히 중요하다 —
+   * 색을 고른 뒤 카드가 저장 왕복만큼 늦게 바뀌면 "안 먹었다"로 읽힌다.
+   */
+  const writeNoteCover = async (docId: string, patchCover: Partial<NoteCover>, failTitle: string): Promise<boolean> => {
+    const prevRaw = state.previewDocs[docId];
+    if (prevRaw) {
+      try {
+        const d = JSON.parse(prevRaw) as { kind?: string; cover?: NoteCover };
+        if (d?.kind === 'note') {
+          d.cover = { ...(d.cover ?? {}), ...patchCover };
+          patch({ previewDocs: { ...state.previewDocs, [docId]: JSON.stringify(d) } });
+        }
+      } catch {
+        /* 미리보기 본문을 못 읽어도 저장 경로는 그대로 간다 */
+      }
+    }
+    const write = async (attempt: number): Promise<boolean> => {
+      const loaded = await docStore.load(docId);
+      if (!loaded || loaded.doc.kind !== 'note') return false;
+      const cover: NoteCover = { ...(loaded.doc.cover ?? {}), ...patchCover };
+      if (JSON.stringify(cover) === JSON.stringify(loaded.doc.cover ?? {})) return true;
+      const next: Doc = { ...loaded.doc, cover };
+      const res = await docStore.save(docId, next, { prevVersion: loaded.version, title: loaded.title });
+      if (res.ok) {
+        const raw = JSON.stringify(serializeDoc(next));
+        try {
+          localStorage.setItem(docKey(docId), raw); // 에디터가 쓰는 로컬 복구본도 같은 판으로
+        } catch {
+          /* storage unavailable */
+        }
+        if (mountedRef.current) {
+          setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, [docId]: raw }, previewResolved: { ...prev.previewResolved, [docId]: true } }));
+        }
+        return true;
+      }
+      if (res.reason === 'conflict' && attempt === 0) return write(1);
+      return false;
+    };
+    let ok = false;
+    try {
+      ok = await write(0);
+    } catch {
+      ok = false;
+    }
+    if (!ok && mountedRef.current) {
+      setState((prev) => ({
+        ...prev,
+        previewDocs: prevRaw ? { ...prev.previewDocs, [docId]: prevRaw } : prev.previewDocs,
+        toastTitle: failTitle,
+        toast: '연결 상태를 확인하고 다시 시도해 주세요. 보기 전용으로 공유받은 공책은 고칠 수 없어요.',
+      }));
+    }
+    return ok;
+  };
+
+  /** 공책 태그 — 빈 문자열은 "태그 없음"이라는 **명시적** 선택이다(코어 `NoteCover.tag`). */
+  const setNoteTagFor = (docId: string, tag: string) => {
+    patch({ ctxMenu: null });
+    void writeNoteCover(docId, { tag }, '태그를 바꾸지 못했어요');
+  };
+
+  /** 공책 표지 색. */
+  const setNoteCoverColorFor = (docId: string, color: string) => {
+    patch({ ctxMenu: null });
+    void writeNoteCover(docId, { color }, '표지를 바꾸지 못했어요');
+  };
+
+  /** 공책 표지 스케치. */
+  const setNoteSketchFor = (docId: string, sketch: NoteSketch) => {
+    patch({ ctxMenu: null });
+    void writeNoteCover(docId, { sketch }, '표지를 바꾸지 못했어요');
+  };
+
+  /**
    * 일정 화면에서 **칸반 문서를 고친다** — 문서를 열지 않고 그 문서에 쓴다.
    *
    * `moveDashCard`(대시보드 위젯의 열 이동)와 **같은 몸통**이다: 낙관 반영 → 전문
@@ -2148,7 +2226,14 @@ export function useHomeController() {
   // ---- 템플릿 갤러리 ----
   /** "새로 만들기"의 모든 진입점이 여기로 온다 — 빈 맵도 갤러리의 첫 칸이라,
    * 만드는 길이 하나뿐이고 어디서 시작하든 같은 선택지를 본다. */
-  const openTemplates = () => patch({ templateOpen: true, ctxMenu: null });
+  const openTemplates = () => patch({ templateOpen: true, templateTab: null, ctxMenu: null });
+  /**
+   * 같은 갤러리를 **공책 탭으로** 연다(요청 4번 — 스페이스의 `공책 만들기` 타일).
+   *
+   * 창을 따로 만들지 않는 이유: 고를 것이 같고(빈 공책 + 템플릿 넷) 창이 둘이면
+   * 같은 화면을 두 곳에서 고쳐야 한다. 들어오는 문만 다르다.
+   */
+  const openNoteTemplates = () => patch({ templateOpen: true, templateTab: '공책', ctxMenu: null });
   const closeTemplates = () => patch({ templateOpen: false });
   /**
    * 갤러리에서 고른 것으로 새 맵을 만든다. `templateId`가 없으면 예전 그대로 빈 맵.
@@ -2168,6 +2253,16 @@ export function useHomeController() {
     // 칸반 — 세 번째 문서 종류. 보드와 같은 길(주소에 tpl만, 시드는 에디터가).
     if (templateId === 'kanban') {
       onNewMapClick(buildNewMapHref('새 칸반 보드', 'kanban'));
+      return;
+    }
+    // 공책 — 네 번째 종류. 보드·칸반과 같은 길(주소에 tpl만, 시드는 에디터가).
+    if (templateId === 'note') {
+      onNewMapClick(buildNewMapHref('새 공책', 'note'));
+      return;
+    }
+    const nt = findNoteTemplate(templateId);
+    if (nt) {
+      onNewMapClick(buildNewMapHref(nt.name, nt.id));
       return;
     }
     // 칸반 템플릿(스프린트·트리아지·콘텐츠) — 보드 템플릿과 같은 길.
@@ -3168,6 +3263,10 @@ export function useHomeController() {
     mapHref,
     newMapHref,
     openTemplates,
+    openNoteTemplates,
+    setNoteTagFor,
+    setNoteCoverColorFor,
+    setNoteSketchFor,
     closeTemplates,
     createFromTemplate,
     openWithLoader,

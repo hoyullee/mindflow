@@ -7,8 +7,10 @@ import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { docKindOf } from '../viewModel';
-import { isCalItem, sizesFor } from '../dashboard/model';
+import { dashWidgetKind, isCalItem, sizesFor } from '../dashboard/model';
 import { mapHref } from '../storage';
+import type { NoteSketch } from '@mindflow/mindmap-core';
+import { NOTE_COVERS, NOTE_TAGS, noteTagColor } from '@mindflow/mindmap-core';
 import {
   CSS_MENU_TONE,
   MENU_GLYPH_STYLE,
@@ -256,6 +258,43 @@ const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLin
 
 /** 공유 — 에디터 툴바의 `ShareGlyph`(사람 + 더하기)와 같은 도형. 같은 동작은
  * 같은 표식으로 알아본다. */
+/** 공책 메뉴의 아이콘 셋 — 태그·표지·무늬. */
+const TagIcon = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M20.6 12.6 12 21.2l-8.5-8.5V3.5H12z" />
+    <circle cx="7.7" cy="7.7" r="1.4" />
+  </svg>
+);
+const TagOffIcon = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M20.6 12.6 12 21.2l-8.5-8.5V3.5H12z" />
+    <path d="M5 19 19 5" />
+  </svg>
+);
+const CoverIcon = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M6 3.5h12a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z" />
+    <path d="M8 3.5v17" />
+  </svg>
+);
+const SketchIcon = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="4" y="4" width="7" height="7" rx="1.4" />
+    <rect x="13" y="13" width="7" height="7" rx="1.4" />
+    <path d="M13 4h7M13 7.5h4M4 16.5h7M4 20h4" />
+  </svg>
+);
+
+/** 고를 수 있는 표지 무늬 — 코어의 스케치 종류와 같은 목록(이름만 여기 있다). */
+const NOTE_SKETCHES: [NoteSketch, string][] = [
+  ['grid', '표'],
+  ['list', '체크 목록'],
+  ['clip', '클립'],
+  ['bulb', '아이디어'],
+  ['chart', '그래프'],
+  ['none', '없음'],
+];
+
 const ShareIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
     <path d="M15 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -517,6 +556,48 @@ function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[
   if (card.showRenameRow) {
     items.push({ key: 'rename', icon: PencilIcon, label: '이름 변경', onSelect: () => controller.startRenameMap(card.key) });
   }
+  // 공책만의 두 줄 — **태그**와 **표지 꾸미기**(디자인의 공책 카드 메뉴).
+  // 둘 다 카드 겉모습을 정하는 값이고, 공책을 열지 않고 목록에서 바꾸는 것이
+  // 이 메뉴가 있는 이유다(색으로 묶어 두고 훑는 것이 공책의 주된 사용이다).
+  if (card.isNote && card.docId) {
+    const docId = card.docId;
+    const curTag = card.note?.tag ?? null;
+    items.push({
+      key: 'note-tag',
+      icon: TagIcon,
+      label: curTag ? `태그 · ${curTag}` : '태그 붙이기',
+      submenu: [
+        ...NOTE_TAGS.map((t) => ({
+          key: `note-tag-${t}`,
+          icon: <SpaceDot color={noteTagColor(t)} />,
+          label: t,
+          onSelect: () => controller.setNoteTagFor(docId, curTag === t ? '' : t),
+        })),
+        // 빈 문자열은 "태그 없음"이라는 **명시적** 선택이다 — 태그가 없으면 표지
+        // 기본값도 함께 풀린다(코어 `noteCoverColor`의 우선순위).
+        { key: 'note-tag-none', icon: TagOffIcon, label: '태그 없음', onSelect: () => controller.setNoteTagFor(docId, '') },
+      ],
+    });
+    items.push({
+      key: 'note-cover',
+      icon: CoverIcon,
+      label: '표지 꾸미기',
+      submenu: [
+        ...NOTE_COVERS.map(([hex, name]) => ({
+          key: `note-cover-${hex}`,
+          icon: <SpaceDot color={hex} />,
+          label: name,
+          onSelect: () => controller.setNoteCoverColorFor(docId, hex),
+        })),
+        ...NOTE_SKETCHES.map(([key, name]) => ({
+          key: `note-sketch-${key}`,
+          icon: SketchIcon,
+          label: `무늬 · ${name}`,
+          onSelect: () => controller.setNoteSketchFor(docId, key),
+        })),
+      ],
+    });
+  }
   // 공유(요청) — 맵을 열지 않고 여기서 바로 초대·링크 공유. 팝업은 에디터가 쓰는
   // 그 `ShareModal` 그대로다(색만 홈 테마).
   if (card.showShareRow && card.docId) {
@@ -531,7 +612,8 @@ function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[
       submenu: [
         // 칸반에는 그릴 캔버스가 없다(좌표 없는 열·카드) — 그림 형식 셋은 빈
         // 파일이 되므로 내주지 않는다. 에디터 내보내기 메뉴와 같은 규칙.
-        ...(card.isKanban
+        // 칸반·공책에는 그릴 캔버스가 없다 — 그림 형식 셋은 빈 파일이 된다.
+        ...(card.isKanban || card.isNote
           ? []
           : [
               { key: 'export-png', icon: PngIcon, label: 'PNG 이미지', onSelect: () => controller.exportMapPNG(card.title, card.docId) },
@@ -635,7 +717,7 @@ function widgetItems(itemId: string, state: HomeState, view: HomeViewModel, cont
   // 일정 위젯에는 가리킬 문서가 없다 — 여는 곳도 새로 불러올 것도 다르다.
   const cal = isCalItem(item);
   const docId = item.docId ?? '';
-  const kind = cal ? 'cal' : docKindOf('', docId, state.previewDocs);
+  const kind = dashWidgetKind(cal ? 'cal' : docKindOf('', docId, state.previewDocs));
   const allowed = sizesFor(kind);
   const items: HomeMenuItem[] = [
     cal

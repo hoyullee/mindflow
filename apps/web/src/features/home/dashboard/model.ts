@@ -26,8 +26,35 @@ export interface DashboardItemData {
   size: string;
 }
 
-/** 위젯이 그리는 것 — 문서 세 종류 + 일정(문서가 아니다). */
-export type DashWidgetKind = DocKindName | 'cal';
+/**
+ * 위젯이 그리는 것 — **캔버스 문서 세 종류** + 일정(문서가 아니다).
+ *
+ * **공책은 빼 둔다.** 위젯은 문서를 작게 그려 한눈에 보여 주는 자리인데, 공책은
+ * 축소해서 보여 줄 그림이 없다(글이라서다 — 목록 카드도 썸네일 대신 첫 줄을
+ * 보여 준다). 무엇을 어떻게 보여 줄지 정하지 않은 채 종류만 넓히면 위젯이
+ * 빈 사각형으로 뜨므로, 타입에서 **명시적으로** 뺀다 — 그러면 대시보드 쪽 코드가
+ * 공책을 우연히 받아들이는 일이 컴파일 단계에서 막힌다.
+ */
+export type DashWidgetKind = DashDocKind | 'cal';
+
+/**
+ * 위젯으로 올릴 수 있는 **문서** 종류 — 고르는 자리(`dashPickCatalog`)가 이 값을
+ * 쓴다. 일정은 문서가 아니라 따로 고르므로 여기 없다.
+ */
+export type DashDocKind = Exclude<DocKindName, 'note'>;
+
+/**
+ * 문서 종류를 **위젯 종류로** 좁힌다.
+ *
+ * 공책은 위젯이 될 수 없고 고르는 자리(`dashPickCatalog`)에서 이미 빠져 있다.
+ * 그래도 이 함수가 필요한 이유: 대시보드 배치는 **저장된 블롭**이라, 위젯으로
+ * 올린 문서가 나중에 공책이 되는 일은 없지만 블롭이 낡아 이미 사라진 문서를
+ * 가리킬 수는 있다. 그때 조용히 맵으로 보고 칸을 그린다 — 종류를 못 정해
+ * 던지면 대시보드 한 장이 통째로 안 뜬다(빈 칸 하나가 낫다).
+ */
+export function dashWidgetKind(kind: DocKindName | 'cal'): DashWidgetKind {
+  return kind === 'note' ? 'map' : kind;
+}
 
 /** 이 위젯이 일정인가 — `kind`가 없으면 문서다(옛 블롭). */
 export function isCalItem(it: Pick<DashboardItemData, 'kind'>): boolean {

@@ -42,6 +42,60 @@ function SkeletonCard() {
   );
 }
 
+/**
+ * `공책 만들기` 타일 — 공책 구획의 마지막 칸(디자인의 점선 카드).
+ *
+ * 갤러리를 여는 **같은 길**이지만 공책 탭으로 바로 들어간다: 이 자리에서 누르는
+ * 사람은 이미 "공책을 만들겠다"고 정했으므로, 종류를 다시 고르게 하면 한 걸음이
+ * 늘어난다(요청 4번 — 「새로 만들기」 버튼과 이 타일 둘 다로 만들 수 있다).
+ */
+function NewNoteTile({ controller }: { controller: HomeController }) {
+  return (
+    <button
+      type="button"
+      data-new-note-tile
+      onClick={controller.openNoteTemplates}
+      className="btn"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 9,
+        minHeight: 196,
+        padding: 16,
+        borderRadius: 16,
+        border: '1.5px dashed var(--mf-border)',
+        background: 'transparent',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}
+    >
+      <span
+        style={{
+          width: 34,
+          height: 34,
+          flex: '0 0 auto',
+          borderRadius: 999,
+          background: 'var(--mf-accent-soft)',
+          color: 'var(--mf-accent)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </span>
+      <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>공책 만들기</span>
+      <span style={{ maxWidth: 160, fontSize: 11.5, color: 'var(--mf-muted)', lineHeight: 1.6, textAlign: 'center', wordBreak: 'keep-all' }}>
+        빈 공책 또는 회의록·회고 템플릿에서
+      </span>
+    </button>
+  );
+}
+
 /** Home.dc.html:209-329 — recent / folders / maps sections plus the three empty states. */
 export function MapGrid({ view, controller }: Props) {
   if (view.loading) {
@@ -58,7 +112,7 @@ export function MapGrid({ view, controller }: Props) {
       {/* The "최근 항목" strip is cross-space and now lives at the top of Home
           (see `RecentStrip` in Home.tsx), not inside a space's map list. */}
       {view.foldersSectionVisible && (
-        <div style={{ marginBottom: 30 }}>
+        <div data-space-section="폴더" style={{ marginBottom: 30 }}>
           <SectionHead label="폴더" count={view.folderCards.length} />
           <div className="mf-folder-grid">
             {/* 첫 칸 = 상위 폴더(`..`) — 뒤로 가는 길이자 "위로 옮기기" 드롭 대상. */}
@@ -72,16 +126,44 @@ export function MapGrid({ view, controller }: Props) {
         </div>
       )}
 
-      {view.mapsSectionVisible && (
-        <div>
-          <SectionHead label="파일" count={view.allCards.length} />
+      {/* 공책 구획 — **보드보다 위**다(디자인). 카드 생김새가 통째로 달라(표지 + 첫 줄)
+          한 그리드에 섞으면 목록이 들쭉날쭉해진다(viewModel의 `noteCards` 주석). */}
+      {view.noteSectionVisible && (
+        <div data-space-section="공책" style={{ marginBottom: view.boardSectionVisible ? 30 : 0 }}>
+          <SectionHead label="공책" count={view.noteCards.length} />
+          <div className="mf-map-grid" style={GRID_STYLE}>
+            {view.noteCards.map((c) => (
+              <MapCard key={c.key} card={c} controller={controller} draggableEnabled={!view.isDriveSpace} />
+            ))}
+            {/* 마지막 칸은 **만드는 자리**다 — 목록 끝에 두면 "여기에 더 넣을 수 있다"가
+                한눈에 보인다(디자인의 점선 타일). 검색 중에는 그리지 않는다(결과가 아니다). */}
+            {!view.isDriveSpace && <NewNoteTile controller={controller} />}
+          </div>
+        </div>
+      )}
+
+      {view.boardSectionVisible && (
+        <div data-space-section="보드">
+          <SectionHead label="보드" count={view.boardCards.length} />
           <div className="mf-map-grid" style={GRID_STYLE}>
             {/* Key by card identity (docId; title fallback) — duplicate TITLES are
                 fully allowed, and a duplicate React key makes reconciliation reuse
                 one card's subtree for the other (wrong preview/menu state). */}
-            {view.allCards.map((c) => (
+            {view.boardCards.map((c) => (
               <MapCard key={c.key} card={c} controller={controller} draggableEnabled={!view.isDriveSpace} />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* 공책이 아직 없는 스페이스에도 **만드는 길**은 있어야 한다 — 보드만 있으면
+          공책 구획 자체가 서지 않으므로(빈 구획 머리를 두지 않는다) 그 타일도 사라진다.
+          그래서 보드 구획 아래에 한 칸을 따로 둔다. */}
+      {!view.noteSectionVisible && view.boardSectionVisible && !view.isDriveSpace && (
+        <div data-space-section="공책" style={{ marginTop: 30 }}>
+          <SectionHead label="공책" count={0} />
+          <div className="mf-map-grid" style={GRID_STYLE}>
+            <NewNoteTile controller={controller} />
           </div>
         </div>
       )}
@@ -121,7 +203,7 @@ export function MapGrid({ view, controller }: Props) {
               같은 문법) 무엇을 만들 수 있는지는 아래 줄이 말한다. */}
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>이 스페이스는 비어 있어요</div>
           <div style={{ fontSize: 13.5, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
-            마인드맵 · 화이트보드 · 칸반 보드 중에서 골라
+            마인드맵 · 화이트보드 · 칸반 보드 · 공책 중에서 골라
             <br /> 첫 문서를 만들어 보세요.
           </div>
           <button
