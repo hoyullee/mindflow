@@ -144,11 +144,23 @@ describe('deriveHomeView — recent (cross-space)', () => {
     expect(card.pathFull).toBe(''); // 툴팁을 달지 않는다
   });
 
-  it('hides the recent strip while searching (it lives above the search results)', () => {
+  it('검색 중에는 최근 항목을 **접는다**(지우지 않는다 — 요청·디자인)', () => {
+    // 예전에는 DOM에서 통째로 뺐다: 한 프레임에 사라지고 아래 내용이 위로 튀어
+    // 화면이 덜컹였다. 지금은 자리에 남긴 채 높이·투명도를 함께 줄인다.
     const state = twoSpaceState();
     state.recent = ['작업맵'];
     state.search = '작업';
-    expect(deriveHomeView(state).recentSectionVisible).toBe(false);
+    const view = deriveHomeView(state);
+    expect(view.recentSectionVisible).toBe(true);
+    expect(view.recentCollapsed).toBe(true);
+  });
+
+  it('검색이 아니면 접히지 않는다', () => {
+    const state = twoSpaceState();
+    state.recent = ['작업맵'];
+    const view = deriveHomeView(state);
+    expect(view.recentSectionVisible).toBe(true);
+    expect(view.recentCollapsed).toBe(false);
   });
 
   it('keeps the recent tray visible INSIDE a folder (it is global, not a folder view)', () => {

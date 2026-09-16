@@ -82,6 +82,10 @@ export function emptyBlock(kind: NoteBlockKind = 'p'): NoteBlock {
   const shape = noteBlockShape(kind);
   const block: NoteBlock = { id: noteId('bk'), kind };
   if (shape === 'runs') block.runs = textRuns('');
+  // 토글만 **두 줄**을 쓴다: `runs`가 접어 둔 머리, `items[0]`이 펼쳤을 때의 내용.
+  // 중첩 트리로 만들지 않은 이유는 `retypeBlock`·순서·삭제가 통째로 달라지기
+  // 때문이고, 접는 쓰임의 대부분은 "긴 설명을 감춰 두기"라 한 줄로 충분하다.
+  if (kind === 'toggle') block.items = [emptyItem()];
   else if (shape === 'items') block.items = [emptyItem()];
   else if (shape === 'table') block.rows = [[textRuns(''), textRuns('')], [textRuns(''), textRuns('')]];
   return block;
@@ -150,7 +154,12 @@ export function retypeBlock(block: NoteBlock, kind: NoteBlockKind): NoteBlock {
   if (to === 'runs') {
     next.runs = from === 'runs' ? (block.runs ?? textRuns('')) : textRuns(blockText(block));
     if (kind === 'callout') next.tone = block.tone ?? 'warn';
-    if (kind === 'toggle') next.open = block.open ?? true;
+    if (kind === 'toggle') {
+      next.open = block.open ?? true;
+      // 머리와 본문 둘을 쓴다(`emptyBlock` 참고) — 옮겨 온 글은 머리에 남고
+      // 본문 자리는 비워 둔다.
+      next.items = block.items?.length ? block.items : [emptyItem()];
+    }
   } else if (to === 'items') {
     next.items =
       from === 'items'

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
+import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
@@ -149,6 +149,16 @@ function zoomAtState(state: ViewportState, nz: number, sx: number, sy: number): 
 
 /** The subset of `Doc` the undo/redo stack snapshots — port of `Component#takeSnap`
  * (MindFlow.dc.html:548-549): `themeKey` is intentionally excluded (the original's own asymmetry). */
+/** 문서 링크 블록이 고를 수 있는 한 문서. */
+export interface LinkTarget {
+  docId: string;
+  title: string;
+  href: string;
+  /** 화면에 적는 종류 이름(본문이 아직 없으면 그냥 `문서`). */
+  kindName: string;
+  color: string;
+}
+
 interface Snapshot {
   nodes: NodeMap;
   floats: Float[];
@@ -812,6 +822,13 @@ export interface EditorController {
   addNoteTableCol: (blockId: string) => void;
   setNoteCover: (patch: Partial<NoteCover>) => void;
   setNotePageTag: (pageId: string, tag: string | null) => void;
+  /** 이미지 블록에 파일을 붙인다(플로트 이미지와 같은 저장 경로). */
+  setNoteImage: (blockId: string, file: File | Blob) => Promise<void>;
+  setNoteLinkDoc: (blockId: string, docId: string) => void;
+  /** 문서 링크 블록이 고를 수 있는 문서들(공책일 때만 채워진다). */
+  linkTargets: LinkTarget[];
+  setNoteCalloutTone: (blockId: string, tone: NoteCalloutTone) => void;
+  toggleNoteOpen: (blockId: string) => void;
   /** 칸반 열(왼→오 순서) / 카드(열 안 순서는 `pos`). */
   columns: KanbanColumn[];
   cards: KanbanCard[];
@@ -4510,10 +4527,10 @@ export function useEditorState(): EditorController {
   // 논의가 무엇에 딸린 것인지 흐려진다(댓글은 이제 핀에만 붙는다 — 요청 ⑧).
   // 칸반은 대상이 카드라 자기 effect가 따로 있다(아래 `selectedCardId`).
   useEffect(() => {
-    if (isKanban) return;
+    if (isKanban || isNote) return; // 캔버스가 없는 종류에는 핀이 없다
     if (selection?.kind === 'commentPin') setCommentsNodeId(selection.id);
     else setCommentsOpen(false);
-  }, [selection?.kind, selection?.id, isKanban]);
+  }, [selection?.kind, selection?.id, isKanban, isNote]);
 
   // 가리키던 핀이 사라졌으면 팝업도 닫는다(제보 ②).
   //
@@ -4523,12 +4540,12 @@ export function useEditorState(): EditorController {
   // "지웠는데 다른 댓글 팝업이 떴다"로 보인다. 캔버스에서 논의는 핀에만 붙으므로
   // (요청 ⑧) 핀이 없으면 열려 있을 이유가 없다 — 상대가 지운 경우·되돌리기도 같다.
   useEffect(() => {
-    if (isKanban || !commentsOpen) return;
+    if (isKanban || isNote || !commentsOpen) return; // 캔버스가 없는 종류에는 핀이 없다
     if ((doc.commentPins ?? []).some((p) => p.id === commentsNodeId)) return;
     setCommentsOpen(false);
     // 사라진 핀을 고른 상태로 남겨 두지 않는다(키보드 경로가 유령을 만지지 않게).
     setSelectionState((prev) => (prev?.kind === 'commentPin' && prev.id === commentsNodeId ? null : prev));
-  }, [isKanban, commentsOpen, commentsNodeId, doc.commentPins]);
+  }, [isKanban, isNote, commentsOpen, commentsNodeId, doc.commentPins]);
 
   const commentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -6279,6 +6296,21 @@ export function useEditorState(): EditorController {
    * 공책을 열어 둔 모두의 화면이 따라 움직인다.
    */
   const [notePageId, setNotePageId] = useState<string | null>(null);
+  /**
+   * 주소에 `page=`가 실려 오면 **그 장으로 연다** — 홈 검색의 `내용` 줄이 공책
+   * 페이지를 눌렀을 때 오는 길이다(문서만 열고 다시 찾게 하지 않는다).
+   *
+   * 한 번만 먹는다: 그 뒤에 사용자가 다른 장으로 넘어간 것을 주소가 되돌리면 안 된다.
+   */
+  const wantPageId = params.get('page');
+  const pageParamUsed = useRef(false);
+  useEffect(() => {
+    if (pageParamUsed.current || !wantPageId) return;
+    const pages = docRef.current.pages ?? [];
+    if (!pages.some((pg) => pg.id === wantPageId)) return; // 아직 문서가 안 왔거나 없는 장
+    pageParamUsed.current = true;
+    setNotePageId(wantPageId);
+  }, [wantPageId, doc.pages]);
   /** 없는 페이지를 가리키고 있으면(삭제·첫 진입) 첫 장으로 떨어진다. */
   const notePage = notePages.find((pg) => pg.id === notePageId) ?? notePages[0] ?? null;
 
@@ -6604,6 +6636,86 @@ export function useEditorState(): EditorController {
     },
     [commitDoc],
   );
+
+  /**
+   * 이미지 블록에 파일을 붙인다 — **플로트 이미지와 같은 길**(`attachImageFile`):
+   * 리사이즈·재인코딩 후 저장소에 올리고 본문에는 참조(`mfimg:…`)만 남긴다.
+   * 저장소가 없으면(로컬 데모·용량 초과) 데이터 URL로 물러선다.
+   */
+  const setNoteImage = useCallback(
+    async (blockId: string, file: File | Blob) => {
+      if (readOnlyRef.current || !notePage) return;
+      const attached = await attachImageFile(file, imageUploadRef.current);
+      if (!attached) return; // 이미지가 아니거나 디코드 실패 — 조용히 무시
+      noteIfInlined(attached.src);
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, src: attached.src }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 보드 링크 블록이 가리킬 문서. */
+  const setNoteLinkDoc = useCallback(
+    (blockId: string, docId: string) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, docId }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 콜아웃 어조(주의·결정·질문). */
+  const setNoteCalloutTone = useCallback(
+    (blockId: string, tone: NoteCalloutTone) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, tone }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 토글 펼침 — **문서에 저장되는 값**이다(다음에 열 때도 같은 모양). */
+  const toggleNoteOpen = useCallback(
+    (blockId: string) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, open: !(b.open ?? true) }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /**
+   * 문서 링크 블록이 고를 수 있는 **다른 문서들**.
+   *
+   * 워크스페이스 블롭에서 읽는다(홈이 카드를 그리는 그 목록) — 그래서 고를 수
+   * 있는 것이 곧 "내가 볼 수 있는 문서"이고, 끊어진 링크가 생기지 않는다. 지금
+   * 열려 있는 이 문서 자신은 뺀다(자기를 가리키는 링크는 뜻이 없다).
+   *
+   * **공책일 때만** 읽는다: 다른 종류에는 이 블록이 없고, 에디터를 열 때마다
+   * 워크스페이스를 한 번 더 부를 이유가 없다.
+   */
+  const [linkTargets, setLinkTargets] = useState<LinkTarget[]>([]);
+  useEffect(() => {
+    if (!isNote) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const ws = await spaceStore.load();
+        if (!alive || !ws) return;
+        const out: LinkTarget[] = [];
+        for (const raw of (ws.spaces ?? []) as { maps?: { title?: unknown; docId?: unknown }[] }[]) {
+          for (const m of raw?.maps ?? []) {
+            const id = typeof m?.docId === 'string' ? m.docId : '';
+            const title = typeof m?.title === 'string' ? m.title : '';
+            if (!id || id === docStoreId) continue;
+            out.push({ docId: id, title: title || '제목 없음', href: `/editor?map=${encodeURIComponent(id)}`, kindName: '문서', color: 'var(--mf-doc-map)' });
+          }
+        }
+        setLinkTargets(out);
+      } catch {
+        /* 목록을 못 받아도 본문은 그대로 쓴다 — 고를 수 없을 뿐이다 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isNote, spaceStore, docStoreId]);
 
   /** 페이지 태그(공책 태그와 별개 — 페이지마다 다를 수 있다). */
   const setNotePageTag = useCallback(
@@ -7070,6 +7182,11 @@ export function useEditorState(): EditorController {
     addNoteTableCol,
     setNoteCover,
     setNotePageTag,
+    setNoteImage,
+    setNoteLinkDoc,
+    linkTargets,
+    setNoteCalloutTone,
+    toggleNoteOpen,
     cardClipboardSize: cardClipboard.length,
     copyCard,
     cutCard,

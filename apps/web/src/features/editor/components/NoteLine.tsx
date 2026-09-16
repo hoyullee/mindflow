@@ -29,6 +29,14 @@ interface Props {
   onEnter?: () => boolean;
   /** 맨 앞에서 백스페이스 — 대개 "이 블록/항목 지우기". 처리했으면 `true`. */
   onBackspaceAtStart?: () => boolean;
+  /**
+   * **빈 줄에서 `/`를 쳤다** — 블록 종류 목록을 여는 신호. 처리했으면 `true`
+   * (그 `/` 글자는 본문에 남기지 않는다).
+   *
+   * 빈 줄에서만 부르는 이유: 글자 사이에서도 열리면 코드나 주소를 적다 `/`를 칠
+   * 때마다 메뉴가 끼어든다. 조건 하나로 그 오탐이 사라진다.
+   */
+  onSlash?: () => boolean;
   /** 위/아래 화살표로 블록 사이를 옮긴다(글의 끝·시작에서만). */
   onArrowOut?: (dir: -1 | 1) => boolean;
   /** 마운트 직후 캐럿을 놓는다(새로 만든 블록). */
@@ -45,7 +53,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -83,6 +91,12 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
     if (!el) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       if (onEnter?.()) {
+        e.preventDefault();
+        return;
+      }
+    }
+    if (e.key === '/' && !e.nativeEvent.isComposing && onSlash && el.textContent === '') {
+      if (onSlash()) {
         e.preventDefault();
         return;
       }

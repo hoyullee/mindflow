@@ -2,7 +2,8 @@ import { avatarLabel } from './components/ProfileAvatar';
 import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
 import { miniBoardPreview, miniKanbanPreview, miniPreview, previewSkeleton, previewSurface, realPreview } from './mapPreview';
 import type { PreviewSurface } from './mapPreview';
-import { docSearchText, matchesQuery } from './searchIndex';
+import { docSearchHits, docSearchText, matchesQuery, snippetAround } from './searchIndex';
+import type { SearchHitKind } from './searchIndex';
 import { calendarEntries, type CalendarSource } from './calendar/entries';
 import { calendarBrief, todayISO, type CalendarBrief } from './calendar/model';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
@@ -121,6 +122,25 @@ export interface SearchGroupViewData {
   folders: FolderCardViewData[];
 }
 
+/**
+ * **어디서 걸렸는지** 한 줄(요청: 공책과 공책 페이지 내용도 검색되게).
+ *
+ * 카드만 보여 주면 "왜 이 문서가 나왔는지"를 알 수 없다 — 제목에 없는 낱말로 찾은
+ * 경우가 특히 그렇다. 공책은 한 문서 안에 페이지가 여럿이라 **어느 장인지**가 곧
+ * 다음 행동이라, 눌렀을 때 그 장으로 바로 연다.
+ */
+export interface SearchHitViewData {
+  key: string;
+  /** `페이지` · `본문` · `주제` · `메모` · `영역` · `열` · `카드` */
+  kind: SearchHitKind;
+  /** 질의 앞뒤를 잘라 낸 한 조각. */
+  snippet: string;
+  docTitle: string;
+  spaceName: string;
+  spaceColor: string;
+  href: string;
+}
+
 /** 폴더 안에서 그리드 맨 앞에 서는 "상위 폴더" 타일 — 뒤로 가기이자 **드롭 대상**.
  * 예전에는 상위로 옮기려면 우클릭 → "폴더에서 꺼내기"뿐이었다(제보): 아래로는
  * 드래그로 넣는데 위로는 메뉴여야 하는 비대칭. 파일 탐색기의 `..` 관례이기도 하다. */
@@ -190,6 +210,8 @@ export interface HomeViewModel {
   searchCount: number;
   /** 전역 검색 결과 — 스페이스별 묶음. 검색 중이 아니면 빈 배열. */
   searchGroups: SearchGroupViewData[];
+  /** 내용에서 걸린 줄들 — 카드 목록 아래에 따로 선다. */
+  searchHits: SearchHitViewData[];
   /** 다른 스페이스 본문을 아직 받는 중인가 — 그동안은 제목으로만 걸린다. */
   searchLoading: boolean;
   showDriveConnect: boolean;
@@ -197,6 +219,15 @@ export interface HomeViewModel {
   newFolderVisible: boolean;
   importVisible: boolean;
   recentSectionVisible: boolean;
+  /**
+   * 검색 중이라 **최근 항목이 접혀 있는가**(요청·디자인).
+   *
+   * 예전에는 검색을 시작하면 그 띠를 DOM에서 통째로 뺐다 — 한 프레임에 사라지고
+   * 아래 내용이 위로 튀어 화면이 한 번 덜컹였다. 지금은 **지우지 않고 접는다**:
+   * 높이·투명도·위치가 함께 줄어 전환이 이어져 보이고, 검색을 지우면 같은 길로
+   * 되돌아온다(띠가 다시 그려지며 스크롤이 튀지도 않는다).
+   */
+  recentCollapsed: boolean;
   /** LNB `일정` 행의 개수 — 다가오는 마감(오늘 포함) 수. */
   calendarBrief: CalendarBrief;
   /** 폴더 안일 때만 — 그리드 첫 칸의 "상위 폴더" 타일. */
@@ -737,6 +768,38 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   }
   const searchTotal = searchGroups.reduce((n, g) => n + g.cards.length + g.folders.length, 0);
 
+  /**
+   * 내용에서 걸린 줄들 — **결과 카드가 나온 문서에서만** 모은다.
+   *
+   * 제목으로만 걸린 문서도 카드로는 이미 서 있으므로, 여기서 다시 말할 것이 없으면
+   * 줄이 생기지 않는다(그 경우가 정상이다). 문서 하나가 목록을 덮지 않게 문서당
+   * 넷까지, 전체는 24줄에서 끊는다 — 그 이상은 훑는 것이 아니라 스크롤이다.
+   */
+  const searchHits: SearchHitViewData[] = [];
+  if (searching) {
+    const HITS_MAX = 24;
+    for (const g of searchGroups) {
+      for (const c of g.cards) {
+        if (searchHits.length >= HITS_MAX) break;
+        const raw = cardRaw(c.title, c.docId, state.previewDocs);
+        if (!raw) continue;
+        for (const h of docSearchHits(c.docId || c.title, raw, query, 4)) {
+          if (searchHits.length >= HITS_MAX) break;
+          searchHits.push({
+            key: `${c.key}:${h.kind}:${searchHits.length}`,
+            kind: h.kind,
+            snippet: snippetAround(h.text, query),
+            docTitle: c.title,
+            spaceName: g.spaceName,
+            spaceColor: g.spaceColor,
+            // 공책의 페이지 히트는 **그 장으로** 연다 — 문서를 열고 다시 찾게 하지 않는다.
+            href: h.pageId ? `${c.href}${c.href.includes('?') ? '&' : '?'}page=${encodeURIComponent(h.pageId)}` : c.href,
+          });
+        }
+      }
+    }
+  }
+
   // Favorites are keyed by `cardKeyOf` (docId, title fallback), so the list is
   // built by resolving each LIVE map against the flags — a docId key can't be
   // matched back to a title by key iteration. A trashed map never appears (it
@@ -950,6 +1013,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     searchQuery: searching ? state.search.trim() : '',
     searchCount: searchTotal,
     searchGroups,
+    searchHits,
     searchLoading: searching && state.searchBodiesLoading,
     showDriveConnect,
     backVisible: !!(curFolder || driveFolder),
@@ -965,7 +1029,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     // folders too (hiding it there made "이어하기" vanish mid-navigation). Hidden
     // only while searching (it sits above the results and isn't filtered by the
     // query) and on the Drive-connect prompt (a full-screen empty state).
-    recentSectionVisible: !loading && !state.search && !showDriveConnect && recentCards.length > 0,
+    // 검색 중에도 **자리에 남는다**(접힌 채로) — 위 `recentCollapsed` 주석 참고.
+    recentSectionVisible: !loading && !showDriveConnect && recentCards.length > 0,
+    recentCollapsed: !!state.search,
     // 일정 개수 — 화면을 열지 않아도 LNB에 뜨므로 여기서 센다. 본문이 아직 없는
     // 문서는 세지 못한다(0으로 보인다) — 프리페치가 도착하면 함께 오른다.
     calendarBrief: calendarBriefOf(state),

@@ -196,7 +196,8 @@ export function Toolbar({ controller }: ToolbarProps) {
               "GNB 메뉴에 들어가 있으니 불편하다"). 배경 우클릭 메뉴는 그대로
               (그건 "누른 자리에 만든다"는 다른 동작이다). */}
           {/* 칸반은 삽입할 것이 열·카드뿐이고 그 둘이 화면의 ＋ 버튼에 있다. */}
-          {!controller.isBoard && !controller.isKanban && (
+          {/* 공책도 삽입할 것이 블록뿐이고 그건 본문의 `/` 커맨드·서식 툴바에 있다. */}
+          {!controller.isBoard && !controller.isKanban && !controller.isNote && (
             <MenuBarButton label="삽입" open={openMenu === 'insert'} onOpenChange={menuOpen('insert')} th={th} isMobile={isMobile} width={200} align="left">
               <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
             </MenuBarButton>
@@ -220,7 +221,8 @@ export function Toolbar({ controller }: ToolbarProps) {
       {/* 칸반에는 캔버스가 없어 테마·레이아웃·연결선 스타일이 뜻을 갖지 않는다.
           스타일은 **목록이 아니라 설정 패널**이다(세그먼트·스와치) — 화살표로 훑을
           항목이 없으므로 메뉴가 아니라 팝오버로 연다(Tab으로 다니는 게 맞다). */}
-      {!controller.readOnly && !controller.isKanban && (
+      {/* 공책에도 캔버스가 없다 — 테마·레이아웃·연결선이 그릴 대상이 없다. */}
+      {!controller.readOnly && !controller.isKanban && !controller.isNote && (
       <PanelBarButton
         label="스타일"
         open={openMenu === 'style'}
@@ -256,7 +258,8 @@ export function Toolbar({ controller }: ToolbarProps) {
       {/* 맵 안 검색 — 바로 열리는 버튼(Ctrl/⌘+F와 동일). 모바일에서도 남긴다:
           긴 맵에서 찾기는 터치 사용자가 더 아쉬운 기능이고 아이콘 하나 폭이다.
           칸반은 캔버스 텍스트를 훑는 검색이라 아직 대상이 없다(1단계 범위 밖). */}
-      {!controller.isKanban && (
+      {/* 공책은 **페이지 목록의 검색칸**이 그 자리다(한 권 안에서 찾는다). */}
+      {!controller.isKanban && !controller.isNote && (
       <button
         type="button"
         className="mf-ed-btn"
