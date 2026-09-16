@@ -10,7 +10,7 @@ import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } f
 import { DRIVE_FILES } from './types';
 import type { DashDocKind } from './dashboard/model';
 import type { Doc, NoteSketch } from '@mindflow/mindmap-core';
-import { noteChecklistProgress, noteCoverColor, noteCoverSketch, noteTagColor, pageExcerpt, parseDoc } from '@mindflow/mindmap-core';
+import { noteCoverColor, noteCoverSketch, noteTagColor, pageExcerpt, parseDoc } from '@mindflow/mindmap-core';
 
 export interface CardViewData {
   /** Card identity (`cardKeyOf` — docId, title fallback). Duplicate TITLES are
@@ -347,19 +347,18 @@ export function isNoteRaw(raw: string | null | undefined): boolean {
  * 목록에서 "무슨 내용인지"를 알려 주는 것이 축소된 지면보다 첫 문장이기 때문이다.
  */
 export interface NoteCardData {
-  /** 표지 색 — 사용자 지정 > 태그 기본 > 흑연(`noteCoverColor`). */
+  /** 표지 색 — 사용자 지정 > 태그 기본 > 흑연(`noteCoverColor`). 제목·책갈피·스케치가
+   *  모두 이 한 색을 쓴다(디자인 원본의 `ink`). */
   cover: string;
   sketch: NoteSketch;
-  /** 공책 태그(없으면 `null` — 카드가 "태그 붙이기"를 보여 준다). */
+  /** 공책 태그(없으면 `null` — 카드가 "＋ 태그"를 보여 준다). */
   tag: string | null;
   tagColor: string;
   pageCount: number;
-  /** 첫 페이지의 제목(비어 있으면 `제목 없는 페이지`). */
-  firstTitle: string;
-  /** 첫 줄 — 목록에서 내용을 짐작하게 하는 한 줄. */
-  excerpt: string;
-  /** 체크리스트 진행(없으면 `null`). */
-  checks: { done: number; total: number } | null;
+  /** **앞 세 장의 제목** — 카드 본문이 보여 주는 목록(디자인 원본). */
+  pageTitles: string[];
+  /** 그 뒤로 남은 장 수(0이면 `+N 페이지 더`를 적지 않는다). */
+  moreCount: number;
 }
 
 /**
@@ -384,17 +383,18 @@ export function noteCardData(raw: string | null | undefined): NoteCardData | nul
   }
   if (!doc) return null;
   const pages = doc.pages ?? [];
-  const first = pages[0];
   const tag = doc.cover?.tag ? doc.cover.tag : null;
+  // 제목이 비어 있는 장은 **첫 줄로 대신 부른다** — 목록에 `제목 없는 페이지`가
+  // 줄줄이 서면 무엇이 들어 있는지 하나도 알려 주지 못한다.
+  const titles = pages.map((pg) => pg.title.trim() || pageExcerpt(pg, 40) || '제목 없는 페이지');
   const data: NoteCardData = {
     cover: noteCoverColor(doc.cover),
     sketch: noteCoverSketch(doc.cover),
     tag,
     tagColor: noteTagColor(tag),
     pageCount: pages.length,
-    firstTitle: first?.title?.trim() || '제목 없는 페이지',
-    excerpt: first ? pageExcerpt(first) : '',
-    checks: noteChecklistProgress(pages),
+    pageTitles: titles.slice(0, 3),
+    moreCount: Math.max(0, titles.length - 3),
   };
   // 캐시가 무한히 자라지 않게 — 본문이 바뀌면 키도 바뀌므로 옛 항목은 쓸모가 없다.
   if (noteCardCache.size > 200) noteCardCache.clear();

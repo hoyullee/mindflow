@@ -62,9 +62,13 @@ function NewNoteTile({ controller }: { controller: HomeController }) {
         alignItems: 'center',
         justifyContent: 'center',
         gap: 9,
-        minHeight: 196,
+        // 공책 카드와 **같은 높이·같은 윗여백**(214 + 8) — 디자인 원본. 카드가 겹친
+        // 종이 그늘 때문에 아래로 8px 더 자라므로, 이 타일만 위에서 시작하면 한 행의
+        // 아랫변이 어긋난다.
+        height: 214,
+        marginTop: 8,
         padding: 16,
-        borderRadius: 16,
+        borderRadius: 12,
         border: '1.5px dashed var(--mf-border)',
         background: 'transparent',
         cursor: 'pointer',

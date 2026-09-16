@@ -38,162 +38,386 @@ function docKindColor(card: CardViewData): string {
 }
 
 /**
- * 공책 카드의 **표지** — 보드 카드의 썸네일이 있던 자리.
+ * 공책 카드 — 디자인 원본은 보드 카드와 **골격부터 다르다**.
  *
- * 보드는 문서를 축소해 보여 주지만 공책에는 축소할 그림이 없다(글이라서다). 그래서
- * 디자인은 이 자리를 **표지**로 쓴다: 표지 색 · 스케치 · 첫 페이지 제목 · 첫 줄.
- * 목록에서 "무슨 내용인지"를 알려 주는 것이 축소된 지면이 아니라 첫 문장이기 때문이다.
+ * 보드 카드는 [썸네일 + 아래 제목 줄]인데, 공책에는 축소할 그림이 없다(글이라서다).
+ * 그래서 디자인은 공책을 **한 장의 종이**로 그린다: 겹친 종이 그늘 · 모눈 바탕 ·
+ * 오른쪽 책갈피 · 큰 제목 · 페이지 목록 · 표지 스케치. 214px 고정 높이 한 덩어리라
+ * 썸네일/본문 경계선도 없다.
  *
- * 표지 색 하나가 배경·책등·스케치 잉크를 함께 정한다(코어 `noteCoverColor`의
+ * 표지 색 하나(`ink`)가 제목·책갈피·스케치를 함께 정한다(코어 `noteCoverColor`의
  * 우선순위: 사용자 지정 > 태그 기본 > 흑연).
+ *
+ * 디자인의 스프링 링(`noteRings`)은 **원본에서도 꺼진 기본값**이라(headOp 0) 그리지
+ * 않는다 — 켜진 모습이 없는 것을 옮기면 우리만 다른 그림이 된다.
  */
-function NoteCoverBlock({ card, compact, grey }: { card: CardViewData; compact: boolean; grey: boolean }) {
+function NoteCardBody({ card, controller, selectMode }: { card: CardViewData; controller: HomeController; selectMode: boolean }) {
   const note = card.note;
-  const cover = note?.cover ?? 'var(--mf-doc-note)';
+  const ink = note?.cover ?? 'var(--mf-doc-note)';
+  const titles = note?.pageTitles ?? [];
+  const when = formatLastEdited(card.updatedAt);
+  return (
+    <>
+      {/* 모눈 바탕 — 14px 격자. 종이 질감을 만드는 첫 겹이다. */}
+      <span
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 12,
+          backgroundImage:
+            'linear-gradient(90deg, color-mix(in srgb, var(--mf-border) 62%, transparent) 1px, transparent 1px),' +
+            'linear-gradient(180deg, color-mix(in srgb, var(--mf-border) 62%, transparent) 1px, transparent 1px)',
+          backgroundSize: '14px 14px',
+          backgroundPosition: '6px 6px',
+          pointerEvents: 'none',
+        }}
+      />
+      {/* 윗면의 빛 — 위쪽 38%에만 옅게. 종이가 평면이 아니라 **덮여 있는** 것처럼 보인다. */}
+      <span
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 12,
+          background: 'linear-gradient(180deg, color-mix(in srgb, var(--mf-card) 65%, transparent), transparent 38%)',
+          pointerEvents: 'none',
+        }}
+      />
+      {/* 책갈피 — 오른쪽 모서리에 표지 색으로 꽂힌 띠. 그리드에서 "공책"을 가장 빨리 말한다. */}
+      <span
+        aria-hidden="true"
+        data-note-bookmark
+        style={{
+          position: 'absolute',
+          top: 44,
+          right: -1,
+          width: 7,
+          height: 40,
+          borderRadius: '4px 0 0 4px',
+          background: ink,
+          boxShadow: '-1px 1px 2px rgba(46,42,38,.16)',
+        }}
+      />
+
+      <div
+        data-note-cover
+        style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '18px 22px 14px 20px' }}
+      >
+        {/* 첫 줄 — 태그 · 수정 시각 · (검색 중이면) 위치 · ★. */}
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span
+            role="button"
+            tabIndex={-1}
+            data-note-tag
+            title="태그 바꾸기"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // 태그를 바꾸는 자리는 이미 카드 메뉴에 있다 — 칩은 그 메뉴를 칩 아래로 연다.
+              const r = e.currentTarget.getBoundingClientRect();
+              controller.openCtxMenu(r.left, r.bottom + 6, { kind: 'map', key: card.key });
+            }}
+            style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 20,
+              padding: '0 7px 0 6px',
+              marginLeft: -6,
+              borderRadius: 7,
+              fontSize: 10.5,
+              fontWeight: 700,
+              letterSpacing: '.02em',
+              color: note?.tag ? 'var(--mf-text)' : 'var(--mf-faint)',
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {note?.tag ? (
+              <>
+                <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: note.tagColor, display: 'block', flexShrink: 0 }} />
+                {note.tag}
+              </>
+            ) : (
+              <>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span style={{ fontWeight: 600 }}>태그</span>
+              </>
+            )}
+          </span>
+          {when && (
+            <span title={formatFullDateTime(card.updatedAt)} style={{ fontFamily: 'var(--mf-mono, ui-monospace, monospace)', fontSize: 10, color: 'var(--mf-subtext)', whiteSpace: 'nowrap' }}>
+              {when}
+            </span>
+          )}
+          {/* 검색 결과 카드의 위치 — 검색은 폴더 경계를 넘으므로 어느 폴더인지 알려 준다. */}
+          {card.pathLabel && (
+            <span data-card-path title={card.pathLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 2, background: card.spaceColor ?? 'var(--mf-faint)', display: 'block', flexShrink: 0 }} />
+              {card.pathLabel}
+            </span>
+          )}
+          <span style={{ flex: 1, minWidth: 0 }} />
+          {/* ★ — 디자인은 이 별을 카드 위에 떠 있는 칩이 아니라 **첫 줄의 끝**에 둔다.
+              그래서 공책 카드는 겉에 얹히는 ☆ 버튼(`fav-btn`)을 쓰지 않는다. */}
+          {!selectMode && (
+            <button
+              type="button"
+              className="fav-btn"
+              title="즐겨찾기"
+              aria-label={card.isFav ? '즐겨찾기 해제' : '즐겨찾기'}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                controller.toggleFav(card.title, card.docId);
+              }}
+              style={{
+                width: 24,
+                height: 24,
+                flex: '0 0 auto',
+                borderRadius: 8,
+                border: 0,
+                background: 'transparent',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                padding: 0,
+                color: card.isFav ? 'var(--mf-star)' : 'var(--mf-faint)',
+                opacity: card.isFav || card.selected ? 1 : 0,
+                transition: 'opacity .16s ease, background .16s ease',
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill={card.isFav ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" aria-hidden="true">
+                <path d="m12 3.6 2.5 5.2 5.6.8-4 4 .9 5.6-5-2.7-5 2.7.9-5.6-4-4 5.6-.8z" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* 공책 이름 — 표지 색으로 크게. 카드에서 가장 먼저 읽히는 것이 이 줄이다. */}
+        <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 3, padding: '10px 0 0' }}>
+          <span
+            data-note-title
+            title={card.title}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '0 0 2px',
+              fontSize: 19,
+              fontWeight: 800,
+              letterSpacing: '-.04em',
+              color: ink,
+              lineHeight: 1.3,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {card.title}
+          </span>
+        </div>
+
+        {/* 페이지 목록(앞 세 장) + 표지 스케치 — 본문 첫 줄이 아니라 **목차**를 보여 준다.
+            공책은 여러 장이 한 권이라, "무엇이 들어 있나"에 답하는 것이 목차다. */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'flex-start', gap: 12, paddingTop: 6, minWidth: 0, overflow: 'hidden' }}>
+          <span data-note-pages style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {titles.map((t, i) => (
+              <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, height: 19 }}>
+                <span aria-hidden="true" style={{ width: 4, height: 4, flex: '0 0 auto', borderRadius: 999, background: 'var(--mf-text)', opacity: 0.7, display: 'block' }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
+              </span>
+            ))}
+            {!!note?.moreCount && (
+              <span style={{ paddingLeft: 11, fontSize: 10.5, color: 'var(--mf-subtext)', lineHeight: '19px' }}>+{note.moreCount} 페이지 더</span>
+            )}
+          </span>
+          <NoteSketchArt sketch={note?.sketch ?? 'grid'} ink={ink} />
+        </div>
+
+        {/* 맨 아랫줄 — 페이지 수 · 공유 표식 · ☰. 디자인의 아바타 자리를 ☰이 쓴다
+            (우리 카드의 메뉴는 어느 종류에서나 같은 자리에 있어야 한다). */}
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 10, color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>
+            <span style={{ fontFamily: 'var(--mf-mono, ui-monospace, monospace)' }}>{note?.pageCount ?? 0}</span> 페이지
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }} />
+          {card.sharedLabel && (
+            <span data-shared-badge role="img" title={card.sharedLabel} aria-label={`공유 중 — ${card.sharedLabel}`} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--mf-muted)' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <circle cx="9" cy="8" r="3" />
+                <path d="M3 19a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M21 19a5 5 0 0 0-4-4.9" />
+              </svg>
+            </span>
+          )}
+          {!selectMode && (
+            <div
+              className="menu-btn"
+              role="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const r = e.currentTarget.getBoundingClientRect();
+                controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: card.key });
+              }}
+              title="메뉴"
+              aria-label="메뉴"
+              style={{
+                flexShrink: 0,
+                width: 22,
+                height: 22,
+                borderRadius: 8,
+                background: 'transparent',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--mf-subtext)',
+                cursor: 'pointer',
+                opacity: card.menuOpen || card.selected ? 1 : 0,
+                transform: card.menuOpen || card.selected ? 'translateY(0)' : 'translateY(2px)',
+                transition: 'opacity .18s ease, transform .18s ease, background .15s ease',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * 표지 스케치 96×58 — 디자인 원본의 다섯 벌을 그대로. 전부 표지 색(`ink`) 한 색으로
+ * 그린다. 태그별 기본값이 있어 같은 태그의 공책들이 한 눈에 묶여 보인다.
+ */
+function NoteSketchArt({ sketch, ink }: { sketch: NoteSketch; ink: string }) {
+  if (sketch === 'none') return null;
+  // 스케치 안의 면을 채우는 옅은 색 — 디자인의 `shade(ink, .86, 'w')`.
+  const fill = `color-mix(in srgb, ${ink} 14%, var(--mf-card))`;
+  const pill: CSSProperties = {
+    position: 'absolute',
+    padding: '2px 6px',
+    border: `1.3px solid ${ink}`,
+    borderRadius: 999,
+    background: 'var(--mf-card)',
+    fontSize: 7.5,
+    fontWeight: 800,
+    color: ink,
+    whiteSpace: 'nowrap',
+    lineHeight: 1.3,
+  };
+  const bar = (op: number, mr: number): CSSProperties => ({ flex: 1, height: 2, borderRadius: 999, background: ink, opacity: op, display: 'block', marginRight: mr });
+  return (
+    <span aria-hidden="true" data-note-sketch={sketch} style={{ flex: '0 0 auto', width: 96, height: 58, position: 'relative', display: 'block', opacity: 0.92 }}>
+      {sketch === 'grid' && (
+        <span style={{ position: 'absolute', inset: '4px 8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 3, transform: 'rotate(-2deg)' }}>
+          {[0, 1, 2, 3].map((k) => (
+            <span key={k} style={{ border: `1.3px solid ${ink}`, borderRadius: 3, background: fill, display: 'block' }} />
+          ))}
+        </span>
+      )}
+      {sketch === 'list' && (
+        <span style={{ position: 'absolute', inset: 6, display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 9, height: 9, border: `1.3px solid ${ink}`, borderRadius: 2, display: 'block' }} />
+            <span style={bar(0.55, 0)} />
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 9, height: 9, border: `1.3px solid ${ink}`, borderRadius: 2, background: ink, display: 'block' }} />
+            <span style={bar(0.35, 14)} />
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 9, height: 9, border: `1.3px solid ${ink}`, borderRadius: 2, display: 'block' }} />
+            <span style={bar(0.55, 26)} />
+          </span>
+          <span style={{ alignSelf: 'flex-end', marginTop: 2, padding: '1px 6px', border: `1.3px solid ${ink}`, borderRadius: 999, fontSize: 7.5, fontWeight: 800, color: ink, letterSpacing: '.02em', lineHeight: 1.3, whiteSpace: 'nowrap' }}>§1 · §2</span>
+        </span>
+      )}
+      {sketch === 'clip' && (
+        <>
+          <span style={{ position: 'absolute', left: 4, top: 8, width: 60, height: 46, border: `1.3px solid ${ink}`, borderRadius: 5, background: fill, display: 'block', transform: 'rotate(-3deg)', overflow: 'hidden' }}>
+            <span style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 9, borderBottom: `1.3px solid ${ink}`, display: 'flex', alignItems: 'center', gap: 2, padding: '0 4px' }}>
+              <span style={{ width: 3, height: 3, borderRadius: 999, background: ink, display: 'block' }} />
+              <span style={{ width: 3, height: 3, borderRadius: 999, background: ink, display: 'block' }} />
+            </span>
+            <span style={{ position: 'absolute', left: 6, top: 15, width: 26, height: 16, borderRadius: 2, background: ink, opacity: 0.35, display: 'block' }} />
+            <span style={{ position: 'absolute', left: 36, top: 15, width: 18, height: 3, borderRadius: 999, background: ink, opacity: 0.5, display: 'block' }} />
+            <span style={{ position: 'absolute', left: 36, top: 22, width: 14, height: 3, borderRadius: 999, background: ink, opacity: 0.35, display: 'block' }} />
+          </span>
+          <span style={{ ...pill, right: 2, top: 2, transform: 'rotate(4deg)' }}>Insight</span>
+          <span style={{ ...pill, right: 0, bottom: 4, transform: 'rotate(-3deg)' }}>Compare</span>
+        </>
+      )}
+      {sketch === 'bulb' && (
+        <>
+          <span style={{ position: 'absolute', left: 18, top: 2, width: 44, height: 54, display: 'block', transform: 'rotate(-4deg)' }}>
+            <svg width="44" height="54" viewBox="0 0 24 30" fill="none" stroke={ink} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8.5 19.5A7 7 0 1 1 15.5 19.5c-.9.8-1.3 1.8-1.3 3.2H9.8c0-1.4-.4-2.4-1.3-3.2Z" fill={fill} />
+              <path d="M9.8 25h4.4M10.6 27.5h2.8" />
+              <path d="M12 12v4M10 14h4" />
+            </svg>
+          </span>
+          <span style={{ position: 'absolute', right: 0, top: 10, width: 5, height: 5, borderRadius: 999, background: ink, opacity: 0.45, display: 'block' }} />
+          <span style={{ position: 'absolute', right: 8, top: 2, width: 3, height: 3, borderRadius: 999, background: ink, opacity: 0.7, display: 'block' }} />
+          <span style={{ ...pill, right: 2, bottom: 6, transform: 'rotate(3deg)' }}>Idea</span>
+        </>
+      )}
+      {sketch === 'chart' && (
+        <>
+          <span style={{ position: 'absolute', inset: '6px 10px 4px 8px', borderLeft: `1.3px solid ${ink}`, borderBottom: `1.3px solid ${ink}`, display: 'flex', alignItems: 'flex-end', gap: 5, padding: '0 4px 0 6px', transform: 'rotate(-2deg)' }}>
+            {[[38, 0.35], [62, 0.55], [48, 0.4], [84, 1]].map(([h, op], k) => (
+              <span key={k} style={{ flex: 1, height: `${h}%`, borderRadius: '2px 2px 0 0', background: ink, opacity: op, display: 'block' }} />
+            ))}
+          </span>
+          <span style={{ ...pill, right: -2, top: 0, transform: 'rotate(4deg)' }}>+24%</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * 최근 항목 트레이의 공책 — 214px 카드가 들어갈 자리가 아니다(트레이 카드는 그리드
+ * 카드의 1/4 크기다). 그래서 여기서는 **책등 + 첫 장 제목 + 페이지 수**로 줄인다:
+ * 그리드 카드의 요약본이되 "공책"임은 책등과 표지 색이 여전히 말한다.
+ */
+function NoteCompactCover({ card, grey }: { card: CardViewData; grey: boolean }) {
+  const note = card.note;
+  const ink = note?.cover ?? 'var(--mf-doc-note)';
   return (
     <div
       data-note-cover
       style={{
         position: 'relative',
-        height: compact ? 74 : 150,
-        // 표지 색을 옅게 깐다 — 진한 면에 흰 글자를 올리면 카드 그리드에서 공책만
-        // 무겁게 튄다(보드 카드의 썸네일은 밝은 캔버스다).
-        background: grey ? 'var(--mf-panel2)' : `color-mix(in srgb, ${cover} 12%, var(--mf-card))`,
+        height: 74,
+        background: grey ? 'var(--mf-panel2)' : `color-mix(in srgb, ${ink} 12%, var(--mf-card))`,
         borderBottom: '1px solid var(--mf-border-soft)',
-        borderRadius: compact ? '14px 14px 0 0' : '17px 17px 0 0',
+        borderRadius: '14px 14px 0 0',
         overflow: 'hidden',
         display: 'flex',
         filter: grey ? 'grayscale(1) opacity(.55)' : 'none',
       }}
     >
-      {/* 책등 — 왼쪽 세로 띠. 이 한 줄이 "이건 공책이다"를 가장 빠르게 말한다. */}
-      <span aria-hidden="true" style={{ width: compact ? 5 : 8, flex: '0 0 auto', background: cover, opacity: 0.9 }} />
-      <span aria-hidden="true" style={{ width: 1, flex: '0 0 auto', background: `color-mix(in srgb, ${cover} 35%, transparent)` }} />
-      <span style={{ position: 'relative', flex: 1, minWidth: 0, padding: compact ? '9px 10px' : '14px 15px', display: 'flex', flexDirection: 'column', gap: compact ? 4 : 7, overflow: 'hidden' }}>
-        {/* 첫 페이지 제목 — 카드 아래 제목은 **공책 이름**이라 서로 다른 값이다. */}
-        <span
-          style={{
-            fontSize: compact ? 11.5 : 13.5,
-            fontWeight: 800,
-            letterSpacing: '-.02em',
-            color: `color-mix(in srgb, ${cover} 72%, var(--mf-text))`,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {note?.firstTitle ?? '제목 없는 페이지'}
+      <span aria-hidden="true" style={{ width: 5, flex: '0 0 auto', background: ink, opacity: 0.9 }} />
+      <span style={{ position: 'relative', flex: 1, minWidth: 0, padding: '9px 10px', display: 'flex', flexDirection: 'column', gap: 4, overflow: 'hidden' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '-.02em', color: `color-mix(in srgb, ${ink} 72%, var(--mf-text))`, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {note?.pageTitles[0] ?? '제목 없는 페이지'}
         </span>
-        {!compact && (
-          // 첫 줄 — 두 줄까지 보여 준다(디자인: "목록에 본문 첫 줄을 두 줄까지").
-          <span
-            style={{
-              fontSize: 11.5,
-              lineHeight: 1.65,
-              color: 'var(--mf-subtext)',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-              wordBreak: 'keep-all',
-            }}
-          >
-            {note?.excerpt || '아직 쓴 내용이 없어요'}
-          </span>
-        )}
-        {/* 아래 줄 — 태그 칩 · 페이지 수 · 체크 진행. 세 값이 다 있을 때도 한 줄에 든다. */}
-        <span style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          {note?.tag && (
-            <span
-              data-note-tag
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: 18,
-                padding: '0 7px',
-                borderRadius: 999,
-                background: `color-mix(in srgb, ${note.tagColor} 20%, transparent)`,
-                color: `color-mix(in srgb, ${note.tagColor} 78%, var(--mf-text))`,
-                fontSize: 10.5,
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {note.tag}
-            </span>
-          )}
-          <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{note?.pageCount ?? 0}페이지</span>
-          {note?.checks && (
-            <span data-note-checks style={{ fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>
-              ✓ {note.checks.done}/{note.checks.total}
-            </span>
-          )}
-        </span>
+        <span style={{ marginTop: 'auto', fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{note?.pageCount ?? 0}페이지</span>
       </span>
-      {/* 표지 스케치 — 오른쪽 아래에 옅게. 태그별 기본값이 있어 같은 태그의 공책들이
-          한 눈에 묶여 보인다(코어 `noteCoverSketch`). */}
-      {!compact && <NoteSketchGlyph sketch={note?.sketch ?? 'grid'} ink={cover} />}
     </div>
-  );
-}
-
-/** 표지 스케치 여섯 — 디자인의 `SKETCHES`. 잉크는 표지 색이다. */
-function NoteSketchGlyph({ sketch, ink }: { sketch: NoteSketch; ink: string }) {
-  if (sketch === 'none') return null;
-  const paths: Record<Exclude<NoteSketch, 'none'>, JSX.Element> = {
-    grid: (
-      <>
-        <rect x="4" y="4" width="7" height="7" rx="1.4" />
-        <rect x="13" y="4" width="7" height="7" rx="1.4" />
-        <rect x="4" y="13" width="7" height="7" rx="1.4" />
-        <rect x="13" y="13" width="7" height="7" rx="1.4" />
-      </>
-    ),
-    list: (
-      <>
-        <rect x="3.5" y="4.5" width="6" height="6" rx="1.4" />
-        <path d="m5 7.6 1.4 1.4L9 6.2" />
-        <path d="M13 7.5h7.5" />
-        <rect x="3.5" y="13.5" width="6" height="6" rx="1.4" />
-        <path d="M13 16.5h7.5" />
-      </>
-    ),
-    clip: (
-      <>
-        <rect x="3.5" y="5" width="17" height="14" rx="2.2" />
-        <path d="M3.5 9.5h17" />
-        <rect x="6" y="12" width="5.5" height="4.5" rx="1" />
-        <path d="M14 12.5h4M14 15.5h3" />
-      </>
-    ),
-    bulb: (
-      <>
-        <path d="M9 18h6M10 21h4" />
-        <path d="M8.5 14.5A5.5 5.5 0 1 1 15.5 14.5c-.7.6-1 1.4-1 2.5h-5c0-1.1-.3-1.9-1-2.5Z" />
-      </>
-    ),
-    chart: (
-      <>
-        <path d="M4 20h16" />
-        <path d="M6 16v-4M11 16V7M16 16v-7" />
-      </>
-    ),
-  };
-  return (
-    <svg
-      aria-hidden="true"
-      width="52"
-      height="52"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={ink}
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ position: 'absolute', right: 10, bottom: 8, opacity: 0.14, pointerEvents: 'none' }}
-    >
-      {paths[sketch]}
-    </svg>
   );
 }
 
@@ -354,6 +578,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
   const onDragEnd = () => controller.clearDrag();
 
   const grey = card.openable === false;
+  /** 그리드의 공책 카드 — 디자인 원본이 **한 장의 종이**로 그리는 그 카드
+   *  (`NoteCardBody`). 최근 항목 트레이(compact)는 크기가 1/4이라 요약본을 쓴다. */
+  const notePaper = card.isNote && !compact;
   const cardStyle: CSSProperties = {
     // 문서 **종류**를 테두리 색으로 알린다(요청) — 마인드맵 초록 · 화이트보드 파랑 ·
     // 칸반 보라. 처음엔 화이트보드만 갈랐고 이름 영역에 가라앉은 면을 깔았는데 그
@@ -396,6 +623,19 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     contentVisibility: 'auto',
     containIntrinsicSize: compact ? 'auto 130px' : 'auto 220px',
   };
+  if (notePaper) {
+    // 공책은 [썸네일 + 제목 줄]이 아니라 **214px 고정 높이 한 덩어리**다(디자인 원본).
+    // 테두리 한 줄 대신 겹친 종이 그늘이 카드 경계를 그리므로(home.css의 `.mf-note-card`)
+    // border와 인라인 boxShadow를 모두 뺀다 — 인라인이 남으면 CSS의 겹친 그늘을 덮는다.
+    cardStyle.height = 214;
+    cardStyle.marginTop = 8;
+    cardStyle.borderRadius = 12;
+    cardStyle.border = 'none';
+    cardStyle.display = 'flex';
+    cardStyle.flexDirection = 'column';
+    delete cardStyle.boxShadow;
+    cardStyle.containIntrinsicSize = 'auto 222px';
+  }
 
   return (
     <a
@@ -411,7 +651,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       draggable={draggableEnabled}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="map-card"
+      className={notePaper ? 'map-card mf-note-card' : 'map-card'}
       data-title={card.title}
       data-card-key={compact ? undefined : card.key}
       style={cardStyle}
@@ -453,8 +693,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           aria-hidden="true"
           style={{
             position: 'absolute',
-            top: 10,
-            left: 10,
+            // 공책 카드에는 ★이 카드 위에 떠 있지 않고 **첫 줄의 끝**에 있다 —
+            // 체크도 그 자리(오른쪽 위)로 간다. 왼쪽 위에 두면 태그 칩을 덮는다.
+            top: notePaper ? 14 : 10,
+            ...(notePaper ? { right: 16 } : { left: 10 }),
             zIndex: 4,
             width: 26,
             height: 26,
@@ -476,6 +718,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         </div>
       )}
 
+      {notePaper ? (
+        <NoteCardBody card={card} controller={controller} selectMode={selectMode} />
+      ) : (
+        <>
       <div
         className="fav-btn"
         role="button"
@@ -583,7 +829,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       )}
 
       {card.isNote ? (
-        <NoteCoverBlock card={card} compact={compact} grey={grey} />
+        <NoteCompactCover card={card} grey={grey} />
       ) : (
       <div
         className="map-thumb"
@@ -766,6 +1012,8 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           </div>
         )}
       </div>
+        </>
+      )}
     </a>
   );
 }
