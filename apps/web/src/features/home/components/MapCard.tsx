@@ -7,6 +7,7 @@ import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useCardActivation } from './useCardActivation';
 import { dotGridStyle } from '../chrome';
 import { useVisibleOnce } from '../useVisibleOnce';
+import type { NoteSketch } from '@mindflow/mindmap-core';
 
 interface Props {
   card: CardViewData;
@@ -30,9 +31,170 @@ interface Props {
 function docKindColor(card: CardViewData): string {
   // 열 수 없는 카드(Drive 데모의 비지원 파일)는 종류를 말할 게 없다.
   if (card.openable === false) return 'var(--mf-faint)';
+  if (card.isNote) return 'var(--mf-doc-note)';
   if (card.isKanban) return 'var(--mf-doc-kanban)';
   if (card.isBoard) return 'var(--mf-doc-board)';
   return 'var(--mf-doc-map)';
+}
+
+/**
+ * 공책 카드의 **표지** — 보드 카드의 썸네일이 있던 자리.
+ *
+ * 보드는 문서를 축소해 보여 주지만 공책에는 축소할 그림이 없다(글이라서다). 그래서
+ * 디자인은 이 자리를 **표지**로 쓴다: 표지 색 · 스케치 · 첫 페이지 제목 · 첫 줄.
+ * 목록에서 "무슨 내용인지"를 알려 주는 것이 축소된 지면이 아니라 첫 문장이기 때문이다.
+ *
+ * 표지 색 하나가 배경·책등·스케치 잉크를 함께 정한다(코어 `noteCoverColor`의
+ * 우선순위: 사용자 지정 > 태그 기본 > 흑연).
+ */
+function NoteCoverBlock({ card, compact, grey }: { card: CardViewData; compact: boolean; grey: boolean }) {
+  const note = card.note;
+  const cover = note?.cover ?? 'var(--mf-doc-note)';
+  return (
+    <div
+      data-note-cover
+      style={{
+        position: 'relative',
+        height: compact ? 74 : 150,
+        // 표지 색을 옅게 깐다 — 진한 면에 흰 글자를 올리면 카드 그리드에서 공책만
+        // 무겁게 튄다(보드 카드의 썸네일은 밝은 캔버스다).
+        background: grey ? 'var(--mf-panel2)' : `color-mix(in srgb, ${cover} 12%, var(--mf-card))`,
+        borderBottom: '1px solid var(--mf-border-soft)',
+        borderRadius: compact ? '14px 14px 0 0' : '17px 17px 0 0',
+        overflow: 'hidden',
+        display: 'flex',
+        filter: grey ? 'grayscale(1) opacity(.55)' : 'none',
+      }}
+    >
+      {/* 책등 — 왼쪽 세로 띠. 이 한 줄이 "이건 공책이다"를 가장 빠르게 말한다. */}
+      <span aria-hidden="true" style={{ width: compact ? 5 : 8, flex: '0 0 auto', background: cover, opacity: 0.9 }} />
+      <span aria-hidden="true" style={{ width: 1, flex: '0 0 auto', background: `color-mix(in srgb, ${cover} 35%, transparent)` }} />
+      <span style={{ position: 'relative', flex: 1, minWidth: 0, padding: compact ? '9px 10px' : '14px 15px', display: 'flex', flexDirection: 'column', gap: compact ? 4 : 7, overflow: 'hidden' }}>
+        {/* 첫 페이지 제목 — 카드 아래 제목은 **공책 이름**이라 서로 다른 값이다. */}
+        <span
+          style={{
+            fontSize: compact ? 11.5 : 13.5,
+            fontWeight: 800,
+            letterSpacing: '-.02em',
+            color: `color-mix(in srgb, ${cover} 72%, var(--mf-text))`,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {note?.firstTitle ?? '제목 없는 페이지'}
+        </span>
+        {!compact && (
+          // 첫 줄 — 두 줄까지 보여 준다(디자인: "목록에 본문 첫 줄을 두 줄까지").
+          <span
+            style={{
+              fontSize: 11.5,
+              lineHeight: 1.65,
+              color: 'var(--mf-subtext)',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              wordBreak: 'keep-all',
+            }}
+          >
+            {note?.excerpt || '아직 쓴 내용이 없어요'}
+          </span>
+        )}
+        {/* 아래 줄 — 태그 칩 · 페이지 수 · 체크 진행. 세 값이 다 있을 때도 한 줄에 든다. */}
+        <span style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          {note?.tag && (
+            <span
+              data-note-tag
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 18,
+                padding: '0 7px',
+                borderRadius: 999,
+                background: `color-mix(in srgb, ${note.tagColor} 20%, transparent)`,
+                color: `color-mix(in srgb, ${note.tagColor} 78%, var(--mf-text))`,
+                fontSize: 10.5,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {note.tag}
+            </span>
+          )}
+          <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{note?.pageCount ?? 0}페이지</span>
+          {note?.checks && (
+            <span data-note-checks style={{ fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>
+              ✓ {note.checks.done}/{note.checks.total}
+            </span>
+          )}
+        </span>
+      </span>
+      {/* 표지 스케치 — 오른쪽 아래에 옅게. 태그별 기본값이 있어 같은 태그의 공책들이
+          한 눈에 묶여 보인다(코어 `noteCoverSketch`). */}
+      {!compact && <NoteSketchGlyph sketch={note?.sketch ?? 'grid'} ink={cover} />}
+    </div>
+  );
+}
+
+/** 표지 스케치 여섯 — 디자인의 `SKETCHES`. 잉크는 표지 색이다. */
+function NoteSketchGlyph({ sketch, ink }: { sketch: NoteSketch; ink: string }) {
+  if (sketch === 'none') return null;
+  const paths: Record<Exclude<NoteSketch, 'none'>, JSX.Element> = {
+    grid: (
+      <>
+        <rect x="4" y="4" width="7" height="7" rx="1.4" />
+        <rect x="13" y="4" width="7" height="7" rx="1.4" />
+        <rect x="4" y="13" width="7" height="7" rx="1.4" />
+        <rect x="13" y="13" width="7" height="7" rx="1.4" />
+      </>
+    ),
+    list: (
+      <>
+        <rect x="3.5" y="4.5" width="6" height="6" rx="1.4" />
+        <path d="m5 7.6 1.4 1.4L9 6.2" />
+        <path d="M13 7.5h7.5" />
+        <rect x="3.5" y="13.5" width="6" height="6" rx="1.4" />
+        <path d="M13 16.5h7.5" />
+      </>
+    ),
+    clip: (
+      <>
+        <rect x="3.5" y="5" width="17" height="14" rx="2.2" />
+        <path d="M3.5 9.5h17" />
+        <rect x="6" y="12" width="5.5" height="4.5" rx="1" />
+        <path d="M14 12.5h4M14 15.5h3" />
+      </>
+    ),
+    bulb: (
+      <>
+        <path d="M9 18h6M10 21h4" />
+        <path d="M8.5 14.5A5.5 5.5 0 1 1 15.5 14.5c-.7.6-1 1.4-1 2.5h-5c0-1.1-.3-1.9-1-2.5Z" />
+      </>
+    ),
+    chart: (
+      <>
+        <path d="M4 20h16" />
+        <path d="M6 16v-4M11 16V7M16 16v-7" />
+      </>
+    ),
+  };
+  return (
+    <svg
+      aria-hidden="true"
+      width="52"
+      height="52"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={ink}
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ position: 'absolute', right: 10, bottom: 8, opacity: 0.14, pointerEvents: 'none' }}
+    >
+      {paths[sketch]}
+    </svg>
+  );
 }
 
 /** 모바일 선택 모드 진입 — 누르고 있어야 하는 시간(iOS·안드로이드의 길게 누르기와 같은 길이). */
@@ -362,7 +524,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       {!card.badge && card.openable !== false && (
         <div
           data-board-badge
-          title={card.isKanban ? '칸반 보드' : card.isBoard ? '화이트보드' : '마인드맵'}
+          title={card.isNote ? '공책' : card.isKanban ? '칸반 보드' : card.isBoard ? '화이트보드' : '마인드맵'}
           style={{
             position: 'absolute',
             top: compact ? 7 : 10,
@@ -394,7 +556,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               flexShrink: 0,
             }}
           />
-          {card.isKanban ? (compact ? '칸반' : '칸반 보드') : card.isBoard ? (compact ? '보드' : '화이트보드') : compact ? '마인드맵' : '마인드맵'}
+          {card.isNote ? '공책' : card.isKanban ? (compact ? '칸반' : '칸반 보드') : card.isBoard ? (compact ? '보드' : '화이트보드') : '마인드맵'}
         </div>
       )}
 
@@ -420,6 +582,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         </div>
       )}
 
+      {card.isNote ? (
+        <NoteCoverBlock card={card} compact={compact} grey={grey} />
+      ) : (
       <div
         className="map-thumb"
         style={{
@@ -452,6 +617,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             점 격자·배지)만 디자인을 따르고 내용은 진짜다. */}
         <span style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>{card.sketch}</span>
       </div>
+      )}
       {/* 하단 정보 영역: [제목+수정일] 좌측 열 + ☰ 메뉴 버튼(영역 전체의
           세로 중앙) — 버튼을 제목 행 안에 두면 수정일 줄 때문에 시각적으로
           위로 치우쳐 보인다. */}

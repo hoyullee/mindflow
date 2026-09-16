@@ -15,6 +15,7 @@ import { PresenceBar } from './components/PresenceBar';
 import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { KanbanBoard } from './components/KanbanBoard';
+import { NoteEditor } from './components/NoteEditor';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { CollabPaused } from './components/CollabPaused';
@@ -181,7 +182,16 @@ export function Editor() {
       <FeedbackModal open={controller.feedbackOpen} onClose={() => controller.setFeedbackOpen(false)} page="editor" theme={th} />
 
       <div style={{ position: 'relative', flex: '1 1 auto', overflow: 'hidden', display: 'flex' }}>
-        {controller.isKanban ? (
+        {controller.isNote ? (
+          /* 공책 — 캔버스도 열도 아니라 **페이지의 글**이다. 팬/줌·미니맵·그리기·
+             레이아웃이 통째로 뜻이 없어 Viewport 계열 UI가 하나도 뜨지 않는다
+             (칸반과 같은 자리에서 갈린다). */
+          <>
+            <NoteEditor controller={controller} theme={th} />
+            <DocChip controller={controller} />
+            <PresenceBar controller={controller} />
+          </>
+        ) : controller.isKanban ? (
           /* 칸반 — 캔버스가 아니라 전용 고정 레이아웃(열·카드). 팬/줌·미니맵·
              그리기가 없으므로 Viewport 계열 UI는 통째로 뜨지 않는다. */
           <>

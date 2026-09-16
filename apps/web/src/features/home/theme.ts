@@ -124,6 +124,8 @@ export interface HomeTheme {
   docMap: string;
   docBoard: string;
   docKanban: string;
+  /** 공책 — 위 셋과 색상환에서 떨어진 자리(분홍빛 자두)를 쓴다. */
+  docNote: string;
   /** 즐겨찾기 별의 금색. */
   star: string;
 
@@ -179,6 +181,8 @@ const LIGHT_INK = {
   docMap: '#d9482b',
   docBoard: '#3f9e6a',
   docKanban: '#8a63d2',
+  // 공책은 네 번째 — 빨강·초록·보라 사이에서 가장 먼 자리가 분홍이다.
+  docNote: '#c2557f',
   star: '#e0a53c',
   // 홈 리디자인(디자인 원본의 그늘·hover 값). 밝은 다섯 벌이 공유한다 —
   // 그늘은 잉크색이라 면 색과 달리 테마마다 갈릴 이유가 없다.
@@ -344,6 +348,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     docMap: '#e86a4e',
     docBoard: '#5ec38b',
     docKanban: '#a98ae6',
+    docNote: '#e086ac',
     star: '#e8bd57',
     // 다크는 그늘을 검정으로 더 진하게 — 어두운 면 위에서 옅은 그늘은 보이지 않는다.
     // hover 경계는 반대로 **밝아진다**(어두워지면 반응이 아니라 사라지는 것처럼 보인다).
@@ -485,6 +490,7 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-doc-map': t.docMap,
     '--mf-doc-board': t.docBoard,
     '--mf-doc-kanban': t.docKanban,
+    '--mf-doc-note': t.docNote,
     '--mf-star': t.star,
     '--mf-card-shadow': t.cardShadow,
     '--mf-card-shadow-hover': t.cardShadowHover,

@@ -218,6 +218,14 @@ export interface HomeState {
   /** 템플릿 갤러리 — "새로 만들기"의 세 진입점(툴바·빈 자리 우클릭·빈 상태 CTA)이
    * 전부 이걸 연다. 빈 맵도 갤러리의 첫 칸이다. */
   templateOpen: boolean;
+  /**
+   * 갤러리를 열 때 **미리 골라 둘 탭**(`null`이면 `전체`).
+   *
+   * 스페이스의 `공책 만들기` 타일처럼 종류가 이미 정해진 문으로 들어올 때 쓴다 —
+   * 상태에 두는 이유는 갤러리가 열릴 때마다 탭을 `전체`로 되돌리기 때문이다
+   * (지난번 탭이 남아 있으면 "템플릿이 사라졌다"로 보인다는 판단이 이미 있다).
+   */
+  templateTab: string | null;
   /** 홈 색상 테마(LNB 최하단에서 고른다). 정본은 워크스페이스 블롭이라 기기 간에
    * 따라오고, 첫 페인트용 캐시는 `theme.ts`의 localStorage에 둔다. */
   theme: HomeThemeKey;
@@ -500,6 +508,7 @@ export function initialHomeState(): HomeState {
     calendarAddFocus: 0,
     feedbackOpen: false,
     templateOpen: false,
+    templateTab: null,
     // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
     // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
     theme: loadHomeThemeCache(),

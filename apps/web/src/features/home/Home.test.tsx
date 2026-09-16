@@ -4454,17 +4454,25 @@ describe('홈 우클릭 메뉴', () => {
 
       await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
-      const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
-      // 두 문서 종류를 구획으로 나눴다(제보: 섞여 있어 구별이 어렵다) — 마인드맵
-      // 구획(빈 맵 + 템플릿들) 뒤에 화이트보드 구획(빈 보드 + 보드 템플릿들)이 온다.
-      expect(cards[0]?.getAttribute('data-template')).toBe('blank');
-      const ids = cards.map((c) => c.getAttribute('data-template'));
-      // 마인드맵 → 화이트보드 → 칸반 보드 순서의 구획들.
-      expect(ids.slice(-2 - BOARD_TEMPLATES.length - KANBAN_TEMPLATES.length)).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id), 'kanban', ...KANBAN_TEMPLATES.map((t) => t.id)]);
-      // 구획 이름은 탭에도 있다(디자인 개정판) — 하나 이상이면 된다.
-      expect(within(dialog).getAllByText('마인드맵').length).toBeGreaterThan(0);
-      expect(within(dialog).getAllByText('화이트보드').length).toBeGreaterThan(0);
-      expect(within(dialog).getAllByText('칸반 보드').length).toBeGreaterThan(0);
+      // 종류는 **왼쪽 레일**에서 고른다(요청·디자인 — 예전에는 네 구획을 한 화면에
+      // 쌓아 두고 가로 탭으로 걸렀다). 그래서 기본 화면에는 마인드맵 구획만 있다.
+      for (const kind of ['마인드맵', '화이트보드', '공책', '칸반 보드']) {
+        expect(dialog.querySelector(`[data-gallery-tab="${kind}"]`)).toBeTruthy();
+      }
+      const mapIds = within(dialog)
+        .getAllByRole('button')
+        .filter((b) => b.hasAttribute('data-template'))
+        .map((c) => c.getAttribute('data-template'));
+      // 구획 첫 칸은 **빈 문서**다(바로 시작 줄) — 그다음이 템플릿들.
+      expect(mapIds[0]).toBe('blank');
+      expect(mapIds).not.toContain('board');
+
+      await user.click(dialog.querySelector('[data-gallery-tab="화이트보드"]') as HTMLElement);
+      const boardIds = within(dialog)
+        .getAllByRole('button')
+        .filter((b) => b.hasAttribute('data-template'))
+        .map((c) => c.getAttribute('data-template'));
+      expect(boardIds).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id)]);
 
       await user.click(within(dialog).getByRole('button', { name: /빈 화이트보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 화이트보드'));
@@ -4478,6 +4486,7 @@ describe('홈 우클릭 메뉴', () => {
 
       await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
+      await user.click(dialog.querySelector('[data-gallery-tab="칸반 보드"]') as HTMLElement);
       await user.click(within(dialog).getByRole('button', { name: /새 칸반 보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 칸반 보드'));
       await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
@@ -4492,6 +4501,7 @@ describe('홈 우클릭 메뉴', () => {
 
       await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
+      await user.click(dialog.querySelector('[data-gallery-tab="칸반 보드"]') as HTMLElement);
       const first = KANBAN_TEMPLATES[0]!;
       await user.click(within(dialog).getByRole('button', { name: new RegExp(first.name) }));
       await waitFor(() => expect(newMapTitles()).toContain(first.name));
@@ -4505,6 +4515,7 @@ describe('홈 우클릭 메뉴', () => {
 
       await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
+      await user.click(dialog.querySelector('[data-gallery-tab="화이트보드"]') as HTMLElement);
 
       const retro = BOARD_TEMPLATES[0]!;
       const card = within(dialog).getByRole('button', { name: new RegExp(retro.name.replace(/[()]/g, '\\$&')) });

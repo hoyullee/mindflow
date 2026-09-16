@@ -38,6 +38,12 @@ export interface RichChar {
   href?: string | null;
   /** 인라인 멘션 이메일 — post-dc 추가(RichRun.m 참고). */
   m?: string | null;
+  /** 밑줄 — 공책의 서식(RichRun.u 참고). */
+  u?: boolean;
+  /** 인라인 코드 — 공책의 서식(RichRun.k 참고). */
+  k?: boolean;
+  /** 형광펜 색 키 — 공책의 서식(RichRun.hl 참고). */
+  hl?: string | null;
 }
 
 /** Explodes `src.rich` (or, absent that, `src.text` as one unstyled run) into
@@ -48,7 +54,8 @@ export function runsToChars(src: RichSource): RichChar[] {
   const chars: RichChar[] = [];
   runs.forEach((r) => {
     const t = r.t || '';
-    for (let i = 0; i < t.length; i++) chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null, m: r.m || null });
+    for (let i = 0; i < t.length; i++)
+      chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null, m: r.m || null, u: !!r.u, k: !!r.k, hl: r.hl || null });
   });
   return chars;
 }
@@ -61,7 +68,19 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
   const runs: RichRun[] = [];
   chars.forEach((x) => {
     const last = runs[runs.length - 1];
-    if (last && !!last.b === x.b && (last.c || null) === x.c && !!last.i === !!x.i && !!last.s === !!x.s && (last.href || null) === (x.href || null) && (last.m || null) === (x.m || null)) last.t += x.ch;
+    if (
+      last &&
+      !!last.b === x.b &&
+      (last.c || null) === x.c &&
+      !!last.i === !!x.i &&
+      !!last.s === !!x.s &&
+      (last.href || null) === (x.href || null) &&
+      (last.m || null) === (x.m || null) &&
+      !!last.u === !!x.u &&
+      !!last.k === !!x.k &&
+      (last.hl || null) === (x.hl || null)
+    )
+      last.t += x.ch;
     else {
       // i/s/href는 값이 있을 때만 키를 만든다 — 원본(dc) 시절 문서와 같은 직렬화
       // 모양을 유지해 골든/CRDT 무회귀 (RichRun doc 참고).
@@ -70,6 +89,9 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
       if (x.s) r.s = true;
       if (x.href) r.href = x.href;
       if (x.m) r.m = x.m;
+      if (x.u) r.u = true;
+      if (x.k) r.k = true;
+      if (x.hl) r.hl = x.hl;
       runs.push(r);
     }
   });
@@ -99,7 +121,7 @@ export function applyPartialStyle(
   src: RichSource,
   s0In: number,
   s1In: number,
-  kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear',
+  kind: 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'link' | 'clear',
   val?: string | null,
 ): { text: string; rich: RichRun[] | null } {
   let s0 = s0In;
@@ -117,13 +139,28 @@ export function applyPartialStyle(
   }
   const seg = chars.slice(s0, s1);
   // 토글류(b/i/s)는 굵게와 같은 규칙: 전부 켜져 있을 때만 끈다(혼합 선택은 먼저 켠다).
-  const target = kind === 'b' ? !seg.every((x) => x.b) : kind === 'i' ? !seg.every((x) => x.i) : kind === 's' ? !seg.every((x) => x.s) : null;
+  const target =
+    kind === 'b'
+      ? !seg.every((x) => x.b)
+      : kind === 'i'
+        ? !seg.every((x) => x.i)
+        : kind === 's'
+          ? !seg.every((x) => x.s)
+          : kind === 'u'
+            ? !seg.every((x) => x.u)
+            : kind === 'k'
+              ? !seg.every((x) => x.k)
+              : null;
   for (let idx = s0; idx < s1; idx++) {
     const c = chars[idx]!;
     if (kind === 'b') c.b = target as boolean;
     else if (kind === 'i') c.i = target as boolean;
     else if (kind === 's') c.s = target as boolean;
+    else if (kind === 'u') c.u = target as boolean;
+    else if (kind === 'k') c.k = target as boolean;
     else if (kind === 'c') c.c = val ?? null;
+    // 형광펜은 색 지정이다(토글이 아니다) — 빈 값이 곧 "지우기"다.
+    else if (kind === 'hl') c.hl = val || null;
     else if (kind === 'link') c.href = val || null;
     else {
       c.b = false;
@@ -132,6 +169,9 @@ export function applyPartialStyle(
       c.s = false;
       c.href = null;
       c.m = null;
+      c.u = false;
+      c.k = false;
+      c.hl = null;
     }
   }
   const nruns = charsToRuns(chars).filter((r) => r.t);
@@ -144,14 +184,14 @@ export function applyPartialStyle(
  * 되돌아간다(링크만 걸린 런이 그랬다). 그래서 판정을 **여기 한 곳**에 둔다 —
  * 웹의 커밋 경로들도 이 함수를 쓴다. */
 export function isStyledRuns(runs: RichRun[] | null | undefined): boolean {
-  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href || r.m);
+  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href || r.m || r.u || r.k || r.hl);
 }
 
 /** Removes one style key from every run, dropping back to plain (`null`)
  * `rich` if nothing else is styled afterward — pure port of `Component#stripRich`
  * (MindFlow.dc.html:2727), used when a WHOLE-node style toggle (e.g. the
  * bold-everything button) should override any conflicting partial run. */
-export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's' | 'href'): RichRun[] | null {
+export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's' | 'href' | 'u' | 'k' | 'hl'): RichRun[] | null {
   if (!rich || !rich.length) return null;
   const next = rich.map((r) => {
     const o = { ...r };

@@ -1,0 +1,155 @@
+// 공책 본문의 **편집 가능한 한 줄** — 문단·제목·목록 항목·표 칸이 모두 이 부품이다.
+//
+// ## 늘 편집 가능하다
+//
+// 맵·보드의 편집 박스는 "두 번 눌러 열고 확정하면 닫힌다". 공책은 문서 편집기라
+// 반대다 — 누르면 바로 캐럿이 가야 하고, 그래서 이 부품은 상시 `contentEditable`이다.
+//
+// ## innerHTML은 **마운트할 때 한 번만** 심는다
+//
+// 값이 바뀔 때마다 다시 심으면 타이핑 중에 캐럿이 맨 앞으로 튄다(리액트 제어
+// 컴포넌트로 만들 수 없는 이유). 그래서 이 박스는 **비제어**다: 처음 한 번 그리고,
+// 그 뒤로는 사용자의 입력이 DOM의 진실이고 우리가 그것을 읽어 문서에 커밋한다.
+// 서식 버튼처럼 **우리가** 내용을 갈아야 할 때는 `applyNoteFormat`이 직접 그린다.
+
+import { useEffect, useRef } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { RichRun } from '@mindflow/mindmap-core';
+import { runsText, textRuns } from '@mindflow/mindmap-core';
+import { domToRuns, runsToHtml } from '../richtextDom';
+import { NOTE_EDIT_ATTR } from '../noteRichDom';
+
+interface Props {
+  runs: RichRun[] | undefined;
+  onChange: (runs: RichRun[]) => void;
+  placeholder?: string;
+  style?: CSSProperties;
+  readOnly?: boolean;
+  /** 엔터 — 대개 "새 블록/항목". 처리했으면 `true`(줄바꿈을 막는다). */
+  onEnter?: () => boolean;
+  /** 맨 앞에서 백스페이스 — 대개 "이 블록/항목 지우기". 처리했으면 `true`. */
+  onBackspaceAtStart?: () => boolean;
+  /** 위/아래 화살표로 블록 사이를 옮긴다(글의 끝·시작에서만). */
+  onArrowOut?: (dir: -1 | 1) => boolean;
+  /** 마운트 직후 캐럿을 놓는다(새로 만든 블록). */
+  autoFocus?: boolean;
+  /** 이 줄을 가리키는 표식 — 테스트와 캐럿 이동이 쓴다. */
+  lineKey?: string;
+  /**
+   * 이 줄에 포커스가 왔다 — 툴바가 **어느 줄에 서식을 걸지** 아는 두 번째 근거다.
+   *
+   * 선택만 보면(`noteEditBoxInSelection`) 툴바를 먼저 누른 경우나 캐럿이 접혀 있는
+   * 경우에 대상을 잃는다. 포커스는 클릭·탭 이동·프로그램 이동 모두에서 오므로
+   * 더 넓게 잡힌다 — 둘을 함께 쓴다(선택이 있으면 그쪽이 정확하다).
+   */
+  onFocusLine?: (el: HTMLElement) => void;
+}
+
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, autoFocus, lineKey, onFocusLine }: Props) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.innerHTML = runsToHtml({ text: runsText(runs), rich: runs ?? null });
+    if (autoFocus) {
+      el.focus();
+      // 캐럿을 **끝**에 둔다 — 새 줄은 대개 이어서 쓰려고 만든다.
+      try {
+        const sel = window.getSelection();
+        const rng = document.createRange();
+        rng.selectNodeContents(el);
+        rng.collapse(false);
+        sel?.removeAllRanges();
+        sel?.addRange(rng);
+      } catch {
+        /* 캐럿을 못 놓아도 포커스는 갔다 */
+      }
+    }
+    // **마운트할 때 한 번만**(파일 머리 주석) — 값 변화로 다시 심으면 캐럿이 튄다.
+    // 의존성을 일부러 비워 둔다: `runs`를 넣으면 타이핑마다 다시 심어 캐럿이 맨 앞으로
+    // 튄다(비제어 박스라는 결정의 핵심이다).
+  }, []);
+
+  const commit = (): void => {
+    const el = ref.current;
+    if (!el) return;
+    const { text, rich } = domToRuns(el);
+    onChange(rich ?? textRuns(text));
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const el = ref.current;
+    if (!el) return;
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      if (onEnter?.()) {
+        e.preventDefault();
+        return;
+      }
+    }
+    if (e.key === 'Backspace' && !e.nativeEvent.isComposing) {
+      const sel = window.getSelection();
+      const atStart = !!sel && sel.isCollapsed && sel.anchorOffset === 0 && caretAtFirstTextNode(el, sel);
+      if (atStart && onBackspaceAtStart?.()) {
+        e.preventDefault();
+        return;
+      }
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.nativeEvent.isComposing && onArrowOut) {
+      const sel = window.getSelection();
+      if (sel?.isCollapsed) {
+        const dir = e.key === 'ArrowUp' ? -1 : 1;
+        // 글의 끝(아래) · 시작(위)에서만 넘어간다 — 여러 줄 블록 안에서는 평범한
+        // 캐럿 이동이어야 한다.
+        const edge = dir === -1 ? caretAtFirstTextNode(el, sel) && sel.anchorOffset === 0 : caretAtLastTextNode(el, sel);
+        if (edge && onArrowOut(dir)) e.preventDefault();
+      }
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      {...{ [NOTE_EDIT_ATTR]: lineKey ?? '' }}
+      data-note-line={lineKey ?? ''}
+      className="mf-note-line"
+      contentEditable={!readOnly}
+      suppressContentEditableWarning
+      role="textbox"
+      aria-multiline="true"
+      // 소프트 키보드의 액션 키를 줄바꿈으로 못박는다 — 맵 편집 박스와 같은 이유
+      // ("완료/이동"류를 고르면 그 키가 키보드를 내려 편집이 끝난다).
+      enterKeyHint="enter"
+      data-placeholder={placeholder ?? ''}
+      onInput={commit}
+      onBlur={commit}
+      onFocus={() => {
+        const el = ref.current;
+        if (el) onFocusLine?.(el);
+      }}
+      onKeyDown={onKeyDown}
+      style={{ outline: 'none', minHeight: '1.6em', whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...style }}
+    />
+  );
+}
+
+/** 캐럿이 이 박스의 **첫 텍스트 노드**에 있는가(백스페이스·위 화살표 판정). */
+function caretAtFirstTextNode(el: HTMLElement, sel: Selection): boolean {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const first = walker.nextNode();
+  // 빈 박스는 텍스트 노드가 없다 — 그때도 "맨 앞"이다.
+  return !first || first === sel.anchorNode;
+}
+
+/** 캐럿이 **마지막 텍스트 노드의 끝**에 있는가(아래 화살표 판정). */
+function caretAtLastTextNode(el: HTMLElement, sel: Selection): boolean {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let last: Node | null = null;
+  let node = walker.nextNode();
+  while (node) {
+    last = node;
+    node = walker.nextNode();
+  }
+  if (!last) return true;
+  return last === sel.anchorNode && sel.anchorOffset === (last.nodeValue || '').length;
+}

@@ -7,6 +7,9 @@ import { calendarEntries, type CalendarSource } from './calendar/entries';
 import { calendarBrief, todayISO, type CalendarBrief } from './calendar/model';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
+import type { DashDocKind } from './dashboard/model';
+import type { Doc, NoteSketch } from '@mindflow/mindmap-core';
+import { noteChecklistProgress, noteCoverColor, noteCoverSketch, noteTagColor, pageExcerpt, parseDoc } from '@mindflow/mindmap-core';
 
 export interface CardViewData {
   /** Card identity (`cardKeyOf` — docId, title fallback). Duplicate TITLES are
@@ -29,6 +32,10 @@ export interface CardViewData {
   isBoard: boolean;
   /** 칸반 보드인가 — 배지·썸네일 바탕이 갈린다(화이트보드와 같은 규칙). */
   isKanban: boolean;
+  /** 공책 문서인가 — 카드가 **표지**로 그려지고 스페이스의 다른 구획에 선다. */
+  isNote: boolean;
+  /** 공책 표지·태그·요약(공책일 때만). 카드가 그릴 것이 보드와 통째로 다르다. */
+  note?: NoteCardData | null;
   /** 썸네일 바탕 — **그 문서의 캔버스 배경**(`previewSurface`). 본문을 아직 못
    * 받았으면 `null`이고, 그때는 카드가 지금까지의 기본 바탕을 쓴다. */
   surface: PreviewSurface | null;
@@ -160,7 +167,7 @@ export interface HomeViewModel {
   /** "보드 올리기" 피커의 후보 목록 — 내 문서 전체(휴지통 제외, docId 있는 것만.
    * docId 없는 옛 카드·Drive 데모는 위젯이 가리킬 서버 문서가 없어 내주지 않는다 —
    * 이름 변경·공유와 같은 가드) + 공유받은 문서. */
-  dashPickCatalog: { docId: string; title: string; spaceId: string; spaceName: string; kind: DocKindName; hue: string; updatedAt?: string; shared: boolean }[];
+  dashPickCatalog: { docId: string; title: string; spaceId: string; spaceName: string; kind: DashDocKind; hue: string; updatedAt?: string; shared: boolean }[];
   /** 아직 확인하지 않은 초대 수 — LNB "공유받음"의 알림 배지. 0이면 배지 없음. */
   sharedUnread: number;
   /** LNB에 "공유받음" 구획을 그릴지. 처음엔 공유받은 게 없으면 숨겼는데, 항상
@@ -196,6 +203,17 @@ export interface HomeViewModel {
   parentTile: ParentTileViewData | null;
   foldersSectionVisible: boolean;
   mapsSectionVisible: boolean;
+  /**
+   * 스페이스 목록이 **공책**과 **보드** 두 구획으로 갈린다(요청·디자인).
+   *
+   * 한 그리드에 섞어 두면 카드 생김새가 통째로 다른 둘이 번갈아 서서 목록이
+   * 들쭉날쭉해진다(공책은 표지 + 첫 줄, 보드는 썸네일) — 종류로 나누면 각 구획이
+   * 같은 결로 읽힌다. 공책을 **위에** 두는 것도 디자인 그대로다.
+   */
+  noteCards: CardViewData[];
+  boardCards: CardViewData[];
+  noteSectionVisible: boolean;
+  boardSectionVisible: boolean;
   userInitial: string;
 }
 
@@ -285,6 +303,74 @@ export function isKanbanRaw(raw: string | null | undefined): boolean {
   return !!raw && /"kind"\s*:\s*"kanban"/.test(raw);
 }
 
+/** 공책 문서인가 — `isBoardRaw`와 같은 이유로 문자열만 본다. */
+export function isNoteRaw(raw: string | null | undefined): boolean {
+  return !!raw && /"kind"\s*:\s*"note"/.test(raw);
+}
+
+/**
+ * 공책 카드가 그리는 것 — 표지 색·스케치·태그·페이지 수·첫 줄·체크 진행.
+ *
+ * 보드 카드는 **썸네일**(문서를 작게 그린 그림)을 보여 주지만 공책은 그릴 그림이
+ * 없다 — 글이라서다. 그래서 디자인은 공책 카드를 **표지 + 첫 줄**로 그린다:
+ * 목록에서 "무슨 내용인지"를 알려 주는 것이 축소된 지면보다 첫 문장이기 때문이다.
+ */
+export interface NoteCardData {
+  /** 표지 색 — 사용자 지정 > 태그 기본 > 흑연(`noteCoverColor`). */
+  cover: string;
+  sketch: NoteSketch;
+  /** 공책 태그(없으면 `null` — 카드가 "태그 붙이기"를 보여 준다). */
+  tag: string | null;
+  tagColor: string;
+  pageCount: number;
+  /** 첫 페이지의 제목(비어 있으면 `제목 없는 페이지`). */
+  firstTitle: string;
+  /** 첫 줄 — 목록에서 내용을 짐작하게 하는 한 줄. */
+  excerpt: string;
+  /** 체크리스트 진행(없으면 `null`). */
+  checks: { done: number; total: number } | null;
+}
+
+/**
+ * 저장본에서 공책 카드 데이터를 뽑는다. 공책이 아니면 `null`.
+ *
+ * **여기서는 `JSON.parse`를 한다** — 종류 판별(`isNoteRaw`)이 문자열 검사인 것과
+ * 대조적이지만, 표지·페이지·첫 줄은 구조를 읽어야 나오고 대안이 없다. 공책 카드에만
+ * 도는 비용이고(보드 카드는 이 함수를 지나지 않는다) 결과를 본문 문자열로 캐시해
+ * 같은 카드가 다시 그려질 때 두 번 파싱하지 않는다.
+ */
+const noteCardCache = new Map<string, NoteCardData>();
+export function noteCardData(raw: string | null | undefined): NoteCardData | null {
+  if (!isNoteRaw(raw) || !raw) return null;
+  const hit = noteCardCache.get(raw);
+  if (hit) return hit;
+  let doc: Doc | null;
+  try {
+    doc = parseDoc(JSON.parse(raw) as Record<string, unknown>);
+  } catch {
+    // 못 읽는 본문은 카드에서 조용히 비운다 — 목록이 깨지는 것보다 낫다.
+    return null;
+  }
+  if (!doc) return null;
+  const pages = doc.pages ?? [];
+  const first = pages[0];
+  const tag = doc.cover?.tag ? doc.cover.tag : null;
+  const data: NoteCardData = {
+    cover: noteCoverColor(doc.cover),
+    sketch: noteCoverSketch(doc.cover),
+    tag,
+    tagColor: noteTagColor(tag),
+    pageCount: pages.length,
+    firstTitle: first?.title?.trim() || '제목 없는 페이지',
+    excerpt: first ? pageExcerpt(first) : '',
+    checks: noteChecklistProgress(pages),
+  };
+  // 캐시가 무한히 자라지 않게 — 본문이 바뀌면 키도 바뀌므로 옛 항목은 쓸모가 없다.
+  if (noteCardCache.size > 200) noteCardCache.clear();
+  noteCardCache.set(raw, data);
+  return data;
+}
+
 /** 카드 본문(썸네일·종류 판별의 원천) — `cardSketch`와 같은 조회 순서. */
 function cardRaw(title: string, docId: string | undefined, previewDocs: Record<string, string>): string | null {
   return (docId ? previewDocs[docId] || readDocRaw(docId) : docRawForTitle(title)) || null;
@@ -292,10 +378,10 @@ function cardRaw(title: string, docId: string | undefined, previewDocs: Record<s
 
 /** LNB 리스트 행(공유받음·즐겨찾기·휴지통)의 종류 아이콘용. 본문을 아직 못 받은
  * 문서(예: 열어 본 적 없는 공유 문서)는 'map'으로 둔다 — 배지와 같은 판별 규칙. */
-export type DocKindName = 'map' | 'board' | 'kanban';
+export type DocKindName = 'map' | 'board' | 'kanban' | 'note';
 export function docKindOf(title: string, docId: string | undefined, previewDocs: Record<string, string>): DocKindName {
   const raw = cardRaw(title, docId, previewDocs);
-  return isKanbanRaw(raw) ? 'kanban' : isBoardRaw(raw) ? 'board' : 'map';
+  return isNoteRaw(raw) ? 'note' : isKanbanRaw(raw) ? 'kanban' : isBoardRaw(raw) ? 'board' : 'map';
 }
 
 export function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>, imageUrls?: Record<string, string>): JSX.Element {
@@ -462,6 +548,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved, state.previewImageUrls),
       isBoard: isBoardRaw(cardRaw(c.title, c.docId, state.previewDocs)),
       isKanban: isKanbanRaw(cardRaw(c.title, c.docId, state.previewDocs)),
+      isNote: isNoteRaw(cardRaw(c.title, c.docId, state.previewDocs)),
+      note: noteCardData(cardRaw(c.title, c.docId, state.previewDocs)),
       surface: previewSurface(cardRaw(c.title, c.docId, state.previewDocs)),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
@@ -485,6 +573,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       spaceMoveTargets,
     };
   });
+
+  // 종류로 가른 두 목록 — 순서는 `allCards`(최근 수정 순)를 그대로 물려받는다.
+  const noteCards = allCards.filter((c) => c.isNote);
+  const boardCards = allCards.filter((c) => !c.isNote);
 
   const driveFolderCardsRaw: FolderCardViewData[] =
     isDriveSpace && connected && !driveFolder
@@ -584,6 +676,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             sketch: cardSketch(m.title, m.hue, m.docId, state.previewDocs, state.previewResolved, state.previewImageUrls),
             isBoard: isBoardRaw(cardRaw(m.title, m.docId, state.previewDocs)),
             isKanban: isKanbanRaw(cardRaw(m.title, m.docId, state.previewDocs)),
+            isNote: isNoteRaw(cardRaw(m.title, m.docId, state.previewDocs)),
+            note: noteCardData(cardRaw(m.title, m.docId, state.previewDocs)),
             surface: previewSurface(cardRaw(m.title, m.docId, state.previewDocs)),
             badge: '',
             openable: true,
@@ -723,6 +817,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         sketch: cardSketch(base.title, base.hue, base.docId, state.previewDocs, state.previewResolved, state.previewImageUrls),
         isBoard: isBoardRaw(cardRaw(base.title, base.docId, state.previewDocs)),
         isKanban: isKanbanRaw(cardRaw(base.title, base.docId, state.previewDocs)),
+        isNote: isNoteRaw(cardRaw(base.title, base.docId, state.previewDocs)),
+        note: noteCardData(cardRaw(base.title, base.docId, state.previewDocs)),
         surface: previewSurface(cardRaw(base.title, base.docId, state.previewDocs)),
         badge: '',
         openable: true,
@@ -803,8 +899,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       if (m.docId) {
         dashDocTitles[m.docId] = m.title;
         dashDocSpaces[m.docId] = sp.name;
-        if (!isTrashedCard(m.title, m.docId)) {
-          dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: sp.id, spaceName: sp.name, kind: docKindOf(m.title, m.docId, state.previewDocs), hue: m.hue, updatedAt: state.docTimes[m.docId], shared: false });
+        // 공책은 위젯 후보가 아니다(`DashWidgetKind` 주석 — 축소해 보여 줄 그림이 없다).
+        const pickKind = docKindOf(m.title, m.docId, state.previewDocs);
+        if (!isTrashedCard(m.title, m.docId) && pickKind !== 'note') {
+          dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: sp.id, spaceName: sp.name, kind: pickKind, hue: m.hue, updatedAt: state.docTimes[m.docId], shared: false });
         }
       }
     });
@@ -812,8 +910,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   state.sharedMaps.forEach((m) => {
     dashDocTitles[m.docId] = m.title;
     dashDocSpaces[m.docId] = '공유받음';
-    if (!isTrashedCard(m.title, m.docId)) {
-      dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: 'shared', spaceName: '공유받음', kind: docKindOf(m.title, m.docId, state.previewDocs), hue: '#f0663f', updatedAt: m.updatedAt, shared: true });
+    const sharedPickKind = docKindOf(m.title, m.docId, state.previewDocs);
+    if (!isTrashedCard(m.title, m.docId) && sharedPickKind !== 'note') {
+      dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: 'shared', spaceName: '공유받음', kind: sharedPickKind, hue: '#f0663f', updatedAt: m.updatedAt, shared: true });
     }
   });
 
@@ -876,6 +975,11 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     // Only render the "맵" section when there are actually maps to show — a space
     // with folders but no loose maps must not render an empty "맵" header.
     mapsSectionVisible: !loading && !searching && !showDriveConnect && allCards.length > 0,
+    noteCards,
+    boardCards,
+    // 구획은 **그 종류가 있을 때만** 선다 — 빈 구획 머리("공책 0")는 뜻이 없다.
+    noteSectionVisible: !loading && !searching && !showDriveConnect && noteCards.length > 0,
+    boardSectionVisible: !loading && !searching && !showDriveConnect && boardCards.length > 0,
     userInitial: avatarLabel(state.userName),
   };
 }

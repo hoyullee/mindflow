@@ -20,7 +20,7 @@ export const CORE_VERSION = '0.0.0';
 
 export type { TextMeasurer, Clock, IdGen } from './ports';
 
-export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind, Stroke, Reaction, KanbanColumn, KanbanCard, KanbanTag, CommentPin } from './model';
+export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind, Stroke, Reaction, KanbanColumn, KanbanCard, KanbanTag, CommentPin, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, NoteSketch } from './model';
 export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, DEFAULT_EDGE_STYLE, VOTE_EMOJI } from './model';
 
 export type { SerializableState } from './serialize';
@@ -81,3 +81,34 @@ export { reactionGroups, findReaction, toggleReaction, pruneReactions } from './
 // 칸반(문서 종류 'kanban') — 열·카드의 순수 규칙.
 export { cardsInColumn, posForIndex, needsRenumber, renumberColumn, moveCard, moveColumn, removeColumn, sortColumnsByDue, patchCardMeta, patchCardText, cardTextValue, shiftCardDates, DEFAULT_KANBAN_COLUMNS } from './kanban';
 export type { CardMetaPatch } from './kanban';
+
+// 공책(문서 종류 'note') — 페이지·블록의 순수 규칙.
+export {
+  noteBlockShape,
+  noteBlockIsText,
+  runsText,
+  textRuns,
+  normalizeRuns,
+  noteId,
+  emptyBlock,
+  emptyItem,
+  newPage,
+  removePage,
+  movePage,
+  moveBlock,
+  retypeBlock,
+  blockText,
+  pageText,
+  pageExcerpt,
+  noteUpdatedAt,
+  noteChecklistProgress,
+  noteCoverColor,
+  noteCoverSketch,
+  noteTagColor,
+  noteHighlightColor,
+  NOTE_COVER_FALLBACK,
+  NOTE_TAGS,
+  NOTE_COVERS,
+  NOTE_HIGHLIGHTS,
+} from './note';
+export type { NoteBlockShape } from './note';

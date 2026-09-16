@@ -433,3 +433,38 @@ input[type='search']::-webkit-search-results-decoration {
      있게), 그때 큰 상자가 칠해지면 시안의 담담한 제목과 다른 인상이 된다. */
   border-color: var(--mf-kb-title-line, rgba(0, 0, 0, 0.12)) !important;
 }
+
+/* ── 공책 본문 ─────────────────────────────────────────────────────────────
+ * 블록은 늘 편집 가능한 `contentEditable`이다(`NoteLine`). 빈 줄에 안내 글자를
+ * 보여 주는 길은 CSS뿐이다 — `placeholder` 속성은 input/textarea에만 있다.
+ * `:empty`만으로는 부족하다: 빈 contentEditable에는 브라우저가 `<br>`를 하나 넣어
+ * 두는 경우가 있어 비어 있어도 `:empty`가 아니다. 그래서 자식이 `<br>` 하나뿐인
+ * 경우까지 함께 본다. */
+.mf-note-line:empty::before,
+.mf-note-line:has(> br:only-child)::before {
+  content: attr(data-placeholder);
+  color: var(--mf-faint2);
+  pointer-events: none;
+}
+/* 인라인 코드·형광펜 — 본문에서 그려지는 모양(런의 `k`/`hl`). 편집 박스 안이라
+ * 실제 요소로 들어 있다(`runsToHtml`). */
+.mf-note-line code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.92em;
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: var(--mf-panel2);
+  border: 1px solid var(--mf-border-soft);
+}
+.mf-note-line .mf-hl[data-hl='yellow'] { background: #fbefc0; }
+.mf-note-line .mf-hl[data-hl='green'] { background: #d9efdc; }
+.mf-note-line .mf-hl[data-hl='blue'] { background: #dce8fa; }
+.mf-note-line .mf-hl[data-hl='pink'] { background: #f9dde8; }
+.mf-note-line .mf-hl[data-hl='gray'] { background: #e8e2da; }
+/* 형광펜은 **어느 테마에서도 같은 색**이다 — 사용자가 고른 잉크이므로 면 색에
+ * 따라 바뀌면 고른 값이 아니게 된다. 다크에서 글자만 어두운 면 위로 되돌린다. */
+.mf-note-line .mf-hl {
+  border-radius: 3px;
+  padding: 0.02em 0.12em;
+  color: #2e2a26;
+}

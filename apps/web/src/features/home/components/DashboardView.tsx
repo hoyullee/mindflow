@@ -11,7 +11,7 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel, DocKindName } from '../viewModel';
 import { docKindOf } from '../viewModel';
-import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, calWidgetMode, parseSize, sizesFor, type DashWidgetKind } from '../dashboard/model';
+import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, calWidgetMode, dashWidgetKind, parseSize, sizesFor, type DashWidgetKind } from '../dashboard/model';
 import { CalWidgetBody, type CalWidgetSide } from '../dashboard/CalendarWidget';
 import { useCalendarEntries } from '../calendar/useCalendarEntries';
 import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
@@ -139,6 +139,18 @@ const KIND_META: Record<DocKindName, { name: string; color: string; icon: JSX.El
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <rect x="3.5" y="4" width="17" height="14" rx="2.5" />
         <path d="m8 14 3-4 2.4 3 2-2.4L18 14" />
+      </svg>
+    ),
+  },
+  note: {
+    name: '공책',
+    color: 'var(--mf-doc-note)',
+    // 표지와 책등 — 공책 카드·LNB·검색 결과가 같은 글리프를 쓴다.
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M6.5 3.5h12a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1h-12a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z" />
+        <path d="M8 3.5v17" />
+        <path d="M11.5 8.5h5M11.5 12h5" />
       </svg>
     ),
   },
@@ -488,7 +500,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   const cal = itemKind === 'cal';
   const raw = state.previewDocs[docId] || readDocRaw(docId) || null;
   const resolved = !!raw || !!state.previewResolved[docId];
-  const kind = cal ? 'cal' : docKindOf('', docId, state.previewDocs);
+  const kind = dashWidgetKind(cal ? 'cal' : docKindOf('', docId, state.previewDocs));
   const meta = cal ? CAL_META : KIND_META[kind as DocKindName];
   const [c0, rows] = parseSize(size);
   const c = Math.min(c0, maxCols); // 모바일(2열)에서는 넓은 위젯을 접는다

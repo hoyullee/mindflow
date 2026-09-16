@@ -239,3 +239,41 @@ describe('인라인 멘션 왕복', () => {
     expect(back.rich?.find((r) => r.m)).toEqual({ t: '@kim', b: false, c: null, m: 'kim@x.io' });
   });
 });
+
+describe('공책의 서식 — 밑줄 · 인라인 코드 · 형광펜', () => {
+  it('왕복해도 그대로다(그려서 다시 읽는다)', () => {
+    const rich = [
+      { t: '밑줄', b: false, c: null, u: true },
+      { t: '코드', b: false, c: null, k: true },
+      { t: '형광', b: false, c: null, hl: 'yellow' },
+      { t: '평문', b: false, c: null },
+    ];
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: '밑줄코드형광평문', rich });
+    expect(domToRuns(div).rich).toEqual(rich);
+  });
+
+  it('겹쳐 쓴 서식도 한 런에 담긴다', () => {
+    const rich = [{ t: '다', b: true, c: '#d92626', i: true, u: true, k: true, hl: 'green' }];
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: '다', rich });
+    expect(domToRuns(div).rich).toEqual(rich);
+  });
+
+  it('붙여넣기로 들어온 `<mark>`·`<code>`도 받는다', () => {
+    const el = document.createElement('div');
+    el.innerHTML = '<mark>형광</mark><code>코드</code>';
+    expect(domToRuns(el).rich).toEqual([
+      { t: '형광', b: false, c: null, hl: 'yellow' },
+      { t: '코드', b: false, c: null, k: true },
+    ]);
+  });
+
+  it('**링크의 밑줄은 서식이 아니다** — 떼어도 밑줄이 남지 않는다', () => {
+    const el = document.createElement('div');
+    el.innerHTML = runsToHtml({ text: '주소', rich: [{ t: '주소', b: false, c: null, href: 'https://a.b' }] });
+    const out = domToRuns(el).rich;
+    expect(out).toEqual([{ t: '주소', b: false, c: null, href: 'https://a.b/' }]); // normalizeUrl이 슬래시를 붙인다
+    expect(out?.[0]).not.toHaveProperty('u');
+  });
+});
