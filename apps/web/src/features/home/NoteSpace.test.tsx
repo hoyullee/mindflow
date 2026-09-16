@@ -37,6 +37,8 @@ const MAP_DOC = { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode:
 
 function seed(): void {
   localStorage.setItem('mindflow_doc_nb1', JSON.stringify(NOTE_DOC));
+  // 공책은 뿌리 노드가 없다 — 이름은 문서 메타에 있다(갤러리로 만들면 거기에 적힌다).
+  localStorage.setItem('mindflow_doc_meta_nb1', JSON.stringify({ title: '제품 회의록', version: 1, updatedAt: new Date().toISOString() }));
   localStorage.setItem('mindflow_doc_mp1', JSON.stringify(MAP_DOC));
   localStorage.setItem(
     'mf_spaces',
@@ -104,18 +106,24 @@ describe('스페이스의 공책 구획', () => {
     expect(within(boardSec!).getByText('1')).toBeTruthy();
   });
 
-  it('공책 카드는 썸네일이 아니라 **표지 + 첫 줄**을 보여 준다', async () => {
+  it('공책 카드는 썸네일이 아니라 **제목 + 페이지 목록**을 보여 준다', async () => {
     const { container } = renderHome();
     await waitFor(() => expect(container.querySelector('[data-note-cover]')).toBeTruthy());
 
     const cover = container.querySelector('[data-note-cover]') as HTMLElement;
-    // 첫 페이지 제목과 본문 첫 줄(공책 이름은 카드 아래에 따로 있다).
-    expect(within(cover).getByText('9월 3주 회의록')).toBeTruthy();
-    expect(within(cover).getByText('릴리즈 범위를 다시 좁혔습니다.')).toBeTruthy();
-    // 태그 칩 · 페이지 수 · 체크 진행.
+    // 공책 이름이 카드 안에서 가장 큰 글씨다(디자인 원본 — 카드 아래 제목 줄이 없다).
+    expect(within(cover).getByText('제품 회의록')).toBeTruthy();
+    // 본문 첫 줄이 아니라 **목차**다 — 앞 세 장의 제목.
+    const pages = cover.querySelector('[data-note-pages]') as HTMLElement;
+    expect(within(pages).getByText('9월 3주 회의록')).toBeTruthy();
+    expect(within(pages).getByText('주간 회고')).toBeTruthy();
+    // 태그 칩 · 페이지 수(숫자는 고정폭 글꼴이라 따로 선다) · 표지 스케치.
     expect(within(cover).getByText('회의록')).toBeTruthy();
-    expect(within(cover).getByText('2페이지')).toBeTruthy();
-    expect(within(cover).getByText('✓ 1/2')).toBeTruthy();
+    expect(within(cover).getByText('2')).toBeTruthy();
+    expect(within(cover).getByText('페이지', { exact: false })).toBeTruthy();
+    expect(cover.parentElement!.querySelector('[data-note-sketch]')).toBeTruthy();
+    // 책갈피 띠 — 표지 색으로 오른쪽 모서리에 꽂힌다.
+    expect(cover.parentElement!.querySelector('[data-note-bookmark]')).toBeTruthy();
   });
 
   it('공책 구획 끝에 **공책 만들기** 타일이 있고, 누르면 갤러리가 공책 탭으로 열린다', async () => {
