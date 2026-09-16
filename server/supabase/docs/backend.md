@@ -2450,7 +2450,43 @@ select net.http_post(url := 'https://<ref>.supabase.co/functions/v1/notify-diges
                      body := '{}'::jsonb);
 ```
 
+### ✅ 실기기에서 도착 확인됨 (2026-09-15)
+
+사용자의 메일함에 실제로 도착했다. `pending_mention_digests` → 예산 청구 → Resend →
+`emailed_at` 스탬프까지 전 구간이 통과했다. 같은 라운드에 푸시도 확인됐다(§24).
+
 ### 메일이 안 올 때 보는 순서
+
+0. **`{"sent":0,"candidates":0}`은 고장이 아니다** — "지금 보낼 것이 없다"는 뜻이고
+   그게 정상 상태다. 실제로 사용자가 "읽음 처리도 안 했는데 왜 0이냐"고 물은 적이
+   있는데, **답은 이미 나갔기 때문**이었다(`emailed_at`이 찍혀 있었고 메일함에 있었다).
+   후보에서 빠지는 길이 일곱이라, 어느 것인지 **한 번에 보는 쿼리**를 먼저 돌린다:
+
+   ```sql
+   select n.id, n.kind, n.actor_name, n.doc_title, n.created_at,
+          n.read_at, n.emailed_at, n.pushed_at,
+          (n.read_at is null)                           as "①안읽음",
+          (n.emailed_at is null)                        as "②안보냄",
+          (n.kind in ('mention','doc_mention'))         as "③멘션종류",
+          (n.created_at <= now() - interval '5 minutes') as "④5분지남",
+          (n.created_at >= now() - interval '24 hours')  as "⑤24시간이내"
+     from public.notifications n
+    where n.recipient = (select id from auth.users where lower(email) = '<이메일>')
+    order by n.created_at desc limit 20;
+
+   -- ⑥ 설정 · ⑦ 수신자당 오늘 보낸 통수(상한 5)
+   select email_mentions, push_mentions from public.notification_prefs
+    where user_id = (select id from auth.users where lower(email) = '<이메일>');
+   select count(distinct emailed_at) from public.notifications
+    where recipient = (select id from auth.users where lower(email) = '<이메일>')
+      and emailed_at >= current_date;
+   ```
+   **다섯 칸이 전부 `true`인 행이 하나라도 있어야** 후보가 된다. `false`인 칸이 곧
+   원인이다 — ②가 가장 흔하다(**이미 나갔다. 스팸함을 본다**).
+
+   참고: **읽음 처리는 종 팝업을 여는 순간에만** 일어난다(`NotificationBell`의
+   `openCenter` 한 곳). 푸시 배너를 눌러 앱으로 들어오는 것만으로는 읽음이 되지
+   않으므로, "배너를 눌렀더니 메일이 안 왔다"는 이 경로가 아니다.
 
 1. `pending_mention_digests()`가 **빈가** — 그러면 앱이 옳다(읽었거나, 5분이 안 됐거나,
    설정이 꺼졌거나, 오늘 상한을 채웠다).
