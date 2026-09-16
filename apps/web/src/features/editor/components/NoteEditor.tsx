@@ -7,8 +7,8 @@
 // 팬·줌·미니맵·그리기·레이아웃이 없다(에디터가 `isNote`로 그 UI를 통째로 걷어낸다).
 // 대신 다루는 것이 순서와 글이고, 규칙은 전부 코어 `note.ts`에 있다.
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
 import type { Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, NotePage, RichRun } from '@mindflow/mindmap-core';
 import {
   NOTE_COVERS,
@@ -62,7 +62,10 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   { kind: 'code', name: '코드 블록', hint: '⌘⌥C', desc: '고정폭 글꼴', group: '강조', inMenu: true, icon: <path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4" /> },
   { kind: 'table', name: '표', hint: '', desc: '행과 열', group: '넣기', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 10h17M9.5 10v9M15 10v9" /></>) },
   { kind: 'img', name: '이미지', hint: '', desc: '파일을 올려 본문에', group: '넣기', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5L14 17l3-3 3 3" /></>) },
-  { kind: 'link', name: '문서 링크', hint: '', desc: '맵 · 보드 · 칸반으로', group: '넣기', icon: (<><rect x="3.5" y="4" width="4.6" height="16" rx="1.3" /><rect x="9.7" y="4" width="4.6" height="10" rx="1.3" /><rect x="15.9" y="4" width="4.6" height="13" rx="1.3" /></>) },
+  // 아이콘이 칸반 세 기둥이었는데, 이 블록은 **어떤 종류의 문서로든** 가는 링크다
+  // (요청: "칸반 보드 모양이라 이상해"). 문서 한 장 + 사슬 — 종류를 말하지 않으면서
+  // "다른 문서로 간다"만 말한다. 인라인 링크(주소)와는 **문서 모양**으로 갈린다.
+  { kind: 'link', name: '문서 링크', hint: '', desc: '맵 · 보드 · 칸반 · 공책으로', group: '넣기', icon: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" /><path d="M14 3v5h5" /><path d="M10.5 14.5a2.2 2.2 0 0 0 3.2.2l1.3-1.3a2.2 2.2 0 0 0-3.1-3.1l-.6.6" /><path d="M13.5 12.5a2.2 2.2 0 0 0-3.2-.2L9 13.6a2.2 2.2 0 0 0 3.1 3.1l.6-.6" /></>) },
   { kind: 'hr', name: '구분선', hint: '', desc: '섹션 나누기', group: '넣기', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
 ];
 
@@ -195,7 +198,7 @@ const INSERTS: { kind: NoteBlockKind; name: string; icon: JSX.Element }[] = [
   { kind: 'table', name: '표', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 10h17M9.5 10v9M15 10v9" /></>) },
   { kind: 'img', name: '이미지', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5L14 17l3-3 3 3" /></>) },
   { kind: 'hr', name: '구분선', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
-  { kind: 'link', name: '문서 링크', icon: (<><rect x="3.5" y="4" width="4.6" height="16" rx="1.3" /><rect x="9.7" y="4" width="4.6" height="10" rx="1.3" /><rect x="15.9" y="4" width="4.6" height="13" rx="1.3" /></>) },
+  { kind: 'link', name: '문서 링크', icon: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" /><path d="M14 3v5h5" /><path d="M10.5 14.5a2.2 2.2 0 0 0 3.2.2l1.3-1.3a2.2 2.2 0 0 0-3.1-3.1l-.6.6" /><path d="M13.5 12.5a2.2 2.2 0 0 0-3.2-.2L9 13.6a2.2 2.2 0 0 0 3.1 3.1l.6-.6" /></>) },
 ];
 
 /** 가로 정렬 셋 — 디자인의 `alignTools` 앞 세 개. */
@@ -245,8 +248,20 @@ export function NoteEditor({ controller }: Props) {
    * 글자 사이에서는 뜨지 않는다: 코드나 주소를 적다 `/`를 칠 때마다 메뉴가 끼어들면
    * 방해다. "빈 줄에서 시작한다"는 조건 하나로 그 오탐이 사라진다.
    */
+  /**
+   * `/` 목록 — 어느 블록에 걸리는지(`slashFor`)와 **어디서 열렸는지**(`slashAt`)를 함께
+   * 든다. 예전에는 목록 맨 끝에 `absolute`로 붙어 있어, 툴바의 `/`로 열든 글 중간에서
+   * 열든 **본문 맨 아래**에 떴다(제보). 이제 연 자리를 기준으로 뜬다.
+   */
   const [slashFor, setSlashFor] = useState<string | null>(null);
+  const [slashAt, setSlashAt] = useState<DOMRect | null>(null);
   const [slashQ, setSlashQ] = useState('');
+  const openSlashAt = (blockId: string, from?: Element | null) => {
+    const el = from ?? document.querySelector(`[data-note-line="${blockId}"]`);
+    setSlashAt(el ? el.getBoundingClientRect() : null);
+    setSlashFor(blockId);
+    setSlashQ('');
+  };
   /**
    * 집중 모드 — **페이지 목록을 왼쪽으로 밀어 넣는다**(요청).
    *
@@ -281,10 +296,7 @@ export function NoteEditor({ controller }: Props) {
             boxRef={boxRef}
             rememberBox={rememberBox}
             onInserted={setFreshId}
-            openSlash={(id) => {
-              setSlashFor(id);
-              setSlashQ('');
-            }}
+            openSlash={(id, from) => openSlashAt(id, from)}
             focus={focus}
             setFocus={setFocus}
           />
@@ -294,6 +306,9 @@ export function NoteEditor({ controller }: Props) {
               간격이고, 이 리듬이 없으면 제목과 본문이 한 덩어리로 뭉쳐 보인다). */}
           <div style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}>
             <PageHead controller={controller} page={page} />
+            {/* 머리와 본문 사이의 선(요청) — 위는 이 장이 무엇인지(제목·태그·사람),
+                아래는 그 내용이다. 블록 간격(19px)만으로는 그 경계가 서지 않는다. */}
+            <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', marginTop: -6 }} />
             {page.blocks.map((block, i) => (
               <BlockView
                 key={block.id}
@@ -304,14 +319,12 @@ export function NoteEditor({ controller }: Props) {
                 setFreshId={setFreshId}
                 rememberBox={rememberBox}
                 focusBox={focusBox}
-                openSlash={(id) => {
-                  setSlashFor(id);
-                  setSlashQ('');
-                }}
+                openSlash={(id) => openSlashAt(id)}
               />
             ))}
             {slashFor && !readOnly && (
               <SlashMenu
+                anchor={slashAt}
                 query={slashQ}
                 onQuery={setSlashQ}
                 onClose={() => setSlashFor(null)}
@@ -349,6 +362,71 @@ export function NoteEditor({ controller }: Props) {
       </div>
     </div>
   );
+}
+
+/**
+ * 팝업 하나를 **화면 좌표로** 띄우고, 바깥을 누르면 닫는다.
+ *
+ * 왜 `position: fixed`인가: 공책 화면은 [상단 바 · 목록 · 본문]이 각각 `overflow:hidden`인
+ * 상자다. 그 안에서 `absolute`로 띄운 팝업은 상자 밖으로 나가는 순간 **잘린다** —
+ * 경로의 공책 전환 팝업이 본문에 가려 보이지 않던 것이 그 때문이었다(제보). 화면
+ * 좌표로 띄우면 어느 상자 안에서 열든 온전히 보인다.
+ *
+ * 닫히는 조건을 한곳에 모은 이유도 같다: 팝업마다 따로 달다 보니 어떤 것은 바깥을
+ * 눌러도 열려 있었다(제보 — "모든 툴팁에 동일하게"). 여기서는 **바깥 누르기 · Esc ·
+ * 스크롤 · 창 크기 변경**이 모두 닫는다. 스크롤과 크기 변경까지 닫는 이유는 기준점이
+ * 움직였는데 팝업만 제자리에 남으면 엉뚱한 것에 붙어 보이기 때문이다.
+ */
+function useAnchored(open: boolean, close: () => void): { ref: RefObject<HTMLElement | null>; rect: DOMRect | null } {
+  const ref = useRef<HTMLElement | null>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    if (open && ref.current) setRect(ref.current.getBoundingClientRect());
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    const onDown = () => close();
+    // 캡처 단계 — 팝업 안의 클릭은 그쪽에서 `stopPropagation`으로 막는다.
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onDown);
+    document.addEventListener('scroll', onDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onDown);
+      document.removeEventListener('scroll', onDown, true);
+    };
+  }, [open, close]);
+  return { ref, rect };
+}
+
+/**
+ * 기준 사각형 아래에 뜰 자리 — 화면 밖으로 나가지 않게 당긴다.
+ *
+ * `align: 'right'`는 기준의 **오른쪽 끝에 맞춘다**(내보내기처럼 화면 오른쪽에 있는 단추).
+ * 아래에 자리가 모자라면 위로 뒤집는다 — 화면 아래쪽에서 연 팝업이 잘리지 않게.
+ */
+function anchoredStyle(rect: DOMRect | null, width: number, opts: { align?: 'left' | 'right'; gap?: number; maxHeight?: number } = {}): CSSProperties {
+  if (!rect) return { position: 'fixed', top: -9999, left: -9999 };
+  const gap = opts.gap ?? 6;
+  const vw = typeof window === 'undefined' ? 1280 : window.innerWidth;
+  const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
+  const max = opts.maxHeight ?? 360;
+  const below = vh - rect.bottom - gap - 12;
+  const flip = below < Math.min(max, 220) && rect.top > below;
+  const left = opts.align === 'right' ? rect.right - width : rect.left;
+  return {
+    position: 'fixed',
+    left: Math.max(12, Math.min(left, vw - width - 12)),
+    ...(flip ? { bottom: vh - rect.top + gap } : { top: rect.bottom + gap }),
+    width,
+    maxHeight: Math.max(160, flip ? rect.top - gap - 12 : below),
+    overflowY: 'auto',
+  };
 }
 
 /** 전환 팝업이 보여 주는 한 권. */
@@ -436,46 +514,57 @@ function useNotebooks(controller: EditorController, open: boolean): { rows: Note
 function NotebookSwitch({ controller }: { controller: EditorController }) {
   const [open, setOpen] = useState(false);
   const { rows, loading } = useNotebooks(controller, open);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [open]);
+  const { ref, rect } = useAnchored(open, () => setOpen(false));
+  const cover = noteCoverColor(controller.doc.cover);
   return (
-    <span style={{ position: 'relative', display: 'inline-flex', flex: '0 1 auto', minWidth: 0 }} onPointerDown={(e) => e.stopPropagation()}>
+    <>
+      {/* 경로의 공책 칸 — 표지 타일 · 이름 · `⇅ 이동` 배지(요청·이미지 2·3).
+          배지가 있어야 "여기를 누르면 옮길 수 있다"가 보인다. 열려 있으면 `닫기`로
+          바뀌어 같은 자리가 토글임을 말한다. */}
       <button
         type="button"
+        ref={ref as RefObject<HTMLButtonElement>}
         data-note-book-switch
         title="다른 공책으로 이동"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={() => setOpen((v) => !v)}
-        className="mf-note-crumb"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 6,
+          gap: 7,
+          flex: '0 1 auto',
           minWidth: 0,
           maxWidth: '100%',
-          height: 26,
-          padding: '0 6px 0 9px',
-          border: 0,
-          borderRadius: 8,
-          background: open ? 'var(--mf-note-hover)' : 'transparent',
+          height: 30,
+          padding: '0 7px 0 7px',
+          border: `1px solid ${open ? 'var(--mf-border-hover)' : 'var(--mf-border)'}`,
+          borderRadius: 999,
+          background: 'var(--mf-card)',
           fontFamily: 'inherit',
           fontSize: 12,
-          fontWeight: 600,
-          color: 'var(--mf-subtext)',
+          fontWeight: 700,
+          color: 'var(--mf-text)',
           cursor: 'pointer',
         }}
       >
-        <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 2.5, background: noteCoverColor(controller.doc.cover), display: 'block' }} />
+        <BookTile cover={cover} size="sm" />
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{controller.docTitle || '제목 없는 공책'}</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        <span
+          aria-hidden="true"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flex: '0 0 auto', height: 18, padding: '0 6px', borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-deep)', fontSize: 9.5, fontWeight: 800, whiteSpace: 'nowrap' }}
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3" />
+          </svg>
+          {open ? '닫기' : '이동'}
+        </span>
       </button>
       {open && (
-        <div data-note-book-menu style={{ ...POP, top: 'calc(100% + 8px)', left: 0, width: 292, padding: 8, borderRadius: 15, display: 'flex', flexDirection: 'column' }}>
+        <div
+          data-note-book-menu
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{ ...POP, ...anchoredStyle(rect, 292, { gap: 8, maxHeight: 420 }), padding: 8, borderRadius: 15, display: 'flex', flexDirection: 'column' }}
+        >
           <span style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 8px 8px' }}>
             <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.07em', color: 'var(--mf-faint)' }}>공책 이동</span>
             {controller.noteSpaceName && <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10, color: 'var(--mf-faint2)' }}>{controller.noteSpaceName}</span>}
@@ -494,10 +583,7 @@ function NotebookSwitch({ controller }: { controller: EditorController }) {
                 className="mf-note-item"
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box', padding: '8px 9px', borderRadius: 11, background: here ? 'var(--mf-accent-soft)' : 'transparent', textDecoration: 'none', color: 'inherit', cursor: here ? 'default' : 'pointer', minWidth: 0 }}
               >
-                {/* 책등 타일 — 표지 색 그대로. 오른쪽 모서리만 둥글어 책이 꽂힌 모양이다. */}
-                <span aria-hidden="true" style={{ width: 26, height: 32, flex: '0 0 auto', borderRadius: '3px 6px 6px 3px', background: `color-mix(in srgb, ${r.cover} 26%, var(--mf-card))`, borderLeft: `3px solid ${r.cover}`, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 4, boxSizing: 'border-box' }}>
-                  <span style={{ width: 12, height: 2, borderRadius: 999, background: 'var(--mf-card)', opacity: 0.8, display: 'block' }} />
-                </span>
+                <BookTile cover={r.cover} size="md" />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
                   <span style={{ fontSize: 12.5, fontWeight: here ? 800 : 700, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
                   <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -525,6 +611,32 @@ function NotebookSwitch({ controller }: { controller: EditorController }) {
           </button>
         </div>
       )}
+    </>
+  );
+}
+
+/** 공책 한 권의 **책등 타일** — 표지 색 그대로, 오른쪽 모서리만 둥글다(꽂힌 책 모양). */
+function BookTile({ cover, size }: { cover: string; size: 'sm' | 'md' }) {
+  const w = size === 'sm' ? 15 : 26;
+  const h = size === 'sm' ? 19 : 32;
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: w,
+        height: h,
+        flex: '0 0 auto',
+        borderRadius: size === 'sm' ? '2px 4px 4px 2px' : '3px 6px 6px 3px',
+        background: `color-mix(in srgb, ${cover} 26%, var(--mf-card))`,
+        borderLeft: `${size === 'sm' ? 2 : 3}px solid ${cover}`,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        paddingBottom: size === 'sm' ? 3 : 4,
+        boxSizing: 'border-box',
+      }}
+    >
+      <span style={{ width: size === 'sm' ? 7 : 12, height: 2, borderRadius: 999, background: 'var(--mf-card)', opacity: 0.85, display: 'block' }} />
     </span>
   );
 }
@@ -974,16 +1086,7 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
    */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const last = controller.notePages.length <= 1;
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
-    document.addEventListener('pointerdown', close);
-    document.addEventListener('keydown', close);
-    return () => {
-      document.removeEventListener('pointerdown', close);
-      document.removeEventListener('keydown', close);
-    };
-  }, [menu]);
+  useAnchored(!!menu, () => setMenu(null));
   return (
     <div
       data-note-page-row={page.id}
@@ -1050,19 +1153,17 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
             {excerpt}
           </div>
         )}
-        {(tag || who) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-            {tag && (
-              <span data-note-page-tag style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto' }}>
-                <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: noteTagColor(tag), display: 'block' }} />
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: noteTagColor(tag) }}>{tag}</span>
-              </span>
-            )}
+        {/* 태그 줄 — 태그가 없어도 **자리를 비우지 않는다**(요청): 빈 자리는 "아직 안
+            정했다"인지 "이 줄이 원래 없다"인지 말해 주지 않고, 행마다 높이도 달라진다. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+            <span data-note-page-tag style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto' }}>
+              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: tag ? noteTagColor(tag) : 'var(--mf-faint2)', display: 'block' }} />
+              <span style={{ fontSize: 10.5, fontWeight: tag ? 700 : 600, color: tag ? noteTagColor(tag) : 'var(--mf-faint)' }}>{tag || '태그 없음'}</span>
+            </span>
             {who && (
               <span style={{ minWidth: 0, fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{who} 님이 씀</span>
             )}
-          </div>
-        )}
+        </div>
       </div>
       {menu && (
         <div
@@ -1184,6 +1285,7 @@ function TagPick({
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const tag = page.tag ?? null;
+  const { ref, rect } = useAnchored(open, () => setOpen(() => false));
   /** 고를 수 있는 태그 — 기본 여섯 뒤에 이 공책이 실제로 쓰고 있는 것들. */
   const options = useMemo(() => {
     const out = [...NOTE_TAGS];
@@ -1203,12 +1305,14 @@ function TagPick({
   };
 
   return (
-    <div style={{ position: 'relative', flex: '0 0 auto' }}>
+    <>
       <button
         type="button"
+        ref={ref as RefObject<HTMLButtonElement>}
         data-note-tag-pick
         disabled={readOnly}
         title="태그 바꾸기"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={() => setOpen((v) => !v)}
         className="btn"
         style={{
@@ -1229,13 +1333,13 @@ function TagPick({
         }}
       >
         <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: tag ? noteTagColor(tag) : 'var(--mf-faint)', display: 'block' }} />
-        {tag || '태그'}
+        {tag || '태그 없음'}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
       {open && !readOnly && (
-        <div data-note-tag-menu style={{ ...POP, top: 'calc(100% + 6px)', left: 0, width: 236, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div data-note-tag-menu onPointerDown={(e) => e.stopPropagation()} style={{ ...POP, ...anchoredStyle(rect, 236), display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={POP_HEAD}>태그</span>
           {options.map((t) => {
             const on = tag === t;
@@ -1316,7 +1420,7 @@ function TagPick({
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1398,8 +1502,8 @@ function FormatToolbar({
   rememberBox: () => void;
   /** 새로 만든 블록·항목으로 캐럿을 보낸다(루트의 `freshId`). */
   onInserted: (id: string | null) => void;
-  /** `/` 단추 — 지금 줄에서 블록 목록을 연다(빈 줄에서 `/`를 치는 것과 같은 자리). */
-  openSlash: (blockId: string) => void;
+  /** `/` 단추 — 지금 줄에서 블록 목록을 연다. `from`을 주면 그 요소를 기준으로 뜬다. */
+  openSlash: (blockId: string, from?: Element | null) => void;
   focus: boolean;
   setFocus: (fn: (v: boolean) => boolean) => void;
 }) {
@@ -1645,9 +1749,11 @@ function FormatToolbar({
         aria-label="블록 넣기"
         className="btn mf-note-tb"
         onMouseDown={stop}
-        onClick={() => {
+        onClick={(e) => {
           const id = curBlockId();
-          if (id) openSlash(id);
+          // 기준은 **이 단추**다(요청) — 눌러서 연 목록이 화면 저 아래에 뜨면 어디서
+          // 나온 것인지 알 수 없다.
+          if (id) openSlash(id, e.currentTarget);
         }}
         style={TOOL_BTN}
       >
@@ -1697,15 +1803,18 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
   const [open, setOpen] = useState(false);
   const cur = controller.notePage?.blocks.find((b) => b.id === blockIdOf(boxRef.current?.getAttribute('data-note-line') || ''));
   const curType = BLOCK_TYPES.find((t) => t.kind === (cur?.kind ?? 'p')) ?? BLOCK_TYPES[0]!;
+  const { ref, rect } = useAnchored(open, () => setOpen(false));
   return (
-    <div style={{ position: 'relative' }}>
+    <>
       {/* 디자인은 이 하나만 **테두리 있는 알약**이다 — 지금 줄이 무엇인지 늘 말해 주는
           자리라 다른 단추들과 달리 면을 가진다. 왼쪽 아이콘이 그 종류를 그림으로 겹쳐 말한다. */}
       <button
         type="button"
+        ref={ref as RefObject<HTMLButtonElement>}
         data-note-blocktype
         className="btn"
         title="블록 종류"
+        onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => {
           rememberBox();
           e.preventDefault();
@@ -1739,17 +1848,8 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
       {open && (
         <div
           data-note-blocktype-menu
-          style={{
-            ...POP,
-            top: 'calc(100% + 6px)',
-            left: 0,
-            width: 224,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-            maxHeight: 320,
-            overflowY: 'auto',
-          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{ ...POP, ...anchoredStyle(rect, 224, { maxHeight: 340 }), display: 'flex', flexDirection: 'column', gap: 1 }}
           className="lnb-scroll"
         >
           {BLOCK_TYPES.filter((t) => t.inMenu).map((t) => (
@@ -1779,7 +1879,7 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1800,12 +1900,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<NoteExportScope>('page');
   const [notice, setNotice] = useState('');
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [open]);
+  const { ref, rect } = useAnchored(open, () => setOpen(false));
 
   const title = controller.docTitle || '공책';
   const page = controller.notePage;
@@ -1825,9 +1920,10 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   ];
 
   return (
-    <div style={{ position: 'relative' }} onPointerDown={(e) => e.stopPropagation()}>
+    <>
       <button
         type="button"
+        ref={ref as RefObject<HTMLButtonElement>}
         data-note-export
         title="내보내기"
         aria-label="내보내기"
@@ -1842,7 +1938,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
         </svg>
       </button>
       {open && (
-        <div data-note-export-menu style={{ ...POP, top: 'calc(100% + 6px)', right: 0, width: 236, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div data-note-export-menu onPointerDown={(e) => e.stopPropagation()} style={{ ...POP, ...anchoredStyle(rect, 236, { align: 'right' }), display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={POP_HEAD}>내보내기 · {scope === 'book' ? '공책 전체' : '이 페이지'}</span>
           {items.map((x) => (
             <button
@@ -1896,7 +1992,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
           {notice && <span style={{ padding: '2px 9px 6px', fontSize: 10.5, color: 'var(--mf-danger)', lineHeight: 1.5, wordBreak: 'keep-all' }}>{notice}</span>}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -2502,11 +2598,14 @@ function LinkBlock({ controller, block }: { controller: EditorController; block:
  * 빈 줄이 하나 남는다. 좁혀 찾을 수 있게 입력칸을 함께 둔다(블록이 열다섯이다).
  */
 function SlashMenu({
+  anchor,
   query,
   onQuery,
   onPick,
   onClose,
 }: {
+  /** 연 자리 — 여기 아래에 뜬다. `null`이면 화면 가운데 위쪽에 뜬다(안전망). */
+  anchor: DOMRect | null;
   query: string;
   onQuery: (v: string) => void;
   onPick: (kind: NoteBlockKind) => void;
@@ -2517,19 +2616,8 @@ function SlashMenu({
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
   const groups = q ? [{ name: '', items: hits }] : ['기본', '목록', '강조', '넣기'].map((name) => ({ name, items: hits.filter((t) => t.group === name) }));
   return (
-    <div data-note-slash style={{ position: 'relative' }}>
-      <div
-        style={{
-          ...POP,
-          top: 4,
-          left: 0,
-          width: 290,
-          padding: 0,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
+    <div data-note-slash onPointerDown={(e) => e.stopPropagation()}>
+      <div style={{ ...POP, ...anchoredStyle(anchor, 290, { maxHeight: 380 }), padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {/* 머리 — `/`와 입력칸이 한 줄(디자인). 무엇을 치고 있는지가 `/` 옆에 이어진다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
           <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)' }}>
