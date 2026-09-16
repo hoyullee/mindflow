@@ -7177,7 +7177,12 @@ export function useEditorState(): EditorController {
     downloadFile(`${safeDocTitle(doc, metaTitle)}.md`, toMarkdown(doc, metaTitle), 'text/markdown');
   }, [doc, metaTitle]);
 
-  const docTitle = laidOutNodes[ROOT_ID]?.text || metaTitle || (doc.kind === 'board' ? '새 화이트보드' : '새 마인드맵');
+  // 종류마다 다른 기본 이름 — 공책·칸반은 뿌리 노드가 없어 **이 폴백이 곧 화면에
+  // 보이는 이름**이다(디자인 대조에서 공책이 '새 마인드맵'으로 보여 드러났다).
+  const docTitle =
+    laidOutNodes[ROOT_ID]?.text ||
+    metaTitle ||
+    (doc.kind === 'board' ? '새 화이트보드' : doc.kind === 'kanban' ? '새 칸반 보드' : doc.kind === 'note' ? '새 공책' : '새 마인드맵');
 
   return {
     doc,

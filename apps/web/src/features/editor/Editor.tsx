@@ -15,7 +15,7 @@ import { PresenceBar } from './components/PresenceBar';
 import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { KanbanBoard } from './components/KanbanBoard';
-import { NoteEditor, NoteTopBar } from './components/NoteEditor';
+import { NoteEditor, NoteTopBar, noteTokens } from './components/NoteEditor';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { CollabPaused } from './components/CollabPaused';
@@ -186,12 +186,14 @@ export function Editor() {
           /* 공책 — 캔버스도 열도 아니라 **페이지의 글**이다. 팬/줌·미니맵·그리기·
              레이아웃이 통째로 뜻이 없어 Viewport 계열 UI가 하나도 뜨지 않는다
              (칸반과 같은 자리에서 갈린다). */
-          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          /* 공책의 색은 **이 한 겹에** 깔린다(`noteTokens`) — 상단 바와 본문이 같은
+             팔레트를 봐야 하므로 둘을 감싸는 여기가 그 자리다. */
+          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--mf-panel)', ...noteTokens(th) }}>
             {/* 상단 바 — 디자인 원본은 공책을 [바 · 목록 · 본문]으로 짠다. 문서 칩이
                 여기 **줄 안에** 서므로(inline) 왼쪽 페이지 목록을 덮지 않는다. */}
-            <NoteTopBar controller={controller} theme={th} />
+            <NoteTopBar controller={controller} />
             <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-            <NoteEditor controller={controller} theme={th} />
+            <NoteEditor controller={controller} />
             <PresenceBar controller={controller} />
             {/* 댓글 — **공책 한 권에 대한 논의**다(디자인: "이 공책에 댓글 남기기").
                 캔버스가 없어 핀을 꽂을 자리가 없으므로 대상은 문서 자신 하나뿐이고,

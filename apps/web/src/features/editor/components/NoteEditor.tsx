@@ -27,32 +27,31 @@ import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
 import { applyNoteFormat, noteEditBoxInSelection } from '../noteRichDom';
 import { NoteLine } from './NoteLine';
-import { DocChip } from './DocChip';
+import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
 
 interface Props {
   controller: EditorController;
-  theme: Theme;
 }
 
 /** 블록 종류 메뉴 — 이름과 아이콘(디자인의 `BLOCKS`). 2판에서 붙는 종류는 없다. */
-const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string }[] = [
-  { kind: 'p', name: '문단', hint: '일반 글' },
-  { kind: 'h1', name: '제목 1', hint: '가장 큰 제목' },
-  { kind: 'h2', name: '제목 2', hint: '섹션 제목' },
-  { kind: 'h3', name: '제목 3', hint: '작은 제목' },
-  { kind: 'ul', name: '글머리 목록', hint: '점으로 나열' },
-  { kind: 'ol', name: '번호 목록', hint: '순서가 있는 나열' },
-  { kind: 'ck', name: '체크리스트', hint: '할 일 · 결정 사항' },
-  { kind: 'q', name: '인용', hint: '다른 글이나 말을 인용' },
-  { kind: 'code', name: '코드', hint: '고정폭' },
-  { kind: 'table', name: '표', hint: '행과 열' },
-  { kind: 'callout', name: '콜아웃', hint: '주의 · 결정 · 질문 박스' },
-  { kind: 'toggle', name: '토글', hint: '긴 내용을 접어 두기' },
-  { kind: 'img', name: '이미지', hint: '파일을 올려 본문에 넣기' },
-  { kind: 'link', name: '문서 링크', hint: '마인드맵 · 화이트보드 · 칸반' },
-  { kind: 'hr', name: '구분선', hint: '섹션 나누기' },
+const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: string; group: string; icon: JSX.Element }[] = [
+  { kind: 'p', name: '본문', hint: '⌘⌥0', desc: '일반 글', group: '기본', icon: <path d="M4 7h16M4 12h16M4 17h10" /> },
+  { kind: 'h1', name: '제목 1', hint: '⌘⌥1', desc: '가장 큰 제목', group: '기본', icon: (<><path d="M4 5v14M12 5v14M4 12h8" /><path d="M17 9.5 19.5 8V19" /></>) },
+  { kind: 'h2', name: '제목 2', hint: '⌘⌥2', desc: '섹션 제목', group: '기본', icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 10a2 2 0 1 1 3.4 1.4L15.5 16H20" /></>) },
+  { kind: 'h3', name: '제목 3', hint: '⌘⌥3', desc: '작은 제목', group: '기본', icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 9.5h4.5l-2.5 3a2.2 2.2 0 1 1-2 3.6" /></>) },
+  { kind: 'ul', name: '글머리 목록', hint: '', desc: '점으로 나열', group: '목록', icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
+  { kind: 'ol', name: '번호 목록', hint: '', desc: '순서가 있는 나열', group: '목록', icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
+  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록', icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
+  { kind: 'q', name: '인용', hint: '⌘⇧.', desc: '다른 글이나 말을 인용', group: '강조', icon: <path d="M7 7h4v5c0 2-1 3.5-3 4.5M14 7h4v5c0 2-1 3.5-3 4.5" /> },
+  { kind: 'callout', name: '콜아웃', hint: '', desc: '주의 · 결정 · 질문', group: '강조', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="3" /><path d="M12 9v3.5M12 15.5h.01" /></>) },
+  { kind: 'toggle', name: '접기', hint: '', desc: '긴 내용을 접어 두기', group: '강조', icon: (<><path d="m8 6 6 6-6 6" /><path d="M4 21h16" opacity=".35" /></>) },
+  { kind: 'code', name: '코드 블록', hint: '⌘⌥C', desc: '고정폭 글꼴', group: '강조', icon: <path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4" /> },
+  { kind: 'table', name: '표', hint: '', desc: '행과 열', group: '넣기', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 10h17M9.5 10v9M15 10v9" /></>) },
+  { kind: 'img', name: '이미지', hint: '', desc: '파일을 올려 본문에', group: '넣기', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5L14 17l3-3 3 3" /></>) },
+  { kind: 'link', name: '문서 링크', hint: '', desc: '맵 · 보드 · 칸반으로', group: '넣기', icon: (<><rect x="3.5" y="4" width="4.6" height="16" rx="1.3" /><rect x="9.7" y="4" width="4.6" height="10" rx="1.3" /><rect x="15.9" y="4" width="4.6" height="13" rx="1.3" /></>) },
+  { kind: 'hr', name: '구분선', hint: '', desc: '섹션 나누기', group: '넣기', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
 ];
 
 /** 콜아웃 어조 셋 — 디자인의 `CALLOUTS`(이름, 바탕, 잉크). */
@@ -72,49 +71,108 @@ const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; c
 ];
 
 /**
- * 공책 UI가 쓰는 색 — **에디터 테마에서 만들어** 이 화면에만 깐다.
+ * 공책의 색 — **디자인 원본의 종이 팔레트를 값 그대로** 깐다.
  *
- * 공책 UI는 홈에서 옮겨 온 코드라 `--mf-*`(홈 토큰)로 색을 적는다. 그런데 그 토큰은
- * `main.tsx`가 **홈 테마**로 document에 깔아 둔 값이라, 에디터 안에서 쓰면 한 화면에
- * 팔레트가 둘이 된다(본문은 문서 테마, 목록은 홈 테마). 홈 테마를 다크로 바꾸면
- * 밝은 목록 위에 어두운 행이 앉는 식으로 어긋난다.
+ * 공책은 캔버스가 아니라 **종이**다. 디자인 원본이 그 종이를 따뜻한 크림 한 벌로
+ * 정해 두었고(바탕 `#FBF7F1` · 상단 `#F6F0E8` · 본문 `#FDFBF8` · 면 `#FFFDFB`),
+ * 그 관계가 곧 이 화면의 인상이다. 그래서 여기서는 테마에서 **만들어 내지 않고**
+ * 디자인 값을 그대로 쓴다(요청: "디자인 html과 완벽하게 동일하게").
  *
- * 그래서 같은 이름을 **여기서 다시 정의해** 하위 트리에서만 덮는다 — 106군데를 고치지
- * 않고도 공책 전체가 문서 테마를 따른다.
+ * 테마를 아주 버리지는 않는다 — **강조색만** 문서 테마를 따른다(코랄이면 디자인과
+ * 같은 주황이고, 오션이면 같은 종이에 파란 강조다). 그리고 **다크 테마에서는**
+ * 종이 대신 테마에서 만든 값으로 통째로 바꾼다: 밝은 종이를 어두운 화면에 그대로
+ * 두면 읽을 수 없다.
  *
- * 밝기 관계는 디자인 원본을 그대로 옮겼다: **목록이 어둡고(크림 `#FBF7F1`) 본문·툴바가
- * 밝다(종이 `#FDFBF8`/`#FFFDFB`)**. 우리는 이게 뒤집혀 있었다 — 목록이 순백(홈
- * `--mf-panel`)이고 본문이 **마인드맵 캔버스 색**(`canvasBg` `#f5ece5`)이었다. 공책에는
- * 캔버스가 없으므로 그 색을 쓸 이유가 처음부터 없었다(제보).
+ * 이 값들은 홈에서 쓰는 이름(`--mf-*`)을 **이 트리에서만** 덮는다 — 공책 UI가 홈에서
+ * 옮겨 온 코드라 색을 그 이름으로 적기 때문이고, 덮지 않으면 한 화면에 팔레트가
+ * 둘이 된다(본문은 문서 테마, 목록은 홈 테마).
  */
-function noteTokens(t: Theme): CSSProperties {
+export function noteTokens(t: Theme): CSSProperties {
   const mix = (a: string, pct: number, b: string) => `color-mix(in srgb, ${a} ${pct}%, ${b})`;
+  // 다크는 종이가 성립하지 않는다 — 테마에서 만든다(밝기 관계는 그대로: 목록이 어둡고
+  // 본문이 밝다). 판정은 이름이 아니라 **배경의 밝기**로 한다(테마가 늘어나도 맞는다).
+  if (luma(t.appBg) < 0.5) {
+    return {
+      '--mf-panel': t.appBg,
+      '--mf-card': t.panel,
+      '--mf-panel2': t.panel2,
+      '--mf-border': t.border,
+      '--mf-border-soft': mix(t.border, 60, t.panel),
+      '--mf-border-hover': mix(t.accent, 26, t.border),
+      '--mf-hairline': t.border,
+      '--mf-text': t.text,
+      '--mf-subtext': t.subtext,
+      '--mf-muted': mix(t.subtext, 82, t.panel),
+      '--mf-faint': mix(t.subtext, 66, t.panel),
+      '--mf-faint2': mix(t.subtext, 48, t.panel),
+      '--mf-accent': t.accent,
+      '--mf-accent-ink': t.accentInk,
+      '--mf-accent-soft': mix(t.accent, 18, t.panel),
+      '--mf-accent-mute': mix(t.accent, 36, t.panel),
+      '--mf-accent-deep': mix(t.accent, 70, t.text),
+      '--mf-note-bar': t.appBg,
+      '--mf-note-bar-dot': mix(t.border, 70, 'transparent'),
+      '--mf-note-body': t.panel,
+      '--mf-note-hover': t.panel2,
+      '--mf-note-ck': t.border,
+      '--mf-note-code-bg': t.panel2,
+      '--mf-note-code-fg': t.text,
+      '--mf-note-ok': '#5eaa5e',
+      '--mf-note-ok-ink': '#8fb66f',
+      ...TONE_TOKENS,
+    } as CSSProperties;
+  }
   return {
-    '--mf-panel': t.appBg, // 페이지 목록 — 본문보다 **어둡다**
-    '--mf-card': t.panel, // 종이(본문·툴바·팝업·고른 행)
-    '--mf-panel2': t.panel2, // 가라앉은 면(세그먼트 트랙·표 머리·코드)
-    '--mf-border': t.border,
-    '--mf-border-soft': mix(t.border, 55, t.panel),
-    '--mf-border-hover': mix(t.accent, 14, t.border),
-    '--mf-hairline': mix(t.border, 70, t.panel),
-    '--mf-text': t.text,
-    '--mf-subtext': t.subtext,
-    '--mf-muted': t.subtext,
-    '--mf-faint': mix(t.subtext, 72, t.panel),
-    '--mf-faint2': mix(t.subtext, 52, t.panel),
+    '--mf-panel': '#fbf7f1', // 페이지 목록·바탕
+    '--mf-card': '#fffdfb', // 면(툴바·팝업·카드·고른 행)
+    '--mf-panel2': '#f4ede4', // 가라앉은 면(세그먼트 트랙)
+    '--mf-border': '#efe4da',
+    '--mf-border-soft': '#f3eae1', // 실선보다 옅은 경계(툴바 아래·통계 줄 위)
+    '--mf-border-hover': '#eed8c8', // 고른 행의 테두리
+    '--mf-hairline': '#efe4da',
+    '--mf-text': '#3a352f',
+    '--mf-subtext': '#8a8078',
+    '--mf-muted': '#a29b90',
+    '--mf-faint': '#b7aca1',
+    '--mf-faint2': '#c3b8ac',
+    // 강조색만 문서 테마를 따른다 — 코랄이면 디자인의 주황(#E85E33)과 같은 자리다.
     '--mf-accent': t.accent,
-    '--mf-accent-ink': t.accentInk,
-    '--mf-accent-soft': mix(t.accent, 14, t.panel),
-    '--mf-accent-mute': mix(t.accent, 32, t.panel),
-    '--mf-accent-deep': mix(t.accent, 78, t.text),
-    // 어조·위험은 **테마를 따르지 않는다** — 초록은 결정, 파랑은 질문, 빨강은 삭제라는
-    // 뜻이 색에 실려 있어 테마마다 달라지면 그 뜻이 흐려진다(맵 에디터와 같은 규칙).
-    '--mf-success': '#4e8c67',
-    '--mf-success-soft': mix('#4e8c67', 12, t.panel),
-    '--mf-info': '#3f8fd0',
-    '--mf-info-soft': mix('#3f8fd0', 12, t.panel),
-    '--mf-danger': '#c0563a',
+    '--mf-accent-ink': '#fffdfb',
+    '--mf-accent-soft': mix(t.accent, 12, '#fffdfb'),
+    '--mf-accent-mute': mix(t.accent, 34, '#fffdfb'),
+    '--mf-accent-deep': mix(t.accent, 82, '#3a352f'),
+    '--mf-note-bar': '#f6f0e8', // 상단 바 — 본문보다 한 톤 짙다
+    '--mf-note-bar-dot': 'rgba(199,186,172,.28)', // 그 위의 도트 무늬(14px)
+    '--mf-note-body': '#fdfbf8', // 본문 바탕 — 면보다 아주 살짝 어둡다
+    '--mf-note-hover': '#f6efe7', // 툴바 단추에 마우스를 얹었을 때
+    '--mf-note-ck': '#dcd1c6', // 체크 상자의 빈 테두리
+    '--mf-note-code-bg': '#332e29',
+    '--mf-note-code-fg': '#e7dacb',
+    '--mf-note-ok': '#5eaa5e', // 저장됨 점
+    '--mf-note-ok-ink': '#7a8b62', // 저장됨 글자
+    ...TONE_TOKENS,
   } as CSSProperties;
+}
+
+/**
+ * 어조·위험색은 **테마를 따르지 않는다** — 결정은 초록, 질문은 파랑, 삭제는 빨강이라는
+ * 뜻이 색에 실려 있어 테마마다 달라지면 그 뜻이 흐려진다(맵 에디터와 같은 규칙).
+ */
+const TONE_TOKENS = {
+  '--mf-success': '#4e8c67',
+  '--mf-success-soft': '#ebf5ee',
+  '--mf-info': '#3f8fd0',
+  '--mf-info-soft': '#eaf2fb',
+  '--mf-danger': '#c0563a',
+} as const;
+
+/** 상대 밝기(0~1) — 종이 팔레트를 쓸지 테마에서 만들지 가르는 기준. */
+function luma(hex: string): number {
+  const h = hex.replace('#', '');
+  const v = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(v.slice(0, 6), 16);
+  if (Number.isNaN(n)) return 1;
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
 }
 
 /** 넣기 — 디자인 원본의 `TOOL_ICONS`. 아이콘은 그 파일의 path를 그대로 옮겼다. */
@@ -151,7 +209,7 @@ const INKS: [string, string][] = [
   ['#8e5a80', '자두'],
 ];
 
-export function NoteEditor({ controller, theme }: Props) {
+export function NoteEditor({ controller }: Props) {
   const page = controller.notePage;
   const readOnly = controller.readOnly;
   /**
@@ -177,6 +235,8 @@ export function NoteEditor({ controller, theme }: Props) {
    */
   const [slashFor, setSlashFor] = useState<string | null>(null);
   const [slashQ, setSlashQ] = useState('');
+  /** 집중 모드 — 본문 단을 700→640으로 좁히고 위 여백을 키운다(디자인의 `toggleFocus`). */
+  const [focus, setFocus] = useState(false);
 
   // Escape로 닫는다 — 팝업이 열려 있는 동안 본문 타이핑은 그대로 이어진다.
   useEffect(() => {
@@ -193,7 +253,7 @@ export function NoteEditor({ controller, theme }: Props) {
   return (
     <div
       data-note-editor
-      style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', background: theme.panel, overflow: 'hidden', ...noteTokens(theme) }}
+      style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', background: 'var(--mf-note-body)', overflow: 'hidden' }}
     >
       <PageList controller={controller} />
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -207,12 +267,14 @@ export function NoteEditor({ controller, theme }: Props) {
               setSlashFor(id);
               setSlashQ('');
             }}
+            focus={focus}
+            setFocus={setFocus}
           />
         )}
-        <div className="lnb-scroll" data-note-page style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '26px 0 56px' }}>
+        <div className="lnb-scroll" data-note-page style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: focus ? '56px 0 56px' : '26px 0 56px', background: 'var(--mf-note-body)', transition: 'padding .2s ease' }}>
           {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 19px로 벌어진다(글이 숨 쉬는
               간격이고, 이 리듬이 없으면 제목과 본문이 한 덩어리로 뭉쳐 보인다). */}
-          <div style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}>
+          <div style={{ maxWidth: focus ? 640 : 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0, transition: 'max-width .2s ease' }}>
             <PageHead controller={controller} page={page} />
             {page.blocks.map((block, i) => (
               <BlockView
@@ -272,15 +334,21 @@ export function NoteEditor({ controller, theme }: Props) {
 }
 
 /**
- * 상단 바 — 디자인 원본의 공책 머리. 왼쪽부터 [문서 칩(뒤로·이름·저장)] · [경로] ·
- * [공유·댓글·기록].
+ * 상단 바 — 디자인 원본의 공책 머리를 값 그대로.
  *
- * 문서 칩이 여기 **줄 안에** 선다(`inline`). 캔버스 위에 떠 있던 예전 자리는 공책에서는
- * 왼쪽 페이지 목록의 머리와 검색칸을 덮었다 — 제보의 "UI가 틀어져 있다" 중 첫 번째다.
+ * [알약: 뒤로 · 공책 이름 + 저장 상태 · 저장] · [경로] · [알약: 공유 + 얼굴들 | 댓글 · 기록]
+ *
+ * 바탕은 본문보다 한 톤 짙은 `#F6F0E8`에 **14px 도트 무늬**가 깔린다(`radial-gradient`)
+ * — 이 무늬가 상단을 "책상 면"으로 만들어 그 위의 흰 알약을 떠 보이게 한다(제보:
+ * "배경 패턴"). 문서 칩은 이 알약이 대신한다 — 지름·모서리·그림자가 전부 다르고,
+ * 캔버스용 칩을 억지로 맞추는 것보다 여기서 그리는 편이 정확하다.
  */
-export function NoteTopBar({ controller, theme }: Props) {
+export function NoteTopBar({ controller }: { controller: EditorController }) {
   const page = controller.notePage;
   const space = controller.noteSpaceName;
+  const readOnly = controller.readOnly;
+  const saving = controller.saveState;
+  const saveLabel = readOnly ? '보기 전용' : saving === 'saved' ? '저장됨' : saving === 'saving' ? '저장 중…' : saving === 'unsaved' ? '저장 전' : '변경됨';
   const tabs: { name: string; on: boolean; onPick: () => void }[] = [
     { name: '댓글', on: controller.commentsOpen, onPick: () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) },
     { name: '기록', on: controller.historyOpen, onPick: () => controller.setHistoryOpen(!controller.historyOpen) },
@@ -293,73 +361,152 @@ export function NoteTopBar({ controller, theme }: Props) {
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: '10px 14px',
-        background: theme.appBg,
-        borderBottom: `1px solid ${theme.border}`,
+        flexWrap: 'wrap',
+        padding: '10px 14px 10px 12px',
+        background: 'var(--mf-note-bar)',
+        backgroundImage: 'radial-gradient(var(--mf-note-bar-dot) 1px, transparent 1px)',
+        backgroundSize: '14px 14px',
         minWidth: 0,
       }}
     >
-      <DocChip controller={controller} inline />
-      {/* 경로 — `스페이스 › 공책 › 페이지`. 스페이스 이름은 워크스페이스 블롭에서 오고
-          (공책일 때만 읽는다), 아직 못 읽었으면 그 조각만 빠진다. */}
-      <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+      {/* 문서 알약 — 46px, 반지름 15, 떠 있는 그림자. */}
+      <span
+        data-doc-chip
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 10,
+          height: 46,
+          padding: '0 6px',
+          flex: '0 0 auto',
+          borderRadius: 15,
+          background: 'var(--mf-card)',
+          border: '1px solid var(--mf-border)',
+          boxShadow: '0 2px 4px -2px rgba(46,42,38,.1), 0 14px 28px -20px rgba(46,42,38,.4)',
+        }}
+      >
+        <button
+          type="button"
+          className="mf-note-pill-btn"
+          onClick={controller.goBack}
+          title="홈으로"
+          aria-label="홈으로"
+          style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 11, border: '1px solid var(--mf-border)', background: 'var(--mf-note-body)', color: 'var(--mf-text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M19 12H5M11 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, maxWidth: 260 }}>
+          <input
+            data-note-book-title
+            defaultValue={controller.docTitle}
+            readOnly={readOnly}
+            maxLength={40}
+            placeholder="공책 이름"
+            title="눌러서 공책 이름 수정"
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            onBlur={(e) => controller.commitTitle(e.currentTarget.value)}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '0 0 1px',
+              border: 0,
+              borderBottom: '1.5px dashed transparent',
+              background: 'transparent',
+              fontFamily: 'inherit',
+              fontSize: 13.5,
+              fontWeight: 800,
+              letterSpacing: '-.02em',
+              color: 'var(--mf-text)',
+              outline: 'none',
+            }}
+          />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--mf-subtext)', whiteSpace: 'nowrap', minWidth: 0 }}>
+            <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: saving === 'saved' ? 'var(--mf-note-ok)' : 'var(--mf-accent)', display: 'block' }} />
+            <span style={{ color: saving === 'saved' ? 'var(--mf-note-ok-ink)' : 'var(--mf-subtext)', fontWeight: 700 }}>{saveLabel}</span>
+          </span>
+        </span>
+        {!readOnly && (
+          <button
+            type="button"
+            data-note-save
+            onClick={controller.saveNow}
+            title="저장"
+            aria-label="저장"
+            style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 11, border: 0, background: 'linear-gradient(180deg, color-mix(in srgb, var(--mf-accent) 88%, #fff), var(--mf-accent))', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, boxShadow: '0 8px 18px -10px color-mix(in srgb, var(--mf-accent) 90%, transparent)' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 4h11l3 3v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
+              <path d="M8 4v5h7V4M8 21v-6h8v6" />
+            </svg>
+          </button>
+        )}
+      </span>
+
+      {/* 경로 — `스페이스 › ● 공책 › 페이지`. */}
+      <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, height: 46, padding: '0 6px', boxSizing: 'border-box', overflow: 'hidden' }}>
         {space && (
           <>
-            <button
-              type="button"
-              className="mf-ed-btn"
-              onClick={controller.goBack}
-              style={{ flex: '0 0 auto', height: 26, padding: '0 9px', border: 0, borderRadius: 8, background: 'transparent', color: theme.subtext, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-            >
+            <button type="button" className="mf-note-crumb" onClick={controller.goBack} style={{ flex: '0 0 auto', height: 26, padding: '0 9px', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--mf-muted)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               {space}
             </button>
-            <Caret theme={theme} />
+            <Caret />
           </>
         )}
-        <span style={{ flex: '0 1 auto', minWidth: 0, display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 9px', fontSize: 12, fontWeight: 600, color: theme.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ flex: '0 1 auto', minWidth: 0, display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 9px', fontSize: 12, fontWeight: 600, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 2.5, background: noteCoverColor(controller.doc.cover), display: 'block' }} />
           {controller.docTitle || '제목 없는 공책'}
         </span>
-        <Caret theme={theme} />
-        <span style={{ flex: '0 1 auto', minWidth: 0, height: 26, padding: '0 9px', display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 800, letterSpacing: '-.015em', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <Caret />
+        <span style={{ flex: '0 1 auto', minWidth: 0, height: 26, padding: '0 9px', display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {page?.title?.trim() || '제목 없는 페이지'}
         </span>
       </nav>
-      {/* 오른쪽 — 디자인 그대로 [공유 · 댓글 · 기록]을 한 알약에 묶는다(요청).
-          GNB에도 공유가 있지만 공책에서는 **이 줄이 문서 단위 조작이 모이는 자리**다 —
-          경로 바로 옆에서 "이 공책을 누구와"가 이어지는 편이 메뉴를 거치는 것보다 짧다. */}
-      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, height: 40, padding: '0 8px', borderRadius: 14, background: theme.panel, border: `1px solid ${theme.border}` }}>
+
+      {/* 오른쪽 알약 — 공유(+ 함께 보는 얼굴들) | 댓글 · 기록. */}
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, height: 46, padding: '0 8px', borderRadius: 15, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', boxShadow: '0 2px 4px -2px rgba(46,42,38,.1), 0 14px 28px -20px rgba(46,42,38,.4)' }}>
         <button
           type="button"
-          className="mf-ed-btn"
+          className="mf-note-crumb"
           data-note-share
           onClick={controller.openShare}
           title="공유"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 11px', borderRadius: 10, border: 0, background: 'transparent', color: theme.subtext, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 11, border: 0, background: 'transparent', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="9" cy="8" r="3" />
             <path d="M3 19a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M21 19a5 5 0 0 0-4-4.9" />
           </svg>
           공유
+          {/* 함께 보고 있는 얼굴들 — 겹쳐 놓는다(디자인). 혼자면 아무것도 그리지 않는다.
+              GNB가 쓰는 그 컴포넌트를 그대로 쓴다(같은 뜻은 같은 그림). */}
+          <PresenceAvatars controller={controller} isMobile />
         </button>
-        <span aria-hidden="true" style={{ width: 1, height: 20, background: theme.border, display: 'block', flex: '0 0 auto' }} />
-        <span style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 11, background: theme.panel2, border: `1px solid ${theme.border}` }}>
+        <span aria-hidden="true" style={{ width: 1, height: 20, background: 'var(--mf-border)', display: 'block', flex: '0 0 auto', margin: '0 2px' }} />
+        <span style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 11, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)' }}>
           {tabs.map((t) => (
             <button
               key={t.name}
               type="button"
-              className="mf-ed-btn"
+              className="mf-note-crumb"
               data-note-tab={t.name}
               aria-pressed={t.on}
               onClick={t.onPick}
+              title={t.name}
               style={{
-                height: 24,
-                padding: '0 11px',
+                height: 26,
+                padding: '0 12px',
                 borderRadius: 8,
                 border: 0,
-                background: t.on ? theme.panel : 'transparent',
-                color: t.on ? theme.text : theme.subtext,
+                background: t.on ? 'var(--mf-card)' : 'transparent',
+                color: t.on ? 'var(--mf-text)' : 'var(--mf-subtext)',
                 fontFamily: 'inherit',
                 fontSize: 12,
                 fontWeight: t.on ? 800 : 600,
@@ -377,9 +524,9 @@ export function NoteTopBar({ controller, theme }: Props) {
 }
 
 /** 경로의 `›` — 한 벌로 써서 간격이 어긋나지 않게. */
-function Caret({ theme }: { theme: Theme }) {
+function Caret() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={theme.subtext} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
       <path d="m9 6 6 6-6 6" />
     </svg>
   );
@@ -718,7 +865,10 @@ function PageStats({ page }: { page: NotePage }) {
   const words = text.split(/\s+/).filter(Boolean).length;
   const minutes = Math.max(1, Math.round(chars / 500));
   return (
-    <div data-note-stats style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10.5, color: 'var(--mf-faint)' }}>
+    <div
+      data-note-stats
+      style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 14, borderTop: '1px solid var(--mf-border-soft)', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10.5, color: 'var(--mf-faint)', flexWrap: 'wrap' }}
+    >
       <span>{chars}자</span>
       <span aria-hidden="true">·</span>
       <span>{words}단어</span>
@@ -891,6 +1041,8 @@ function FormatToolbar({
   rememberBox,
   onInserted,
   openSlash,
+  focus,
+  setFocus,
 }: {
   controller: EditorController;
   boxRef: { current: HTMLElement | null };
@@ -899,6 +1051,8 @@ function FormatToolbar({
   onInserted: (id: string | null) => void;
   /** `/` 단추 — 지금 줄에서 블록 목록을 연다(빈 줄에서 `/`를 치는 것과 같은 자리). */
   openSlash: (blockId: string) => void;
+  focus: boolean;
+  setFocus: (fn: (v: boolean) => boolean) => void;
 }) {
   const [open, setOpen] = useState<'hl' | 'ink' | null>(null);
 
@@ -940,13 +1094,25 @@ function FormatToolbar({
    * 박스가 어느 블록·항목·칸의 것인지는 `data-note-line`에 실어 둔 키로 안다 —
    * 툴바가 블록 구조를 다시 알아내지 않아도 되고, 목록 항목·표 칸도 같은 길을 쓴다.
    */
-  const apply = (kind: 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'clear', val?: string | null) => {
+  const apply = (kind: 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'link' | 'clear', val?: string | null) => {
     const el = boxRef.current;
     if (!el) return;
     const runs = applyNoteFormat(el, kind, val);
     if (!runs) return;
     commitLine(controller, el.getAttribute('data-note-line') || '', runs);
     setOpen(null);
+  };
+
+  /**
+   * 링크 — 고른 글에 주소를 건다. 주소는 `prompt`로 받는다(디자인의 `insertUrl`과 같은
+   * 자리). 취소하거나 빈 값이면 아무 일도 하지 않고, **선택을 기억해 둔 박스**에 건다.
+   */
+  const insertLink = () => {
+    const el = boxRef.current;
+    if (!el) return;
+    const url = typeof window === 'undefined' ? null : window.prompt('링크 주소');
+    if (!url || !url.trim()) return;
+    apply('link', url.trim());
   };
 
   const stop = (e: ReactMouseEvent) => {
@@ -964,7 +1130,7 @@ function FormatToolbar({
         alignItems: 'center',
         gap: 4,
         flexWrap: 'wrap',
-        padding: '8px 14px',
+        padding: '9px 20px',
         borderBottom: '1px solid var(--mf-border-soft)',
         background: 'var(--mf-card)',
       }}
@@ -978,10 +1144,10 @@ function FormatToolbar({
           data-note-mark={m.kind}
           title={m.name}
           aria-label={m.name}
-          className="btn"
+          className="btn mf-note-tb"
           onMouseDown={stop}
           onClick={() => apply(m.kind)}
-          style={{ ...TOOL_BTN, ...m.css }}
+          style={{ ...TOOL_BTN, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontWeight: 700, ...m.css }}
         >
           {m.label}
         </button>
@@ -989,8 +1155,21 @@ function FormatToolbar({
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
       {/* 형광펜 */}
       <div style={{ position: 'relative' }}>
-        <button type="button" data-note-hl className="btn" title="형광펜" onMouseDown={stop} onClick={() => setOpen((v) => (v === 'hl' ? null : 'hl'))} style={TOOL_BTN}>
-          <span aria-hidden="true" style={{ width: 13, height: 13, borderRadius: 3, background: noteHighlightColor('yellow') ?? '#FBEFC0', border: '1px solid var(--mf-border)' }} />
+        <button
+          type="button"
+          data-note-hl
+          className="btn mf-note-tb"
+          title="형광펜"
+          onMouseDown={stop}
+          onClick={() => setOpen((v) => (v === 'hl' ? null : 'hl'))}
+          style={{ ...TOOL_BTN, flexDirection: 'column', gap: 2, background: open === 'hl' ? 'var(--mf-accent-soft)' : 'transparent' }}
+        >
+          {/* 형광펜 글리프 — 색은 아래 막대가 말한다(디자인). */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m14.5 4.5 5 5-8 8H6.5v-5z" />
+            <path d="M4 21h16" />
+          </svg>
+          <span aria-hidden="true" style={{ width: 14, height: 3, borderRadius: 999, background: noteHighlightColor('yellow') ?? '#FBEFC0', display: 'block' }} />
         </button>
         {open === 'hl' && (
           <div style={SWATCH_POP}>
@@ -1005,8 +1184,17 @@ function FormatToolbar({
       </div>
       {/* 글자색 */}
       <div style={{ position: 'relative' }}>
-        <button type="button" data-note-ink className="btn" title="글자색" onMouseDown={stop} onClick={() => setOpen((v) => (v === 'ink' ? null : 'ink'))} style={{ ...TOOL_BTN, fontWeight: 800 }}>
-          A
+        <button
+          type="button"
+          data-note-ink
+          className="btn mf-note-tb"
+          title="글자색"
+          onMouseDown={stop}
+          onClick={() => setOpen((v) => (v === 'ink' ? null : 'ink'))}
+          style={{ ...TOOL_BTN, flexDirection: 'column', gap: 2, background: open === 'ink' ? 'var(--mf-accent-soft)' : 'transparent' }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>A</span>
+          <span aria-hidden="true" style={{ width: 14, height: 3, borderRadius: 999, background: 'var(--mf-text)', display: 'block' }} />
         </button>
         {open === 'ink' && (
           <div style={SWATCH_POP}>
@@ -1027,14 +1215,24 @@ function FormatToolbar({
           </div>
         )}
       </div>
-      <button type="button" data-note-clear className="btn" title="서식 지우기" onMouseDown={stop} onClick={() => apply('clear')} style={{ ...TOOL_BTN, width: 'auto', padding: '0 9px', fontSize: 11.5 }}>
-        서식 지우기
+      {/* 링크 — 인라인 묶음의 마지막(디자인). 고른 글에 주소를 건다. */}
+      <button type="button" data-note-link-btn className="btn mf-note-tb" title="링크" aria-label="링크" onMouseDown={stop} onClick={insertLink} style={TOOL_BTN}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+          <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+        </svg>
+      </button>
+      <button type="button" data-note-clear className="btn mf-note-tb" title="서식 지우기" aria-label="서식 지우기" onMouseDown={stop} onClick={() => apply('clear')} style={TOOL_BTN}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M7 7h10M12 7v10M8 20h8" />
+          <path d="m4 4 16 16" />
+        </svg>
       </button>
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
       {/* 넣기 — 디자인 원본의 `TOOL_ICONS`. 모델에는 처음부터 있던 블록들인데 넣는
           길이 `/` 커맨드 하나뿐이었다(그래서 있는 줄도 몰랐다). */}
       {INSERTS.map((t) => (
-        <button key={t.kind} type="button" data-note-insert={t.kind} title={t.name} aria-label={t.name} className="btn" onMouseDown={stop} onClick={() => insert(t.kind)} style={TOOL_BTN}>
+        <button key={t.kind} type="button" data-note-insert={t.kind} title={t.name} aria-label={t.name} className="btn mf-note-tb" onMouseDown={stop} onClick={() => insert(t.kind)} style={TOOL_BTN}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             {t.icon}
           </svg>
@@ -1053,7 +1251,7 @@ function FormatToolbar({
             aria-pressed={on}
             title={t.name}
             aria-label={t.name}
-            className="btn"
+            className="btn mf-note-tb"
             onMouseDown={stop}
             onClick={() => {
               const id = curBlockId();
@@ -1074,7 +1272,7 @@ function FormatToolbar({
           data-note-indent={t.delta > 0 ? 'in' : 'out'}
           title={t.name}
           aria-label={t.name}
-          className="btn"
+          className="btn mf-note-tb"
           onMouseDown={stop}
           onClick={() => {
             const id = curBlockId();
@@ -1089,22 +1287,57 @@ function FormatToolbar({
       ))}
       <span style={{ flex: 1 }} />
       {/* `/` — 빈 줄에서 `/`를 치는 것과 같은 자리를 **버튼으로도** 연다. 그 규칙을
-          아는 사람만 쓸 수 있는 기능이 되지 않게(디자인 원본도 이 단추를 둔다). */}
+          아는 사람만 쓸 수 있는 기능이 되지 않게(디자인 원본도 이 단추를 둔다).
+          디자인은 글리프가 아니라 **키캡**처럼 생긴 작은 면이다. */}
       <button
         type="button"
         data-note-slash-btn
         title="블록 넣기 (/)"
         aria-label="블록 넣기"
-        className="btn"
+        className="btn mf-note-tb"
         onMouseDown={stop}
         onClick={() => {
           const id = curBlockId();
           if (id) openSlash(id);
         }}
-        style={{ ...TOOL_BTN, fontSize: 12, fontWeight: 700 }}
+        style={TOOL_BTN}
       >
-        /
+        <span aria-hidden="true" style={{ padding: '2px 6px', borderRadius: 6, background: 'var(--mf-panel2)', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 700, color: 'var(--mf-subtext)', lineHeight: 1 }}>/</span>
       </button>
+      <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
+      {/* 집중 — 본문 단을 좁히고 여백을 키운다(디자인의 `toggleFocus`: 700→640px). */}
+      <button
+        type="button"
+        data-note-focus
+        aria-pressed={focus}
+        title={focus ? '집중 모드 끄기' : '집중 모드'}
+        aria-label={focus ? '집중 모드 끄기' : '집중 모드'}
+        className="btn mf-note-tb"
+        onMouseDown={stop}
+        onClick={() => setFocus((v) => !v)}
+        style={{ ...TOOL_BTN, background: focus ? 'var(--mf-accent-soft)' : 'transparent', color: focus ? 'var(--mf-accent)' : 'var(--mf-subtext)' }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" />
+        </svg>
+      </button>
+      <ExportMenu controller={controller} stop={stop} />
+      <button
+        type="button"
+        data-note-keys
+        title="단축키"
+        aria-label="단축키"
+        className="btn mf-note-tb"
+        onMouseDown={stop}
+        onClick={() => controller.setHelpOpen(true)}
+        style={{ ...TOOL_BTN, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 13, fontWeight: 700 }}
+      >
+        ?
+      </button>
+      {/* 표지 — **디자인 툴바에는 없다.** 원본은 표지를 홈의 공책 우클릭 메뉴에서만
+          바꾸는데, 우리는 에디터에서도 바꿀 수 있게 해 뒀다. 프로토타입에 없다는
+          이유로 동작하는 길을 없애는 것은 맞바꿀 만한 일이 아니라 그대로 둔다 —
+          대신 맨 끝에서 30×30 한 칸만 차지하게 해 줄의 인상은 건드리지 않는다. */}
       <CoverMenu controller={controller} />
     </div>
   );
@@ -1114,22 +1347,43 @@ function FormatToolbar({
 function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: EditorController; rememberBox: () => void; boxRef: { current: HTMLElement | null } }) {
   const [open, setOpen] = useState(false);
   const cur = controller.notePage?.blocks.find((b) => b.id === blockIdOf(boxRef.current?.getAttribute('data-note-line') || ''));
-  const name = BLOCK_TYPES.find((t) => t.kind === (cur?.kind ?? 'p'))?.name ?? '문단';
+  const curType = BLOCK_TYPES.find((t) => t.kind === (cur?.kind ?? 'p')) ?? BLOCK_TYPES[0]!;
   return (
     <div style={{ position: 'relative' }}>
+      {/* 디자인은 이 하나만 **테두리 있는 알약**이다 — 지금 줄이 무엇인지 늘 말해 주는
+          자리라 다른 단추들과 달리 면을 가진다. 왼쪽 아이콘이 그 종류를 그림으로 겹쳐 말한다. */}
       <button
         type="button"
         data-note-blocktype
         className="btn"
+        title="블록 종류"
         onMouseDown={(e) => {
           rememberBox();
           e.preventDefault();
         }}
         onClick={() => setOpen((v) => !v)}
-        style={{ ...TOOL_BTN, width: 'auto', padding: '0 10px', gap: 6, fontSize: 12, fontWeight: 700 }}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 7,
+          height: 30,
+          padding: '0 8px 0 10px',
+          border: '1px solid var(--mf-border)',
+          borderRadius: 9,
+          background: open ? 'var(--mf-panel2)' : 'transparent',
+          color: 'var(--mf-text)',
+          fontFamily: 'inherit',
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
       >
-        {name}
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {curType.icon}
+        </svg>
+        {curType.name}
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
@@ -1137,16 +1391,10 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
         <div
           data-note-blocktype-menu
           style={{
-            position: 'absolute',
-            top: 32,
+            ...POP,
+            top: 'calc(100% + 6px)',
             left: 0,
-            zIndex: 30,
-            width: 214,
-            padding: 6,
-            borderRadius: 12,
-            background: 'var(--mf-card)',
-            border: '1px solid var(--mf-border)',
-            boxShadow: '0 20px 40px -22px rgba(46,42,38,.5)',
+            width: 224,
             display: 'flex',
             flexDirection: 'column',
             gap: 1,
@@ -1160,7 +1408,7 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
               key={t.kind}
               type="button"
               data-note-blocktype-item={t.kind}
-              className="btn"
+              className="btn mf-note-item"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 const key = boxRef.current?.getAttribute('data-note-line') || '';
@@ -1168,10 +1416,71 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
                 if (id) controller.retypeNoteBlock(id, t.kind);
                 setOpen(false);
               }}
-              style={{ ...MENU_ITEM, flexDirection: 'column', alignItems: 'flex-start', gap: 1, background: cur?.kind === t.kind ? 'var(--mf-accent-soft)' : 'transparent' }}
+              style={{ ...MENU_ITEM, fontWeight: cur?.kind === t.kind ? 800 : 600, background: cur?.kind === t.kind ? 'var(--mf-accent-soft)' : 'transparent' }}
             >
-              <span style={{ fontWeight: 700 }}>{t.name}</span>
-              <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>{t.hint}</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+                {t.icon}
+              </svg>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+              {/* 오른쪽 끝의 **키 힌트** — 고정폭이라 여러 줄이 세로로 맞는다(디자인). */}
+              <span style={POP_KEY}>{t.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 내보내기 — 디자인의 오른쪽 묶음 가운데 하나. 항목마다 **확장자 배지**가 붙어
+ * 무엇이 떨어지는지 이름을 읽기 전에 보인다.
+ *
+ * 공책에는 그릴 캔버스가 없으므로 그림 형식(PNG·SVG·PDF)은 넣지 않는다 — 홈의 공책
+ * 우클릭 메뉴가 같은 이유로 그것들을 감추는 것과 한 규칙이다.
+ */
+function ExportMenu({ controller, stop }: { controller: EditorController; stop: (e: ReactMouseEvent) => void }) {
+  const [open, setOpen] = useState(false);
+  const items: { ext: string; name: string; onPick: () => void }[] = [
+    { ext: 'MD', name: '마크다운', onPick: controller.exportMarkdown },
+    { ext: 'JSON', name: '원본 데이터', onPick: controller.exportJSON },
+  ];
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        data-note-export
+        title="내보내기"
+        aria-label="내보내기"
+        className="btn mf-note-tb"
+        onMouseDown={stop}
+        onClick={() => setOpen((v) => !v)}
+        style={{ ...TOOL_BTN, background: open ? 'var(--mf-accent-soft)' : 'transparent' }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3v12M8 11l4 4 4-4" />
+          <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+        </svg>
+      </button>
+      {open && (
+        <div data-note-export-menu style={{ ...POP, top: 'calc(100% + 6px)', right: 0, width: 236, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={POP_HEAD}>이 페이지</span>
+          {items.map((x) => (
+            <button
+              key={x.ext}
+              type="button"
+              className="btn mf-note-item"
+              onMouseDown={stop}
+              onClick={() => {
+                x.onPick();
+                setOpen(false);
+              }}
+              style={MENU_ITEM}
+            >
+              <span aria-hidden="true" style={{ width: 26, height: 20, flex: '0 0 auto', borderRadius: 6, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 9, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                {x.ext}
+              </span>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</span>
             </button>
           ))}
         </div>
@@ -1188,9 +1497,8 @@ function CoverMenu({ controller }: { controller: EditorController }) {
   if (controller.readOnly) return null;
   return (
     <div style={{ position: 'relative' }}>
-      <button type="button" data-note-cover-btn className="btn" title="표지 색" onClick={() => setOpen((v) => !v)} style={{ ...TOOL_BTN, width: 'auto', padding: '0 9px', gap: 6, fontSize: 11.5 }}>
-        <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 3, background: color }} />
-        표지
+      <button type="button" data-note-cover-btn className="btn mf-note-tb" title="공책 표지 색" aria-label="공책 표지 색" onClick={() => setOpen((v) => !v)} style={{ ...TOOL_BTN, background: open ? 'var(--mf-accent-soft)' : 'transparent' }}>
+        <span aria-hidden="true" style={{ width: 14, height: 14, borderRadius: 4, background: color, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.12)' }} />
       </button>
       {open && (
         <div data-note-cover-menu style={{ ...SWATCH_POP, right: 0, left: 'auto' }}>
@@ -1231,6 +1539,13 @@ interface BlockProps {
 function BlockView({ controller, block, index, freshId, setFreshId, rememberBox, focusBox, openSlash }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
+  /**
+   * 이 페이지의 강조색 — 디자인은 `accent = allTags()[태그]`다. 즉 **페이지 태그 색**이
+   * 체크 표시와 제목 바를 칠한다(회의록이면 자두색, 회고면 주황). 공책 표지 색이
+   * 아니다 — 한 공책 안에서도 장마다 성격이 다를 수 있고, 목록의 태그 점과 본문의
+   * 강조가 같은 색이라야 "이 장은 회의록"이 두 곳에서 같은 말을 한다.
+   */
+  const accent = pageAccent(controller);
 
   /** 엔터 — 같은 종류의 새 블록을 아래에 만든다(제목 뒤에는 문단이 자연스럽다). */
   const enterBlock = (): boolean => {
@@ -1395,14 +1710,15 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
                 onClick={() => controller.toggleNoteCheck(block.id, item.id)}
                 className="btn"
                 style={{
-                  width: 17,
-                  height: 17,
-                  marginTop: 5,
+                  // 디자인: 18×18 · 반지름 6 · 빈 테두리는 `#DCD1C6` · 켜지면 **페이지 태그 색**.
+                  width: 18,
+                  height: 18,
+                  marginTop: 4,
                   flex: '0 0 auto',
-                  borderRadius: 5,
-                  border: `1.5px solid ${item.done ? 'var(--mf-accent)' : 'var(--mf-border)'}`,
-                  background: item.done ? 'var(--mf-accent)' : 'transparent',
-                  color: '#fff',
+                  borderRadius: 6,
+                  border: `1.5px solid ${item.done ? accent : 'var(--mf-note-ck)'}`,
+                  background: item.done ? accent : 'transparent',
+                  color: 'var(--mf-card)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1454,11 +1770,11 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               style={{
                 flex: 1,
                 minWidth: 0,
-                fontSize: 14.5,
-                lineHeight: 1.75,
-                color: 'var(--mf-text)',
-                textDecoration: block.kind === 'ck' && item.done ? 'line-through' : undefined,
-                opacity: block.kind === 'ck' && item.done ? 0.55 : 1,
+                fontSize: 14,
+                lineHeight: 1.7,
+                // 디자인은 **취소선을 긋지 않는다** — 흐려지는 것만으로 끝난 줄이 읽히고,
+                // 회의록의 결정 사항은 끝난 뒤에도 읽을 거리로 남는다.
+                color: block.kind === 'ck' && item.done ? 'var(--mf-muted)' : 'var(--mf-text)',
               }}
             />
           </div>
@@ -1559,7 +1875,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
     >
       {/* 제목의 왼쪽 강조 바 — 디자인 원본. 굵기만으로 가른 제목은 긴 글에서 본문과
           섞여 보인다(스크롤하며 훑을 때 눈이 걸릴 자리가 없다). */}
-      {heading && <span aria-hidden="true" style={{ width: 3, height: block.kind === 'h1' ? 21 : 17, flex: '0 0 auto', borderRadius: 999, background: noteCoverColor(controller.doc.cover), display: 'block' }} />}
+      {heading && <span aria-hidden="true" style={{ width: 3, height: block.kind === 'h1' ? 21 : 17, flex: '0 0 auto', borderRadius: 999, background: accent, display: 'block' }} />}
       {line}
     </div>
   );
@@ -1786,74 +2102,90 @@ function SlashMenu({
   onClose: () => void;
 }) {
   const q = query.trim().toLowerCase();
-  const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.hint}`.toLowerCase().includes(q));
+  const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
+  // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
+  const groups = q ? [{ name: '', items: hits }] : ['기본', '목록', '강조', '넣기'].map((name) => ({ name, items: hits.filter((t) => t.group === name) }));
   return (
     <div data-note-slash style={{ position: 'relative' }}>
       <div
-        className="lnb-scroll"
         style={{
-          position: 'absolute',
+          ...POP,
           top: 4,
           left: 0,
-          zIndex: 40,
-          width: 264,
-          maxHeight: 320,
-          overflowY: 'auto',
-          padding: 6,
-          borderRadius: 12,
-          background: 'var(--mf-card)',
-          border: '1px solid var(--mf-border)',
-          boxShadow: '0 22px 44px -22px rgba(46,42,38,.55)',
+          width: 290,
+          padding: 0,
+          overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          gap: 1,
         }}
       >
-        <input
-          data-note-slash-input
-          autoFocus
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && hits[0]) {
-              e.preventDefault();
-              onPick(hits[0].kind);
-            }
-            if (e.key === 'Escape') onClose();
-          }}
-          placeholder="블록 찾기"
-          aria-label="블록 찾기"
-          style={{
-            height: 30,
-            margin: '0 0 4px',
-            padding: '0 9px',
-            borderRadius: 8,
-            border: '1px solid var(--mf-border)',
-            background: 'var(--mf-panel2)',
-            color: 'var(--mf-text)',
-            fontFamily: 'inherit',
-            fontSize: 12,
-            outline: 'none',
-          }}
-        />
-        {hits.length === 0 && <div style={{ padding: '10px 9px', fontSize: 11.5, color: 'var(--mf-faint)' }}>맞는 블록이 없어요.</div>}
-        {hits.map((t) => (
-          <button
-            key={t.kind}
-            type="button"
-            data-note-slash-item={t.kind}
-            className="btn"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onPick(t.kind)}
-            style={{ ...MENU_ITEM, flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}
-          >
-            <span style={{ fontWeight: 700 }}>{t.name}</span>
-            <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>{t.hint}</span>
-          </button>
-        ))}
+        {/* 머리 — `/`와 입력칸이 한 줄(디자인). 무엇을 치고 있는지가 `/` 옆에 이어진다. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
+          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)' }}>
+            /
+          </span>
+          <input
+            data-note-slash-input
+            autoFocus
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && hits[0]) {
+                e.preventDefault();
+                onPick(hits[0].kind);
+              }
+              if (e.key === 'Escape') onClose();
+            }}
+            placeholder="블록 이름 입력"
+            aria-label="블록 이름 입력"
+            style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, outline: 'none' }}
+          />
+        </div>
+        <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: 300, overflowY: 'auto' }}>
+          {groups.map((g) =>
+            g.items.length === 0 ? null : (
+              <div key={g.name || 'hits'} style={{ display: 'contents' }}>
+                {g.name && <span style={POP_HEAD}>{g.name}</span>}
+                {g.items.map((t) => (
+                  <button
+                    key={t.kind}
+                    type="button"
+                    data-note-slash-item={t.kind}
+                    className="btn mf-note-item"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onPick(t.kind)}
+                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10 }}
+                  >
+                    {/* 아이콘 **타일** — 디자인은 28×28 면 위에 글리프를 얹는다(글자 옆의
+                        맨 아이콘보다 줄이 또렷하게 나뉜다). */}
+                    <span aria-hidden="true" style={{ width: 28, height: 28, flex: '0 0 auto', borderRadius: 8, background: 'var(--mf-note-hover)', color: 'var(--mf-subtext)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        {t.icon}
+                      </svg>
+                    </span>
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)' }}>{t.name}</span>
+                      <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.desc}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ),
+          )}
+          {hits.length === 0 && <span style={{ padding: '14px 9px', fontSize: 12, color: 'var(--mf-faint)' }}>맞는 블록이 없어요</span>}
+        </div>
       </div>
     </div>
   );
+}
+
+/**
+ * 지금 페이지의 강조색 — **페이지 태그 색**이고, 태그가 없으면 공책 표지 색으로
+ * 물러선다(디자인: `allTags()[cTag] || '#E8845C'`).
+ */
+function pageAccent(controller: EditorController): string {
+  const tag = controller.notePage?.tag?.trim();
+  return tag ? noteTagColor(tag) : noteCoverColor(controller.doc.cover);
 }
 
 /** 종류별 글자 모양 — 제목 셋이 크기·굵기로 갈리고 코드는 고정폭이다. */
@@ -1901,18 +2233,20 @@ function blockIdOf(key: string): string {
   return key.split(':')[0] ?? '';
 }
 
+/** 툴바 단추 — 디자인은 **테두리 없는 30×30**이다(면이 아니라 글리프만 보인다). */
 const TOOL_BTN: CSSProperties = {
-  height: 28,
-  width: 28,
+  height: 30,
+  width: 30,
+  flex: '0 0 auto',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  borderRadius: 8,
-  border: '1px solid var(--mf-border)',
-  background: 'var(--mf-card)',
+  borderRadius: 9,
+  border: 0,
+  background: 'transparent',
   color: 'var(--mf-subtext)',
   fontFamily: 'inherit',
-  fontSize: 12.5,
+  fontSize: 13,
   cursor: 'pointer',
   padding: 0,
 };
@@ -1933,11 +2267,10 @@ const GHOST_BTN: CSSProperties = {
 const MENU_ITEM: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 7,
-  height: 'auto',
-  minHeight: 30,
-  padding: '6px 9px',
-  borderRadius: 8,
+  gap: 9,
+  height: 32,
+  padding: '0 9px',
+  borderRadius: 9,
   border: 'none',
   background: 'transparent',
   color: 'var(--mf-text)',
@@ -1946,27 +2279,57 @@ const MENU_ITEM: CSSProperties = {
   textAlign: 'left',
   cursor: 'pointer',
   width: '100%',
+  boxSizing: 'border-box',
+};
+
+/** 팝업 겉면 — 디자인의 값 한 벌(반지름 14 · 종이 · 옅은 테두리 · 멀리 퍼지는 그늘). */
+const POP: CSSProperties = {
+  position: 'absolute',
+  zIndex: 40,
+  boxSizing: 'border-box',
+  padding: 7,
+  borderRadius: 14,
+  background: 'var(--mf-card)',
+  border: '1px solid var(--mf-border-soft)',
+  boxShadow: '0 22px 44px -22px rgba(46,42,38,.5)',
+  animation: 'mf-note-pop .13s ease both',
+};
+
+/** 팝업 안의 작은 머리말 — `공책 이동`·`태그`처럼 무엇의 목록인지 알리는 줄. */
+const POP_HEAD: CSSProperties = {
+  padding: '4px 9px 6px',
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '.07em',
+  textTransform: 'uppercase',
+  color: 'var(--mf-faint)',
+};
+
+/** 메뉴 오른쪽의 단축키 힌트 — 고정폭이라 여러 줄이 세로로 맞는다. */
+const POP_KEY: CSSProperties = {
+  flex: '0 0 auto',
+  fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+  fontSize: 10,
+  color: 'var(--mf-faint2)',
 };
 
 const SWATCH_POP: CSSProperties = {
-  position: 'absolute',
-  top: 32,
+  ...POP,
+  top: 'calc(100% + 6px)',
   left: 0,
-  zIndex: 30,
   display: 'flex',
+  alignItems: 'center',
   gap: 5,
-  padding: 7,
-  borderRadius: 10,
-  background: 'var(--mf-card)',
-  border: '1px solid var(--mf-border)',
-  boxShadow: '0 18px 36px -20px rgba(46,42,38,.5)',
+  borderRadius: 12,
+  boxShadow: '0 18px 36px -22px rgba(46,42,38,.5)',
 };
 
 const SWATCH: CSSProperties = {
-  width: 20,
-  height: 20,
-  borderRadius: 5,
-  border: '1px solid var(--mf-border)',
+  width: 24,
+  height: 24,
+  flex: '0 0 auto',
+  borderRadius: 7,
+  border: '2px solid var(--mf-border)',
   cursor: 'pointer',
   padding: 0,
   display: 'inline-flex',
