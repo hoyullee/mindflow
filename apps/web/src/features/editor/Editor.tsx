@@ -190,6 +190,12 @@ export function Editor() {
             <NoteEditor controller={controller} theme={th} />
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
+            {/* 댓글 — **공책 한 권에 대한 논의**다(디자인: "이 공책에 댓글 남기기").
+                캔버스가 없어 핀을 꽂을 자리가 없으므로 대상은 문서 자신 하나뿐이고,
+                그래서 기본 대상(`ROOT_ID`)을 그대로 쓴다. 보기 전용에도 열린다 —
+                댓글은 본문을 바꾸지 않고, 리뷰를 받으려고 보기 권한으로 부르는 일이
+                흔하다(맵과 같은 판단). */}
+            <CommentPanel controller={controller} />
           </>
         ) : controller.isKanban ? (
           /* 칸반 — 캔버스가 아니라 전용 고정 레이아웃(열·카드). 팬/줌·미니맵·

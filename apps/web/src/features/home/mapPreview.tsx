@@ -362,6 +362,9 @@ interface PreviewDoc {
   columns?: { id: string; title: string; color?: string | null; bg?: string | null }[];
   cards?: { id: string; col: string; pos: number; text: string; bg?: string | null; tag?: string }[];
   tags?: { id: string; name: string; color?: string | null }[];
+  /** 공책 — 페이지의 글(캔버스가 아니다). */
+  pages?: { id: string; title?: string; blocks?: { kind?: string; runs?: { t?: string }[]; items?: { runs?: { t?: string }[] }[] }[] }[];
+  cover?: { tag?: string | null; color?: string | null };
 }
 
 /** Saved docs persist layout-derived node x/y as `0`: the React editor keeps
@@ -440,6 +443,9 @@ function buildPreview(rawDoc: string, hueFallback: string, imageUrls?: Record<st
   // 칸반 화면은 캔버스가 아니라 크롬이라 에디터도 **UI 테마**(고정 팔레트)로
   // 그린다 — 썸네일도 같은 팔레트를 써야 카드와 화면이 같은 색으로 보인다.
   if (d.kind === 'kanban') return kanbanPreview(d);
+  // 공책 — 축소할 캔버스가 없다. **첫 페이지의 글**을 지면 모양으로 그린다(버전
+  // 기록이 "어느 판인지"를 알아보는 근거가 제목·첫 줄이기 때문이다).
+  if (d.kind === 'note') return notePreview(d);
   // Editor-identical node box sizing: `computeMetrics` (real canvas text
   // measurement). The layout pass records each node's box into `metricsById` so
   // the DRAWN box is exactly the box the layout positioned (see `dim`).
@@ -948,6 +954,52 @@ function kbClip(text: string, maxW: number, font: string): string {
     else hi = mid - 1;
   }
   return lo > 0 ? `${one.slice(0, lo)}…` : '…';
+}
+
+/**
+ * 공책 미리보기 — **첫 페이지의 제목과 첫 몇 줄**.
+ *
+ * 다른 종류는 문서를 축소해 그리지만 공책에는 축소할 그림이 없다(글이라서다).
+ * 글을 그 크기로 줄이면 읽을 수 없는 회색 줄이 되므로, 읽히는 크기로 **앞부분만**
+ * 보여 준다 — 버전 기록에서 판을 가르는 근거가 정확히 그 앞부분이다.
+ */
+function notePreview(d: PreviewDoc): JSX.Element | null {
+  const page = (d.pages ?? [])[0];
+  if (!page) return null;
+  const line = (runs?: { t?: string }[]): string => (runs ?? []).map((r) => r?.t ?? '').join('').trim();
+  const rows: { text: string; head: boolean }[] = [];
+  for (const b of page.blocks ?? []) {
+    if (rows.length >= 7) break;
+    const head = b?.kind === 'h1' || b?.kind === 'h2' || b?.kind === 'h3';
+    const t = line(b?.runs) || (b?.items ?? []).map((it) => line(it?.runs)).find(Boolean) || '';
+    if (t) rows.push({ text: t, head });
+  }
+  const title = (page.title || '').trim();
+  if (!title && !rows.length) return null;
+  const ink = d.cover?.color || '#6E655C';
+  return (
+    <div style={{ width: '100%', height: '100%', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden', textAlign: 'left' }}>
+      <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', color: ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {title || '제목 없는 페이지'}
+      </div>
+      {rows.map((r, i) => (
+        <div
+          key={i}
+          style={{
+            fontSize: r.head ? 11.5 : 10.5,
+            fontWeight: r.head ? 800 : 400,
+            lineHeight: 1.55,
+            color: r.head ? 'var(--mf-text)' : 'var(--mf-subtext)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {r.text}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function kanbanPreview(d: PreviewDoc): JSX.Element | null {

@@ -7,9 +7,9 @@
 // 팬·줌·미니맵·그리기·레이아웃이 없다(에디터가 `isNote`로 그 UI를 통째로 걷어낸다).
 // 대신 다루는 것이 순서와 글이고, 규칙은 전부 코어 `note.ts`에 있다.
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
-import type { NoteBlock, NoteBlockKind, NotePage, RichRun } from '@mindflow/mindmap-core';
+import type { NoteBlock, NoteBlockKind, NoteCalloutTone, NotePage, RichRun } from '@mindflow/mindmap-core';
 import {
   NOTE_COVERS,
   NOTE_HIGHLIGHTS,
@@ -20,6 +20,7 @@ import {
   noteTagColor,
   pageExcerpt,
   runsText,
+  blockText,
 } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
@@ -44,7 +45,18 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string }[] = [
   { kind: 'q', name: '인용', hint: '다른 글이나 말을 인용' },
   { kind: 'code', name: '코드', hint: '고정폭' },
   { kind: 'table', name: '표', hint: '행과 열' },
+  { kind: 'callout', name: '콜아웃', hint: '주의 · 결정 · 질문 박스' },
+  { kind: 'toggle', name: '토글', hint: '긴 내용을 접어 두기' },
+  { kind: 'img', name: '이미지', hint: '파일을 올려 본문에 넣기' },
+  { kind: 'link', name: '문서 링크', hint: '마인드맵 · 화이트보드 · 칸반' },
   { kind: 'hr', name: '구분선', hint: '섹션 나누기' },
+];
+
+/** 콜아웃 어조 셋 — 디자인의 `CALLOUTS`(이름, 바탕, 잉크). */
+const TONES: { tone: NoteCalloutTone; name: string; bg: string; ink: string }[] = [
+  { tone: 'warn', name: '주의', bg: 'var(--mf-accent-soft)', ink: 'var(--mf-accent-deep)' },
+  { tone: 'decide', name: '결정', bg: 'var(--mf-success-soft)', ink: 'var(--mf-success)' },
+  { tone: 'ask', name: '질문', bg: 'var(--mf-info-soft)', ink: 'var(--mf-info)' },
 ];
 
 /** 인라인 서식 — 코어 `applyPartialStyle`의 종류와 1:1. */
@@ -84,6 +96,24 @@ export function NoteEditor({ controller, theme }: Props) {
   };
   /** 방금 만든 블록·항목 — 캐럿을 그리로 보낸다. */
   const [freshId, setFreshId] = useState<string | null>(null);
+  /**
+   * `/` 커맨드 — **빈 블록에서 `/`를 치면** 종류 목록이 뜬다(디자인).
+   *
+   * 글자 사이에서는 뜨지 않는다: 코드나 주소를 적다 `/`를 칠 때마다 메뉴가 끼어들면
+   * 방해다. "빈 줄에서 시작한다"는 조건 하나로 그 오탐이 사라진다.
+   */
+  const [slashFor, setSlashFor] = useState<string | null>(null);
+  const [slashQ, setSlashQ] = useState('');
+
+  // Escape로 닫는다 — 팝업이 열려 있는 동안 본문 타이핑은 그대로 이어진다.
+  useEffect(() => {
+    if (!slashFor) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSlashFor(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [slashFor]);
 
   if (!page) return null;
 
@@ -108,8 +138,25 @@ export function NoteEditor({ controller, theme }: Props) {
                 setFreshId={setFreshId}
                 rememberBox={rememberBox}
                 focusBox={focusBox}
+                openSlash={(id) => {
+                  setSlashFor(id);
+                  setSlashQ('');
+                }}
               />
             ))}
+            {slashFor && !readOnly && (
+              <SlashMenu
+                query={slashQ}
+                onQuery={setSlashQ}
+                onClose={() => setSlashFor(null)}
+                onPick={(kind) => {
+                  controller.retypeNoteBlock(slashFor, kind);
+                  setSlashFor(null);
+                  setFreshId(slashFor);
+                }}
+              />
+            )}
+
             {/* 본문 아래의 빈 자리 — 누르면 마지막에 문단을 더한다. 글 끝에서 아래를
                 눌러 이어 쓰는 것이 문서 편집기의 몸에 익은 동작이다. */}
             {!readOnly && (
@@ -135,6 +182,20 @@ function PageList({ controller }: { controller: EditorController }) {
   const pages = controller.notePages;
   const curId = controller.notePage?.id ?? null;
   const cover = noteCoverColor(controller.doc.cover);
+  /**
+   * 이 공책 안에서 **페이지 이름과 본문을 함께** 찾는다(요청 12번).
+   *
+   * 홈 검색이 문서를 찾아 주는 자리라면 여기는 **한 권 안에서** 찾는 자리다 —
+   * 회의록처럼 같은 틀이 수십 장 쌓이면 제목만으로는 못 고른다. 걸린 줄을
+   * 그 자리에 보여 줘 "이 장이 맞나"를 목록에서 판단할 수 있게 한다.
+   */
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const shown = query
+    ? pages
+        .map((pg) => ({ pg, hit: pageHit(pg, query) }))
+        .filter((x) => x.hit !== null)
+    : pages.map((pg) => ({ pg, hit: null }));
   return (
     <aside
       data-note-pages
@@ -157,8 +218,53 @@ function PageList({ controller }: { controller: EditorController }) {
         <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, color: 'var(--mf-faint)' }}>{pages.length}</span>
       </div>
 
-      {pages.map((pg, i) => (
-        <PageRow key={pg.id} controller={controller} page={pg} index={i} active={pg.id === curId} />
+      {/* 검색칸 — 페이지가 한 장뿐이면 찾을 것이 없으므로 그리지 않는다. */}
+      {pages.length > 1 && (
+        <div style={{ position: 'relative', margin: '0 4px 8px' }}>
+          <svg
+            aria-hidden="true"
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--mf-faint)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            style={{ position: 'absolute', left: 9, top: 9, pointerEvents: 'none' }}
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.5-4.5" />
+          </svg>
+          <input
+            data-note-search
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="이 공책에서 찾기"
+            aria-label="이 공책에서 찾기"
+            style={{
+              width: '100%',
+              height: 31,
+              padding: '0 9px 0 27px',
+              borderRadius: 9,
+              border: '1px solid var(--mf-border)',
+              background: 'var(--mf-panel2)',
+              color: 'var(--mf-text)',
+              fontFamily: 'inherit',
+              fontSize: 12,
+              outline: 'none',
+            }}
+          />
+        </div>
+      )}
+
+      {query && shown.length === 0 && (
+        <div data-note-search-empty style={{ padding: '16px 10px', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.7, wordBreak: 'keep-all' }}>
+          이 공책의 제목과 본문을 모두 찾아봤어요. 다른 낱말로 찾아보세요.
+        </div>
+      )}
+
+      {shown.map(({ pg, hit }) => (
+        <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} />
       ))}
 
       {!controller.readOnly && (
@@ -194,8 +300,9 @@ function PageList({ controller }: { controller: EditorController }) {
   );
 }
 
-function PageRow({ controller, page, index, active }: { controller: EditorController; page: NotePage; index: number; active: boolean }) {
-  const excerpt = pageExcerpt(page, 60);
+function PageRow({ controller, page, index, active, hit }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null }) {
+  // 검색 중이면 **걸린 줄**을 보여 준다 — 첫 줄은 왜 걸렸는지를 말해 주지 못한다.
+  const excerpt = hit ?? pageExcerpt(page, 60);
   const tag = page.tag ?? null;
   return (
     <div
@@ -259,13 +366,35 @@ function PageRow({ controller, page, index, active }: { controller: EditorContro
         )}
       </div>
       {excerpt && (
-        <div style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 18 }}>{excerpt}</div>
+        <div
+          data-note-page-hit={hit ? '1' : undefined}
+          style={{ fontSize: 11, color: hit ? 'var(--mf-subtext)' : 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 18 }}
+        >
+          {excerpt}
+        </div>
       )}
       {page.updatedAt && (
         <div style={{ fontSize: 10, color: 'var(--mf-faint2)', paddingLeft: 18 }}>{formatLastEdited(page.updatedAt)}</div>
       )}
     </div>
   );
+}
+
+/**
+ * 이 페이지가 질의에 걸리는가 — 걸렸으면 **보여 줄 한 줄**, 아니면 `null`.
+ *
+ * 제목에서 걸리면 빈 문자열을 돌려준다(행이 제목을 이미 보여 주므로 같은 말을
+ * 두 번 쓰지 않는다 — 호출부는 `!== null`로 판단한다).
+ */
+function pageHit(page: NotePage, query: string): string | null {
+  if (page.title.toLowerCase().includes(query)) return '';
+  for (const b of page.blocks) {
+    const line = blockText(b)
+      .split('\n')
+      .find((l) => l.toLowerCase().includes(query));
+    if (line) return line.length > 70 ? `${line.slice(0, 69)}…` : line;
+  }
+  return null;
 }
 
 /* ── 페이지 머리(제목·태그·페이지 조작) ───────────────────────────────────── */
@@ -620,9 +749,11 @@ interface BlockProps {
   setFreshId: (id: string | null) => void;
   rememberBox: () => void;
   focusBox: (el: HTMLElement) => void;
+  /** 빈 블록에서 `/`를 쳤다 — 종류 목록을 연다. */
+  openSlash: (blockId: string) => void;
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, rememberBox, focusBox }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, rememberBox, focusBox, openSlash }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
 
@@ -653,6 +784,122 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
     return (
       <div data-note-block={block.id} data-note-kind={block.kind} style={{ padding: '14px 0' }}>
         <hr style={{ border: 'none', borderTop: '1px solid var(--mf-border)', margin: 0 }} />
+      </div>
+    );
+  }
+
+  if (shape === 'img') {
+    return <ImageBlock controller={controller} block={block} />;
+  }
+
+  if (shape === 'link') {
+    return <LinkBlock controller={controller} block={block} />;
+  }
+
+  if (block.kind === 'callout') {
+    const tone = TONES.find((t) => t.tone === (block.tone ?? 'warn')) ?? TONES[0]!;
+    return (
+      <div
+        data-note-block={block.id}
+        data-note-kind="callout"
+        onMouseUp={rememberBox}
+        style={{ display: 'flex', gap: 10, alignItems: 'flex-start', margin: '8px 0', padding: '11px 13px', borderRadius: 10, background: tone.bg }}
+      >
+        {/* 어조는 **왼쪽 칩을 눌러** 돈다 — 세 가지뿐이라 메뉴보다 한 번 누르는 쪽이 빠르다. */}
+        <button
+          type="button"
+          data-note-tone={block.tone ?? 'warn'}
+          disabled={readOnly}
+          title="주의 · 결정 · 질문"
+          onClick={() => {
+            const i = TONES.findIndex((t) => t.tone === (block.tone ?? 'warn'));
+            controller.setNoteCalloutTone(block.id, TONES[(i + 1) % TONES.length]!.tone);
+          }}
+          className="btn"
+          style={{
+            flex: '0 0 auto',
+            height: 20,
+            marginTop: 2,
+            padding: '0 8px',
+            borderRadius: 999,
+            border: 'none',
+            background: 'transparent',
+            color: tone.ink,
+            fontFamily: 'inherit',
+            fontSize: 11,
+            fontWeight: 800,
+            cursor: readOnly ? 'default' : 'pointer',
+          }}
+        >
+          {tone.name}
+        </button>
+        <NoteLine
+          onFocusLine={focusBox}
+          lineKey={block.id}
+          runs={block.runs}
+          readOnly={readOnly}
+          placeholder="알려 둘 것"
+          autoFocus={freshId === block.id}
+          onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
+          onEnter={enterBlock}
+          onBackspaceAtStart={backBlock}
+          style={{ flex: 1, minWidth: 0, fontSize: 13.5, lineHeight: 1.75, color: 'var(--mf-text)' }}
+        />
+      </div>
+    );
+  }
+
+  if (block.kind === 'toggle') {
+    const open = block.open ?? true;
+    return (
+      <div data-note-block={block.id} data-note-kind="toggle" onMouseUp={rememberBox} style={{ padding: '2px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+          <button
+            type="button"
+            data-note-toggle={open ? 'open' : 'closed'}
+            aria-expanded={open}
+            aria-label={open ? '접기' : '펼치기'}
+            onClick={() => controller.toggleNoteOpen(block.id)}
+            className="btn"
+            style={{ flex: '0 0 auto', width: 18, height: 24, border: 'none', background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .14s ease' }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </button>
+          <NoteLine
+            onFocusLine={focusBox}
+            lineKey={block.id}
+            runs={block.runs}
+            readOnly={readOnly}
+            placeholder="접어 둘 제목"
+            autoFocus={freshId === block.id}
+            onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
+            onEnter={enterBlock}
+            onBackspaceAtStart={backBlock}
+            style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, lineHeight: 1.8, color: 'var(--mf-text)' }}
+          />
+        </div>
+        {/* 접힌 토글의 **안쪽 내용은 다음 블록들**이 아니라 이 한 줄이다(이번 판).
+            구조를 중첩으로 들면 모델이 트리가 되고, 그러면 순서·이동·삭제가 전부
+            달라진다 — 접는 쓰임의 대부분은 "긴 설명을 감춰 두기"라 한 줄로 충분하다. */}
+        {open && (
+          <div style={{ paddingLeft: 24, paddingTop: 2 }}>
+            <NoteLine
+              onFocusLine={focusBox}
+              lineKey={`${block.id}:body`}
+              runs={block.items?.[0]?.runs}
+              readOnly={readOnly}
+              placeholder="펼쳤을 때 보일 내용"
+              onChange={(runs) => {
+                const itemId = block.items?.[0]?.id;
+                if (itemId) controller.setNoteItemRuns(block.id, itemId, runs);
+                else controller.addNoteItem(block.id);
+              }}
+              style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--mf-subtext)' }}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -817,13 +1064,281 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
         lineKey={block.id}
         runs={block.runs}
         readOnly={readOnly}
-        placeholder={index === 0 ? '여기에 글을 쓰세요' : ''}
+        placeholder={index === 0 ? '여기에 글을 쓰세요 — / 로 블록 넣기' : ''}
         autoFocus={freshId === block.id}
         onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
         onEnter={enterBlock}
         onBackspaceAtStart={backBlock}
+        onSlash={() => {
+          if (readOnly) return false;
+          openSlash(block.id);
+          return true;
+        }}
         style={style}
       />
+    </div>
+  );
+}
+
+/**
+ * 이미지 블록 — 파일을 올리면 본문에는 **참조만** 남는다(플로트 이미지와 같은 길:
+ * `attachImageFile` → 저장소 업로드 → `mfimg:…`). 저장소가 없으면 데이터 URL로
+ * 물러서고, 그때는 문서가 무거워지므로 `noteIfInlined`가 이미 경고를 켠다.
+ */
+function ImageBlock({ controller, block }: { controller: EditorController; block: NoteBlock }) {
+  const readOnly = controller.readOnly;
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const url = block.src ? (controller.imageUrls[block.src] ?? (block.src.startsWith('data:') ? block.src : '')) : '';
+  return (
+    <div data-note-block={block.id} data-note-kind="img" style={{ padding: '8px 0' }}>
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          data-note-image
+          style={{ display: 'block', maxWidth: '100%', borderRadius: 10, border: '1px solid var(--mf-border-soft)' }}
+        />
+      ) : (
+        <button
+          type="button"
+          data-note-image-pick
+          disabled={readOnly}
+          onClick={() => inputRef.current?.click()}
+          className="btn"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            width: '100%',
+            height: 96,
+            borderRadius: 10,
+            border: '1.5px dashed var(--mf-border)',
+            background: 'transparent',
+            color: 'var(--mf-muted)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            cursor: readOnly ? 'default' : 'pointer',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3.5" y="5" width="17" height="14" rx="2" />
+            <circle cx="9" cy="10" r="1.6" />
+            <path d="m5 17 4.5-4.5L14 17l3-3 3 3" />
+          </svg>
+          {block.src ? '이미지를 불러오는 중…' : '이미지 올리기'}
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = ''; // 같은 파일을 다시 골라도 change가 오게
+          if (file) void controller.setNoteImage(block.id, file);
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * 문서 링크 블록 — 이 앱의 **다른 문서**를 본문에 꽂는다(디자인의 `보드 링크`).
+ *
+ * 주소를 적는 것이 아니라 **문서를 고른다**: 제목이 바뀌어도 링크가 살아 있고,
+ * 무엇보다 여기서 고를 수 있는 것이 곧 "내가 볼 수 있는 문서"라 끊어진 링크가
+ * 생기지 않는다.
+ */
+function LinkBlock({ controller, block }: { controller: EditorController; block: NoteBlock }) {
+  const [open, setOpen] = useState(false);
+  const readOnly = controller.readOnly;
+  const targets = controller.linkTargets;
+  const target = targets.find((t) => t.docId === block.docId) ?? null;
+  return (
+    <div data-note-block={block.id} data-note-kind="link" style={{ padding: '8px 0', position: 'relative' }}>
+      {target ? (
+        <a
+          href={target.href}
+          data-note-link={target.docId}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '11px 13px',
+            borderRadius: 10,
+            border: '1px solid var(--mf-border-soft)',
+            background: 'var(--mf-panel)',
+            color: 'inherit',
+            textDecoration: 'none',
+          }}
+        >
+          <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2.5, background: target.color, flex: '0 0 auto' }} />
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{target.title}</span>
+          <span style={{ fontSize: 11, color: 'var(--mf-faint)', flex: '0 0 auto' }}>{target.kindName}</span>
+          {!readOnly && (
+            <button type="button" className="btn" onClick={(e) => { e.preventDefault(); setOpen((v) => !v); }} style={{ ...GHOST_BTN, height: 22, flex: '0 0 auto' }}>
+              바꾸기
+            </button>
+          )}
+        </a>
+      ) : (
+        <button
+          type="button"
+          data-note-link-pick
+          disabled={readOnly}
+          onClick={() => setOpen((v) => !v)}
+          className="btn"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            width: '100%',
+            height: 52,
+            borderRadius: 10,
+            border: '1.5px dashed var(--mf-border)',
+            background: 'transparent',
+            color: 'var(--mf-muted)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            cursor: readOnly ? 'default' : 'pointer',
+          }}
+        >
+          문서 고르기
+        </button>
+      )}
+      {open && !readOnly && (
+        <div
+          data-note-link-menu
+          className="lnb-scroll"
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            zIndex: 30,
+            maxHeight: 260,
+            overflowY: 'auto',
+            padding: 6,
+            borderRadius: 12,
+            background: 'var(--mf-card)',
+            border: '1px solid var(--mf-border)',
+            boxShadow: '0 20px 40px -22px rgba(46,42,38,.5)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+          }}
+        >
+          {targets.length === 0 && <div style={{ padding: '10px 9px', fontSize: 11.5, color: 'var(--mf-faint)' }}>연결할 문서가 아직 없어요.</div>}
+          {targets.map((t) => (
+            <button
+              key={t.docId}
+              type="button"
+              data-note-link-option={t.docId}
+              className="btn"
+              onClick={() => {
+                controller.setNoteLinkDoc(block.id, t.docId);
+                setOpen(false);
+              }}
+              style={MENU_ITEM}
+            >
+              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 2, background: t.color, flex: '0 0 auto' }} />
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+              <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>{t.kindName}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * `/` 커맨드 목록 — 지금 블록의 **종류를 바꾼다**(새 블록을 만들지 않는다).
+ *
+ * 빈 블록에서만 열리므로 "이 줄을 무엇으로 만들까"가 곧 요청이고, 새로 만들면
+ * 빈 줄이 하나 남는다. 좁혀 찾을 수 있게 입력칸을 함께 둔다(블록이 열다섯이다).
+ */
+function SlashMenu({
+  query,
+  onQuery,
+  onPick,
+  onClose,
+}: {
+  query: string;
+  onQuery: (v: string) => void;
+  onPick: (kind: NoteBlockKind) => void;
+  onClose: () => void;
+}) {
+  const q = query.trim().toLowerCase();
+  const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.hint}`.toLowerCase().includes(q));
+  return (
+    <div data-note-slash style={{ position: 'relative' }}>
+      <div
+        className="lnb-scroll"
+        style={{
+          position: 'absolute',
+          top: 4,
+          left: 0,
+          zIndex: 40,
+          width: 264,
+          maxHeight: 320,
+          overflowY: 'auto',
+          padding: 6,
+          borderRadius: 12,
+          background: 'var(--mf-card)',
+          border: '1px solid var(--mf-border)',
+          boxShadow: '0 22px 44px -22px rgba(46,42,38,.55)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+        }}
+      >
+        <input
+          data-note-slash-input
+          autoFocus
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && hits[0]) {
+              e.preventDefault();
+              onPick(hits[0].kind);
+            }
+            if (e.key === 'Escape') onClose();
+          }}
+          placeholder="블록 찾기"
+          aria-label="블록 찾기"
+          style={{
+            height: 30,
+            margin: '0 0 4px',
+            padding: '0 9px',
+            borderRadius: 8,
+            border: '1px solid var(--mf-border)',
+            background: 'var(--mf-panel2)',
+            color: 'var(--mf-text)',
+            fontFamily: 'inherit',
+            fontSize: 12,
+            outline: 'none',
+          }}
+        />
+        {hits.length === 0 && <div style={{ padding: '10px 9px', fontSize: 11.5, color: 'var(--mf-faint)' }}>맞는 블록이 없어요.</div>}
+        {hits.map((t) => (
+          <button
+            key={t.kind}
+            type="button"
+            data-note-slash-item={t.kind}
+            className="btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onPick(t.kind)}
+            style={{ ...MENU_ITEM, flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}
+          >
+            <span style={{ fontWeight: 700 }}>{t.name}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>{t.hint}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

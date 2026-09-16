@@ -47,6 +47,12 @@ export function collectImageRefs(doc: Doc): string[] {
   for (const f of doc.floats) {
     if (isImageRef(f.img)) out.add(f.img!);
   }
+  // 공책 — 이미지 블록도 같은 참조를 쓴다(표시·내보내기가 같은 길을 타야 한다).
+  for (const pg of doc.pages ?? []) {
+    for (const b of pg.blocks) {
+      if (isImageRef(b.src)) out.add(b.src!);
+    }
+  }
   return Array.from(out);
 }
 
@@ -55,7 +61,7 @@ export function collectImageRefs(doc: Doc): string[] {
  * `{ kind, id }`로 어디에 붙어 있는지까지 알려 준다(옮긴 뒤 그 자리를 참조로 바꾼다).
  */
 export interface InlineImage {
-  kind: 'node' | 'float';
+  kind: 'node' | 'float' | 'note';
   id: string;
   dataUrl: string;
 }
@@ -86,7 +92,19 @@ export function replaceImageValues(doc: Doc, byValue: Record<string, string>): D
     touched = true;
     return { ...f, img: ref };
   });
-  return touched ? { ...doc, nodes, floats } : doc;
+  const pages = (doc.pages ?? []).map((pg) => {
+    let pageTouched = false;
+    const blocks = pg.blocks.map((b) => {
+      const ref = b.src ? byValue[b.src] : undefined;
+      if (!ref) return b;
+      pageTouched = true;
+      return { ...b, src: ref };
+    });
+    if (!pageTouched) return pg;
+    touched = true;
+    return { ...pg, blocks };
+  });
+  return touched ? { ...doc, nodes, floats, ...(doc.pages ? { pages } : {}) } : doc;
 }
 
 export function collectInlineImages(doc: Doc): InlineImage[] {
@@ -97,6 +115,11 @@ export function collectInlineImages(doc: Doc): InlineImage[] {
   }
   for (const f of doc.floats) {
     if (typeof f.img === 'string' && f.img.startsWith('data:')) out.push({ kind: 'float', id: f.id, dataUrl: f.img });
+  }
+  for (const pg of doc.pages ?? []) {
+    for (const b of pg.blocks) {
+      if (typeof b.src === 'string' && b.src.startsWith('data:')) out.push({ kind: 'note', id: b.id, dataUrl: b.src });
+    }
   }
   return out;
 }

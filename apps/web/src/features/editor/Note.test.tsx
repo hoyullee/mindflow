@@ -240,3 +240,136 @@ describe('공책 에디터', () => {
     expect(container.querySelector('[data-note-line="b1"]')?.getAttribute('contenteditable')).toBe('false');
   });
 });
+
+describe('공책 2판 — 공책 안에서 찾기 · 고급 블록 · 협업', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('**이 공책에서 찾기** — 제목과 본문을 함께 훑고, 걸린 줄을 보여 준다', async () => {
+    localStorage.setItem('mindflow_doc_ns1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-search]')).toBeTruthy());
+
+    // 본문에만 있는 낱말 — 제목으로는 못 찾는 장이다.
+    fireEvent.change(container.querySelector('[data-note-search]')!, { target: { value: 'Keep' } });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-page-row]')).toHaveLength(1));
+    expect(container.querySelector('[data-note-page-row="p2"]')).toBeTruthy();
+
+    // 제목으로 찾으면 그 장만 남는다.
+    fireEvent.change(container.querySelector('[data-note-search]')!, { target: { value: '회의록' } });
+    await waitFor(() => expect(container.querySelector('[data-note-page-row="p1"]')).toBeTruthy());
+    expect(container.querySelector('[data-note-page-row="p2"]')).toBeNull();
+  });
+
+  it('맞는 장이 없으면 그렇게 말한다', async () => {
+    localStorage.setItem('mindflow_doc_ns2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-search]')).toBeTruthy());
+
+    fireEvent.change(container.querySelector('[data-note-search]')!, { target: { value: '없는낱말' } });
+    await waitFor(() => expect(container.querySelector('[data-note-search-empty]')).toBeTruthy());
+    expect(container.querySelectorAll('[data-note-page-row]')).toHaveLength(0);
+  });
+
+  it('주소의 `page=`로 **그 장을 열고** 연다(홈 검색의 내용 줄이 오는 길)', async () => {
+    localStorage.setItem('mindflow_doc_ns3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns3&title=x&page=p2');
+    await waitFor(() => expect(container.querySelector('[data-note-title]')).toBeTruthy());
+    await waitFor(() => expect((container.querySelector('[data-note-title]') as HTMLInputElement).value).toBe('주간 회고'));
+  });
+
+  it('빈 줄에서 `/`를 치면 블록 목록이 뜨고, 고르면 그 줄의 종류가 바뀐다', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_ns4', JSON.stringify(empty));
+    const { container } = renderEditor('/editor?map=ns4&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
+
+    fireEvent.keyDown(container.querySelector('[data-note-line="b1"]')!, { key: '/' });
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-slash-item="callout"]')!);
+    saveNow();
+    await waitFor(() => expect(saved('ns4')?.pages?.[0]?.blocks?.[0]?.kind).toBe('callout'));
+  });
+
+  it('**글자가 있는 줄에서는 `/`가 그냥 글자다** — 코드·주소를 적다 메뉴가 끼어들지 않게', async () => {
+    localStorage.setItem('mindflow_doc_ns5', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns5&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
+
+    fireEvent.keyDown(container.querySelector('[data-note-line="b1"]')!, { key: '/' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(container.querySelector('[data-note-slash]')).toBeNull();
+  });
+
+  it('콜아웃은 어조를 돌려 가며 고른다(주의 → 결정 → 질문)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: 't', blocks: [{ id: 'b1', kind: 'callout', tone: 'warn', runs: [{ t: '보세요', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_ns6', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ns6&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-tone="warn"]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-tone="warn"]')!);
+    await waitFor(() => expect(container.querySelector('[data-note-tone="decide"]')).toBeTruthy());
+    saveNow();
+    await waitFor(() => expect(saved('ns6')?.pages?.[0]?.blocks?.[0]?.tone).toBe('decide'));
+  });
+
+  it('토글은 접고 펴며, 그 상태가 **문서에 남는다**', async () => {
+    const doc = {
+      ...NOTE,
+      pages: [{ id: 'p1', title: 't', blocks: [{ id: 'b1', kind: 'toggle', open: true, runs: [{ t: '더 보기', b: false, c: null }], items: [{ id: 'i1', runs: [{ t: '숨긴 내용', b: false, c: null }] }] }] }],
+    };
+    localStorage.setItem('mindflow_doc_ns7', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ns7&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-toggle="open"]')).toBeTruthy());
+    expect(container.querySelector('[data-note-line="b1:body"]')).toBeTruthy();
+
+    fireEvent.click(container.querySelector('[data-note-toggle="open"]')!);
+    await waitFor(() => expect(container.querySelector('[data-note-toggle="closed"]')).toBeTruthy());
+    // 접으면 본문 줄이 사라진다.
+    expect(container.querySelector('[data-note-line="b1:body"]')).toBeNull();
+    saveNow();
+    await waitFor(() => expect(saved('ns7')?.pages?.[0]?.blocks?.[0]?.open).toBe(false));
+  });
+
+  it('문서 링크는 **주소가 아니라 문서를 고른다**', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ spaces: [{ id: 's1', name: '일반', home: true, color: '#f0663f', maps: [{ title: '스프린트 보드', when: '방금', hue: '#f0663f', docId: 'mp9' }], folders: [] }], mapFolders: {} }),
+    );
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: 't', blocks: [{ id: 'b1', kind: 'link' }] }] };
+    localStorage.setItem('mindflow_doc_ns8', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ns8&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-link-pick]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-link-pick]')!);
+    await waitFor(() => expect(container.querySelector('[data-note-link-option="mp9"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-link-option="mp9"]')!);
+    saveNow();
+    await waitFor(() => expect(saved('ns8')?.pages?.[0]?.blocks?.[0]?.docId).toBe('mp9'));
+  });
+
+  it('이미지 블록은 올리기 전에는 **자리만** 잡는다', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: 't', blocks: [{ id: 'b1', kind: 'img' }] }] };
+    localStorage.setItem('mindflow_doc_ns9', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ns9&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-image-pick]')).toBeTruthy());
+    expect(container.querySelector('[data-note-image]')).toBeNull();
+  });
+
+  it('캔버스 전용 도구는 뜨지 않는다 — 스타일·삽입·맵 검색', async () => {
+    localStorage.setItem('mindflow_doc_ns10', JSON.stringify(NOTE));
+    renderEditor('/editor?map=ns10&title=x');
+    await waitFor(() => expect(screen.getByRole('button', { name: '공유' })).toBeTruthy());
+
+    expect(screen.queryByRole('button', { name: '삽입' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '스타일' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '맵에서 검색' })).toBeNull();
+    // 공유는 남는다(보기 권한으로 부르는 길 — 요청).
+    expect(screen.getByRole('button', { name: '공유' })).toBeTruthy();
+  });
+});

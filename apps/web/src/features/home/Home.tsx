@@ -212,7 +212,30 @@ export function Home() {
         ) : (
           <>
             {view.loading && state.recent.length > 0 && !view.searchQuery && <RecentStripSkeleton count={state.recent.length} />}
-            {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
+            {/* 검색으로 들어갈 때 **접힌다**(지우지 않는다 — 요청·디자인). 높이·투명도·
+                위치가 함께 줄어 전환이 이어져 보이고, 검색을 지우면 같은 길로 되돌아온다.
+                접힌 동안에는 `inert`로 키보드 초점까지 막는다 — `max-height: 0`은 화면에서
+                감출 뿐이라 안의 카드가 여전히 탭으로 잡히면 "보이지 않는 곳에 초점이 있는"
+                상태가 된다(pointer-events만으로는 못 막는 자리다). */}
+            {view.recentSectionVisible && (
+              <div
+                data-recent-collapse={view.recentCollapsed ? '1' : '0'}
+                aria-hidden={view.recentCollapsed || undefined}
+                {...(view.recentCollapsed ? { inert: '' } : {})}
+                style={{
+                  overflow: 'hidden',
+                  maxHeight: view.recentCollapsed ? 0 : 460,
+                  opacity: view.recentCollapsed ? 0 : 1,
+                  transform: view.recentCollapsed ? 'translateY(-6px)' : 'none',
+                  // 접힐 때 아래 여백까지 함께 걷어야 빈 자리가 남지 않는다.
+                  marginBottom: view.recentCollapsed ? -34 : 0,
+                  pointerEvents: view.recentCollapsed ? 'none' : undefined,
+                  transition: 'max-height .36s cubic-bezier(.4,0,.2,1), opacity .22s ease, transform .3s ease, margin-bottom .36s cubic-bezier(.4,0,.2,1)',
+                }}
+              >
+                <RecentStrip cards={view.recentCards} controller={controller} />
+              </div>
+            )}
             {/* 툴바(검색창이 그 안에 있다)는 검색 중에도 남는다 — 검색창이 사라지면
                 글자를 고칠 수도, 지울 수도 없다. 스페이스 제목은 "지금 어디에 있는가",
                 즉 검색을 지웠을 때 돌아갈 자리를 계속 가리킨다. */}

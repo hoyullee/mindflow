@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { docSearchText, matchesQuery } from './searchIndex';
+import { docSearchHits, docSearchText, matchesQuery, snippetAround } from './searchIndex';
 
 const doc = (extra: Record<string, unknown> = {}) =>
   JSON.stringify({
@@ -93,5 +93,82 @@ describe('docSearchText — 칸반', () => {
     expect(matchesQuery('내 보드', t, '온보딩')).toBe(true);
     expect(matchesQuery('내 보드', t, '스프린트')).toBe(true); // 열 제목
     expect(matchesQuery('내 보드', t, '없는낱말')).toBe(false);
+  });
+});
+
+describe('공책 — 페이지와 본문도 찾는다(요청)', () => {
+  const NOTE = JSON.stringify({
+    kind: 'note',
+    nodes: {},
+    floats: [],
+    pages: [
+      {
+        id: 'p1',
+        title: '9월 3주 회의록',
+        blocks: [
+          { id: 'b1', kind: 'p', runs: [{ t: '릴리즈 범위를 다시 좁혔습니다.' }] },
+          { id: 'b2', kind: 'ck', items: [{ runs: [{ t: '알림을 멘션과 시스템으로 분리한다' }] }] },
+          { id: 'b3', kind: 'table', rows: [[[{ t: '할 일' }], [{ t: '담당' }]]] },
+          { id: 'b4', kind: 'img', src: 'mfimg:x/y.webp' },
+        ],
+      },
+      { id: 'p2', title: '주간 회고', blocks: [{ id: 'b9', kind: 'p', runs: [{ t: 'Keep' }] }] },
+    ],
+  });
+
+  it('페이지 제목·문단·목록 항목·표 칸이 모두 검색 대상이다', () => {
+    const text = docSearchText('nb1', NOTE);
+    expect(text).toContain('9월 3주 회의록');
+    expect(text).toContain('릴리즈 범위');
+    expect(text).toContain('분리한다');
+    expect(text).toContain('할 일');
+    // 이미지 참조는 글이 아니다 — 경로가 검색에 걸리면 안 된다.
+    expect(text).not.toContain('mfimg');
+  });
+
+  it('걸린 자리를 **종류와 함께** 돌려준다(어느 장인지까지)', () => {
+    const hits = docSearchHits('nb1', NOTE, '회의록');
+    expect(hits[0]).toMatchObject({ kind: '페이지', pageId: 'p1' });
+
+    const body = docSearchHits('nb1', NOTE, '분리한다');
+    expect(body[0]).toMatchObject({ kind: '본문', pageId: 'p1' });
+  });
+
+  it('한 문서가 목록을 덮지 않게 개수를 끊는다', () => {
+    const many = JSON.stringify({
+      kind: 'note',
+      nodes: {},
+      floats: [],
+      pages: [{ id: 'p', title: 't', blocks: Array.from({ length: 20 }, (_, i) => ({ id: `b${i}`, kind: 'p', runs: [{ t: `같은 말 ${i}` }] })) }],
+    });
+    expect(docSearchHits('nb2', many, '같은 말', 4)).toHaveLength(4);
+  });
+
+  it('질의가 없으면 히트도 없다(검색 중이 아닐 때 헛일하지 않는다)', () => {
+    expect(docSearchHits('nb1', NOTE, '')).toEqual([]);
+  });
+
+  it('손상된 본문은 조용히 빈 결과다 — 검색이 문서 하나에 던지지 않는다', () => {
+    expect(docSearchText('bad', '{ not json')).toBe('');
+    expect(docSearchHits('bad', '{ not json', '가')).toEqual([]);
+  });
+});
+
+describe('스니펫 — 걸린 자리를 가운데 둔다', () => {
+  it('짧은 줄은 그대로', () => {
+    expect(snippetAround('짧은 줄', '줄')).toBe('짧은 줄');
+  });
+
+  it('긴 줄은 앞뒤를 자르고 …를 붙인다', () => {
+    const long = `${'가'.repeat(120)}찾는말${'나'.repeat(120)}`;
+    const out = snippetAround(long, '찾는말', 40);
+    expect(out).toContain('찾는말');
+    expect(out.startsWith('…')).toBe(true);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.length).toBeLessThan(50);
+  });
+
+  it('없는 낱말이면 원문 그대로(호출부가 잘못 불러도 깨지지 않는다)', () => {
+    expect(snippetAround('가나다', '없음')).toBe('가나다');
   });
 });
