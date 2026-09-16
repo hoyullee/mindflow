@@ -162,7 +162,11 @@ export function Editor() {
         e.preventDefault();
       }}
     >
-      <Toolbar controller={controller} />
+      {/* GNB — **공책에서는 띄우지 않는다**(요청). 디자인의 공책 화면은 전체를 덮는
+          한 겹이고, 그 안의 상단 바가 뒤로·이름·저장·경로·공유·댓글·기록을 모두
+          담는다. 위에 앱 메뉴 줄이 하나 더 있으면 같은 일을 하는 자리가 두 곳이 된다.
+          (편집·보기 메뉴의 항목들은 단축키와 이 화면의 도구로 그대로 닿는다.) */}
+      {!controller.isNote && <Toolbar controller={controller} />}
       {/* 공유 맵에서 실시간이 오래 끊기면 편집을 멈추고 새로고침을 안내한다 —
           갈라진 채 계속 쓰면 나중에 저장한 쪽이 상대 작업을 덮는다. */}
       <CollabPaused controller={controller} />
@@ -175,6 +179,9 @@ export function Editor() {
         // 공유에서 나가면 이 맵에 더 접근할 수 없다 — 열려 있는 에디터에 남겨 두지 않는다.
         onLeft={controller.goHome}
         theme={th}
+        // 제목이 **무엇을 공유하는지**를 말한다(요청) — `마인드맵 공유`·`공책 공유`…
+        kindName={controller.isNote ? '공책' : controller.isKanban ? '칸반 보드' : controller.isBoard ? '화이트보드' : '마인드맵'}
+        docName={controller.docTitle}
       />
       <ShortcutHelp controller={controller} />
       <VersionHistory controller={controller} />

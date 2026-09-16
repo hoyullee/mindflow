@@ -147,13 +147,15 @@ describe('공책 에디터', () => {
     expect(saved('nb5').pages[1].id).toBe('p2');
   });
 
-  it('**마지막 페이지는 지울 수 없다** — 버튼이 꺼진다', async () => {
+  // 페이지 조작은 **목록 행의 우클릭**에 있다(요청으로 본문 머리에서 옮겼다).
+  it('**마지막 페이지는 지울 수 없다** — 메뉴 항목이 꺼진다', async () => {
     const one = { ...NOTE, pages: [NOTE.pages[0]] };
     localStorage.setItem('mindflow_doc_nb6', JSON.stringify(one));
     const { container } = renderEditor('/editor?map=nb6&title=x');
-    await waitFor(() => expect(container.querySelector('[data-note-del-page]')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('[data-note-page-row]')).toBeTruthy());
 
-    const del = container.querySelector('[data-note-del-page]') as HTMLButtonElement;
+    fireEvent.contextMenu(container.querySelector('[data-note-page-row]')!);
+    const del = (await waitFor(() => container.querySelector('[data-note-page-del]'))) as HTMLButtonElement;
     expect(del.disabled).toBe(true);
     expect(del.getAttribute('title')).toContain('한 장 이상');
   });
@@ -161,9 +163,10 @@ describe('공책 에디터', () => {
   it('두 장이면 지워지고 남은 장으로 옮겨 간다', async () => {
     localStorage.setItem('mindflow_doc_nb7', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=nb7&title=x');
-    await waitFor(() => expect(container.querySelector('[data-note-del-page]')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('[data-note-page-row]')).toBeTruthy());
 
-    fireEvent.click(container.querySelector('[data-note-del-page]') as HTMLButtonElement);
+    fireEvent.contextMenu(container.querySelector('[data-note-page-row]')!);
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-page-del]'))) as HTMLButtonElement);
     await waitFor(() => expect(container.querySelectorAll('[data-note-page-row]')).toHaveLength(1));
     expect((container.querySelector('[data-note-title]') as HTMLInputElement).value).toBe('주간 회고');
   });
@@ -177,13 +180,14 @@ describe('공책 에디터', () => {
     fireEvent.focus(container.querySelector('[data-note-line="b1"]')!);
     fireEvent.mouseDown(container.querySelector('[data-note-blocktype]')!);
     fireEvent.click(container.querySelector('[data-note-blocktype]')!);
-    fireEvent.click(await screen.findByText('글머리 목록'));
+    // 블록 메뉴는 **글의 종류**만 담는다(디자인) — 인용으로 바꿔도 글은 그대로다.
+    fireEvent.click(await screen.findByText('인용'));
     saveNow();
 
     await waitFor(() => {
       const block = saved('nb8')?.pages?.[0]?.blocks?.[0];
-      expect(block?.kind).toBe('ul');
-      expect(block?.items?.[0]?.runs?.[0]?.t).toBe('릴리즈 범위를 좁혔습니다.');
+      expect(block?.kind).toBe('q');
+      expect(block?.runs?.[0]?.t).toBe('릴리즈 범위를 좁혔습니다.');
     });
   });
 
@@ -369,9 +373,9 @@ describe('공책 2판 — 공책 안에서 찾기 · 고급 블록 · 협업', (
     expect(screen.queryByRole('button', { name: '삽입' })).toBeNull();
     expect(screen.queryByRole('button', { name: '스타일' })).toBeNull();
     expect(screen.queryByRole('button', { name: '맵에서 검색' })).toBeNull();
-    // 공유는 남는다(보기 권한으로 부르는 길 — 요청). GNB와 공책 상단 바 **둘 다**에
-    // 있다(요청: "상단 바에 공유도 다시 넣어줘") — 그래서 하나만 찾으면 안 된다.
-    expect(screen.getAllByRole('button', { name: '공유' }).length).toBeGreaterThanOrEqual(2);
+    // 공유는 남는다(보기 권한으로 부르는 길 — 요청). 공책에서는 **GNB를 띄우지 않으므로**
+    // (요청) 상단 바의 하나뿐이다.
+    expect(screen.getAllByRole('button', { name: '공유' })).toHaveLength(1);
   });
 });
 
@@ -507,6 +511,7 @@ describe('공책 3판 — 디자인 이식', () => {
     });
     expect(stats.textContent).toMatch(/\d+자/);
     expect(stats.textContent).toMatch(/\d+단어/);
-    expect(stats.textContent).toMatch(/읽기 \d+분/);
+    // `읽기 n분`은 뺐다(요청) — 한 장짜리 페이지에서 말해 주는 것이 거의 없었다.
+    expect(stats.textContent).not.toMatch(/읽기/);
   });
 });

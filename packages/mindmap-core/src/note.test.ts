@@ -259,10 +259,17 @@ describe('표지 — 사용자 지정 > 태그 기본 > 기본값', () => {
     expect(noteCoverSketch(undefined)).toBe('grid');
   });
 
-  it('모르는 태그도 색을 준다 — 칩이 비지 않게', () => {
-    expect(noteTagColor('없는태그')).toBe('#B0A69B');
-    expect(noteTagColor(null)).toBe('#B0A69B');
+  it('직접 만든 태그도 **제 색**을 받는다 — 이름이 같으면 언제나 같은 색', () => {
+    // 태그는 저장소가 따로 없는 그냥 글자다(사용자가 만들 수 있다). 예전에는 모르는
+    // 이름을 전부 회색으로 칠해, 직접 만든 태그끼리 구분이 되지 않았다.
+    const a = noteTagColor('스프린트');
+    expect(a).not.toBe('#B0A69B');
+    expect(noteTagColor('스프린트')).toBe(a); // 같은 이름 → 같은 색(기기가 달라도)
+    expect(noteTagColor('디자인')).not.toBe(a); // 다른 이름 → 다른 색(대개)
+    // 기본 여섯은 표에 박힌 값 그대로, 빈 값만 회색이다.
     expect(noteTagColor('회의록')).toBe('#C98BB4');
+    expect(noteTagColor(null)).toBe('#B0A69B');
+    expect(noteTagColor('  ')).toBe('#B0A69B');
   });
 });
 

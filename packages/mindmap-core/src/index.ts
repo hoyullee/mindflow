@@ -112,3 +112,7 @@ export {
   NOTE_HIGHLIGHTS,
 } from './note';
 export type { NoteBlockShape } from './note';
+
+/** 공책 내보내기 — 페이지의 블록을 마크다운·글자·중간 표현으로(순수 함수). */
+export { noteMarkdown, notePlainText, noteLines, notePagesFor } from './noteExport';
+export type { NoteExportScope, NoteLineOut } from './noteExport';

@@ -248,6 +248,10 @@ export interface HomeViewModel {
   noteSectionVisible: boolean;
   boardSectionVisible: boolean;
   userInitial: string;
+  /** 공유 모달의 제목에 들어갈 종류 이름(`마인드맵`·`공책`…). */
+  shareKindName: string;
+  /** 그 문서의 이름 — 모달 부제에 인용된다. */
+  shareDocName: string;
 }
 
 
@@ -348,6 +352,9 @@ export function isNoteRaw(raw: string | null | undefined): boolean {
  * 없다 — 글이라서다. 그래서 디자인은 공책 카드를 **표지 + 첫 줄**로 그린다:
  * 목록에서 "무슨 내용인지"를 알려 주는 것이 축소된 지면보다 첫 문장이기 때문이다.
  */
+/** 종류 이름 — 공유 모달의 제목(`마인드맵 공유`)이 쓴다. */
+const KIND_LABEL: Record<DocKindName, string> = { map: '마인드맵', board: '화이트보드', kanban: '칸반 보드', note: '공책' };
+
 export interface NoteCardData {
   /** 표지 색 — 사용자 지정 > 태그 기본 > 흑연(`noteCoverColor`). 제목·책갈피·스케치가
    *  모두 이 한 색을 쓴다(디자인 원본의 `ink`). */
@@ -1051,6 +1058,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     // 구획은 **그 종류가 있을 때만** 선다 — 빈 구획 머리("공책 0")는 뜻이 없다.
     noteSectionVisible: !loading && !searching && !showDriveConnect && noteCards.length > 0,
     boardSectionVisible: !loading && !searching && !showDriveConnect && boardCards.length > 0,
+    // 공유 모달의 제목·부제 — 어떤 문서를 공유하는지가 제목에 실린다(요청).
+    // 종류는 카드가 이미 아는 값(`docKindOf`)에서, 이름은 그 카드의 제목에서 온다.
+    shareKindName: state.shareDocId ? KIND_LABEL[docKindOf('', state.shareDocId, state.previewDocs)] : '문서',
+    shareDocName: state.shareDocId ? (allCards.find((c) => c.docId === state.shareDocId)?.title ?? '') : '',
     userInitial: avatarLabel(state.userName),
   };
 }

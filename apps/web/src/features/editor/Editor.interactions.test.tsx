@@ -711,7 +711,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       const dialog = await screen.findByRole('dialog', { name: '공유' });
 
       // 체크박스가 아니라 스위치다 — 상태는 `aria-checked`로 읽는다(`role="switch"`).
-      const toggle = within(dialog).getByRole('switch', { name: '링크가 있는 사람은 열람' });
+      const toggle = within(dialog).getByRole('switch', { name: '링크로 공유' });
       expect(toggle.getAttribute('aria-checked')).toBe('false');
       expect(within(dialog).queryByLabelText('공유 링크')).toBeNull();
 
@@ -720,7 +720,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       const url = (await within(dialog).findByLabelText('공유 링크')) as HTMLInputElement;
       expect(url.value).toContain('/editor?map=shlink');
 
-      await user.click(within(dialog).getByRole('switch', { name: '링크가 있는 사람은 열람' }));
+      await user.click(within(dialog).getByRole('switch', { name: '링크로 공유' }));
       await waitFor(() => expect(shareStore.setLink).toHaveBeenCalledWith('shlink', null));
       await waitFor(() => expect(within(dialog).queryByLabelText('공유 링크')).toBeNull());
     });
@@ -735,7 +735,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
 
       await user.click(screen.getByRole('button', { name: '공유' }));
       const dialog = await screen.findByRole('dialog', { name: '공유' });
-      await user.click(within(dialog).getByRole('switch', { name: '링크가 있는 사람은 열람' }));
+      await user.click(within(dialog).getByRole('switch', { name: '링크로 공유' }));
       await user.click(await within(dialog).findByRole('button', { name: '링크 복사' }));
 
       expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/editor?map=shcopy'));

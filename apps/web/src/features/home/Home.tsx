@@ -275,7 +275,7 @@ export function Home() {
       <FeedbackModal open={state.feedbackOpen} onClose={controller.closeFeedback} page="home" theme={modalTheme} />
       {/* 공유 — 카드 메뉴에서 연다(요청). 에디터와 **같은 모달**이고 색만 홈 테마다.
           그리드의 카드는 언제나 내 맵이라 보기 전용이 아니다(공유받은 맵은 LNB에만). */}
-      <ShareModal open={!!state.shareDocId} docId={state.shareDocId ?? ''} onClose={controller.closeShare} theme={modalTheme} />
+      <ShareModal open={!!state.shareDocId} docId={state.shareDocId ?? ''} onClose={controller.closeShare} theme={modalTheme} kindName={view.shareKindName} docName={view.shareDocName} />
       <TemplateGallery state={state} controller={controller} />
       <DashboardPicker state={state} view={view} controller={controller} isMobile={isMobile} />
       <DashboardModal state={state} controller={controller} />
