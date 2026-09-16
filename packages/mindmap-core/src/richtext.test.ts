@@ -371,3 +371,28 @@ describe('richToMarkdown — 자동 링크는 부풀리지 않는다', () => {
     expect(richToMarkdown({ text: '문서', rich: [{ t: '문서', b: false, c: null, href: 'https://ex.com/a' }] })).toBe('[문서](https://ex.com/a)');
   });
 });
+
+describe('인라인 코드는 다른 글자 서식을 걷어낸다(요청)', () => {
+  const src = { text: '코드', rich: [{ t: '코드', b: true, c: '#f00', i: true, s: true, u: true }] };
+
+  it('켜면 굵게·기울임·취소선·밑줄이 사라진다 — 색은 남는다', () => {
+    const out = applyPartialStyle(src, 0, 2, 'k');
+    const r = out.rich![0]!;
+    expect(r.k).toBe(true);
+    expect(r.b).toBeFalsy();
+    expect(r.i).toBeFalsy();
+    expect(r.s).toBeFalsy();
+    expect(r.u).toBeFalsy();
+    // 색은 문법 강조처럼 쓰는 사람이 있어 건드리지 않는다.
+    expect(r.c).toBe('#f00');
+  });
+
+  it('끌 때는 아무것도 건드리지 않는다', () => {
+    const coded = applyPartialStyle(src, 0, 2, 'k');
+    const off = applyPartialStyle({ text: coded.text, rich: coded.rich }, 0, 2, 'k');
+    const r = off.rich?.[0];
+    expect(r?.k).toBeFalsy();
+    // 켤 때 이미 걷어냈으므로 되살아나지는 않는다 — 다만 끄기가 새로 지우지도 않는다.
+    expect(r?.c).toBe('#f00');
+  });
+});

@@ -29,7 +29,7 @@ import {
 import type { EditorController } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
-import { applyNoteFormat, noteEditBoxInSelection } from '../noteRichDom';
+import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
 import { NoteLine } from './NoteLine';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
@@ -45,17 +45,21 @@ interface Props {
 /** 블록 종류 메뉴 — 이름과 아이콘(디자인의 `BLOCKS`). 2판에서 붙는 종류는 없다. */
 /**
  * `/` 커맨드가 고를 수 있는 **모든** 블록. 툴바의 `본문 ⌄` 메뉴는 이 가운데
- * **글의 종류**(`inMenu`)만 보여 준다 — 표·이미지·구분선·문서 링크는 "이 줄을 무엇으로
- * 바꿀까"가 아니라 "여기에 무엇을 넣을까"라서 툴바 아이콘과 `/`가 맡는다(디자인).
+ * **줄의 종류**(`inMenu`)만 보여 준다 — 표·이미지·구분선·문서 링크는 "이 줄을 무엇으로
+ * 바꿀까"가 아니라 "여기에 무엇을 넣을까"라서 툴바 아이콘과 `/`가 맡는다.
+ *
+ * 목록 셋(글머리·번호·체크리스트)은 **메뉴에 있다**(제보). 한 번 뺐었는데, 그러면
+ * 목록 줄에 커서를 뒀을 때 단추에는 `글머리 목록`이라 적히는데 열어 보면 그 항목이
+ * 없다 — 라벨과 메뉴가 어긋난다. 목록은 문단과 서로 오갈 수 있는 **줄의 종류**가 맞다.
  */
 const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
   { kind: 'p', name: '본문', hint: '⌘⌥0', desc: '일반 글', group: '기본', inMenu: true, icon: <path d="M4 7h16M4 12h16M4 17h10" /> },
   { kind: 'h1', name: '제목 1', hint: '⌘⌥1', desc: '가장 큰 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M12 5v14M4 12h8" /><path d="M17 9.5 19.5 8V19" /></>) },
   { kind: 'h2', name: '제목 2', hint: '⌘⌥2', desc: '섹션 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 10a2 2 0 1 1 3.4 1.4L15.5 16H20" /></>) },
   { kind: 'h3', name: '제목 3', hint: '⌘⌥3', desc: '작은 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 9.5h4.5l-2.5 3a2.2 2.2 0 1 1-2 3.6" /></>) },
-  { kind: 'ul', name: '글머리 목록', hint: '', desc: '점으로 나열', group: '목록', icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
-  { kind: 'ol', name: '번호 목록', hint: '', desc: '순서가 있는 나열', group: '목록', icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
-  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록', icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
+  { kind: 'ul', name: '글머리 목록', hint: '', desc: '점으로 나열', group: '목록', inMenu: true, sepBefore: true, icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
+  { kind: 'ol', name: '번호 목록', hint: '', desc: '순서가 있는 나열', group: '목록', inMenu: true, icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
+  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록', inMenu: true, icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
   { kind: 'q', name: '인용', hint: '⌘⇧.', desc: '다른 글이나 말을 인용', group: '강조', inMenu: true, sepBefore: true, icon: <path d="M7 7h4v5c0 2-1 3.5-3 4.5M14 7h4v5c0 2-1 3.5-3 4.5" /> },
   { kind: 'callout', name: '콜아웃', hint: '', desc: '주의 · 결정 · 질문', group: '강조', inMenu: true, icon: (<><rect x="3.5" y="5" width="17" height="14" rx="3" /><path d="M12 9v3.5M12 15.5h.01" /></>) },
   { kind: 'toggle', name: '접기', hint: '', desc: '긴 내용을 접어 두기', group: '강조', inMenu: true, icon: (<><path d="m8 6 6 6-6 6" /><path d="M4 21h16" opacity=".35" /></>) },
@@ -1508,6 +1512,23 @@ function FormatToolbar({
   setFocus: (fn: (v: boolean) => boolean) => void;
 }) {
   const [open, setOpen] = useState<'hl' | 'ink' | null>(null);
+  /**
+   * 지금 캐럿에 걸린 서식 — 굵게·기울임·취소선·밑줄·코드 단추가 이걸 보고 켜진다(요청).
+   *
+   * 선택이 바뀔 때마다 다시 읽어야 하므로 `selectionchange`를 듣는다. 값이 같으면
+   * 상태를 갱신하지 않는다 — 글자를 칠 때마다 이벤트가 오는데 매번 리렌더하면
+   * 편집 박스가 흔들린다.
+   */
+  const [marks, setMarks] = useState({ b: false, i: false, s: false, u: false, k: false });
+  useEffect(() => {
+    const read = () => {
+      const el = noteEditBoxInSelection() ?? boxRef.current;
+      const next = el ? noteActiveMarks(el) : { b: false, i: false, s: false, u: false, k: false };
+      setMarks((cur) => (cur.b === next.b && cur.i === next.i && cur.s === next.s && cur.u === next.u && cur.k === next.k ? cur : next));
+    };
+    document.addEventListener('selectionchange', read);
+    return () => document.removeEventListener('selectionchange', read);
+  }, [boxRef]);
 
   /**
    * 지금 **다루는 블록** — 캐럿이 들어 있던 줄. 아직 아무 데도 두지 않았으면
@@ -1598,9 +1619,18 @@ function FormatToolbar({
           title={m.name}
           aria-label={m.name}
           className="btn mf-note-tb"
+          aria-pressed={marks[m.kind]}
           onMouseDown={stop}
           onClick={() => apply(m.kind)}
-          style={{ ...TOOL_BTN, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontWeight: 700, ...m.css }}
+          style={{
+            ...TOOL_BTN,
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            fontWeight: 700,
+            // 걸려 있으면 켜진 면 — 지금 글자가 어떤 서식인지 툴바가 말해 준다(요청).
+            background: marks[m.kind] ? 'var(--mf-accent-soft)' : 'transparent',
+            color: marks[m.kind] ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
+            ...m.css,
+          }}
         >
           {m.label}
         </button>
@@ -2053,6 +2083,8 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
    * 강조가 같은 색이라야 "이 장은 회의록"이 두 곳에서 같은 말을 한다.
    */
   const accent = pageAccent(controller);
+  /** 이 페이지에 글이 한 자도 없는가 — 첫 줄 안내를 띄울지 가른다. */
+  const pageIsEmpty = (controller.notePage?.blocks ?? []).every((b) => blockText(b).trim() === '');
 
   /** 엔터 — 같은 종류의 새 블록을 아래에 만든다(제목 뒤에는 문단이 자연스럽다). */
   const enterBlock = (): boolean => {
@@ -2279,9 +2311,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
                 minWidth: 0,
                 fontSize: 14,
                 lineHeight: 1.7,
-                // 디자인은 **취소선을 긋지 않는다** — 흐려지는 것만으로 끝난 줄이 읽히고,
-                // 회의록의 결정 사항은 끝난 뒤에도 읽을 거리로 남는다.
+                // 끝낸 항목은 **흐려지고 줄이 그어진다**(요청). 색만 바꾸면 "옅은 글"과
+                // "끝난 글"이 같아 보여서, 목록을 훑을 때 무엇이 남았는지 한눈에 안 들어온다.
                 color: block.kind === 'ck' && item.done ? 'var(--mf-muted)' : 'var(--mf-text)',
+                textDecoration: block.kind === 'ck' && item.done ? 'line-through' : undefined,
               }}
             />
           </div>
@@ -2355,7 +2388,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
       lineKey={block.id}
       runs={block.runs}
       readOnly={readOnly}
-      placeholder={index === 0 ? '여기에 글을 쓰세요 — / 로 블록 넣기' : ''}
+      // 안내는 **이 페이지가 통째로 비었을 때만** 뜬다(제보). 예전에는 `index === 0`만
+      // 봐서, 아래에 글이 가득한데 첫 줄만 지워도 긴 안내가 튀어나오고 캐럿이 그
+      // 글자 끝으로 밀려 보였다.
+      placeholder={index === 0 && pageIsEmpty ? '여기에 글을 쓰세요 — / 로 블록 넣기' : ''}
       autoFocus={freshId === block.id}
       onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
       onEnter={enterBlock}

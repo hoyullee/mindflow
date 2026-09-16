@@ -582,3 +582,70 @@ describe('공책 4판 — 팝업이 잘리지 않고, 바깥을 누르면 닫힌
     expect(line.style.height).toBe('1px');
   });
 });
+
+// ── 5판(15건 중 2판: 편집 동작) ──────────────────────────────────────────────
+describe('공책 5판 — 편집 동작', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('블록 메뉴에 **목록 셋도 있다** — 단추 라벨과 메뉴가 어긋나지 않게', async () => {
+    localStorage.setItem('mindflow_doc_ns40', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns40&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-blocktype]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-blocktype]')!);
+    const menu = (await waitFor(() => container.querySelector('[data-note-blocktype-menu]'))) as HTMLElement;
+    for (const kind of ['p', 'h1', 'h2', 'h3', 'ul', 'ol', 'ck', 'q', 'callout', 'toggle', 'code']) {
+      expect(menu.querySelector(`[data-note-blocktype-item="${kind}"]`)).toBeTruthy();
+    }
+    // 넣는 것들(표·이미지·구분선·문서 링크)은 여전히 이 메뉴가 아니다.
+    for (const kind of ['table', 'img', 'hr', 'link']) {
+      expect(menu.querySelector(`[data-note-blocktype-item="${kind}"]`)).toBeNull();
+    }
+  });
+
+  it('첫 줄 안내는 **페이지가 통째로 빌 때만** 뜬다', async () => {
+    localStorage.setItem('mindflow_doc_ns41', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns41&title=x');
+    const first = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 아래에 글이 남아 있으므로, 첫 줄을 비워도 안내가 나오지 않는다(제보).
+    type(first, '');
+    await waitFor(() => expect(first.getAttribute('data-placeholder')).toBe(''));
+  });
+
+  it('끝낸 체크 항목에는 **취소선**이 그어진다', async () => {
+    localStorage.setItem('mindflow_doc_ns42', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns42&title=x');
+    // NOTE의 i2가 done: true다.
+    const done = (await waitFor(() => container.querySelector('[data-note-line="b3:i2"]'))) as HTMLElement;
+    expect(done.style.textDecoration).toContain('line-through');
+    const open = container.querySelector('[data-note-line="b3:i1"]') as HTMLElement;
+    expect(open.style.textDecoration).not.toContain('line-through');
+  });
+
+  it('굵은 글에 캐럿을 두면 **굵게 단추가 켜진다**', async () => {
+    const bold = {
+      ...NOTE,
+      pages: [{ ...NOTE.pages[0], blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '굵은 글', b: true, c: null }] }] }, NOTE.pages[1]],
+    };
+    localStorage.setItem('mindflow_doc_ns43', JSON.stringify(bold));
+    const { container } = renderEditor('/editor?map=ns43&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 그 줄 전체를 고른다 — 툴바는 `selectionchange`를 듣는다.
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    await waitFor(() => expect(container.querySelector('[data-note-mark="b"]')!.getAttribute('aria-pressed')).toBe('true'));
+    expect(container.querySelector('[data-note-mark="i"]')!.getAttribute('aria-pressed')).toBe('false');
+  });
+});

@@ -95,6 +95,37 @@ function restoreSelection(el: HTMLElement, a: number, b: number): void {
  * 선택이 통째로 풀린다. 그러면 굵게를 누른 뒤 곧바로 형광펜을 누를 수 없다(고른
  * 글자가 사라져서다) — 연달아 거는 것이 가장 흔한 사용이라 그 자리를 지킨다.
  */
+/**
+ * 지금 선택(또는 캐럿)에 **걸려 있는 서식** — 툴바가 어떤 단추를 켤지 판단한다.
+ *
+ * 규칙은 "고른 글자 **전부**가 그 서식일 때만 켜짐"이다(부분만 굵으면 꺼짐) — 그래야
+ * 단추를 눌렀을 때 "전체에 건다 / 전체에서 뗀다"가 예측된다. 캐럿만 있을 때(범위 0)는
+ * **바로 앞 글자**의 서식을 본다: 굵은 글 끝에 커서를 두면 이어 쓸 때도 굵을 것이므로
+ * 그 상태를 비추는 것이 맞다.
+ */
+export function noteActiveMarks(el: HTMLElement): { b: boolean; i: boolean; s: boolean; u: boolean; k: boolean } {
+  const off = { b: false, i: false, s: false, u: false, k: false };
+  const range = noteSelectionRange(el);
+  if (!range) return off;
+  const { rich } = noteBoxValue(el);
+  if (!rich || rich.length === 0) return off;
+  // 런을 글자 단위로 펴서 [a, b) 구간을 본다 — 런 경계와 선택 경계는 어긋날 수 있다.
+  const chars: RichRun[] = [];
+  for (const r of rich) for (let i = 0; i < r.t.length; i += 1) chars.push(r);
+  const a = range.a === range.b ? Math.max(0, range.a - 1) : range.a;
+  const b = range.a === range.b ? range.a : range.b;
+  const span = chars.slice(a, b);
+  if (span.length === 0) return off;
+  const all = (pick: (r: RichRun) => boolean): boolean => span.every(pick);
+  return {
+    b: all((r) => !!r.b),
+    i: all((r) => !!r.i),
+    s: all((r) => !!r.s),
+    u: all((r) => !!r.u),
+    k: all((r) => !!r.k),
+  };
+}
+
 export function applyNoteFormat(el: HTMLElement, kind: NoteFormatKind, val?: string | null): RichRun[] | null {
   const range = noteSelectionRange(el);
   if (!range) return null;

@@ -157,7 +157,19 @@ export function applyPartialStyle(
     else if (kind === 'i') c.i = target as boolean;
     else if (kind === 's') c.s = target as boolean;
     else if (kind === 'u') c.u = target as boolean;
-    else if (kind === 'k') c.k = target as boolean;
+    else if (kind === 'k') {
+      c.k = target as boolean;
+      // 인라인 코드를 **켜면 다른 글자 서식을 걷어낸다**(요청). 코드는 "이 글자는
+      // 코드다"라는 한 가지 표시이고, 그 위에 굵게·기울임·취소선·밑줄이 겹치면
+      // 고정폭 면 안에서 서로를 지워 읽기만 어려워진다(색은 남긴다 — 문법 강조처럼
+      // 쓰는 사람이 있다). 끌 때는 아무것도 건드리지 않는다.
+      if (target) {
+        c.b = false;
+        c.i = false;
+        c.s = false;
+        c.u = false;
+      }
+    }
     else if (kind === 'c') c.c = val ?? null;
     // 형광펜은 색 지정이다(토글이 아니다) — 빈 값이 곧 "지우기"다.
     else if (kind === 'hl') c.hl = val || null;
