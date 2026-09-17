@@ -31,6 +31,7 @@ import type { EditorController } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
+import { buildSelection, caretAt, clearPaint as clearSelectionPaint, paint as paintSelection, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
@@ -262,13 +263,22 @@ export function NoteEditor({ controller }: Props) {
    */
   const [slashFor, setSlashFor] = useState<string | null>(null);
   const [slashAt, setSlashAt] = useState<DOMRect | null>(null);
-  const [slashQ, setSlashQ] = useState('');
-  const openSlashAt = (blockId: string, from?: Element | null) => {
-    const el = from ?? document.querySelector(`[data-note-line="${blockId}"]`);
+  /**
+   * `/`가 놓인 **글자 자리** — 목록이 그 뒤에 이어 친 글자로 좁혀진다(요청·노션).
+   * 툴바 단추로 열었으면 `null`이고, 그때는 예전처럼 목록이 그대로 다 보인다.
+   */
+  const [slashAtChar, setSlashAtChar] = useState<number | null>(null);
+  const openSlashAt = (blockId: string, from?: Element | number | null) => {
+    const at = typeof from === 'number' ? from : null;
+    const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${blockId}"]`) : from;
     setSlashAt(el ? el.getBoundingClientRect() : null);
     setSlashFor(blockId);
-    setSlashQ('');
+    setSlashAtChar(at);
   };
+  const closeSlash = useCallback(() => {
+    setSlashFor(null);
+    setSlashAtChar(null);
+  }, []);
   /**
    * 집중 모드 — **페이지 목록을 왼쪽으로 밀어 넣는다**(요청).
    *
@@ -283,29 +293,32 @@ export function NoteEditor({ controller }: Props) {
    */
   const [ctxAt, setCtxAt] = useState<BlockMenuAt | null>(null);
   /**
-   * **블록을 가로지른 드래그 선택**(제보: 드래그로 글을 고를 수 없다).
+   * **블록을 가로지른 드래그 선택**(제보: 드래그로 글을 고를 수 없다 → 이어서: 블록이
+   * 아니라 **글자**로 골라 달라).
    *
    * 왜 브라우저에 맡길 수 없나: 블록마다 편집 박스가 따로다(`contentEditable`이 블록
    * 단위다 — 비제어 박스라는 결정의 뿌리다). 브라우저의 선택은 **한 편집 호스트 안에
    * 갇혀** 있어서, 문단에서 끌어 아래 제목으로 넘어가면 그 경계에서 멈춘다(실측:
    * anchor·focus가 둘 다 첫 블록에 남는다). 한 블록 안에서는 지금도 잘 된다.
    *
-   * 그래서 경계를 넘는 순간부터 **블록 단위 선택**으로 바꾼다(노션·크래프트와 같은
-   * 처방): 고른 블록에 면을 깔고, 그 위에서 복사·잘라내기·지우기가 동작한다.
+   * 그래서 경계를 넘는 순간부터 우리가 **글자 구간**을 만들고 `CSS.highlights`로
+   * 칠한다(`noteTextSelect`) — DOM을 건드리지 않으므로 비제어 박스와 부딪히지 않고,
+   * 첫 줄은 중간부터·마지막 줄은 중간까지 칠해져 메모장·업노트의 그 선택으로 보인다.
    */
-  const [blockSel, setBlockSel] = useState<{ from: string; to: string } | null>(null);
-  /** 드래그가 시작된 블록 — 경계를 넘었는지 판단하는 기준. */
-  const dragFrom = useRef<string | null>(null);
+  const [textSel, setTextSel] = useState<LineSel[] | null>(null);
+  /** 드래그가 시작된 자리 — 편집 박스와 그 안의 캐럿 지점. */
+  const dragFrom = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
+  const colRef = useRef<HTMLDivElement | null>(null);
 
   // Escape로 닫는다 — 팝업이 열려 있는 동안 본문 타이핑은 그대로 이어진다.
   useEffect(() => {
     if (!slashFor) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSlashFor(null);
+      if (e.key === 'Escape') closeSlash();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [slashFor]);
+  }, [slashFor, closeSlash]);
 
   /**
    * 드래그의 끝 — **문서에** 건다. 본문 밖에서 손을 떼는 일이 흔하고(스크롤바·
@@ -323,39 +336,84 @@ export function NoteEditor({ controller }: Props) {
     };
   }, []);
 
-  /** 고른 블록 id들 — 드래그 방향과 무관하게 **문서 순서**로 돌려준다. */
-  const selectedIds = useMemo(() => {
-    if (!blockSel || !page) return [];
-    const ids = page.blocks.map((b) => b.id);
-    const a = ids.indexOf(blockSel.from);
-    const b = ids.indexOf(blockSel.to);
-    if (a < 0 || b < 0) return [];
-    return ids.slice(Math.min(a, b), Math.max(a, b) + 1);
-  }, [blockSel, page]);
+  /**
+   * `/` 뒤에 이어 친 글자 — **본문의 그 줄에서** 읽는다(입력칸이 따로 없다).
+   *
+   * 세션이 깨지는 조건도 여기서 본다: 그 자리의 글자가 더는 `/`가 아니거나(지웠다)
+   * 줄이 사라졌으면 닫는다. 띄어쓰기는 그대로 둔다 — `/할 일`처럼 이름에 공백이 든
+   * 항목이 있고, 맞는 것이 없으면 아래에서 어차피 닫힌다.
+   */
+  const slashQuery = useMemo(() => {
+    if (slashFor === null || slashAtChar === null || !page) return '';
+    const text = noteLineText(page, slashFor);
+    return text[slashAtChar] === '/' ? text.slice(slashAtChar + 1) : '';
+  }, [slashFor, slashAtChar, page]);
+  /**
+   * 세션이 살아 있는지 — **`/`를 본 뒤에만** 판단한다.
+   *
+   * 여는 순간에는 모델이 아직 그 글자를 모른다(키를 누른 직후에 열고, 글자는 그
+   * 뒤에 들어와 커밋된다). 그때 바로 검사하면 열자마자 닫힌다(실측으로 그랬다).
+   */
+  const slashSeen = useRef(false);
+  useEffect(() => {
+    if (slashFor === null || slashAtChar === null) slashSeen.current = false;
+  }, [slashFor, slashAtChar]);
+  useEffect(() => {
+    if (slashFor === null || slashAtChar === null || !page) return;
+    const text = noteLineText(page, slashFor);
+    if (text[slashAtChar] === '/') slashSeen.current = true;
+    else if (slashSeen.current) {
+      closeSlash(); // `/`를 지웠다
+      return;
+    } else return; // 아직 글자가 들어오기 전
+    // 이름에 없는 글자를 이어 쳐 맞는 것이 하나도 없으면 접는다(노션과 같은 결).
+    const q = slashQuery.trim().toLowerCase();
+    if (q && !BLOCK_TYPES.some((t) => `${t.name}${t.desc}`.toLowerCase().includes(q))) closeSlash();
+  }, [slashFor, slashAtChar, slashQuery, page, closeSlash]);
+
+  /** 고른 줄들의 블록 id — 칠하기가 안 되는 브라우저에서 면으로 물러설 때 쓴다. */
+  const selectedIds = useMemo(() => (textSel ?? []).map((l) => blockIdOf(l.key)), [textSel]);
+
+  /** 칠하기는 DOM 작업이라 그리고 난 뒤에 — 선택이 바뀔 때마다 다시 칠한다. */
+  useEffect(() => {
+    if (textSel && textSel.length) paintSelection(textSel);
+    else clearSelectionPaint();
+    return () => clearSelectionPaint();
+  }, [textSel]);
 
   /**
-   * 블록 선택 위의 키보드 — 복사·잘라내기·지우기·Esc.
+   * 글자 선택 위의 키보드 — 복사·잘라내기·지우기·Esc.
    *
-   * `copy`/`cut` 이벤트에 얹지 않는 이유: 브라우저의 선택을 비워 둔 상태라(면으로
-   * 대신 표시한다) 그 이벤트가 오지 않는 브라우저가 있다. 키를 직접 읽고 클립보드에
-   * 쓴다 — 막혀 있으면 조용히 넘어간다(지우기는 그대로 동작한다).
+   * `copy`/`cut` 이벤트에 얹지 않는 이유: 브라우저의 선택은 비워 둔 상태라(칠하기로
+   * 대신 보여 준다) 그 이벤트가 오지 않는다. 키를 직접 읽고 클립보드에 쓴다 —
+   * 막혀 있으면 조용히 넘어간다(지우기는 그대로 동작한다).
+   *
+   * 지우기는 **글자 단위**다: 첫 줄의 앞부분과 마지막 줄의 뒷부분을 이어 붙이고
+   * 그 사이 블록들을 뺀다(노션·메모장과 같은 결과).
    */
   useEffect(() => {
-    if (!selectedIds.length || !page) return;
-    const text = () =>
-      selectedIds
-        .map((id) => blockText(page.blocks.find((b) => b.id === id)!))
-        .join('\n');
+    const sel = textSel;
+    if (!sel || !sel.length || !page) return;
     const remove = () => {
-      for (const id of selectedIds) controller.removeNoteBlock(id);
-      setBlockSel(null);
+      const first = sel[0]!;
+      const last = sel[sel.length - 1]!;
+      const head = (first.el.textContent ?? '').slice(0, first.from);
+      const tail = (last.el.textContent ?? '').slice(last.to);
+      // 가운데(와 마지막) 줄이 든 블록을 먼저 뺀다 — 뒤에서부터 지워야 자리가 안 밀린다.
+      const drop = [...new Set(sel.slice(1).map((l) => blockIdOf(l.key)))].filter((id) => id !== blockIdOf(first.key));
+      for (const id of drop.reverse()) controller.removeNoteBlock(id);
+      commitLine(controller, first.key, textRuns(head + tail));
+      // 비제어 박스라 DOM도 함께 고쳐 준다(모델만 바꾸면 화면에 옛 글자가 남는다).
+      first.el.textContent = head + tail;
+      setTextSel(null);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setBlockSel(null);
+        setTextSel(null);
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
+      const text = () => selectionText(sel);
       if (mod && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
         void navigator.clipboard.writeText(text()).catch(() => undefined);
@@ -370,7 +428,7 @@ export function NoteEditor({ controller }: Props) {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [selectedIds, page, controller, readOnly]);
+  }, [textSel, page, controller, readOnly]);
 
   if (!page) return null;
 
@@ -397,35 +455,42 @@ export function NoteEditor({ controller }: Props) {
               19px이던 값의 절반. 제목만 위쪽에 숨을 더 둬서(아래 `headGap`) 문단은
               촘촘하고 구획은 여전히 갈린다. */}
           <div
+            ref={colRef}
             onPointerDown={(e) => {
-              // 새 드래그의 시작 — 이전 블록 선택을 접고 기준 블록을 기억한다.
-              setBlockSel(null);
-              const host = (e.target as HTMLElement | null)?.closest?.('[data-note-block]') as HTMLElement | null;
-              dragFrom.current = host?.getAttribute('data-note-block') ?? null;
+              // 새 드래그의 시작 — 이전 선택을 접고 **캐럿 자리**를 기억한다.
+              setTextSel(null);
+              const line = (e.target as HTMLElement | null)?.closest?.('[data-note-line]') as HTMLElement | null;
+              // 좌표→캐럿이 없는 환경에서는 **줄 머리**로 본다(그 줄 전체가 걸린다).
+              const at = caretAt(e.clientX, e.clientY) ?? (line ? { node: line, offset: 0 } : null);
+              dragFrom.current = line && at ? { el: line, node: at.node, offset: at.offset } : null;
             }}
             onPointerMove={(e) => {
               // 드래그 중일 때만 — 누름은 `dragFrom`이 말하고, 뗌은 **문서에 건**
               // `pointerup`이 지운다(위 effect). `e.buttons`를 보지 않는 이유:
               // 그 값이 실려 오지 않는 환경이 있어 조건으로 쓰면 조용히 죽는다.
-              if (!dragFrom.current) return;
-              // 커서 아래의 블록은 좌표로 찾는다 — 편집 박스가 드래그를 잡고 있어
-              // `e.target`은 시작 블록에 머문다.
+              const from = dragFrom.current;
+              const col = colRef.current;
+              if (!from || !col) return;
+              // 커서 아래의 줄은 좌표로 찾는다 — 편집 박스가 드래그를 잡고 있어
+              // `e.target`은 시작 줄에 머문다.
               let under: HTMLElement | null = null;
               try {
                 under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
               } catch {
                 under = null; // 좌표 조회가 없는 환경(jsdom) — 아래 폴백으로 간다
               }
-              const host = (under ?? (e.target as HTMLElement | null))?.closest?.('[data-note-block]') as HTMLElement | null;
-              const id = host?.getAttribute('data-note-block');
-              if (!id || id === dragFrom.current) return;
-              // 경계를 넘었다 — 여기서부터는 블록 단위다. 브라우저가 반쯤 그려 둔
-              // 선택은 지우고, **캐럿도 뺀다**: 면이 깔린 채로 캐럿이 남아 있으면
-              // 글쇠가 그 블록 안으로 들어가 "고른 것"과 "고치는 것"이 갈린다.
+              const line = (under ?? (e.target as HTMLElement | null))?.closest?.('[data-note-line]') as HTMLElement | null;
+              if (!line || line === from.el) return;
+              const at = caretAt(e.clientX, e.clientY) ?? { node: line, offset: (line.textContent ?? '').length };
+              const next = buildSelection(col, from, { el: line, node: at.node, offset: at.offset });
+              if (!next) return;
+              // 경계를 넘었다 — 여기서부터는 우리가 칠한다. 브라우저가 반쯤 그려 둔
+              // 선택은 지우고 **캐럿도 뺀다**: 칠해 둔 채 캐럿이 남으면 글쇠가 그
+              // 줄 안으로 들어가 "고른 것"과 "고치는 것"이 갈린다.
               window.getSelection()?.removeAllRanges();
               const live = document.activeElement as HTMLElement | null;
               if (live?.hasAttribute('data-note-line')) live.blur();
-              setBlockSel({ from: dragFrom.current, to: id });
+              setTextSel(next);
             }}
             onContextMenu={(e) => {
               if (readOnly) return;
@@ -457,7 +522,9 @@ export function NoteEditor({ controller }: Props) {
                   borderRadius: 7,
                   // 제목 위에 숨을 더 둔다 — 간격을 9px로 좁히면서 구획이 뭉치지 않게.
                   marginTop: i > 0 && (block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3') ? 9 : 0,
-                  ...(selectedIds.includes(block.id)
+                  // 면은 **칠하기를 모르는 브라우저**에서만 — 아는 브라우저에서는 글자에
+                  // 직접 칠하므로(`CSS.highlights`) 면까지 깔면 두 겹이 된다.
+                  ...(!supportsHighlight() && selectedIds.includes(block.id)
                     ? { background: 'var(--mf-accent-soft)', boxShadow: '0 0 0 3px var(--mf-accent-soft)' }
                     : {}),
                 }}
@@ -470,7 +537,7 @@ export function NoteEditor({ controller }: Props) {
                   setFreshId={setFreshId}
                   rememberBox={rememberBox}
                   focusBox={focusBox}
-                  openSlash={(id) => openSlashAt(id)}
+                  openSlash={(id, at) => openSlashAt(id, at)}
                 />
               </div>
             ))}
@@ -478,12 +545,14 @@ export function NoteEditor({ controller }: Props) {
             {slashFor && !readOnly && (
               <SlashMenu
                 anchor={slashAt}
-                query={slashQ}
-                onQuery={setSlashQ}
-                onClose={() => setSlashFor(null)}
+                query={slashQuery}
+                inline={slashAtChar !== null}
+                onClose={closeSlash}
                 onPick={(kind) => {
+                  // 본문에 친 `/질의`는 **지우고** 종류를 바꾼다(노션과 같은 결과).
+                  if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
                   controller.retypeNoteBlock(slashFor, kind);
-                  setSlashFor(null);
+                  closeSlash();
                   setFreshId(slashFor);
                 }}
               />
@@ -2422,8 +2491,8 @@ interface BlockProps {
   setFreshId: (id: string | null) => void;
   rememberBox: () => void;
   focusBox: (el: HTMLElement) => void;
-  /** 빈 블록에서 `/`를 쳤다 — 종류 목록을 연다. */
-  openSlash: (blockId: string) => void;
+  /** `/`를 쳤다 — 그 **글자 자리**와 함께 종류 목록을 연다(글자는 본문에 남는다). */
+  openSlash: (blockId: string, at?: number) => void;
 }
 
 /**
@@ -2810,10 +2879,9 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
       onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
       onEnter={enterBlock}
       onBackspaceAtStart={backBlock}
-      onSlash={() => {
-        if (readOnly) return false;
-        openSlash(block.id);
-        return true;
+      onSlash={(at) => {
+        if (readOnly) return;
+        openSlash(block.id, at);
       }}
       style={heading ? { ...style, flex: 1, minWidth: 0 } : style}
     />
@@ -3811,14 +3879,16 @@ function LinkBlock({ controller, block }: { controller: EditorController; block:
 function SlashMenu({
   anchor,
   query,
-  onQuery,
+  inline,
   onPick,
   onClose,
 }: {
   /** 연 자리 — 여기 아래에 뜬다. `null`이면 화면 가운데 위쪽에 뜬다(안전망). */
   anchor: DOMRect | null;
+  /** 좁히는 글자 — **본문에 친 그 글자**다(`/` 뒤). 툴바로 열었으면 빈 문자열. */
   query: string;
-  onQuery: (v: string) => void;
+  /** 본문에서 `/`로 열렸는가 — 그때는 키보드가 본문에 있으므로 우리가 가로챈다. */
+  inline: boolean;
   onPick: (kind: NoteBlockKind) => void;
   onClose: () => void;
 }) {
@@ -3829,30 +3899,48 @@ function SlashMenu({
   const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
   const groups = q ? [{ name: '', items: hits }] : ['기본', '목록', '강조', '넣기'].map((name) => ({ name, items: hits.filter((t) => t.group === name) }));
+  const [cursor, setCursor] = useState(0);
+  const flat = groups.flatMap((g) => g.items);
+  // 목록이 좁혀지면 고른 줄을 처음으로 되돌린다(없는 줄을 가리키지 않게).
+  useEffect(() => setCursor(0), [q]);
+  /**
+   * 키보드는 **본문에 있다**(캐럿이 그대로다 — 글은 계속 본문에 들어간다). 그래서
+   * Enter·↑·↓·Esc만 **캡처 단계**에서 가로채 본문 핸들러에 닿지 않게 한다: 그러지
+   * 않으면 Enter가 목록을 고르면서 새 블록도 만든다.
+   */
+  useEffect(() => {
+    if (!inline) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      } else if (e.key === 'Enter' && flat.length) {
+        e.preventDefault();
+        e.stopPropagation();
+        onPick(flat[Math.min(cursor, flat.length - 1)]!.kind);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        setCursor((c) => Math.max(0, Math.min(flat.length - 1, c + (e.key === 'ArrowDown' ? 1 : -1))));
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [inline, flat, cursor, onPick, onClose]);
   return (
     <div data-note-slash onPointerDown={(e) => e.stopPropagation()}>
       <div style={{ ...POP, ...anchoredStyle(anchor, 290, { maxHeight: 380 }), padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {/* 머리 — `/`와 입력칸이 한 줄(디자인). 무엇을 치고 있는지가 `/` 옆에 이어진다. */}
+        {/* 머리 — **본문에 친 글자**를 그대로 되비친다(입력칸이 아니다). 글은 본문에
+            들어가고 목록은 그것으로 좁혀지므로, 여기서 한 번 더 받을 이유가 없다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
           <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)' }}>
             /
           </span>
-          <input
-            data-note-slash-input
-            autoFocus
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && hits[0]) {
-                e.preventDefault();
-                onPick(hits[0].kind);
-              }
-              if (e.key === 'Escape') onClose();
-            }}
-            placeholder="블록 이름 입력"
-            aria-label="블록 이름 입력"
-            style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, outline: 'none' }}
-          />
+          <span data-note-slash-q style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: query ? 'var(--mf-text)' : 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {query || '이어서 이름을 치면 좁혀져요'}
+          </span>
+          <span style={POP_KEY}>Esc</span>
         </div>
         <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: 300, overflowY: 'auto' }}>
           {groups.map((g) =>
@@ -3867,7 +3955,8 @@ function SlashMenu({
                     className="btn mf-note-item"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onPick(t.kind)}
-                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10 }}
+                    aria-selected={flat[cursor]?.kind === t.kind}
+                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, background: flat[cursor]?.kind === t.kind ? 'var(--mf-note-hover)' : 'transparent' }}
                   >
                     {/* 아이콘 **타일** — 디자인은 28×28 면 위에 글리프를 얹는다(글자 옆의
                         맨 아이콘보다 줄이 또렷하게 나뉜다). */}
@@ -3917,6 +4006,40 @@ function runStyleOf(kind: NoteBlockKind): CSSProperties {
     default:
       return { fontSize: 14.5, lineHeight: 1.85, color: 'var(--mf-text)' };
   }
+}
+
+/**
+ * 그 편집 박스의 **지금 글자**(모델에서) — 블록·목록 항목·표 칸을 모두 가리키는 키.
+ *
+ * DOM에서 읽지 않는 이유: 렌더 도중에 DOM을 읽으면 아직 반영되지 않은 값을 볼 수
+ * 있다(비제어 박스라 더욱 그렇다). 모델은 글쇠마다 커밋되므로 여기서는 늘 최신이다.
+ */
+function noteLineText(page: NotePage, key: string): string {
+  const [blockId, rest] = key.split(':');
+  const block = page.blocks.find((b) => b.id === blockId);
+  if (!block) return '';
+  if (!rest) return blockText(block);
+  const cell = /^r(\d+)c(\d+)$/.exec(rest);
+  if (cell) return runsText(block.rows?.[Number(cell[1])]?.[Number(cell[2])] ?? []);
+  return runsText(block.items?.find((it) => it.id === rest)?.runs ?? []);
+}
+
+/**
+ * 고른 뒤 본문에서 **`/질의`를 지운다** — 모델과 DOM을 함께.
+ *
+ * DOM까지 손대는 이유: 편집 박스는 비제어라(마운트할 때 한 번만 그린다) 모델만
+ * 바꾸면 화면에는 친 글자가 그대로 남는다. 종류가 바뀌어 다시 그려지는 경우
+ * (문단 → 목록)에는 이 손질이 덮이지만, 같은 모양으로 남는 경우(문단 → 인용)에는
+ * 이것이 유일한 길이다.
+ */
+function dropSlashText(page: NotePage | null, key: string, at: number, query: string, controller: EditorController): void {
+  if (!page) return;
+  const text = noteLineText(page, key);
+  if (text[at] !== '/') return;
+  const next = text.slice(0, at) + text.slice(at + 1 + query.length);
+  commitLine(controller, key, textRuns(next));
+  const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+  if (el) el.textContent = next;
 }
 
 /**

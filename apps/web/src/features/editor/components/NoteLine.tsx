@@ -18,6 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, runsToHtml } from '../richtextDom';
 import { NOTE_EDIT_ATTR } from '../noteRichDom';
+import { charOffset } from '../noteTextSelect';
 
 interface Props {
   runs: RichRun[] | undefined;
@@ -30,13 +31,16 @@ interface Props {
   /** 맨 앞에서 백스페이스 — 대개 "이 블록/항목 지우기". 처리했으면 `true`. */
   onBackspaceAtStart?: () => boolean;
   /**
-   * **빈 줄에서 `/`를 쳤다** — 블록 종류 목록을 여는 신호. 처리했으면 `true`
-   * (그 `/` 글자는 본문에 남기지 않는다).
+   * **`/`를 쳤다** — 블록 종류 목록을 여는 신호. 인자는 그 `/`가 놓일 **글자 자리**다.
    *
-   * 빈 줄에서만 부르는 이유: 글자 사이에서도 열리면 코드나 주소를 적다 `/`를 칠
-   * 때마다 메뉴가 끼어든다. 조건 하나로 그 오탐이 사라진다.
+   * `/`는 **본문에 그대로 들어간다**(요청·노션과 같은 동작): 목록은 그 뒤에 이어 치는
+   * 글자로 좁혀지고, Esc로 닫으면 `/글머리 목록`이라고 쓴 글이 그대로 남는다. 예전에는
+   * 그 글자를 먹어 버려서 `/`로 시작하는 글을 아예 쓸 수 없었다(제보).
+   *
+   * **낱말의 시작에서만** 부른다(줄 머리이거나 앞이 공백) — 그러지 않으면 주소를
+   * 적다 `https://`의 `/`마다 메뉴가 끼어든다.
    */
-  onSlash?: () => boolean;
+  onSlash?: (at: number) => void;
   /** 위/아래 화살표로 블록 사이를 옮긴다(글의 끝·시작에서만). */
   onArrowOut?: (dir: -1 | 1) => boolean;
   /** 마운트 직후 캐럿을 놓는다(새로 만든 블록). */
@@ -95,11 +99,16 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
         return;
       }
     }
-    if (e.key === '/' && !e.nativeEvent.isComposing && onSlash && el.textContent === '') {
-      if (onSlash()) {
-        e.preventDefault();
-        return;
-      }
+    if (e.key === '/' && !e.nativeEvent.isComposing && onSlash) {
+      // 글자는 막지 않는다 — 브라우저가 `/`를 넣고, 우리는 그 **자리**만 기억한다.
+      const sel = window.getSelection();
+      const text = el.textContent ?? '';
+      // 캐럿 자리를 모르는 환경(선택 API가 없는 테스트 하네스 등)에서는 **끝에 친
+      // 것으로** 본다 — 타이핑은 대개 그 자리이고, 아래 낱말 경계 판정도 같다.
+      const at = sel && sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode) ? charOffset(el, sel.anchorNode, sel.anchorOffset) : text.length;
+      const before = text.slice(0, at);
+      // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`에서 열리지 않게.
+      if (!before || /\s$/.test(before)) onSlash(at);
     }
     if (e.key === 'Backspace' && !e.nativeEvent.isComposing) {
       const sel = window.getSelection();
