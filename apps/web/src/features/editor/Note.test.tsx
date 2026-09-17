@@ -483,10 +483,11 @@ describe('공책 3판 — 디자인 이식', () => {
     expect(surface.style.getPropertyValue('--mf-card')).toBe('#fffdfb');
     expect(surface.style.getPropertyValue('--mf-note-body')).toBe('#fdfbf8');
     expect(surface.style.getPropertyValue('--mf-note-bar')).toBe('#f6f0e8');
-    // 상단 바에는 14px 도트 무늬가 깔린다(제보: "배경 패턴").
+    // 상단 바는 **평평하다**(요청·시안) — 한때 한 톤 짙은 면에 14px 도트를 깔았는데,
+    // 지금은 본문과 같은 바탕으로 이어지고 그 위의 카드만 한 톤 희다.
     const bar = container.querySelector('[data-note-topbar]') as HTMLElement;
-    expect(bar.style.backgroundImage).toContain('radial-gradient');
-    expect(bar.style.backgroundSize).toBe('14px 14px');
+    expect(bar.style.backgroundImage).toBe('');
+    expect(bar.style.background).toBe('var(--mf-note-body)');
   });
 
   it('상단 바에 **공유**가 있다(요청) — GNB의 것과 별개로', async () => {
