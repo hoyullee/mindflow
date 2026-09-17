@@ -573,11 +573,61 @@ input[type='search']::-webkit-search-results-decoration {
   background: var(--mf-note-hover) !important;
   color: var(--mf-text) !important;
 }
-/* 상단 바의 글자 단추(경로·공유·탭)도 같은 결로 */
+/* 상단 바의 글자 단추(경로·공유·탭)도 같은 결로. **기본 면을 여기서** 정한다 —
+   인라인 `background: transparent`를 박으면 이 규칙이 조용히 죽는다(제보로 한 번
+   겪었다: 태그 메뉴의 hover가 그렇게 없었다). 켜진 탭은 `aria-pressed`가 말한다. */
+.mf-note-crumb,
+.mf-note-pill-btn {
+  background: transparent;
+}
 .mf-note-crumb:hover,
 .mf-note-pill-btn:hover {
   background: var(--mf-note-hover);
   color: var(--mf-text);
+}
+.mf-note-crumb[aria-pressed='true'] {
+  background: var(--mf-accent-soft);
+  color: var(--mf-accent-deep);
+}
+.mf-note-crumb[aria-pressed='true']:hover {
+  background: var(--mf-accent-mute);
+  color: var(--mf-accent-deep);
+}
+/* 목록 한 줄(페이지·세그먼트·태그 칩) — 고른 줄은 카드 면으로 서 있고, 그 밖의
+   줄은 얹었을 때만 면이 깔린다. 여기서도 기본 면은 **클래스가** 쥔다. */
+.mf-note-row {
+  background: transparent;
+}
+.mf-note-row:hover {
+  background: var(--mf-note-hover);
+}
+.mf-note-row[data-active='1'],
+.mf-note-row[aria-pressed='true'] {
+  background: var(--mf-card);
+}
+.mf-note-row[data-active='1']:hover,
+.mf-note-row[aria-pressed='true']:hover {
+  background: var(--mf-card);
+  border-color: var(--mf-border-hover);
+}
+/* 태그 거르개 칩 — 고른 칩은 강조 면, 나머지는 얹으면 종이 면. */
+.mf-note-chip {
+  background: transparent;
+}
+.mf-note-chip:hover {
+  background: var(--mf-note-hover);
+  border-color: var(--mf-border-hover);
+}
+.mf-note-chip[aria-pressed='true'] {
+  background: var(--mf-accent-soft);
+}
+.mf-note-chip[aria-pressed='true']:hover {
+  background: var(--mf-accent-mute);
+}
+/* 새 페이지 점선 띠 — 얹으면 선이 진해지고 면이 깔린다. */
+.mf-note-item[data-note-new-page]:hover {
+  border-color: var(--mf-accent-mute);
+  color: var(--mf-accent-deep);
 }
 /* 메뉴 한 줄 — 기본 면과 hover를 **여기서** 정한다(인라인으로 박으면 hover를 덮는다). */
 .mf-note-item {

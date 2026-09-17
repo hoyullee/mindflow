@@ -708,7 +708,15 @@ function useNotebooks(controller: EditorController, open: boolean): { rows: Note
       try {
         const metas = await docStore.list();
         const byId = new Map(metas.map((m) => [m.id, m]));
-        const ids = controller.linkTargets.map((t) => t.docId).concat(controller.docId);
+        // **지금 스페이스 안의 공책만**(요청) — A 스페이스에서 열었으면 A의 목록이다.
+        // 다른 스페이스의 공책으로 건너뛰면 경로(`스페이스 › 공책 › 페이지`)가 통째로
+        // 바뀌어, 옮긴 것이 페이지인지 스페이스인지 알 수 없다. 스페이스를 모르는
+        // 문서(워크스페이스 밖)라면 거르지 않는다 — 거를 기준이 없다.
+        const here = controller.noteSpaceName;
+        const ids = controller.linkTargets
+          .filter((t) => !here || t.spaceName === here)
+          .map((t) => t.docId)
+          .concat(controller.docId);
         const bodies = await Promise.allSettled(ids.map((id) => docStore.loadPreview(id, byId.get(id))));
         if (!alive) return;
         const out: NotebookRow[] = [];
@@ -745,7 +753,7 @@ function useNotebooks(controller: EditorController, open: boolean): { rows: Note
     return () => {
       alive = false;
     };
-  }, [open, docStore, controller.linkTargets, controller.docId]);
+  }, [open, docStore, controller.linkTargets, controller.docId, controller.noteSpaceName]);
   return { rows, loading };
 }
 
@@ -768,6 +776,7 @@ function NotebookSwitch({ controller }: { controller: EditorController }) {
       <button
         type="button"
         ref={ref as RefObject<HTMLButtonElement>}
+        className="mf-note-tb"
         data-note-book-switch
         title="다른 공책으로 이동"
         onPointerDown={(e) => e.stopPropagation()}
@@ -1021,7 +1030,7 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
       <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, height: '100%', padding: '0 10px', boxSizing: 'border-box', overflow: 'hidden' }}>
         {space && (
           <>
-            <button type="button" className="mf-note-crumb" onClick={controller.goBack} style={{ flex: '0 0 auto', height: 26, padding: '0 9px', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--mf-muted)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <button type="button" className="mf-note-crumb" onClick={controller.goBack} style={{ flex: '0 0 auto', height: 26, padding: '0 9px', border: 0, borderRadius: 8, color: 'var(--mf-muted)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               {space}
             </button>
             <Caret />
@@ -1044,16 +1053,21 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
           data-note-share
           onClick={controller.openShare}
           title="공유"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 30, padding: '0 10px', borderRadius: 9, border: 0, background: 'transparent', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          // 얼굴이 단추 **안**에 서므로 이름을 못박는다 — 그러지 않으면 접근성
+          // 이름이 `공유 나` 처럼 얼굴의 첫 글자를 물고 들어온다.
+          aria-label="공유"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 30, padding: '0 10px', borderRadius: 9, border: 0, color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="9" cy="8" r="3" />
             <path d="M3 19a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M21 19a5 5 0 0 0-4-4.9" />
           </svg>
           공유
-          {/* 함께 보고 있는 얼굴들 — 겹쳐 놓는다(시안). 혼자면 아무것도 그리지 않는다.
+          {/* 함께 보고 있는 얼굴들 — 겹쳐 놓는다(시안). **혼자여도 내 얼굴은 선다**
+              (요청): "누가 보고 있나"의 답에 나를 빼면 빈자리가 "아무도 없다"로
+              읽히고, 남이 들어온 순간에만 무언가 나타나 자리가 출렁인다.
               GNB가 쓰는 그 컴포넌트를 그대로 쓴다(같은 뜻은 같은 그림). */}
-          <PresenceAvatars controller={controller} isMobile />
+          <PresenceAvatars controller={controller} isMobile withSelf />
         </button>
         <span data-note-panels style={{ display: 'inline-flex', alignItems: 'center', height: 38, padding: '0 4px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)' }}>
           {tabs.map((t, i) => (
@@ -1071,7 +1085,6 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
                   padding: '0 13px',
                   borderRadius: 9,
                   border: 0,
-                  background: t.on ? 'var(--mf-accent-soft)' : 'transparent',
                   color: t.on ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
                   fontFamily: 'inherit',
                   fontSize: 12,
@@ -1199,6 +1212,7 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
               <button
                 type="button"
                 data-note-search-clear
+                className="mf-note-tb"
                 onClick={() => setQ('')}
                 title="지우기"
                 aria-label="검색어 지우기"
@@ -1228,6 +1242,7 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
                 <button
                   key={key}
                   type="button"
+                  className="mf-note-row"
                   data-note-sort={key}
                   aria-pressed={sort === key}
                   onClick={() => setSort(key)}
@@ -1237,7 +1252,6 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
                     height: 25,
                     border: 0,
                     borderRadius: 8,
-                    background: sort === key ? 'var(--mf-card)' : 'transparent',
                     color: sort === key ? 'var(--mf-text)' : 'var(--mf-subtext)',
                     fontFamily: 'inherit',
                     fontSize: 11.5,
@@ -1260,6 +1274,7 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
                     <button
                       key={name}
                       type="button"
+                      className="mf-note-chip"
                       data-note-tag-filter={name}
                       aria-pressed={on}
                       onClick={() => setTag(name)}
@@ -1271,7 +1286,6 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
                         padding: '0 9px',
                         borderRadius: 999,
                         border: `1px solid ${on ? 'var(--mf-border-hover)' : 'var(--mf-border)'}`,
-                        background: on ? 'var(--mf-accent-soft)' : 'transparent',
                         color: on ? 'var(--mf-text)' : 'var(--mf-subtext)',
                         fontFamily: 'inherit',
                         fontSize: 11,
@@ -1290,6 +1304,12 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
           </>
         )}
       </div>
+
+      {/* 거르개와 `새 페이지` 사이의 선(요청) — 위는 "무엇을 볼까"를 고르는 줄이고,
+          아래는 "무엇을 더할까 · 무엇이 있나"다. 선이 이 자리에 있어야 새 페이지가
+          목록의 머리로 읽힌다(예전에는 새 페이지 **아래**에 있어 그 단추가 거르개
+          쪽에 붙어 보였다). */}
+      {!controller.readOnly && !searching && <span aria-hidden="true" style={{ height: 1, flex: '0 0 auto', background: 'var(--mf-border-soft)', display: 'block', margin: '0 14px 10px' }} />}
 
       {/* 새 페이지 — 검색칸 옆의 주황 `+`에서 **목록 바로 위의 점선 띠**로(요청·시안).
           한 칸짜리 단추는 "무엇을 만드는지"를 아이콘 하나로만 말했고, 거르개 줄과 붙어
@@ -1310,9 +1330,10 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
             gap: 7,
             height: 38,
             margin: '0 14px 10px',
-            border: '1.5px dashed var(--mf-border)',
+            // 점선이 너무 옅어 띠가 있는지조차 보이지 않았다(제보) — 한 단계 진한
+            // 선(`--mf-border-hover`)으로 올린다.
+            border: '1.5px dashed var(--mf-border-hover)',
             borderRadius: 11,
-            background: 'transparent',
             color: 'var(--mf-subtext)',
             fontFamily: 'inherit',
             fontSize: 12.5,
@@ -1327,9 +1348,6 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
         </button>
       )}
 
-      {/* 거르개와 목록 사이의 선(요청) — 위는 "무엇을 볼까"를 고르는 줄, 아래는 그
-          결과다. 선 하나가 그 둘을 갈라 준다. */}
-      <span aria-hidden="true" style={{ height: 1, flex: '0 0 auto', background: 'var(--mf-border-soft)', display: 'block', margin: '0 14px 8px' }} />
       <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 8px 14px', display: 'flex', flexDirection: 'column', gap: 3 }}>
         {shown.map(({ pg, hit }) => (
           <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} cover={cover} />
@@ -1343,8 +1361,9 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
             {!searching && !controller.readOnly && (
               <button
                 type="button"
+                className="mf-note-tb"
                 onClick={() => controller.addNotePage()}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 13px', border: '1.5px dashed var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 13px', border: '1.5px dashed var(--mf-border-hover)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
                   <path d="M12 5v14M5 12h14" />
@@ -1415,6 +1434,7 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
   };
   return (
     <div
+      className="mf-note-row"
       data-note-page-row={page.id}
       data-active={active ? '1' : undefined}
       onClick={() => controller.setNotePageId(page.id)}
@@ -1452,7 +1472,6 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
         padding: '10px 11px',
         border: `1px solid ${active ? 'var(--mf-border-hover)' : 'transparent'}`,
         borderRadius: 12,
-        background: active ? 'var(--mf-card)' : 'transparent',
         cursor: 'pointer',
         minWidth: 0,
       }}
