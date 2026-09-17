@@ -14,15 +14,21 @@ import { mixHex } from '../theme';
 /** 한 줄에 세우는 최대 얼굴 수 — 그보다 많으면 마지막 칸이 `+N`이 된다. */
 const MAX_FACES = 3;
 
-export function PresenceAvatars({ controller, isMobile = false }: { controller: EditorController; isMobile?: boolean }) {
+export function PresenceAvatars({ controller, isMobile = false, withSelf = false }: { controller: EditorController; isMobile?: boolean; withSelf?: boolean }) {
   const th = controller.uiTheme;
-  const { peers } = controller.presence;
+  const { peers, localUser } = controller.presence;
   // 끊긴 동안의 얼굴은 낡은 정보다 — 그 상태는 배너/배지가 말한다(PresenceBar).
-  if (!peers.length || controller.collabBlocked) return null;
+  if (controller.collabBlocked) return null;
+  // **나를 포함할 것인가.** 캔버스 GNB에서는 아니다(내 얼굴은 프로필 자리에 이미
+  // 있고, 여기서 묻는 것은 "또 누가 있나"다). 공책 상단의 `공유` 옆에서는 **맞다**
+  // (요청) — 그 자리는 "지금 이 문서를 누가 보나"의 답이고, 혼자일 때 아무것도
+  // 없으면 빈자리가 "아무도 없다"로 읽히며 남이 들어온 순간에만 자리가 출렁인다.
+  const all = withSelf ? [{ key: 'me', user: localUser }, ...peers.map((p) => ({ key: String(p.clientId), user: p.user }))] : peers.map((p) => ({ key: String(p.clientId), user: p.user }));
+  if (!all.length) return null;
 
   const size = isMobile ? 22 : 26;
-  const faces = peers.slice(0, MAX_FACES);
-  const rest = peers.length - faces.length;
+  const faces = all.slice(0, MAX_FACES);
+  const rest = all.length - faces.length;
 
   const circle = (key: string, bg: string, ink: string, label: string, title: string, i: number, src?: string | null) => (
     <span
@@ -69,11 +75,11 @@ export function PresenceAvatars({ controller, isMobile = false }: { controller: 
   return (
     <div
       data-presence-avatars
-      aria-label={`${peers.length}명 접속 중`}
-      title={peers.map((p) => p.user.name).join(', ')}
+      aria-label={`${all.length}명 접속 중`}
+      title={all.map((p) => p.user.name).join(', ')}
       style={{ display: 'flex', alignItems: 'center', marginRight: 2, flexShrink: 0 }}
     >
-      {faces.map((p, i) => circle(String(p.clientId), mixHex(p.user.color, '#ffffff', 0.55), mixHex(p.user.color, '#000000', 0.45), p.user.name.slice(0, 1), p.user.name, i, p.user.avatar))}
+      {faces.map((p, i) => circle(p.key, mixHex(p.user.color, '#ffffff', 0.55), mixHex(p.user.color, '#000000', 0.45), p.user.name.slice(0, 1), p.key === 'me' ? `${p.user.name} (나)` : p.user.name, i, p.user.avatar))}
       {rest > 0 && circle('rest', th.panel2, th.subtext, `+${rest}`, `외 ${rest}명`, faces.length)}
     </div>
   );

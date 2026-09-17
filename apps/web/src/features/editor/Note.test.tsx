@@ -1353,6 +1353,82 @@ describe('공책 13판 — 표를 시안대로(칸·행·열·전체 선택과 �
   });
 });
 
+describe('공책 14판 — 얹으면 반응하고, 목록은 이 스페이스의 것이다', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('구분선은 `새 페이지` **위**에 있고 아래에는 없다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nh0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nh0&title=x');
+    const add = (await waitFor(() => container.querySelector('[data-note-new-page]'))) as HTMLElement;
+
+    // 앞 형제는 1px 선, 뒤 형제는 곧바로 목록이다.
+    expect((add.previousElementSibling as HTMLElement).style.height).toBe('1px');
+    expect((add.nextElementSibling as HTMLElement).className).toContain('lnb-scroll');
+  });
+
+  it('페이지 줄·태그 칩·탭에 hover를 받을 클래스가 붙는다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nh1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nh1&title=x');
+    const row = (await waitFor(() => container.querySelector('[data-note-page-row="p1"]'))) as HTMLElement;
+
+    // 인라인으로 면을 박으면 클래스의 `:hover`가 죽는다 — 기본 면은 CSS가 쥔다.
+    expect(row.className).toContain('mf-note-row');
+    expect(row.style.background).toBe('');
+    const tab = (await waitFor(() => container.querySelector('[data-note-tab="댓글"]'))) as HTMLElement;
+    expect(tab.className).toContain('mf-note-crumb');
+    expect(tab.style.background).toBe('');
+    const chip = container.querySelector('[data-note-tag-filter="전체"]') as HTMLElement | null;
+    if (chip) {
+      expect(chip.className).toContain('mf-note-chip');
+      expect(chip.style.background).toBe('');
+    }
+  });
+
+  it('혼자 보고 있어도 `공유` 옆에 내 얼굴이 선다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nh2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nh2&title=x');
+    const faces = (await waitFor(() => container.querySelector('[data-presence-avatars]'))) as HTMLElement;
+
+    expect(faces.getAttribute('aria-label')).toBe('1명 접속 중');
+    // 단추의 이름은 얼굴에 물들지 않는다.
+    expect(screen.getAllByRole('button', { name: '공유' })).toHaveLength(1);
+  });
+
+  it('`공책 이동` 목록은 **지금 스페이스**의 공책만 보여 준다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nh3', JSON.stringify(NOTE));
+    localStorage.setItem('mindflow_doc_meta_nh3', JSON.stringify({ title: 'A 공책', kind: 'note' }));
+    localStorage.setItem('mindflow_doc_nh4', JSON.stringify(NOTE));
+    localStorage.setItem('mindflow_doc_meta_nh4', JSON.stringify({ title: 'A 옆 공책', kind: 'note' }));
+    localStorage.setItem('mindflow_doc_nh5', JSON.stringify(NOTE));
+    localStorage.setItem('mindflow_doc_meta_nh5', JSON.stringify({ title: 'B 공책', kind: 'note' }));
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [
+          { name: 'A 스페이스', maps: [{ title: 'A 공책', docId: 'nh3' }, { title: 'A 옆 공책', docId: 'nh4' }] },
+          { name: 'B 스페이스', maps: [{ title: 'B 공책', docId: 'nh5' }] },
+        ],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=nh3&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-book-switch]'))) as HTMLElement);
+    const menu = (await waitFor(() => container.querySelector('[data-note-book-menu]'))) as HTMLElement;
+
+    await waitFor(() => expect(menu.querySelector('[data-note-book-item="nh4"]')).toBeTruthy());
+    // 지금 보는 공책은 남고(`보는 중`), 다른 스페이스의 것은 오지 않는다.
+    expect(menu.querySelector('[data-note-book-item="nh3"]')).toBeTruthy();
+    expect(menu.querySelector('[data-note-book-item="nh5"]')).toBeNull();
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');
