@@ -290,15 +290,36 @@ const TAG_INK: Record<string, string> = {
 const TAG_PALETTE: readonly string[] = ['#D8794F', '#7C9BD8', '#69B08A', '#C98BB4', '#D8A24F', '#5EC8C0', '#A9724F', '#E45DA0'];
 
 /**
+ * 태그를 만들 때 **고를 수 있는 점 색**(값, 이름) — 해시가 고르는 그 여덟이다.
+ *
+ * 팔레트를 따로 만들지 않은 이유: 고르지 않으면 이 중 하나가 자동으로 걸리므로,
+ * 목록이 같아야 "고른 색"과 "저절로 정해진 색"이 같은 계열로 보인다.
+ */
+export const NOTE_TAG_COLORS: readonly (readonly [string, string])[] = [
+  ['#D8794F', '주황'],
+  ['#7C9BD8', '파랑'],
+  ['#69B08A', '초록'],
+  ['#C98BB4', '자두'],
+  ['#D8A24F', '노랑'],
+  ['#5EC8C0', '청록'],
+  ['#A9724F', '갈색'],
+  ['#E45DA0', '분홍'],
+];
+
+/**
  * 공책·페이지 태그 칩의 색.
  *
- * 기본 여섯은 표에 박혀 있고(디자인이 고른 색), **사용자가 만든 태그**는 이름 해시로
- * 팔레트에서 고정 선택한다 — 예전에는 모르는 이름을 전부 회색으로 칠해, 직접 만든
- * 태그끼리 구분이 되지 않았다.
+ * 순서: **사람이 고른 색**(`colors` — 문서의 `tagColors`) → 기본 여섯(디자인이 고른
+ * 색) → 이름 해시 팔레트. 마지막 단계가 있는 이유는, 예전에는 모르는 이름을 전부
+ * 회색으로 칠해 직접 만든 태그끼리 구분이 되지 않았기 때문이다.
  */
-export function noteTagColor(tag: string | null | undefined): string {
+export function noteTagColor(tag: string | null | undefined, colors?: Record<string, string> | null): string {
   const name = tag?.trim();
   if (!name) return '#B0A69B';
+  // **사람이 고른 색이 먼저다** — 기본 여섯도 덮어쓸 수 있다(그 이름을 다른 뜻으로
+  // 쓰는 팀이 있다). 문서에 적힌 값이라 그 공책을 여는 모든 사람이 같은 색을 본다.
+  const picked = colors?.[name];
+  if (picked) return picked;
   const known = TAG_INK[name];
   if (known) return known;
   let h = 0;
@@ -307,7 +328,7 @@ export function noteTagColor(tag: string | null | undefined): string {
 }
 
 /** 고를 수 있는 태그 목록 — 디자인의 태그 메뉴 순서 그대로. */
-export const NOTE_TAGS: readonly string[] = ['회의록', '회고', '정책', '카피', '리서치', '스크랩'];
+export const NOTE_TAGS: readonly string[] = ['회의록', '정책', '카피', '리서치', '스크랩', '회고'];
 
 /** 고를 수 있는 표지 색 — 디자인의 `COVERS`(값, 이름). */
 export const NOTE_COVERS: readonly (readonly [string, string])[] = [

@@ -17,6 +17,7 @@ import {
   noteCoverColor,
   noteCoverSketch,
   noteHighlightColor,
+  NOTE_TAG_COLORS,
   noteTagColor,
   noteUpdatedAt,
   normalizeRuns,
@@ -270,6 +271,28 @@ describe('표지 — 사용자 지정 > 태그 기본 > 기본값', () => {
     expect(noteTagColor('회의록')).toBe('#C98BB4');
     expect(noteTagColor(null)).toBe('#B0A69B');
     expect(noteTagColor('  ')).toBe('#B0A69B');
+  });
+
+  it('**사람이 고른 색이 먼저다** — 기본 여섯도 덮어쓴다(요청)', () => {
+    const picked = { 회의록: '#7C9BD8', 스프린트: '#E45DA0' };
+    expect(noteTagColor('회의록', picked)).toBe('#7C9BD8');
+    expect(noteTagColor('스프린트', picked)).toBe('#E45DA0');
+    // 고르지 않은 이름은 지금까지 그대로(표 → 해시).
+    expect(noteTagColor('정책', picked)).toBe('#7FA6E8');
+    expect(noteTagColor('디자인', picked)).toBe(noteTagColor('디자인'));
+    // 표가 없거나 그 이름이 없으면 아무 일도 없다.
+    expect(noteTagColor('회의록', {})).toBe('#C98BB4');
+    expect(noteTagColor('회의록', null)).toBe('#C98BB4');
+  });
+
+  it('고를 수 있는 색 여덟 — 해시 팔레트와 **같은 목록**이다', () => {
+    expect(NOTE_TAG_COLORS).toHaveLength(8);
+    // 이름을 고르지 않고 만든 태그의 색이 언제나 이 목록 안에 있어야, 고른 색과
+    // 저절로 정해진 색이 한 계열로 보인다.
+    const values = NOTE_TAG_COLORS.map(([c]) => c);
+    for (const name of ['스프린트', '디자인', '릴리즈', '인터뷰', '가나다', 'abc']) {
+      expect(values).toContain(noteTagColor(name));
+    }
   });
 });
 

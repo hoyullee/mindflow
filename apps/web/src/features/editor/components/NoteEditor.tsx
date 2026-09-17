@@ -13,6 +13,7 @@ import type { Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, N
 import {
   NOTE_COVERS,
   NOTE_HIGHLIGHTS,
+  NOTE_TAG_COLORS,
   NOTE_TAGS,
   noteBlockShape,
   noteMarkdown,
@@ -1033,7 +1034,7 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                 {['전체', ...tags].map((name) => {
                   const on = tag === name;
-                  const dot = name === '전체' ? null : noteTagColor(name);
+                  const dot = name === '전체' ? null : noteTagColor(name, controller.doc.tagColors);
                   return (
                     <button
                       key={name}
@@ -1280,8 +1281,8 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
             정했다"인지 "이 줄이 원래 없다"인지 말해 주지 않고, 행마다 높이도 달라진다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
             <span data-note-page-tag style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto' }}>
-              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: tag ? noteTagColor(tag) : 'var(--mf-faint2)', display: 'block' }} />
-              <span style={{ fontSize: 10.5, fontWeight: tag ? 700 : 600, color: tag ? noteTagColor(tag) : 'var(--mf-faint)' }}>{tag || '태그 없음'}</span>
+              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: tag ? noteTagColor(tag, controller.doc.tagColors) : 'var(--mf-faint2)', display: 'block' }} />
+              <span style={{ fontSize: 10.5, fontWeight: tag ? 700 : 600, color: tag ? noteTagColor(tag, controller.doc.tagColors) : 'var(--mf-faint)' }}>{tag || '태그 없음'}</span>
             </span>
             {who && (
               <span style={{ minWidth: 0, fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{who} 님이 씀</span>
@@ -1542,10 +1543,13 @@ function PageStats({ page }: { page: NotePage }) {
  * 페이지 태그 고르개 — 칩(점 · 이름 · 캐럿)과 팝업(디자인 3번 이미지).
  *
  * **태그 만들기**가 여기 있다: 기본 여섯(`NOTE_TAGS`)으로는 팀마다 다른 분류를 담지
- * 못한다. 새 태그는 **저장할 곳이 따로 없다** — 태그는 그냥 페이지에 적히는 글자이고,
- * 색은 이름 해시로 정해지므로(`noteTagColor`) 어느 기기에서 열어도 같은 색이다.
- * 그래서 목록은 [기본 여섯 + **이 공책에서 실제로 쓰인 태그**]로 만든다: 1장에서 만든
- * 태그가 2장에서도 그대로 보인다.
+ * 못한다. 태그 자체는 저장할 곳이 따로 없다 — 그냥 페이지에 적히는 글자다. 그래서
+ * 목록은 [기본 여섯 + **이 공책에서 실제로 쓰인 태그**]로 만든다: 1장에서 만든 태그가
+ * 2장에서도 그대로 보인다.
+ *
+ * **점 색은 만들 때 고른다**(요청) — 고르지 않으면 이름 해시로 정해진다(`noteTagColor`).
+ * 고른 값만 문서의 `tagColors`에 적히므로, 그 공책을 여는 모든 사람이 같은 색을 본다
+ * (해시는 기기마다 같지만 "우리 팀의 회의록은 파랑"이라는 약속은 담지 못한다).
  */
 function TagPick({
   controller,
@@ -1562,7 +1566,10 @@ function TagPick({
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
+  /** 새 태그에 고른 점 색 — `null`이면 이름에서 정해진다(고르지 않았다). */
+  const [hue, setHue] = useState<string | null>(null);
   const tag = page.tag ?? null;
+  const inks = controller.doc.tagColors;
   const { ref, rect } = useAnchored(open, () => setOpen(() => false));
   /** 고를 수 있는 태그 — 기본 여섯 뒤에 이 공책이 실제로 쓰고 있는 것들. */
   const options = useMemo(() => {
@@ -1576,11 +1583,23 @@ function TagPick({
 
   const commit = () => {
     const name = draft.trim();
-    if (name) controller.setNotePageTag(page.id, name);
+    if (name) {
+      // 색을 **먼저** 적는다 — 태그가 먼저 붙으면 한 프레임 동안 기본색으로 그려진다.
+      if (hue) controller.setNoteTagColor(name, hue);
+      controller.setNotePageTag(page.id, name);
+    }
     setDraft('');
+    setHue(null);
     setAdding(false);
     setOpen(() => false);
   };
+  const cancel = () => {
+    setDraft('');
+    setHue(null);
+    setAdding(false);
+  };
+  /** 지금 새 태그가 그려질 색 — 고른 값이 있으면 그것, 없으면 이름에서. */
+  const newInk = hue ?? noteTagColor(draft.trim() || '새', inks);
 
   return (
     <>
@@ -1601,8 +1620,8 @@ function TagPick({
           padding: '0 8px 0 10px',
           borderRadius: 999,
           border: `1px solid ${open ? 'var(--mf-border-hover)' : 'transparent'}`,
-          background: tag ? `color-mix(in srgb, ${noteTagColor(tag)} 18%, var(--mf-card))` : 'var(--mf-panel2)',
-          color: tag ? noteTagColor(tag) : 'var(--mf-muted)',
+          background: tag ? `color-mix(in srgb, ${noteTagColor(tag, inks)} 18%, var(--mf-card))` : 'var(--mf-panel2)',
+          color: tag ? noteTagColor(tag, inks) : 'var(--mf-muted)',
           fontFamily: 'inherit',
           fontSize: 11,
           fontWeight: 700,
@@ -1610,14 +1629,14 @@ function TagPick({
           whiteSpace: 'nowrap',
         }}
       >
-        <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: tag ? noteTagColor(tag) : 'var(--mf-faint)', display: 'block' }} />
+        <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: tag ? noteTagColor(tag, inks) : 'var(--mf-faint)', display: 'block' }} />
         {tag || '태그 없음'}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
       {open && !readOnly && (
-        <div data-note-tag-menu onPointerDown={(e) => e.stopPropagation()} style={{ ...POP, ...anchoredStyle(rect, 236), display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div data-note-tag-menu onPointerDown={(e) => e.stopPropagation()} style={{ ...POP, ...anchoredStyle(rect, 252), display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={POP_HEAD}>태그</span>
           {options.map((t) => {
             const on = tag === t;
@@ -1633,7 +1652,7 @@ function TagPick({
                 }}
                 style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, background: on ? 'var(--mf-accent-soft)' : 'transparent' }}
               >
-                <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t), display: 'block' }} />
+                <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t, inks), display: 'block' }} />
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
                 {on && (
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1647,7 +1666,7 @@ function TagPick({
           {adding ? (
             <>
               <span style={{ display: 'flex', alignItems: 'center', gap: 7, height: 32, padding: '0 5px 0 9px', borderRadius: 9, border: '1.5px solid var(--mf-accent)', background: 'var(--mf-card)' }}>
-                <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(draft.trim() || '새'), display: 'block' }} />
+                <span data-note-tag-newdot aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: newInk, display: 'block' }} />
                 <input
                   data-note-tag-new
                   autoFocus
@@ -1657,10 +1676,7 @@ function TagPick({
                   onKeyDown={(e) => {
                     e.stopPropagation();
                     if (e.key === 'Enter') commit();
-                    if (e.key === 'Escape') {
-                      setDraft('');
-                      setAdding(false);
-                    }
+                    if (e.key === 'Escape') cancel();
                   }}
                   placeholder="새 태그 이름"
                   aria-label="새 태그 이름"
@@ -1679,7 +1695,43 @@ function TagPick({
                   </svg>
                 </button>
               </span>
-              <span style={{ padding: '3px 9px 4px', fontSize: 10.5, color: 'var(--mf-faint)' }}>Enter로 추가 · Esc로 취소</span>
+              {/* 색 고르개(요청·디자인) — 고르지 않으면 이름에서 정해지는 그 색이다.
+                  팔레트가 해시의 팔레트와 **같은 여덟**이라, 고른 색과 저절로 정해진
+                  색이 한 계열로 보인다. */}
+              {/* 여덟이 **한 줄에** 서야 한 벌로 읽힌다 — 그래서 팝업 폭이 252다(디자인). */}
+              <div data-note-tag-hues style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 6px 2px' }}>
+                {NOTE_TAG_COLORS.map(([c, name]) => {
+                  const on = hue === c;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      data-note-tag-hue={c}
+                      title={name}
+                      aria-label={`${name} 색`}
+                      aria-pressed={on}
+                      onClick={() => setHue((v) => (v === c ? null : c))}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        flex: '0 0 auto',
+                        padding: 0,
+                        borderRadius: 999,
+                        // 고른 색은 **테두리 링**으로 표시한다 — 점을 키우면 줄이 들썩인다.
+                        border: `2px solid ${on ? c : 'transparent'}`,
+                        background: 'transparent',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 999, background: c, display: 'block' }} />
+                    </button>
+                  );
+                })}
+              </div>
+              <span style={{ padding: '3px 9px 4px', fontSize: 10.5, color: 'var(--mf-faint)' }}>색을 고르고 Enter로 추가 · Esc로 취소</span>
             </>
           ) : (
             <button type="button" data-note-tag-add className="btn mf-note-item" onClick={() => setAdding(true)} style={{ ...MENU_ITEM, height: 30, gap: 8, color: 'var(--mf-accent)', fontWeight: 700 }}>
@@ -3703,7 +3755,7 @@ function SlashMenu({
  */
 function pageAccent(controller: EditorController): string {
   const tag = controller.notePage?.tag?.trim();
-  return tag ? noteTagColor(tag) : noteCoverColor(controller.doc.cover);
+  return tag ? noteTagColor(tag, controller.doc.tagColors) : noteCoverColor(controller.doc.cover);
 }
 
 /** 종류별 글자 모양 — 제목 셋이 크기·굵기로 갈리고 코드는 고정폭이다. */
