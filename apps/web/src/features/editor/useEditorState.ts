@@ -849,6 +849,10 @@ export interface EditorController {
   removeNoteTableCol: (blockId: string, at: number) => void;
   /** 행을 위(`-1`)·아래(`+1`)로 한 칸. */
   moveNoteTableRow: (blockId: string, at: number, delta: number) => void;
+  /** 열의 가로 정렬 — 왼쪽이면 칸을 비운다(기본값은 적지 않는다). */
+  setNoteTableAlign: (blockId: string, col: number, align: 'left' | 'center' | 'right') => void;
+  /** 첫 행을 머리로 쓸지 — 켜짐이 기본이라 **끌 때만** 문서에 적힌다. */
+  toggleNoteTableHead: (blockId: string) => void;
   /** 열을 왼쪽(`-1`)·오른쪽(`+1`)으로 한 칸. */
   moveNoteTableCol: (blockId: string, at: number, delta: number) => void;
   setNoteCover: (patch: Partial<NoteCover>) => void;
@@ -6857,6 +6861,34 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
+  const setNoteTableAlign = useCallback(
+    (blockId: string, col: number, align: 'left' | 'center' | 'right') => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const width = b.rows?.[0]?.length ?? 0;
+          if (col < 0 || col >= width) return b;
+          const next = Array.from({ length: width }, (_, i) => b.colAlign?.[i] ?? 'left');
+          next[col] = align;
+          // 전부 왼쪽이면 칸 자체를 뺀다 — 기본값을 문서에 적지 않는다(블록 정렬과 같은 규칙).
+          return next.every((a) => a === 'left') ? { ...b, colAlign: undefined } : { ...b, colAlign: next };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  const toggleNoteTableHead = useCallback(
+    (blockId: string) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => (b.head === false ? { ...b, head: undefined } : { ...b, head: false }), false);
+    },
+    [commitBlock, notePage],
+  );
+
   const moveNoteTableCol = useCallback(
     (blockId: string, at: number, delta: number) => {
       if (!notePage) return;
@@ -7487,6 +7519,8 @@ export function useEditorState(): EditorController {
     removeNoteTableCol,
     moveNoteTableRow,
     moveNoteTableCol,
+    setNoteTableAlign,
+    toggleNoteTableHead,
     setNoteCover,
     setNotePageTag,
     setNoteImage,
