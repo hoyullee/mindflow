@@ -1321,7 +1321,7 @@ describe('공책 13판 — 표를 시안대로(칸·행·열·전체 선택과 �
   it('색 지우기는 그 칸의 색만 거둔다', async () => {
     const filled = {
       ...NOTE,
-      pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0].blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, fills: { '0:0': '#f6d9c8', '1:1': '#f6d9c8' } } : b)) }, NOTE.pages[1]],
+      pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0]!.blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, fills: { '0:0': '#f6d9c8', '1:1': '#f6d9c8' } } : b)) }, NOTE.pages[1]],
     };
     localStorage.setItem('mindflow_doc_ntb3', JSON.stringify(filled));
     const { container } = renderEditor('/editor?map=ntb3&title=x');
@@ -1337,7 +1337,7 @@ describe('공책 13판 — 표를 시안대로(칸·행·열·전체 선택과 �
   it('열을 넣으면 그 뒤 칸의 색이 따라 밀린다', async () => {
     const filled = {
       ...NOTE,
-      pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0].blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, fills: { '0:1': '#f6d9c8' } } : b)) }, NOTE.pages[1]],
+      pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0]!.blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, fills: { '0:1': '#f6d9c8' } } : b)) }, NOTE.pages[1]],
     };
     localStorage.setItem('mindflow_doc_ntb4', JSON.stringify(filled));
     const { container } = renderEditor('/editor?map=ntb4&title=x');
