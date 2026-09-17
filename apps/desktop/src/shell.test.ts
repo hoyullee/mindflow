@@ -22,6 +22,7 @@ import {
   supportsOpenAtLogin,
   usesTray,
   TITLEBAR_HEIGHT,
+  TITLEBAR_OVERLAY_HEIGHT,
   titleBarHeightFor,
   usesCustomTitleBar,
   type KeyInput,
@@ -158,6 +159,12 @@ describe('타이틀 바', () => {
   it('높이 0이 "그리지 않는다"를 뜻한다', () => {
     expect(titleBarHeightFor('win32')).toBe(TITLEBAR_HEIGHT);
     expect(titleBarHeightFor('linux')).toBe(0);
+  });
+
+  it('창 컨트롤 오버레이는 바보다 **1px 낮다** — 그래야 아래 구분선이 그 밑으로도 이어진다(제보)', () => {
+    expect(TITLEBAR_OVERLAY_HEIGHT).toBe(TITLEBAR_HEIGHT - 1);
+    // 렌더러가 그리는 높이는 그대로다(바와 컨트롤의 높이가 갈리면 안 된다).
+    expect(titleBarHeightFor('win32')).toBe(TITLEBAR_HEIGHT);
   });
 
   it('창 컨트롤 색은 hex만 받는다', () => {
