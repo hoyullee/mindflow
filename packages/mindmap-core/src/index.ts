@@ -105,6 +105,8 @@ export {
   noteCoverColor,
   noteCoverSketch,
   noteTagColor,
+  cellKey,
+  shiftFills,
   noteHighlightColor,
   NOTE_COVER_FALLBACK,
   NOTE_TAG_COLORS,

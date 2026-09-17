@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, shiftFills, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -853,6 +853,11 @@ export interface EditorController {
   setNoteTableAlign: (blockId: string, col: number, align: 'left' | 'center' | 'right') => void;
   /** 첫 행을 머리로 쓸지 — 켜짐이 기본이라 **끌 때만** 문서에 적힌다. */
   toggleNoteTableHead: (blockId: string) => void;
+  /**
+   * 고른 칸들에 **색을 붓는다**(`null`이면 지운다) — 표 선택 칩의 `색 채우기`.
+   * 좌표는 `[행, 열]` 짝이고, 칠하지 않은 표에는 그 칸 자체가 생기지 않는다.
+   */
+  fillNoteTableCells: (blockId: string, cells: [number, number][], color: string | null) => void;
   /** 열을 왼쪽(`-1`)·오른쪽(`+1`)으로 한 칸. */
   moveNoteTableCol: (blockId: string, at: number, delta: number) => void;
   setNoteCover: (patch: Partial<NoteCover>) => void;
@@ -6786,7 +6791,7 @@ export function useEditorState(): EditorController {
           const width = rows[0]?.length ?? 2;
           const row = Array.from({ length: width }, () => textRuns(''));
           const to = at == null ? rows.length : Math.max(0, Math.min(rows.length, at));
-          return { ...b, rows: [...rows.slice(0, to), row, ...rows.slice(to)] };
+          return { ...b, rows: [...rows.slice(0, to), row, ...rows.slice(to)], fills: shiftFills(b.fills, 'row', 'insert', to) };
         },
         false,
       );
@@ -6804,7 +6809,7 @@ export function useEditorState(): EditorController {
           const rows = b.rows ?? [];
           const width = rows[0]?.length ?? 0;
           const to = at == null ? width : Math.max(0, Math.min(width, at));
-          return { ...b, rows: rows.map((r) => [...r.slice(0, to), textRuns(''), ...r.slice(to)]) };
+          return { ...b, rows: rows.map((r) => [...r.slice(0, to), textRuns(''), ...r.slice(to)]), fills: shiftFills(b.fills, 'col', 'insert', to) };
         },
         false,
       );
@@ -6825,7 +6830,7 @@ export function useEditorState(): EditorController {
         (b) => {
           const rows = b.rows ?? [];
           if (rows.length <= 1 || at < 0 || at >= rows.length) return b;
-          return { ...b, rows: rows.filter((_, i) => i !== at) };
+          return { ...b, rows: rows.filter((_, i) => i !== at), fills: shiftFills(b.fills, 'row', 'remove', at) };
         },
         false,
       );
@@ -6843,7 +6848,7 @@ export function useEditorState(): EditorController {
           const rows = b.rows ?? [];
           const width = rows[0]?.length ?? 0;
           if (width <= 1 || at < 0 || at >= width) return b;
-          return { ...b, rows: rows.map((r) => r.filter((_, i) => i !== at)) };
+          return { ...b, rows: rows.map((r) => r.filter((_, i) => i !== at)), fills: shiftFills(b.fills, 'col', 'remove', at) };
         },
         false,
       );
@@ -6864,7 +6869,7 @@ export function useEditorState(): EditorController {
           const next = rows.slice();
           const [row] = next.splice(at, 1);
           next.splice(to, 0, row!);
-          return { ...b, rows: next };
+          return { ...b, rows: next, fills: shiftFills(b.fills, 'row', 'move', at, to) };
         },
         false,
       );
@@ -6885,6 +6890,26 @@ export function useEditorState(): EditorController {
           next[col] = align;
           // 전부 왼쪽이면 칸 자체를 뺀다 — 기본값을 문서에 적지 않는다(블록 정렬과 같은 규칙).
           return next.every((a) => a === 'left') ? { ...b, colAlign: undefined } : { ...b, colAlign: next };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  const fillNoteTableCells = useCallback(
+    (blockId: string, cells: [number, number][], color: string | null) => {
+      if (!notePage || !cells.length) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const next = { ...(b.fills ?? {}) };
+          for (const [r, c] of cells) {
+            if (color) next[cellKey(r, c)] = color;
+            else delete next[cellKey(r, c)];
+          }
+          return { ...b, fills: Object.keys(next).length ? next : undefined };
         },
         false,
       );
@@ -6919,6 +6944,7 @@ export function useEditorState(): EditorController {
               next.splice(to, 0, cell!);
               return next;
             }),
+            fills: shiftFills(b.fills, 'col', 'move', at, to),
           };
         },
         false,
@@ -7548,6 +7574,7 @@ export function useEditorState(): EditorController {
     moveNoteTableCol,
     setNoteTableAlign,
     toggleNoteTableHead,
+    fillNoteTableCells,
     setNoteCover,
     setNotePageTag,
     setNoteTagColor,

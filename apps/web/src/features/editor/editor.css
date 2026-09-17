@@ -485,7 +485,9 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-pageact,
 .mf-note-tableact,
 .mf-note-thandle-row,
-.mf-note-table tr > td:first-child > [data-note-table-rowhandle],
+.mf-note-thandle-col,
+.mf-note-tband,
+.mf-note-tplus,
 .mf-note-linkact {
   opacity: 0;
   transition: opacity 0.14s ease;
@@ -496,8 +498,12 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-table:focus-within .mf-note-tableact,
 .mf-note-table:hover .mf-note-thandle-row,
 .mf-note-table:focus-within .mf-note-thandle-row,
-.mf-note-table:hover tr > td:first-child > [data-note-table-rowhandle],
-.mf-note-table:focus-within tr > td:first-child > [data-note-table-rowhandle],
+.mf-note-table:hover .mf-note-thandle-col,
+.mf-note-table:focus-within .mf-note-thandle-col,
+.mf-note-table:hover .mf-note-tband,
+.mf-note-table:focus-within .mf-note-tband,
+.mf-note-table:hover .mf-note-tplus,
+.mf-note-table:focus-within .mf-note-tplus,
 .mf-note-link:hover .mf-note-linkact,
 .mf-note-link:focus-within .mf-note-linkact {
   opacity: 1;
@@ -508,11 +514,39 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-table [data-note-table-colhandle]:focus-visible {
   opacity: 1;
 }
+/* 띠 **사이**의 `+` — 폭이 0인 자리 표시자이고, 동그란 단추는 그 자리에서 바깥으로
+   그려진다(그래야 띠의 크기를 밀어내지 않는다 — 시안 3번의 사이 `+`). */
+.mf-note-tplus > svg {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--mf-card);
+  border: 1px solid var(--mf-border);
+  color: var(--mf-accent);
+}
+.mf-note-tplus:hover > svg {
+  background: var(--mf-accent);
+  border-color: var(--mf-accent);
+  color: var(--mf-accent-ink);
+}
+/* 끝에 더하는 점선 띠 — 얹으면 강조색으로 물든다. */
+.mf-note-tband:hover {
+  border-color: var(--mf-accent-mute) !important;
+  background: var(--mf-accent-soft) !important;
+  color: var(--mf-accent) !important;
+}
 @media (hover: none) {
   .mf-note-pageact,
   .mf-note-tableact,
   .mf-note-thandle-row,
-  .mf-note-table tr > td:first-child > [data-note-table-rowhandle],
+  .mf-note-thandle-col,
+  .mf-note-tband,
+  .mf-note-tplus,
   .mf-note-linkact {
     opacity: 1;
   }
