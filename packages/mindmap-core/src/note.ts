@@ -362,3 +362,46 @@ export const NOTE_HIGHLIGHTS: readonly (readonly [string, string])[] = [
   ['pink', '분홍'],
   ['gray', '회색'],
 ];
+
+/* ── 표의 칸 채움색 ──────────────────────────────────────────────────────── */
+
+/** 칸 하나의 키 — 성긴 표(`NoteBlock.fills`)가 쓰는 `"행:열"`. */
+export function cellKey(r: number, c: number): string {
+  return `${r}:${c}`;
+}
+
+/**
+ * 행·열을 넣고 빼고 옮길 때 **채움색도 함께 움직인다**.
+ *
+ * 이 함수가 없으면 3번 행을 지웠을 때 그 아래 칸들의 색이 한 줄씩 어긋난 채 남는다
+ * (성긴 표를 쓰기로 한 값이다). `axis`는 어느 쪽을 건드렸는지, `op`는 무엇을 했는지.
+ */
+export function shiftFills(
+  fills: Record<string, string> | undefined,
+  axis: 'row' | 'col',
+  op: 'insert' | 'remove' | 'move',
+  at: number,
+  to = at,
+): Record<string, string> | undefined {
+  if (!fills || !Object.keys(fills).length) return fills;
+  const out: Record<string, string> = {};
+  for (const [key, color] of Object.entries(fills)) {
+    const [rs, cs] = key.split(':');
+    const r = Number(rs);
+    const c = Number(cs);
+    if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
+    let i = axis === 'row' ? r : c;
+    if (op === 'insert') {
+      if (i >= at) i += 1;
+    } else if (op === 'remove') {
+      if (i === at) continue; // 지운 줄의 색은 함께 사라진다
+      if (i > at) i -= 1;
+    } else {
+      // 옮기기 — 두 줄만 자리를 바꾼 것으로 본다(한 칸씩 움직이는 조작이다).
+      if (i === at) i = to;
+      else if (i === to) i = at;
+    }
+    out[axis === 'row' ? cellKey(i, c) : cellKey(r, i)] = color;
+  }
+  return Object.keys(out).length ? out : undefined;
+}

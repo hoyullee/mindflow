@@ -268,13 +268,30 @@ export function NoteEditor({ controller }: Props) {
    * 툴바 단추로 열었으면 `null`이고, 그때는 예전처럼 목록이 그대로 다 보인다.
    */
   const [slashAtChar, setSlashAtChar] = useState<number | null>(null);
-  const openSlashAt = (blockId: string, from?: Element | number | null) => {
+  const openSlashAt = (lineKey: string, from?: Element | number | null) => {
     const at = typeof from === 'number' ? from : null;
-    const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${blockId}"]`) : from;
+    const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
     setSlashAt(el ? el.getBoundingClientRect() : null);
-    setSlashFor(blockId);
+    setSlashFor(lineKey);
     setSlashAtChar(at);
   };
+  /**
+   * 본문을 굴려도 목록이 **따라간다**(제보: 스크롤하면 닫힌다) — 기준 줄을 다시 재
+   * 자리만 고친다. 목록 쪽은 스크롤로 닫지 않도록 꺼 뒀다(`closeOnScroll: false`).
+   */
+  useEffect(() => {
+    if (slashFor === null) return;
+    const follow = () => {
+      const el = document.querySelector(`[data-note-line="${slashFor}"]`);
+      if (el) setSlashAt(el.getBoundingClientRect());
+    };
+    document.addEventListener('scroll', follow, true);
+    window.addEventListener('resize', follow);
+    return () => {
+      document.removeEventListener('scroll', follow, true);
+      window.removeEventListener('resize', follow);
+    };
+  }, [slashFor]);
   const closeSlash = useCallback(() => {
     setSlashFor(null);
     setSlashAtChar(null);
@@ -551,9 +568,10 @@ export function NoteEditor({ controller }: Props) {
                 onPick={(kind) => {
                   // 본문에 친 `/질의`는 **지우고** 종류를 바꾼다(노션과 같은 결과).
                   if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
-                  controller.retypeNoteBlock(slashFor, kind);
+                  const id = blockIdOf(slashFor);
+                  controller.retypeNoteBlock(id, kind);
                   closeSlash();
-                  setFreshId(slashFor);
+                  setFreshId(id);
                 }}
               />
             )}
@@ -599,7 +617,7 @@ export function NoteEditor({ controller }: Props) {
  * 스크롤 · 창 크기 변경**이 모두 닫는다. 스크롤과 크기 변경까지 닫는 이유는 기준점이
  * 움직였는데 팝업만 제자리에 남으면 엉뚱한 것에 붙어 보이기 때문이다.
  */
-function useAnchored(open: boolean, close: () => void): { ref: RefObject<HTMLElement | null>; rect: DOMRect | null } {
+function useAnchored(open: boolean, close: () => void, opts: { closeOnScroll?: boolean } = {}): { ref: RefObject<HTMLElement | null>; rect: DOMRect | null } {
   const ref = useRef<HTMLElement | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   useLayoutEffect(() => {
@@ -612,17 +630,21 @@ function useAnchored(open: boolean, close: () => void): { ref: RefObject<HTMLEle
     };
     const onDown = () => close();
     // 캡처 단계 — 팝업 안의 클릭은 그쪽에서 `stopPropagation`으로 막는다.
+    // 스크롤에서 닫을지는 고를 수 있다(기본은 닫는다 — 기준점이 움직였는데 팝업만
+    // 제자리에 남으면 엉뚱한 것에 붙어 보인다). `/` 목록은 **본문을 스크롤하며 고르는**
+    // 자리라 닫지 않고 따라간다(제보: 스크롤하면 닫힌다).
+    const scrollCloses = opts.closeOnScroll !== false;
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', onDown);
-    document.addEventListener('scroll', onDown, true);
+    if (scrollCloses) document.addEventListener('scroll', onDown, true);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onDown);
-      document.removeEventListener('scroll', onDown, true);
+      if (scrollCloses) document.removeEventListener('scroll', onDown, true);
     };
-  }, [open, close]);
+  }, [open, close, opts.closeOnScroll]);
   return { ref, rect };
 }
 
@@ -1888,7 +1910,7 @@ function TagPick({
                   controller.setNotePageTag(page.id, on ? null : t);
                   setOpen(() => false);
                 }}
-                style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, background: on ? 'var(--mf-tag-on)' : 'transparent' }}
+                style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, ...(on ? { background: 'var(--mf-tag-on)' } : {}) }}
               >
                 <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t, inks), display: 'block' }} />
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
@@ -1900,6 +1922,24 @@ function TagPick({
               </button>
             );
           })}
+          {/* `태그 없음` — **목록의 마지막 줄**이다(요청). 태그를 고르는 자리에서 "안
+              고르겠다"도 하나의 선택이라 같은 묶음에 있어야 하고, `태그 만들기` 아래에
+              있으면 만들기의 부속처럼 읽힌다. */}
+          {tag && (
+            <button
+              type="button"
+              data-note-tag-clear
+              className="btn mf-note-item"
+              onClick={() => {
+                controller.setNotePageTag(page.id, null);
+                setOpen(() => false);
+              }}
+              style={{ ...MENU_ITEM, height: 30, gap: 8, color: 'var(--mf-muted)' }}
+            >
+              <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: 'var(--mf-faint2)', display: 'block' }} />
+              태그 없음
+            </button>
+          )}
           <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px 2px' }} />
           {adding ? (
             <>
@@ -1978,11 +2018,6 @@ function TagPick({
                 </svg>
               </span>
               태그 만들기
-            </button>
-          )}
-          {tag && (
-            <button type="button" data-note-tag-clear className="btn mf-note-item" onClick={() => { controller.setNotePageTag(page.id, null); setOpen(() => false); }} style={{ ...MENU_ITEM, height: 28, color: 'var(--mf-muted)', fontSize: 11.5 }}>
-              태그 없음
             </button>
           )}
         </div>
@@ -2464,7 +2499,7 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
                 if (id) controller.retypeNoteBlock(id, t.kind);
                 setOpen(false);
               }}
-              style={{ ...MENU_ITEM, fontWeight: cur?.kind === t.kind ? 800 : 600, background: cur?.kind === t.kind ? 'var(--mf-accent-soft)' : 'transparent' }}
+              style={{ ...MENU_ITEM, fontWeight: cur?.kind === t.kind ? 800 : 600, ...(cur?.kind === t.kind ? { background: 'var(--mf-accent-soft)' } : {}) }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
                 {t.icon}
@@ -2491,8 +2526,9 @@ interface BlockProps {
   setFreshId: (id: string | null) => void;
   rememberBox: () => void;
   focusBox: (el: HTMLElement) => void;
-  /** `/`를 쳤다 — 그 **글자 자리**와 함께 종류 목록을 연다(글자는 본문에 남는다). */
-  openSlash: (blockId: string, at?: number) => void;
+  /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
+   * 칸에서도 열린다(그 줄의 글로 좁혀져야 하므로 블록 id로는 모자란다). */
+  openSlash: (lineKey: string, at?: number) => void;
 }
 
 /**
@@ -2761,7 +2797,11 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
                 else controller.addNoteItem(block.id);
               }}
               style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--mf-subtext)' }}
-            />
+            onSlash={(at) => {
+                if (readOnly) return;
+                openSlash(`${block.id}:body`, at);
+              }}
+              />
           </div>
         )}
       </div>
@@ -2819,6 +2859,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               placeholder={j === 0 ? '항목' : ''}
               autoFocus={freshId === item.id}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
+              onSlash={(at) => {
+                if (readOnly) return;
+                openSlash(`${block.id}:${item.id}`, at);
+              }}
               onEnter={() => {
                 if (readOnly) return false;
                 // 빈 항목에서 엔터 = 목록을 **끝낸다**(문단으로 빠져나온다) —
@@ -2859,7 +2903,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   }
 
   if (shape === 'table') {
-    return <TableBlock controller={controller} block={block} focusBox={focusBox} />;
+    return <TableBlock controller={controller} block={block} focusBox={focusBox} openSlash={openSlash} />;
   }
 
   // 글 한 덩이(문단·제목·인용·코드) — 종류가 겉모습만 정한다.
@@ -2909,30 +2953,45 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
 /** 표에서 지금 고른 것 — 칸 하나, 또는 손잡이로 고른 행·열 전체. */
 type TablePick = { kind: 'cell' | 'row' | 'col' | 'all'; r: number; c: number };
 
+/** 채울 수 있는 색 — 표를 읽기 쉽게 하는 **옅은 면**들이다(글자가 그대로 읽혀야 한다). */
+const CELL_FILLS: readonly (readonly [string, string])[] = [
+  ['#FCEAE0', '살구'],
+  ['#FBF0D8', '모래'],
+  ['#E6F1E6', '풀'],
+  ['#E4EDF8', '하늘'],
+  ['#F0E8F5', '라일락'],
+  ['#F1EDE8', '회색'],
+];
+
 /**
- * 표 블록 — 칸을 고르고, 행·열을 넣고 빼고 옮긴다(요청: "셀 별 선택, 열 제거, 행 제거").
+ * 표 블록 — 칸·행·열·표 전체를 고르고, 넣고 빼고 옮기고 **색을 붓는다**(시안 4장).
  *
  * 손잡이를 **표의 일부로** 그린다(맨 위의 손잡이 줄, 각 행 맨 앞의 손잡이 칸). 겹쳐
  * 띄우는 방식은 열 너비가 글에 따라 달라지는 표에서 어긋나고, 가로로 스크롤되는 표
- * (`overflow-x:auto`)에서는 따로 논다 — 표 안에 있으면 배치가 저절로 맞는다.
+ * (`overflow-x:auto`)에서는 따로 논다 — 표 안에 있으면 배치가 저절로 맞는다. 손잡이와
+ * `+`는 표에 마우스를 얹어야 나타난다(`editor.css`): 종이에 그린 표라는 인상을 늘
+ * 붙어 있는 회색 띠가 깨뜨린다.
  *
- * 메뉴는 세 자리에서 같은 일을 한다: 열 손잡이(열 기준) · 행 손잡이(행 기준) · 칸 안
- * 우클릭(행과 열을 함께). 마지막 한 행·한 열은 지우지 못한다 — 0칸짜리 표는 화면에서
- * 사라져 되돌릴 손잡이조차 없어진다(표 자체를 지우려면 블록을 지운다).
+ * 고른 것이 있으면 표 오른쪽 위에 **칩**이 뜬다(`칸 선택 1칸` · `표 전체 3×3`)—
+ * 무엇을 골랐는지 말하고, 거기서 색을 붓고, ✕로 놓는다.
+ *
+ * 메뉴(우클릭·손잡이 클릭)는 그대로다 — 마지막 한 행·한 열은 지우지 못한다.
  */
-function TableBlock({ controller, block, focusBox }: { controller: EditorController; block: NoteBlock; focusBox: (el: HTMLElement) => void }) {
+function TableBlock({ controller, block, focusBox, openSlash }: { controller: EditorController; block: NoteBlock; focusBox: (el: HTMLElement) => void; openSlash: BlockProps['openSlash'] }) {
   const readOnly = controller.readOnly;
   const rows = block.rows ?? [];
   const width = rows[0]?.length ?? 0;
+  const head = block.head !== false;
   const [pick, setPick] = useState<TablePick | null>(null);
   const [menu, setMenu] = useState<{ pick: TablePick; at: { x: number; y: number } } | null>(null);
+  const [fillOpen, setFillOpen] = useState(false);
   const closeMenu = useCallback(() => setMenu(null), []);
   useAnchored(!!menu, closeMenu);
   const openAt = (e: { clientX: number; clientY: number }, p: TablePick) => {
     setPick(p);
     setMenu({ pick: p, at: { x: e.clientX, y: e.clientY } });
   };
-  /** 이 칸이 고른 것에 드는가 — 칸 하나, 또는 고른 행·열 전체. */
+  /** 이 칸이 고른 것에 드는가 — 칸 하나, 또는 고른 행·열, 또는 표 전체. */
   const picked = (r: number, c: number) =>
     !!pick &&
     (pick.kind === 'all'
@@ -2942,138 +3001,260 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
         : pick.kind === 'row'
           ? pick.r === r
           : pick.c === c);
-  const handle: CSSProperties = {
-    border: 0,
-    padding: 0,
-    background: 'transparent',
-    display: 'block',
-    width: '100%',
-    height: '100%',
-    cursor: 'pointer',
+  /** 지금 고른 칸들의 좌표 — `색 채우기`가 이 목록에 색을 붓는다. */
+  const pickedCells = (): [number, number][] => {
+    if (!pick) return [];
+    const out: [number, number][] = [];
+    rows.forEach((row, r) => row.forEach((_, c) => picked(r, c) && out.push([r, c])));
+    return out;
   };
+  const pickLabel = (): string => {
+    if (!pick) return '';
+    if (pick.kind === 'all') return `표 전체 ${rows.length}×${width}`;
+    if (pick.kind === 'row') return `행 선택 ${width}칸`;
+    if (pick.kind === 'col') return `열 선택 ${rows.length}칸`;
+    return '칸 선택 1칸';
+  };
+  const on = (r: number, c: number) => (pick?.kind === 'row' ? pick.r === r : pick?.kind === 'col' ? pick.c === c : pick?.kind === 'all');
+  /** 손잡이 한 개 — 고른 줄은 강조색, 아니면 옅은 띠(시안 3·4·5번). */
+  const bar = (active: boolean): CSSProperties => ({
+    display: 'block',
+    borderRadius: 999,
+    background: active ? 'var(--mf-accent)' : 'var(--mf-border)',
+  });
+  const handleBtn: CSSProperties = { border: 0, padding: 0, background: 'transparent', display: 'block', width: '100%', height: '100%', cursor: 'pointer' };
+  /** `+` 단추 — 그 자리에 행·열을 넣는다(시안 3번의 동그란 `+`). */
+  const plus = (title: string, onClick: () => void, style: CSSProperties) => (
+    <button type="button" className="mf-note-tplus" title={title} aria-label={title} onPointerDown={(e) => e.stopPropagation()} onClick={onClick} style={style}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    </button>
+  );
   return (
-    <div className="mf-note-table" data-note-block={block.id} data-note-kind="table" style={blockFlow(block)}>
-      <div style={{ overflowX: 'auto', border: '1px solid var(--mf-border-soft)', borderRadius: 13 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
-          <tbody>
-            {/* 열 손잡이 줄 — 표에 마우스를 얹어야 보인다(`editor.css`). 종이에 그린
-                표라는 인상을 늘 붙어 있는 회색 띠 두 줄이 깨뜨린다. */}
-            {!readOnly && (
-              <tr className="mf-note-thandle-row">
-                <td style={{ width: 14, padding: 0, border: 0 }} />
-                {Array.from({ length: width }, (_, ci) => (
-                  <td key={ci} style={{ height: 11, padding: 0, border: 0 }}>
-                    <button
-                      type="button"
-                      data-note-table-colhandle={ci}
-                      aria-label={`${ci + 1}번째 열`}
-                      title="열 설정"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => openAt(e, { kind: 'col', r: 0, c: ci })}
-                      style={{ ...handle, height: 9 }}
-                    >
-                      <span
-                        style={{
-                          display: 'block',
-                          height: 4,
-                          margin: '0 3px',
-                          borderRadius: 999,
-                          background: pick && pick.kind === 'col' && pick.c === ci ? 'var(--mf-accent)' : 'var(--mf-border)',
-                        }}
-                      />
-                    </button>
-                  </td>
+    <div className="mf-note-table" data-note-block={block.id} data-note-kind="table" style={{ ...blockFlow(block), position: 'relative' }}>
+      {/* 고른 것을 말하는 칩 — 표 오른쪽 위(시안 4·5번). */}
+      {pick && !readOnly && (
+        <div
+          data-note-table-chip
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{ position: 'absolute', top: -34, right: 0, zIndex: 5, display: 'inline-flex', alignItems: 'center', gap: 7, height: 28, padding: '0 6px 0 10px', borderRadius: 999, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', boxShadow: '0 6px 16px -12px rgba(46,42,38,.5)' }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mf-subtext)', whiteSpace: 'nowrap' }}>{pickLabel()}</span>
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              type="button"
+              data-note-table-fill
+              className="btn"
+              onClick={() => setFillOpen((v) => !v)}
+              style={{ height: 20, padding: '0 8px', borderRadius: 999, border: 0, background: fillOpen ? 'var(--mf-accent)' : 'var(--mf-accent-soft)', color: fillOpen ? 'var(--mf-accent-ink)' : 'var(--mf-accent-deep)', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              색 채우기
+            </button>
+            {fillOpen && (
+              <span data-note-table-fills style={{ ...POP, top: 26, right: 0, display: 'flex', alignItems: 'center', gap: 5, padding: 7 }}>
+                {CELL_FILLS.map(([hex, name]) => (
+                  <button
+                    key={hex}
+                    type="button"
+                    data-note-table-fill-color={hex}
+                    title={name}
+                    aria-label={name}
+                    className="btn"
+                    onClick={() => {
+                      controller.fillNoteTableCells(block.id, pickedCells(), hex);
+                      setFillOpen(false);
+                    }}
+                    style={{ width: 18, height: 18, flex: '0 0 auto', borderRadius: 999, border: '1px solid var(--mf-border)', background: hex, cursor: 'pointer', padding: 0 }}
+                  />
                 ))}
-              </tr>
+                <button
+                  type="button"
+                  data-note-table-fill-clear
+                  title="색 지우기"
+                  aria-label="색 지우기"
+                  className="btn"
+                  onClick={() => {
+                    controller.fillNoteTableCells(block.id, pickedCells(), null);
+                    setFillOpen(false);
+                  }}
+                  style={{ width: 18, height: 18, flex: '0 0 auto', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 10, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  ✕
+                </button>
+              </span>
             )}
-            {rows.map((row, ri) => (
-              <tr key={ri}>
-                {!readOnly && (
-                  <td style={{ width: 14, padding: 0, border: 0 }}>
-                    <button
-                      type="button"
-                      data-note-table-rowhandle={ri}
-                      aria-label={`${ri + 1}번째 행`}
-                      title="행 설정"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => openAt(e, { kind: 'row', r: ri, c: 0 })}
-                      style={{ ...handle, padding: '0 3px' }}
-                    >
-                      <span
-                        style={{
-                          display: 'block',
-                          width: 4,
-                          height: '100%',
-                          minHeight: 18,
-                          borderRadius: 999,
-                          background: pick && pick.kind === 'row' && pick.r === ri ? 'var(--mf-accent)' : 'var(--mf-border)',
-                        }}
-                      />
-                    </button>
-                  </td>
-                )}
-                {row.map((cell, ci) => {
-                  // 첫 행이 머리인가 — 메뉴의 `머리글 행 사용`으로 끌 수 있다(자료가
-                  // 아니라 목록인 표에서는 첫 줄만 진하면 잘못 읽힌다).
-                  const head = ri === 0 && block.head !== false;
-                  const on = picked(ri, ci);
-                  const align = block.colAlign?.[ci] ?? 'left';
-                  return (
-                    <td
-                      key={ci}
-                      data-note-table-cell={`${ri}:${ci}`}
-                      data-picked={on ? '1' : undefined}
-                      onClick={() => !readOnly && setPick({ kind: 'cell', r: ri, c: ci })}
-                      onContextMenu={(e) => {
-                        if (readOnly) return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openAt(e, { kind: 'cell', r: ri, c: ci });
-                      }}
-                      style={{
-                        border: '1px solid var(--mf-border-soft)',
-                        padding: '7px 10px',
-                        verticalAlign: 'top',
-                        // 고른 **칸 하나**는 테두리가 아니라 안쪽 선으로 표시한다 —
-                        // 테두리를 굵히면 그 줄만 1px 밀려 표 전체가 흔들린다. 행·열을
-                        // 고른 것은 칸마다 선을 두르면 시끄러워 배경 한 톤으로 말한다.
-                        boxShadow: on && pick?.kind === 'cell' ? 'inset 0 0 0 2px var(--mf-accent)' : undefined,
-                        background: on && pick?.kind !== 'cell' ? 'var(--mf-accent-soft)' : head ? 'var(--mf-panel2)' : 'transparent',
-                        fontWeight: head ? 700 : 400,
-                        textAlign: align,
-                        minWidth: 90,
-                      }}
-                    >
-                      <NoteLine
-                        onFocusLine={focusBox}
-                        lineKey={`${block.id}:r${ri}c${ci}`}
-                        runs={cell}
-                        readOnly={readOnly}
-                        placeholder={head ? '머리' : ''}
-                        onChange={(runs) => controller.setNoteCell(block.id, ri, ci, runs)}
-                        style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--mf-text)', textAlign: align }}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {/* 행·열 추가는 **표에 마우스를 얹었을 때만** 뜬다(`editor.css`) — 디자인의
-          표는 종이에 그린 표처럼 보여야 하고, 늘 붙어 있는 버튼 둘이 그 인상을 깬다. */}
-      {!readOnly && (
-        <div className="mf-note-tableact" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-          <button type="button" data-note-table-row className="btn" onClick={() => controller.addNoteTableRow(block.id)} style={GHOST_BTN}>
-            행 추가
+          </span>
+          <button
+            type="button"
+            data-note-table-unpick
+            className="btn mf-note-tb"
+            title="선택 놓기"
+            aria-label="선택 놓기"
+            onClick={() => {
+              setPick(null);
+              setFillOpen(false);
+            }}
+            style={{ width: 20, height: 20, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
           </button>
-          <button type="button" data-note-table-col className="btn" onClick={() => controller.addNoteTableCol(block.id)} style={GHOST_BTN}>
-            열 추가
-          </button>
-          <span style={{ fontSize: 10.5, color: 'var(--mf-faint2)' }}>행·열 손잡이나 칸 우클릭으로 넣고 지울 수 있어요</span>
         </div>
       )}
+
+      <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {/* 열 손잡이 줄 — 띠 하나가 열 하나다. 띠 **사이**의 `+`는 그 자리에 열을 넣는다. */}
+          {!readOnly && width > 0 && (
+            <div className="mf-note-thandle-row" style={{ display: 'flex', alignItems: 'center', gap: 4, height: 7, padding: '0 1px' }}>
+              {Array.from({ length: width }, (_, ci) => (
+                <Fragment key={ci}>
+                  <button
+                    type="button"
+                    data-note-table-colhandle={ci}
+                    aria-label={`${ci + 1}번째 열`}
+                    title="열 설정"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => openAt(e, { kind: 'col', r: 0, c: ci })}
+                    style={{ ...handleBtn, flex: 1, minWidth: 0, height: 7 }}
+                  >
+                    <span style={{ ...bar(pick?.kind === 'col' ? pick.c === ci : pick?.kind === 'all'), height: 7 }} />
+                  </button>
+                  {ci < width - 1 && plus('여기에 열 넣기', () => controller.addNoteTableCol(block.id, ci + 1), { position: 'relative', width: 0, height: 0, overflow: 'visible', border: 0, background: 'transparent', color: 'var(--mf-accent)', cursor: 'pointer', padding: 0 })}
+                </Fragment>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 5, minWidth: 0 }}>
+            {/* 행 손잡이 칸 — 띠 하나가 행 하나다. */}
+            {!readOnly && (
+              <div className="mf-note-thandle-col" style={{ flex: '0 0 auto', width: 7, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {rows.map((_, ri) => (
+                  <button
+                    key={ri}
+                    type="button"
+                    data-note-table-rowhandle={ri}
+                    aria-label={`${ri + 1}번째 행`}
+                    title="행 설정"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => openAt(e, { kind: 'row', r: ri, c: 0 })}
+                    style={{ ...handleBtn, flex: 1, minHeight: 24, width: 7 }}
+                  >
+                    <span style={{ ...bar(pick?.kind === 'row' ? pick.r === ri : pick?.kind === 'all'), width: 7, height: '100%' }} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div
+              data-note-table-box
+              style={{
+                flex: 1,
+                minWidth: 0,
+                overflowX: 'auto',
+                border: `1px solid ${pick?.kind === 'all' ? 'var(--mf-accent)' : 'var(--mf-border-soft)'}`,
+                borderRadius: 10,
+                background: 'var(--mf-card)',
+              }}
+            >
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+                <tbody>
+                  {rows.map((row, ri) => (
+                    <tr key={ri}>
+                      {row.map((cell, ci) => {
+                        const isHead = ri === 0 && head;
+                        const sel = picked(ri, ci);
+                        const align = block.colAlign?.[ci] ?? 'left';
+                        const fill = block.fills?.[`${ri}:${ci}`];
+                        return (
+                          <td
+                            key={ci}
+                            data-note-table-cell={`${ri}:${ci}`}
+                            data-picked={sel ? '1' : undefined}
+                            onClick={() => !readOnly && setPick({ kind: 'cell', r: ri, c: ci })}
+                            onContextMenu={(e) => {
+                              if (readOnly) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openAt(e, { kind: 'cell', r: ri, c: ci });
+                            }}
+                            style={{
+                              // 격자는 **가로 줄만** 또렷하다(시안) — 세로는 실낱같은 선
+                              // 하나로 칸을 가르고, 표 둘레는 바깥 상자가 그린다.
+                              borderBottom: ri === rows.length - 1 ? 0 : '1px solid var(--mf-border-soft)',
+                              borderRight: ci === row.length - 1 ? 0 : '1px solid var(--mf-hairline)',
+                              padding: '9px 12px',
+                              verticalAlign: 'top',
+                              // 고른 **칸 하나**는 안쪽 선으로, 행·열·전체는 면 한 톤으로.
+                              boxShadow: sel && pick?.kind === 'cell' ? 'inset 0 0 0 2px var(--mf-accent)' : undefined,
+                              background: on(ri, ci) ? 'var(--mf-accent-soft)' : (fill ?? (isHead ? 'var(--mf-panel2)' : 'transparent')),
+                              fontWeight: isHead ? 700 : 400,
+                              textAlign: align,
+                              minWidth: 90,
+                            }}
+                          >
+                            <NoteLine
+                              onFocusLine={focusBox}
+                              lineKey={`${block.id}:r${ri}c${ci}`}
+                              runs={cell}
+                              readOnly={readOnly}
+                              placeholder={isHead ? '머리' : ''}
+                              onSlash={(at) => {
+                                if (readOnly) return;
+                                openSlash(`${block.id}:r${ri}c${ci}`, at);
+                              }}
+                              onChange={(runs) => controller.setNoteCell(block.id, ri, ci, runs)}
+                              style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--mf-text)', textAlign: align }}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 아래의 `+` 띠 — 행을 맨 끝에 더한다(시안 3번). */}
+          {!readOnly && (
+            <button
+              type="button"
+              data-note-table-addrow
+              className="mf-note-tband"
+              title="행 추가"
+              aria-label="행 추가"
+              onClick={() => controller.addNoteTableRow(block.id)}
+              style={{ height: 16, marginLeft: 12, border: '1.5px dashed var(--mf-border)', borderRadius: 8, background: 'transparent', color: 'var(--mf-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* 오른쪽의 `+` 띠 — 열을 맨 끝에 더한다(시안 3번). */}
+        {!readOnly && (
+          <button
+            type="button"
+            data-note-table-addcol
+            className="mf-note-tband"
+            title="열 추가"
+            aria-label="열 추가"
+            onClick={() => controller.addNoteTableCol(block.id)}
+            style={{ width: 16, marginTop: 12, marginBottom: 21, flex: '0 0 auto', border: '1.5px dashed var(--mf-border)', borderRadius: 8, background: 'transparent', color: 'var(--mf-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        )}
+      </div>
+
       {menu && (
         <TableMenu
           controller={controller}
@@ -3517,7 +3698,9 @@ function CtxItem({
         height: 33,
         color: disabled ? 'var(--mf-faint)' : danger ? 'var(--mf-danger)' : 'var(--mf-text)',
         cursor: disabled ? 'default' : 'pointer',
-        background: on ? 'var(--mf-accent-soft)' : 'transparent',
+        // 면은 **켜졌을 때만** 적는다 — 인라인으로 `transparent`를 박으면 클래스의
+        // hover(`.mf-note-item:hover`)를 덮어 마우스를 얹어도 아무 일이 없다(제보).
+        ...(on ? { background: 'var(--mf-accent-soft)' } : {}),
       }}
     >
       {icon && (
@@ -3894,7 +4077,9 @@ function SlashMenu({
 }) {
   // 바깥을 누르면 닫힌다(제보) — 지금까지는 Esc로만 닫혀서, 목록을 열어 둔 채
   // 다른 곳을 눌러도 그대로 떠 있었다. 목록 안의 누름은 뿌리에서 막는다.
-  useAnchored(true, onClose);
+  // **스크롤로는 닫지 않는다**(제보) — 본문을 굴리며 고르는 자리다(자리는 호출부가
+  // 다시 재 준다).
+  useAnchored(true, onClose, { closeOnScroll: false });
   const q = query.trim().toLowerCase();
   const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
@@ -3923,6 +4108,10 @@ function SlashMenu({
         e.preventDefault();
         e.stopPropagation();
         setCursor((c) => Math.max(0, Math.min(flat.length - 1, c + (e.key === 'ArrowDown' ? 1 : -1))));
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+        // 캐럿을 옮기는 것은 **고르는 일이 아니다**(요청) — 목록만 접고 글자는 그대로
+        // 둔다(막지 않으므로 캐럿은 평소처럼 움직인다).
+        onClose();
       }
     };
     document.addEventListener('keydown', onKey, true);
@@ -3956,7 +4145,7 @@ function SlashMenu({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onPick(t.kind)}
                     aria-selected={flat[cursor]?.kind === t.kind}
-                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, background: flat[cursor]?.kind === t.kind ? 'var(--mf-note-hover)' : 'transparent' }}
+                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, ...(flat[cursor]?.kind === t.kind ? { background: 'var(--mf-note-hover)' } : {}) }}
                   >
                     {/* 아이콘 **타일** — 디자인은 28×28 면 위에 글리프를 얹는다(글자 옆의
                         맨 아이콘보다 줄이 또렷하게 나뉜다). */}
@@ -4108,7 +4297,9 @@ const MENU_ITEM: CSSProperties = {
   padding: '0 9px',
   borderRadius: 9,
   border: 'none',
-  background: 'transparent',
+  // **면은 여기서 정하지 않는다** — 인라인으로 `transparent`를 박으면 클래스의
+  // hover(`.mf-note-item:hover`)를 덮어 마우스를 얹어도 아무 일이 없다(제보). 기본
+  // 면은 그 클래스가 준다(`editor.css`).
   color: 'var(--mf-text)',
   fontFamily: 'inherit',
   fontSize: 12.5,
