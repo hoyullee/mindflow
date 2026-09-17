@@ -35,12 +35,15 @@ export interface SearchHit {
   text: string;
   /** 공책일 때 그 페이지 id — 눌러서 그 장으로 바로 갈 수 있게. */
   pageId?: string;
+  /** 공책일 때 그 페이지 제목 — 결과 카드의 경로(`스페이스 › 공책 › 페이지`). */
+  pageTitle?: string;
 }
 
 interface Piece {
   kind: SearchHitKind;
   text: string;
   pageId?: string;
+  pageTitle?: string;
 }
 
 /** 이 값들만 검색 대상 — 나머지(이미지·좌표·색·id)는 글자가 아니다. */
@@ -54,8 +57,8 @@ function collectText(doc: unknown, out: Piece[]): void {
     pages?: unknown;
   } | null;
   if (!d || typeof d !== 'object') return;
-  const push = (kind: SearchHitKind, v: unknown, pageId?: string): void => {
-    if (typeof v === 'string' && v.trim()) out.push({ kind, text: v, ...(pageId ? { pageId } : {}) });
+  const push = (kind: SearchHitKind, v: unknown): void => {
+    if (typeof v === 'string' && v.trim()) out.push({ kind, text: v });
   };
   if (d.nodes && typeof d.nodes === 'object') {
     for (const n of Object.values(d.nodes)) {
@@ -81,7 +84,11 @@ function collectNoteText(pages: unknown, out: Piece[]): void {
     const pg = raw as { id?: unknown; title?: unknown; blocks?: unknown } | null;
     if (!pg || typeof pg !== 'object') continue;
     const pageId = typeof pg.id === 'string' ? pg.id : undefined;
-    if (typeof pg.title === 'string' && pg.title.trim()) out.push({ kind: '페이지', text: pg.title, ...(pageId ? { pageId } : {}) });
+    const title = typeof pg.title === 'string' ? pg.title.trim() : '';
+    // 페이지 이름은 **그 장에서 걸린 모든 줄**에 함께 실린다 — 결과 카드가
+    // `일반 공간 › 제품 회의록 › 9월 3주 회의록`처럼 어디서 걸렸는지 말해야 한다.
+    const at = { ...(pageId ? { pageId } : {}), ...(title ? { pageTitle: title } : {}) };
+    if (title) out.push({ kind: '페이지', text: pg.title as string, ...at });
     if (!Array.isArray(pg.blocks)) continue;
     for (const b of pg.blocks) {
       const block = b as { runs?: unknown; items?: unknown; rows?: unknown } | null;
@@ -89,18 +96,18 @@ function collectNoteText(pages: unknown, out: Piece[]): void {
       // 저장본을 **직접** 읽는다(코어 `blockText`를 쓰지 않는다): 여기 오는 것은
       // 검증되지 않은 JSON이고, 검색이 손상된 문서 하나에 던져서는 안 된다.
       const line = runsLine(block.runs);
-      if (line) out.push({ kind: '본문', text: line, ...(pageId ? { pageId } : {}) });
+      if (line) out.push({ kind: '본문', text: line, ...at });
       if (Array.isArray(block.items)) {
         for (const it of block.items) {
           const t = runsLine((it as { runs?: unknown } | null)?.runs);
-          if (t) out.push({ kind: '본문', text: t, ...(pageId ? { pageId } : {}) });
+          if (t) out.push({ kind: '본문', text: t, ...at });
         }
       }
       if (Array.isArray(block.rows)) {
         for (const row of block.rows) {
           if (!Array.isArray(row)) continue;
           const cells = row.map((c) => runsLine(c)).filter(Boolean);
-          if (cells.length) out.push({ kind: '본문', text: cells.join(' · '), ...(pageId ? { pageId } : {}) });
+          if (cells.length) out.push({ kind: '본문', text: cells.join(' · '), ...at });
         }
       }
     }
@@ -162,7 +169,7 @@ export function docSearchHits(docId: string, raw: string | undefined, query: str
     const key = `${p.kind}\u0000${p.text}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ kind: p.kind, text: p.text, ...(p.pageId ? { pageId: p.pageId } : {}) });
+    out.push({ kind: p.kind, text: p.text, ...(p.pageId ? { pageId: p.pageId } : {}), ...(p.pageTitle ? { pageTitle: p.pageTitle } : {}) });
   }
   return out;
 }

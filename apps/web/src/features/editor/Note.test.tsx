@@ -824,3 +824,105 @@ describe('공책 6판 — 페이지 메뉴와 표', () => {
     expect((menu.querySelector('[data-note-table-act="col-del"]') as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe('공책 7판 — 본문 우클릭 메뉴', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 본문의 한 블록에서 우클릭해 메뉴를 연다. */
+  async function openCtx(container: HTMLElement, blockId: string): Promise<HTMLElement> {
+    const line = (await waitFor(() => container.querySelector(`[data-note-line="${blockId}"]`))) as HTMLElement;
+    fireEvent.contextMenu(line, { bubbles: true });
+    return (await waitFor(() => container.querySelector('[data-note-block-menu]'))) as HTMLElement;
+  }
+
+  it('블록 메뉴가 **네 묶음 열둘**을 준다(디자인)', async () => {
+    localStorage.setItem('mindflow_doc_ns60', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns60&title=x');
+    const menu = await openCtx(container, 'b1');
+
+    for (const mark of ['cut', 'copy', 'paste', 'paste-plain', 'style', 'font', 'link', 'dup', 'comment', 'todo', 'hr', 'del']) {
+      expect(menu.querySelector(`[data-note-ctx="${mark}"]`)).toBeTruthy();
+    }
+  });
+
+  it('`문단 스타일`이 그 블록의 종류를 바꾼다', async () => {
+    localStorage.setItem('mindflow_doc_ns61', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns61&title=x');
+    const menu = await openCtx(container, 'b1');
+
+    fireEvent.click(menu.querySelector('[data-note-ctx="style"]')!);
+    const wing = (await waitFor(() => container.querySelector('[data-note-ctx-wing="문단 스타일"]'))) as HTMLElement;
+    fireEvent.click(wing.querySelector('[data-note-ctx="style-ck"]')!);
+    saveNow();
+
+    await waitFor(() => expect(saved('ns61').pages[0].blocks[0].kind).toBe('ck'));
+  });
+
+  it('`블록 복제`·`아래에 구분선`·`블록 삭제`', async () => {
+    localStorage.setItem('mindflow_doc_ns62', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns62&title=x');
+
+    let menu = await openCtx(container, 'b1');
+    fireEvent.click(menu.querySelector('[data-note-ctx="dup"]')!);
+    saveNow();
+    await waitFor(() => expect(saved('ns62').pages[0].blocks).toHaveLength(5));
+    // 복제본은 **바로 아래**에 서고 글은 같다(id는 새로 찍는다).
+    expect(saved('ns62').pages[0].blocks[1].runs[0].t).toBe('릴리즈 범위를 좁혔습니다.');
+    expect(saved('ns62').pages[0].blocks[1].id).not.toBe('b1');
+
+    menu = await openCtx(container, 'b1');
+    fireEvent.click(menu.querySelector('[data-note-ctx="hr"]')!);
+    saveNow();
+    await waitFor(() => expect(saved('ns62').pages[0].blocks[1].kind).toBe('hr'));
+
+    menu = await openCtx(container, 'b1');
+    fireEvent.click(menu.querySelector('[data-note-ctx="del"]')!);
+    saveNow();
+    await waitFor(() => expect((saved('ns62').pages[0].blocks as { id: string }[]).some((b) => b.id === 'b1')).toBe(false));
+  });
+
+  it('`할 일로 보내기`가 **그 보드의 첫 열**에 카드를 만든다', async () => {
+    localStorage.setItem('mindflow_doc_ns63', JSON.stringify(NOTE));
+    localStorage.setItem(
+      'mindflow_doc_kb1',
+      JSON.stringify({
+        v: 1,
+        nodes: {},
+        floats: [],
+        lines: [],
+        zones: [],
+        layoutMode: 'right',
+        themeKey: 'white',
+        kind: 'kanban',
+        columns: [{ id: 'c1', title: '할 일' }, { id: 'c2', title: '완료' }],
+        cards: [],
+      }),
+    );
+    localStorage.setItem('mindflow_doc_meta_kb1', JSON.stringify({ title: '스프린트 보드', version: 1, updatedAt: '2026-09-16T00:00:00.000Z' }));
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [{ name: '일반 공간', maps: [{ title: '회의 공책', docId: 'ns63' }, { title: '스프린트 보드', docId: 'kb1' }] }],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=ns63&title=x');
+    const menu = await openCtx(container, 'b1');
+
+    fireEvent.click(menu.querySelector('[data-note-ctx="todo"]')!);
+    const wing = (await waitFor(() => container.querySelector('[data-note-ctx-wing="할 일로 보내기"]'))) as HTMLElement;
+    const pick = (await waitFor(() => wing.querySelector('[data-note-todo-to="kb1"]'))) as HTMLElement;
+    fireEvent.click(pick);
+
+    await waitFor(() => expect(saved('kb1').cards).toHaveLength(1));
+    expect(saved('kb1').cards[0].col).toBe('c1');
+    expect(saved('kb1').cards[0].text).toBe('릴리즈 범위를 좁혔습니다.');
+  });
+});

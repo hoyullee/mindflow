@@ -39,6 +39,12 @@ export interface CardViewData {
   isNote: boolean;
   /** 공책 표지·태그·요약(공책일 때만). 카드가 그릴 것이 보드와 통째로 다르다. */
   note?: NoteCardData | null;
+  /**
+   * 검색 중, **이 문서 안에서 걸린 줄**의 수와 종류 — 카드에 `본문 2` 배지로 선다.
+   * 위의 `내용에서 찾은 것` 목록과 같은 셈이라, 배지를 보고 그 문서가 왜 결과에
+   * 있는지 짐작할 수 있다. 제목으로만 걸린 문서에는 없다(배지도 없다).
+   */
+  hits?: { kind: SearchHitKind; count: number };
   /** 썸네일 바탕 — **그 문서의 캔버스 배경**(`previewSurface`). 본문을 아직 못
    * 받았으면 `null`이고, 그때는 카드가 지금까지의 기본 바탕을 쓴다. */
   surface: PreviewSurface | null;
@@ -140,6 +146,10 @@ export interface SearchHitViewData {
   docTitle: string;
   spaceName: string;
   spaceColor: string;
+  /** 공책일 때 그 페이지 이름 — 경로의 마지막 칸(`스페이스 › 공책 › 페이지`). */
+  pageTitle?: string;
+  /** 문서 종류 — 경로 앞의 색 점이 이 값을 쓴다(카드 그리드와 같은 색). */
+  docKind: DocKindName;
   href: string;
 }
 
@@ -794,7 +804,11 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         if (searchHits.length >= HITS_MAX) break;
         const raw = cardRaw(c.title, c.docId, state.previewDocs);
         if (!raw) continue;
-        for (const h of docSearchHits(c.docId || c.title, raw, query, 4)) {
+        const mine = docSearchHits(c.docId || c.title, raw, query, 4);
+        // 카드에도 같은 셈을 붙인다(`본문 2`) — 아래 그리드에서 그 문서가 **왜**
+        // 결과에 있는지가 카드만 보고도 읽힌다.
+        if (mine.length) c.hits = { kind: mine[0]!.kind, count: mine.length };
+        for (const h of mine) {
           if (searchHits.length >= HITS_MAX) break;
           searchHits.push({
             key: `${c.key}:${h.kind}:${searchHits.length}`,
@@ -803,6 +817,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             docTitle: c.title,
             spaceName: g.spaceName,
             spaceColor: g.spaceColor,
+            ...(h.pageTitle ? { pageTitle: h.pageTitle } : {}),
+            docKind: c.isNote ? 'note' : c.isKanban ? 'kanban' : c.isBoard ? 'board' : 'map',
             // 공책의 페이지 히트는 **그 장으로** 연다 — 문서를 열고 다시 찾게 하지 않는다.
             href: h.pageId ? `${c.href}${c.href.includes('?') ? '&' : '?'}page=${encodeURIComponent(h.pageId)}` : c.href,
           });

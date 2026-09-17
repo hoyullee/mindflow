@@ -8,7 +8,7 @@
 // 대신 다루는 것이 순서와 글이고, 규칙은 전부 코어 `note.ts`에 있다.
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from 'react';
 import type { Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, NotePage, RichRun } from '@mindflow/mindmap-core';
 import {
   NOTE_COVERS,
@@ -275,6 +275,11 @@ export function NoteEditor({ controller }: Props) {
    * 접힌 목록은 DOM에 남되 `inert`로 키보드 초점에서 빠진다(홈의 최근 항목과 같은 결).
    */
   const [focus, setFocus] = useState(false);
+  /**
+   * 본문 우클릭 메뉴(요청·디자인) — 어느 블록에서 열렸는지와 **그 편집 박스**를 함께
+   * 든다. 박스를 기억하는 이유는 서식 항목이 그 박스의 선택에 걸리기 때문이다.
+   */
+  const [ctxAt, setCtxAt] = useState<BlockMenuAt | null>(null);
 
   // Escape로 닫는다 — 팝업이 열려 있는 동안 본문 타이핑은 그대로 이어진다.
   useEffect(() => {
@@ -309,7 +314,20 @@ export function NoteEditor({ controller }: Props) {
         <div className="lnb-scroll" data-note-page style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}>
           {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 19px로 벌어진다(글이 숨 쉬는
               간격이고, 이 리듬이 없으면 제목과 본문이 한 덩어리로 뭉쳐 보인다). */}
-          <div style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}>
+          <div
+            onContextMenu={(e) => {
+              if (readOnly) return;
+              const el = e.target as HTMLElement | null;
+              const host = el?.closest?.('[data-note-block]') as HTMLElement | null;
+              const id = host?.getAttribute('data-note-block');
+              if (!id) return; // 머리(제목·태그)나 빈 자리에서는 브라우저 메뉴 그대로
+              e.preventDefault();
+              const box = (el?.closest?.('[data-note-line]') as HTMLElement | null) ?? null;
+              if (box) focusBox(box);
+              setCtxAt({ blockId: id, box, x: e.clientX, y: e.clientY });
+            }}
+            style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}
+          >
             <PageHead controller={controller} page={page} />
             {/* 머리와 본문 사이의 선(요청) — 위는 이 장이 무엇인지(제목·태그·사람),
                 아래는 그 내용이다. 블록 간격(19px)만으로는 그 경계가 서지 않는다. */}
@@ -327,6 +345,7 @@ export function NoteEditor({ controller }: Props) {
                 openSlash={(id) => openSlashAt(id)}
               />
             ))}
+            {ctxAt && !readOnly && <BlockMenu controller={controller} at={ctxAt} onClose={() => setCtxAt(null)} />}
             {slashFor && !readOnly && (
               <SlashMenu
                 anchor={slashAt}
@@ -1383,8 +1402,13 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
             <span style={{ flex: 1 }} />
             <span style={POP_KEY}>⌫</span>
           </button>
-          {moving && !last && <MovePageMenu controller={controller} pageId={page.id} anchor={cursorStyle(menu, PAGE_MENU_W, 246)} onDone={closeMenu} />}
         </div>
+      )}
+      {/* 날개는 메뉴의 **형제**다 — 자식으로 두면 메뉴의 등장 애니메이션이 남긴
+          `transform`이 컨테이닝 블록이 되어 `fixed` 좌표가 메뉴 왼쪽 위에서 다시
+          세어진다(본문 우클릭 메뉴에서 실측했다 — 화면 밖으로 밀려났다). */}
+      {menu && moving && !last && (
+        <MovePageMenu controller={controller} pageId={page.id} anchor={cursorStyle(menu, PAGE_MENU_W, 246)} onDone={closeMenu} />
       )}
     </div>
   );
@@ -2880,6 +2904,392 @@ function TableMenu({
       )}
     </div>
   );
+}
+
+/** 본문 우클릭 메뉴가 잡아 둔 것 — 어느 블록의, 어느 편집 박스에서, 어디서 열렸나. */
+interface BlockMenuAt {
+  blockId: string;
+  /** 오른쪽 클릭이 난 편집 박스(`data-note-line`) — 서식은 **이 박스의 선택**에 건다. */
+  box: HTMLElement | null;
+  x: number;
+  y: number;
+}
+
+/** 문단 스타일 — 디자인 세 번째 이미지의 다섯(색 점이 종류를 말한다). */
+const CTX_STYLES: { kind: NoteBlockKind; name: string; dot: string }[] = [
+  { kind: 'p', name: '본문', dot: 'var(--mf-faint2)' },
+  { kind: 'h2', name: '제목', dot: 'var(--mf-text)' },
+  { kind: 'q', name: '인용', dot: '#D8794F' },
+  { kind: 'ul', name: '글머리 목록', dot: '#7C9BD8' },
+  { kind: 'ck', name: '체크리스트', dot: '#69B08A' },
+];
+
+/** 글꼴 — 디자인 네 번째 이미지의 일곱. `hl`·`c`는 기본 색으로 건다(팔레트는 툴바에). */
+const CTX_FONTS: { kind: 'b' | 'i' | 'u' | 's' | 'hl' | 'c' | 'clear'; name: string; key: string; dot: string }[] = [
+  { kind: 'b', name: '굵게', key: '⌘B', dot: 'var(--mf-text)' },
+  { kind: 'i', name: '기울임', key: '⌘I', dot: 'var(--mf-subtext)' },
+  { kind: 'u', name: '밑줄', key: '⌘U', dot: 'var(--mf-subtext)' },
+  { kind: 's', name: '취소선', key: '⌘⇧X', dot: 'var(--mf-muted)' },
+  { kind: 'hl', name: '형광펜', key: '⌘⇧H', dot: '#F2D45C' },
+  { kind: 'c', name: '글자색', key: '', dot: '#E0632F' },
+  { kind: 'clear', name: '서식 지우기', key: '⌘\\', dot: 'var(--mf-faint2)' },
+];
+
+/**
+ * 본문 우클릭 메뉴 — 지금 이 블록에 할 수 있는 일 전부(요청·디자인 2·3·4번 이미지).
+ *
+ * 왜 필요한가: 조작이 툴바(서식)·`/`(넣기)·페이지 목록(장)으로 흩어져 있어서, **글을
+ * 쓰다 말고** 하고 싶은 일(이 문단만 복사, 여기부터 목록으로, 이 줄을 할 일로)은
+ * 손이 멀었다. 우클릭은 그 자리에서 열리는 유일한 메뉴다.
+ *
+ * 서식은 **오른쪽 클릭이 난 편집 박스**에 건다(`box`) — 메뉴를 여는 동안 브라우저는
+ * 선택을 지우지 않으므로, 고른 글이 있으면 그 글에, 없으면 캐럿 자리에 걸린다.
+ */
+function BlockMenu({ controller, at, onClose }: { controller: EditorController; at: BlockMenuAt; onClose: () => void }) {
+  const [wing, setWing] = useState<'style' | 'font' | 'todo' | null>(null);
+  useAnchored(true, onClose);
+  const blocks = controller.notePage?.blocks ?? [];
+  const block = blocks.find((b) => b.id === at.blockId) ?? null;
+  const text = block ? blockText(block) : '';
+  const base = cursorStyle(at, CTX_MENU_W, 430);
+  const done = (fn: () => void) => () => {
+    fn();
+    onClose();
+  };
+
+  /** 서식 — 툴바와 같은 길(`applyNoteFormat` → `commitLine`). 박스가 없으면 아무 일도 없다. */
+  const format = (kind: (typeof CTX_FONTS)[number]['kind']) => {
+    const el = at.box;
+    if (!el) return;
+    const val = kind === 'hl' ? 'yellow' : kind === 'c' ? '#E0632F' : undefined;
+    const runs = applyNoteFormat(el, kind, val);
+    if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
+  };
+
+  /**
+   * 잘라내기·복사 — 이 블록의 **글**을 클립보드로. 붙여넣기는 클립보드를 읽어
+   * 아래에 문단으로 넣는다. 클립보드 접근은 브라우저가 막을 수 있어(권한·보안
+   * 맥락) 실패하면 조용히 넘어간다 — 그때는 ⌘V가 그대로 동작한다.
+   */
+  const copy = async (): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const paste = async (plain: boolean) => {
+    let read = '';
+    try {
+      read = await navigator.clipboard.readText();
+    } catch {
+      return;
+    }
+    const lines = read.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    // 서식 없이 붙여넣기는 **줄마다 문단 하나**. 그냥 붙여넣기도 지금은 같다 —
+    // 우리가 다루는 클립보드가 글자뿐이라(HTML 조각을 읽지 않는다) 두 항목이
+    // 같은 일을 한다는 사실을 숨기지 않는다(메뉴에는 둘 다 둔다 — 디자인).
+    let after = at.blockId;
+    for (const line of lines.slice(0, 40)) {
+      const id = controller.addNoteBlock('p', after);
+      if (!id) break;
+      controller.setNoteBlockRuns(id, textRuns(plain ? line.replace(/[*_`~]/g, '') : line));
+      after = id;
+    }
+  };
+
+  return (
+    <>
+    <div
+      data-note-block-menu
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{ ...POP, ...base, display: 'flex', flexDirection: 'column', gap: 1 }}
+    >
+      <span style={POP_HEAD}>블록</span>
+      <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={<><path d="M6 3v12a3 3 0 1 0 3 3" /><path d="M18 3v12a3 3 0 1 1-3 3" /><path d="m6 9 12 6M18 9 6 15" /></>} onClick={done(() => void copy().then((ok) => ok && controller.removeNoteBlock(at.blockId)))} />
+      <CtxItem mark="copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(() => void copy())} />
+      <CtxItem mark="paste" name="붙여넣기" hint="⌘V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>} onClick={done(() => void paste(false))} />
+      <CtxItem mark="paste-plain" name="서식 없이 붙여넣기" hint="⌘⇧V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /><path d="M9 13h6" /></>} onClick={done(() => void paste(true))} />
+
+      <CtxRule />
+      <CtxItem
+        mark="style"
+        name="문단 스타일"
+        wing
+        on={wing === 'style'}
+        onClick={() => setWing((v) => (v === 'style' ? null : 'style'))}
+        icon={<><path d="M4 6h16M9 6v13M4 6V4h16v2" /></>}
+      />
+      <CtxItem
+        mark="font"
+        name="글꼴"
+        wing
+        on={wing === 'font'}
+        onClick={() => setWing((v) => (v === 'font' ? null : 'font'))}
+        icon={<><path d="M5 20 12 4l7 16M8 14h8" /></>}
+      />
+      <CtxItem
+        mark="link"
+        name="링크 삽입"
+        hint="⌘K"
+        icon={<><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></>}
+        onClick={done(() => {
+          const el = at.box;
+          if (!el) return;
+          const url = typeof window === 'undefined' ? null : window.prompt('링크 주소');
+          if (!url || !url.trim()) return;
+          const runs = applyNoteFormat(el, 'link', url.trim());
+          if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
+        })}
+      />
+
+      <CtxRule />
+      <CtxItem mark="dup" name="블록 복제" hint="⌘D" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(() => controller.duplicateNoteBlock(at.blockId))} />
+      <CtxItem mark="comment" name="댓글 달기" icon={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>} onClick={done(() => controller.openComments())} />
+      <CtxItem
+        mark="todo"
+        name="할 일로 보내기"
+        wing
+        on={wing === 'todo'}
+        icon={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M9 5v14M15 5v14" /></>}
+        onClick={() => setWing((v) => (v === 'todo' ? null : 'todo'))}
+      />
+
+      <CtxRule />
+      <CtxItem mark="hr" name="아래에 구분선" icon={<path d="M4 12h16" />} onClick={done(() => controller.addNoteBlock('hr', at.blockId))} />
+      <CtxItem
+        mark="del"
+        name="블록 삭제"
+        hint="⌫"
+        danger
+        icon={<><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>}
+        onClick={done(() => controller.removeNoteBlock(at.blockId))}
+      />
+
+    </div>
+      {/* 날개는 메뉴의 **형제**다 — 자식으로 두면 부모의 등장 애니메이션이 남긴
+          `transform`이 컨테이닝 블록을 만들어 `fixed` 좌표가 메뉴 왼쪽 위에서
+          다시 세어진다(실측: 왼쪽 708px만큼 밀려 화면 밖으로 나갔다). 페이지
+          메뉴의 `다른 공책으로 이동`도 같은 이유로 비뚤어져 있었다. */}
+      {wing === 'style' && (
+        <CtxWing anchor={base} title="문단 스타일">
+          {CTX_STYLES.map((s) => (
+            <CtxItem
+              key={s.kind}
+              mark={`style-${s.kind}`}
+              name={s.name}
+              dot={s.dot}
+              on={block?.kind === s.kind}
+              onClick={done(() => controller.retypeNoteBlock(at.blockId, s.kind))}
+            />
+          ))}
+        </CtxWing>
+      )}
+      {wing === 'font' && (
+        <CtxWing anchor={base} title="글꼴">
+          {CTX_FONTS.map((f) => (
+            <CtxItem key={f.kind} mark={`font-${f.kind}`} name={f.name} hint={f.key} dot={f.dot} onClick={done(() => format(f.kind))} />
+          ))}
+        </CtxWing>
+      )}
+      {wing === 'todo' && <TodoWing controller={controller} anchor={base} blockId={at.blockId} onDone={onClose} />}
+    </>
+  );
+}
+
+/** 우클릭 메뉴 너비 — 날개가 이 값만큼 옆으로 붙는다. */
+const CTX_MENU_W = 236;
+
+/** 메뉴 사이의 가는 선 — 묶음이 넷이라(잘라내기·서식·블록·지우기) 선이 없으면 한 덩어리로 읽힌다. */
+function CtxRule() {
+  return <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px' }} />;
+}
+
+/**
+ * 메뉴 한 줄 — [아이콘 또는 색 점] 이름 … [단축키 또는 ›].
+ *
+ * 아이콘과 색 점을 한 컴포넌트가 다루는 이유: 본 메뉴는 아이콘, 날개는 색 점인데
+ * 줄 높이·여백·hover가 같아야 한 벌로 읽힌다(디자인 이미지 셋이 그렇다).
+ */
+function CtxItem({
+  name,
+  hint,
+  icon,
+  dot,
+  danger,
+  wing,
+  on,
+  mark,
+  onClick,
+}: {
+  name: string;
+  hint?: string;
+  icon?: JSX.Element;
+  dot?: string;
+  danger?: boolean;
+  wing?: boolean;
+  on?: boolean;
+  mark: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-note-ctx={mark}
+      className="btn mf-note-item"
+      // 기본 동작(포커스 이동)을 막아 **선택을 잃지 않는다** — 서식 항목이 그 선택에 건다.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      style={{ ...MENU_ITEM, height: 33, color: danger ? 'var(--mf-danger)' : 'var(--mf-text)', background: on ? 'var(--mf-accent-soft)' : 'transparent' }}
+    >
+      {icon && (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={danger ? 'currentColor' : 'var(--mf-subtext)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+          {icon}
+        </svg>
+      )}
+      {dot && <span aria-hidden="true" style={{ width: 8, height: 8, flex: '0 0 auto', borderRadius: 999, background: dot, display: 'block' }} />}
+      {name}
+      <span style={{ flex: 1 }} />
+      {hint && <span style={POP_KEY}>{hint}</span>}
+      {wing && (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+/** 날개 — 본 메뉴 오른쪽(자리가 없으면 왼쪽)에 붙는 두 번째 판. */
+function CtxWing({ anchor, title, children }: { anchor: CSSProperties; title: string; children: ReactNode }) {
+  const vw = typeof window === 'undefined' ? 1280 : window.innerWidth;
+  const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
+  const left = typeof anchor.left === 'number' ? anchor.left : 8;
+  const top = typeof anchor.top === 'number' ? anchor.top : 8;
+  const width = 214;
+  const fits = left + CTX_MENU_W + width + 16 < vw;
+  return (
+    <div
+      data-note-ctx-wing={title}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        ...POP,
+        position: 'fixed',
+        left: fits ? left + CTX_MENU_W + 6 : Math.max(8, left - width - 6),
+        top: Math.min(top + 60, Math.max(8, vh - 300)),
+        width,
+        maxHeight: 320,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+      }}
+    >
+      <span style={POP_HEAD}>{title}</span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * `할 일로 보내기`의 날개 — 이 스페이스의 **칸반 보드들**.
+ *
+ * 고른 보드의 **첫 열 맨 끝**에 카드를 만든다(`sendNoteBlockToBoard`). 회의록에서
+ * 정한 일을 보드로 옮기는 것이 이 메뉴가 있는 이유라, 보드를 열고 카드를 만들고
+ * 글을 옮겨 적는 세 단계가 한 번으로 줄어든다.
+ */
+function TodoWing({ controller, anchor, blockId, onDone }: { controller: EditorController; anchor: CSSProperties; blockId: string; onDone: () => void }) {
+  const { rows, loading } = useBoards(controller);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  return (
+    <CtxWing anchor={anchor} title="할 일로 보내기">
+      {loading && <span style={{ padding: '8px 9px', fontSize: 12, color: 'var(--mf-faint)' }}>보드를 찾는 중…</span>}
+      {!loading && rows.length === 0 && <span style={{ padding: '8px 9px', fontSize: 12, color: 'var(--mf-faint)', lineHeight: 1.5, wordBreak: 'keep-all' }}>이 스페이스에 칸반 보드가 없어요</span>}
+      {rows.map((r) => (
+        <button
+          key={r.docId}
+          type="button"
+          data-note-todo-to={r.docId}
+          className="btn mf-note-item"
+          disabled={busy !== null}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setBusy(r.docId);
+            setFailed(false);
+            void controller.sendNoteBlockToBoard(blockId, r.docId).then((ok) => {
+              setBusy(null);
+              if (!ok) {
+                setFailed(true);
+                return;
+              }
+              // 보냈다는 것을 **잠깐 보여 주고** 닫는다 — 곧바로 닫히면 무슨 일이
+              // 일어났는지 화면 어디에도 남지 않는다(보드는 다른 문서다).
+              setSent(r.docId);
+              window.setTimeout(onDone, 900);
+            });
+          }}
+          style={{ ...MENU_ITEM, height: 36 }}
+        >
+          <span aria-hidden="true" style={{ width: 8, height: 8, flex: '0 0 auto', borderRadius: 2, background: 'var(--mf-doc-kanban)', display: 'block' }} />
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+          {busy === r.docId && <span style={{ flex: '0 0 auto', fontSize: 10.5, color: 'var(--mf-faint)' }}>보내는 중…</span>}
+          {sent === r.docId && <span style={{ flex: '0 0 auto', fontSize: 10.5, fontWeight: 800, color: 'var(--mf-accent-deep)' }}>보냄</span>}
+        </button>
+      ))}
+      {failed && (
+        <span data-note-todo-failed style={{ padding: '6px 9px', fontSize: 11, lineHeight: 1.5, color: 'var(--mf-danger)', wordBreak: 'keep-all' }}>
+          보내지 못했어요 — 그 보드를 다른 곳에서 고치는 중일 수 있어요.
+        </span>
+      )}
+    </CtxWing>
+  );
+}
+
+/** 이 스페이스의 **칸반 보드들** — `useNotebooks`와 같은 길(열릴 때 한 번만 읽는다). */
+function useBoards(controller: EditorController): { rows: { docId: string; title: string }[]; loading: boolean } {
+  const docStore = useDocStore();
+  const [rows, setRows] = useState<{ docId: string; title: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const metas = await docStore.list();
+        const byId = new Map(metas.map((m) => [m.id, m]));
+        const ids = controller.linkTargets.map((t) => t.docId);
+        const bodies = await Promise.allSettled(ids.map((id) => docStore.loadPreview(id, byId.get(id))));
+        if (!alive) return;
+        const out: { docId: string; title: string }[] = [];
+        bodies.forEach((r, i) => {
+          if (r.status !== 'fulfilled' || !r.value) return;
+          const id = ids[i]!;
+          let parsed: Doc | null = null;
+          try {
+            parsed = parseDoc(JSON.parse(r.value) as Record<string, unknown>);
+          } catch {
+            parsed = null;
+          }
+          if (!parsed || parsed.kind !== 'kanban') return;
+          out.push({ docId: id, title: byId.get(id)?.title || controller.linkTargets.find((t) => t.docId === id)?.title || '제목 없는 보드' });
+        });
+        setRows(out);
+      } catch {
+        /* 목록을 못 받아도 본문은 그대로 쓴다 */
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [docStore, controller.linkTargets]);
+  return { rows, loading };
 }
 
 /**

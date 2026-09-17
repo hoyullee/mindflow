@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { CalendarEntry } from './entries';
-import { entryChip, markStyle, type ChipSurface } from './chips';
+import { declinedStyle, entryChip, markStyle, type ChipSurface } from './chips';
 import { dueBadge, dueTone, isSpan, overdueEntries, upcomingEntries, type DueTone } from './model';
 
 /** 한 번에 보여 주는 줄 수 — 넘치면 `+N개 더 보기`로 접는다(제보 #15). */
@@ -151,7 +151,7 @@ function Row({ entry, todayIso, surface, onPick }: { entry: CalendarEntry; today
     >
       <span style={markStyle(chip)} />
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(entry) }}>{entry.title || '제목 없음'}</span>
         <span style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {entry.boardName} · {entry.colName}
           {isSpan(entry) ? ` · ${entry.start!.slice(5).replace('-', '.')} – ${entry.due.slice(5).replace('-', '.')}` : ''}

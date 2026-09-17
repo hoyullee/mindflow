@@ -2,7 +2,7 @@
 // 최근 항목이 **지워지지 않고 접힌다**(요청 6).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
@@ -44,6 +44,9 @@ const MAP_DOC = {
 
 function seed(): void {
   localStorage.setItem('mindflow_doc_nb1', JSON.stringify(NOTE_DOC));
+  // 공책에는 뿌리 노드가 없어 **문서 메타의 제목**이 곧 카드 이름이다(없으면
+  // 저장소가 `(제목 없음)`으로 부른다 — 실제 문서에는 언제나 메타가 있다).
+  localStorage.setItem('mindflow_doc_meta_nb1', JSON.stringify({ title: '제품 회의록', version: 1, updatedAt: '2026-09-16T00:00:00.000Z' }));
   localStorage.setItem('mindflow_doc_mp1', JSON.stringify(MAP_DOC));
   localStorage.setItem(
     'mf_spaces',
@@ -116,9 +119,14 @@ describe('홈 검색 — 공책과 페이지 내용', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    const row = hits.querySelector('[data-search-hit="본문"]');
+    const row = hits.querySelector('[data-search-hit="본문"]') as HTMLElement;
     expect(row).toBeTruthy();
-    expect(within(row as HTMLElement).getByText(/알림 정리를 먼저 끝낸다/)).toBeTruthy();
+    // 발췌는 질의를 기준으로 조각나 있다(형광펜) — 글자는 이어 붙여 본다.
+    expect(row.textContent).toContain('알림 정리를 먼저 끝낸다');
+    // 질의는 **형광펜**으로 그어진다(요청·디자인).
+    expect([...row.querySelectorAll('mark')].map((m) => m.textContent)).toContain('알림 정리');
+    // 경로는 `스페이스 › 공책 › 페이지` — 공책의 **어느 장**인지까지 말한다.
+    expect(row.querySelector('[data-search-hit-path]')?.textContent).toContain('제품 회의록');
     // 그 장으로 바로 가는 주소다(문서만 열고 다시 찾게 하지 않는다).
     expect((row as HTMLAnchorElement).getAttribute('href')).toContain('page=p2');
   });
