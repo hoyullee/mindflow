@@ -1029,3 +1029,75 @@ describe('공책 8판 — 태그 색 고르기', () => {
     expect(row.style.background).toBe('rgb(105, 176, 138)');
   });
 });
+
+describe('공책 9판 — 블록을 가로지르는 드래그 선택', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 문단에서 눌러 다른 블록까지 끌고 간다(좌표는 jsdom에서 0이라 `elementFromPoint`를 세운다). */
+  function dragOver(container: HTMLElement, fromId: string, toId: string): void {
+    const col = container.querySelector(`[data-note-blockwrap="${fromId}"]`)!.parentElement as HTMLElement;
+    const from = container.querySelector(`[data-note-line="${fromId}"]`) as HTMLElement;
+    const to = container.querySelector(`[data-note-block="${toId}"]`) as HTMLElement;
+    fireEvent.pointerDown(from, { bubbles: true });
+    const real = document.elementFromPoint;
+    document.elementFromPoint = () => to;
+    try {
+      fireEvent.pointerMove(col, { buttons: 1, clientX: 10, clientY: 200 });
+    } finally {
+      document.elementFromPoint = real;
+    }
+    fireEvent.pointerUp(col);
+  }
+
+  it('블록 경계를 넘으면 **블록 단위로** 골라진다', async () => {
+    localStorage.setItem('mindflow_doc_ns80', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns80&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
+
+    dragOver(container, 'b1', 'b3');
+    const picked = await waitFor(() => {
+      const els = [...container.querySelectorAll('[data-note-blockwrap][data-selected]')];
+      expect(els.length).toBeGreaterThan(1);
+      return els.map((el) => el.getAttribute('data-note-blockwrap'));
+    });
+    // 드래그가 지나온 블록 셋이 한 덩이로 골라진다(문서 순서).
+    expect(picked).toEqual(['b1', 'b2', 'b3']);
+  });
+
+  it('고른 블록은 ⌫로 지우고 Esc로 놓는다', async () => {
+    localStorage.setItem('mindflow_doc_ns81', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns81&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
+
+    dragOver(container, 'b1', 'b2');
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0));
+
+    dragOver(container, 'b1', 'b2');
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    saveNow();
+    await waitFor(() => {
+      const ids = (saved('ns81').pages[0].blocks as { id: string }[]).map((b) => b.id);
+      expect(ids).toEqual(['b3', 'b4']);
+    });
+  });
+
+  it('한 블록 안에서는 브라우저의 선택 그대로다 — 면을 깔지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_ns82', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns82&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    fireEvent.pointerDown(line, { bubbles: true });
+    fireEvent.pointerMove(line, { buttons: 1, clientX: 30, clientY: 10 });
+    fireEvent.pointerUp(line);
+
+    expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0);
+  });
+});

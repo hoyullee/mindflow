@@ -281,6 +281,20 @@ export function NoteEditor({ controller }: Props) {
    * 든다. 박스를 기억하는 이유는 서식 항목이 그 박스의 선택에 걸리기 때문이다.
    */
   const [ctxAt, setCtxAt] = useState<BlockMenuAt | null>(null);
+  /**
+   * **블록을 가로지른 드래그 선택**(제보: 드래그로 글을 고를 수 없다).
+   *
+   * 왜 브라우저에 맡길 수 없나: 블록마다 편집 박스가 따로다(`contentEditable`이 블록
+   * 단위다 — 비제어 박스라는 결정의 뿌리다). 브라우저의 선택은 **한 편집 호스트 안에
+   * 갇혀** 있어서, 문단에서 끌어 아래 제목으로 넘어가면 그 경계에서 멈춘다(실측:
+   * anchor·focus가 둘 다 첫 블록에 남는다). 한 블록 안에서는 지금도 잘 된다.
+   *
+   * 그래서 경계를 넘는 순간부터 **블록 단위 선택**으로 바꾼다(노션·크래프트와 같은
+   * 처방): 고른 블록에 면을 깔고, 그 위에서 복사·잘라내기·지우기가 동작한다.
+   */
+  const [blockSel, setBlockSel] = useState<{ from: string; to: string } | null>(null);
+  /** 드래그가 시작된 블록 — 경계를 넘었는지 판단하는 기준. */
+  const dragFrom = useRef<string | null>(null);
 
   // Escape로 닫는다 — 팝업이 열려 있는 동안 본문 타이핑은 그대로 이어진다.
   useEffect(() => {
@@ -291,6 +305,71 @@ export function NoteEditor({ controller }: Props) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [slashFor]);
+
+  /**
+   * 드래그의 끝 — **문서에** 건다. 본문 밖에서 손을 떼는 일이 흔하고(스크롤바·
+   * 사이드바), 그때 기준 블록이 남아 있으면 다음 마우스 이동만으로 선택이 생긴다.
+   */
+  useEffect(() => {
+    const done = () => {
+      dragFrom.current = null;
+    };
+    document.addEventListener('pointerup', done);
+    document.addEventListener('pointercancel', done);
+    return () => {
+      document.removeEventListener('pointerup', done);
+      document.removeEventListener('pointercancel', done);
+    };
+  }, []);
+
+  /** 고른 블록 id들 — 드래그 방향과 무관하게 **문서 순서**로 돌려준다. */
+  const selectedIds = useMemo(() => {
+    if (!blockSel || !page) return [];
+    const ids = page.blocks.map((b) => b.id);
+    const a = ids.indexOf(blockSel.from);
+    const b = ids.indexOf(blockSel.to);
+    if (a < 0 || b < 0) return [];
+    return ids.slice(Math.min(a, b), Math.max(a, b) + 1);
+  }, [blockSel, page]);
+
+  /**
+   * 블록 선택 위의 키보드 — 복사·잘라내기·지우기·Esc.
+   *
+   * `copy`/`cut` 이벤트에 얹지 않는 이유: 브라우저의 선택을 비워 둔 상태라(면으로
+   * 대신 표시한다) 그 이벤트가 오지 않는 브라우저가 있다. 키를 직접 읽고 클립보드에
+   * 쓴다 — 막혀 있으면 조용히 넘어간다(지우기는 그대로 동작한다).
+   */
+  useEffect(() => {
+    if (!selectedIds.length || !page) return;
+    const text = () =>
+      selectedIds
+        .map((id) => blockText(page.blocks.find((b) => b.id === id)!))
+        .join('\n');
+    const remove = () => {
+      for (const id of selectedIds) controller.removeNoteBlock(id);
+      setBlockSel(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setBlockSel(null);
+        return;
+      }
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        void navigator.clipboard.writeText(text()).catch(() => undefined);
+      } else if (mod && (e.key === 'x' || e.key === 'X')) {
+        e.preventDefault();
+        void navigator.clipboard.writeText(text()).catch(() => undefined);
+        if (!readOnly) remove();
+      } else if ((e.key === 'Backspace' || e.key === 'Delete') && !readOnly) {
+        e.preventDefault();
+        remove();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selectedIds, page, controller, readOnly]);
 
   if (!page) return null;
 
@@ -313,9 +392,40 @@ export function NoteEditor({ controller }: Props) {
           />
         )}
         <div className="lnb-scroll" data-note-page style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}>
-          {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 19px로 벌어진다(글이 숨 쉬는
-              간격이고, 이 리듬이 없으면 제목과 본문이 한 덩어리로 뭉쳐 보인다). */}
+          {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 **9px**이다(요청: 너무 넓다) —
+              19px이던 값의 절반. 제목만 위쪽에 숨을 더 둬서(아래 `headGap`) 문단은
+              촘촘하고 구획은 여전히 갈린다. */}
           <div
+            onPointerDown={(e) => {
+              // 새 드래그의 시작 — 이전 블록 선택을 접고 기준 블록을 기억한다.
+              setBlockSel(null);
+              const host = (e.target as HTMLElement | null)?.closest?.('[data-note-block]') as HTMLElement | null;
+              dragFrom.current = host?.getAttribute('data-note-block') ?? null;
+            }}
+            onPointerMove={(e) => {
+              // 드래그 중일 때만 — 누름은 `dragFrom`이 말하고, 뗌은 **문서에 건**
+              // `pointerup`이 지운다(위 effect). `e.buttons`를 보지 않는 이유:
+              // 그 값이 실려 오지 않는 환경이 있어 조건으로 쓰면 조용히 죽는다.
+              if (!dragFrom.current) return;
+              // 커서 아래의 블록은 좌표로 찾는다 — 편집 박스가 드래그를 잡고 있어
+              // `e.target`은 시작 블록에 머문다.
+              let under: HTMLElement | null = null;
+              try {
+                under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+              } catch {
+                under = null; // 좌표 조회가 없는 환경(jsdom) — 아래 폴백으로 간다
+              }
+              const host = (under ?? (e.target as HTMLElement | null))?.closest?.('[data-note-block]') as HTMLElement | null;
+              const id = host?.getAttribute('data-note-block');
+              if (!id || id === dragFrom.current) return;
+              // 경계를 넘었다 — 여기서부터는 블록 단위다. 브라우저가 반쯤 그려 둔
+              // 선택은 지우고, **캐럿도 뺀다**: 면이 깔린 채로 캐럿이 남아 있으면
+              // 글쇠가 그 블록 안으로 들어가 "고른 것"과 "고치는 것"이 갈린다.
+              window.getSelection()?.removeAllRanges();
+              const live = document.activeElement as HTMLElement | null;
+              if (live?.hasAttribute('data-note-line')) live.blur();
+              setBlockSel({ from: dragFrom.current, to: id });
+            }}
             onContextMenu={(e) => {
               if (readOnly) return;
               const el = e.target as HTMLElement | null;
@@ -327,24 +437,41 @@ export function NoteEditor({ controller }: Props) {
               if (box) focusBox(box);
               setCtxAt({ blockId: id, box, x: e.clientX, y: e.clientY });
             }}
-            style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}
+            style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}
           >
             <PageHead controller={controller} page={page} />
             {/* 머리와 본문 사이의 선(요청) — 위는 이 장이 무엇인지(제목·태그·사람),
                 아래는 그 내용이다. 블록 간격(19px)만으로는 그 경계가 서지 않는다. */}
             <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', marginTop: -6 }} />
             {page.blocks.map((block, i) => (
-              <BlockView
+              // 선택 면은 **감싸는 칸**이 그린다 — 블록마다 뿌리가 달라서(표·이미지·
+              // 콜아웃…) 각 뿌리에 면을 얹으면 같은 코드를 여덟 번 쓰게 된다. 이 칸은
+              // 여백이 없어 평소 레이아웃에는 아무 영향이 없다.
+              <div
                 key={block.id}
-                controller={controller}
-                block={block}
-                index={i}
-                freshId={freshId}
-                setFreshId={setFreshId}
-                rememberBox={rememberBox}
-                focusBox={focusBox}
-                openSlash={(id) => openSlashAt(id)}
-              />
+                data-note-blockwrap={block.id}
+                data-selected={selectedIds.includes(block.id) ? '1' : undefined}
+                style={{
+                  minWidth: 0,
+                  borderRadius: 7,
+                  // 제목 위에 숨을 더 둔다 — 간격을 9px로 좁히면서 구획이 뭉치지 않게.
+                  marginTop: i > 0 && (block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3') ? 9 : 0,
+                  ...(selectedIds.includes(block.id)
+                    ? { background: 'var(--mf-accent-soft)', boxShadow: '0 0 0 3px var(--mf-accent-soft)' }
+                    : {}),
+                }}
+              >
+                <BlockView
+                  controller={controller}
+                  block={block}
+                  index={i}
+                  freshId={freshId}
+                  setFreshId={setFreshId}
+                  rememberBox={rememberBox}
+                  focusBox={focusBox}
+                  openSlash={(id) => openSlashAt(id)}
+                />
+              </div>
             ))}
             {ctxAt && !readOnly && <BlockMenu controller={controller} at={ctxAt} onClose={() => setCtxAt(null)} />}
             {slashFor && !readOnly && (
