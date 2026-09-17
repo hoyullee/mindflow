@@ -136,6 +136,16 @@ export function clampBounds(saved: Partial<Bounds> | null | undefined, workArea:
 export const TITLEBAR_HEIGHT = 40;
 
 /**
+ * 네이티브 창 컨트롤(최소화·최대화·닫기) 오버레이의 높이 — **바보다 1px 낮다**.
+ *
+ * 왜: Windows의 그 컨트롤은 웹 내용 **위에** 그려지는 네이티브 판이라, 오버레이가
+ * 바와 같은 높이면 바의 아래 테두리 1px을 그 구역에서만 덮는다(제보: "최소화·
+ * 최대화·닫기 하단에만 구분선이 안 보인다"). 웹 쪽에서는 손쓸 방법이 없다 — 그
+ * 판 위에 무엇도 그릴 수 없다. 1px을 비워 주면 그 줄이 화면 끝까지 이어진다.
+ */
+export const TITLEBAR_OVERLAY_HEIGHT = TITLEBAR_HEIGHT - 1;
+
+/**
  * 이 플랫폼에서 **프레임을 숨기고 우리 타이틀 바를 그리는가**.
  *
  * Windows·macOS만이다. Electron의 `titleBarStyle: 'hidden'`과 창 컨트롤

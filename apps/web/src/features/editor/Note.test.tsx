@@ -206,19 +206,6 @@ describe('공책 에디터', () => {
     await waitFor(() => expect(saved('nb9')?.pages?.[0]?.tag).toBe('리서치'));
   });
 
-  it('표지 색을 고르면 문서에 남는다(홈 카드가 읽는 그 값)', async () => {
-    localStorage.setItem('mindflow_doc_nb10', JSON.stringify(NOTE));
-    const { container } = renderEditor('/editor?map=nb10&title=x');
-    await waitFor(() => expect(container.querySelector('[data-note-cover-btn]')).toBeTruthy());
-
-    fireEvent.click(container.querySelector('[data-note-cover-btn]')!);
-    fireEvent.click(await screen.findByLabelText('숲'));
-    saveNow();
-    await waitFor(() => expect(saved('nb10')?.cover?.color).toBe('#2F7D57'));
-    // 태그는 그대로 — 표지 색은 태그를 덮지 않는다(둘은 따로 고르는 값이다).
-    expect(saved('nb10').cover.tag).toBe('회의록');
-  });
-
   it('표에 행·열을 더한다', async () => {
     localStorage.setItem('mindflow_doc_nb11', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=nb11&title=x');
@@ -598,20 +585,18 @@ describe('공책 5판 — 편집 동작', () => {
   });
   afterEach(cleanup);
 
-  it('블록 메뉴에 **목록 셋도 있다** — 단추 라벨과 메뉴가 어긋나지 않게', async () => {
+  it('블록 메뉴는 **여덟**이다 — 글의 종류만(요청·시안)', async () => {
     localStorage.setItem('mindflow_doc_ns40', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns40&title=x');
     await waitFor(() => expect(container.querySelector('[data-note-blocktype]')).toBeTruthy());
 
     fireEvent.click(container.querySelector('[data-note-blocktype]')!);
     const menu = (await waitFor(() => container.querySelector('[data-note-blocktype-menu]'))) as HTMLElement;
-    for (const kind of ['p', 'h1', 'h2', 'h3', 'ul', 'ol', 'ck', 'q', 'callout', 'toggle', 'code']) {
-      expect(menu.querySelector(`[data-note-blocktype-item="${kind}"]`)).toBeTruthy();
-    }
-    // 넣는 것들(표·이미지·구분선·문서 링크)은 여전히 이 메뉴가 아니다.
-    for (const kind of ['table', 'img', 'hr', 'link']) {
-      expect(menu.querySelector(`[data-note-blocktype-item="${kind}"]`)).toBeNull();
-    }
+    expect([...menu.querySelectorAll('[data-note-blocktype-item]')].map((b) => b.getAttribute('data-note-blocktype-item'))).toEqual([
+      'p', 'h1', 'h2', 'h3', 'q', 'callout', 'toggle', 'code',
+    ]);
+    // 단추는 **폭이 고정**이라 이름이 길어져도(`코드 블록`) 오른쪽 단추들이 밀리지 않는다.
+    expect((container.querySelector('[data-note-blocktype]') as HTMLElement).style.width).toBe('118px');
   });
 
   it('첫 줄 안내는 **페이지가 통째로 빌 때만** 뜬다', async () => {
@@ -1105,5 +1090,52 @@ describe('공책 9판 — 블록을 가로지르는 드래그 선택', () => {
     fireEvent.pointerUp(line);
 
     expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0);
+  });
+});
+
+describe('공책 10판 — 태그·툴바·새 페이지', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('`블록 넣기` 목록은 **바깥을 누르면 닫힌다**(제보)', async () => {
+    localStorage.setItem('mindflow_doc_ns90', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns90&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-btn]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-slash-btn]')!);
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
+  });
+
+  it('새 페이지는 **목록 위의 띠**다 — 눌러서 한 장 더한다(요청·시안)', async () => {
+    localStorage.setItem('mindflow_doc_ns91', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns91&title=x');
+    const band = (await waitFor(() => container.querySelector('[data-note-new-page]'))) as HTMLElement;
+
+    expect(band.textContent).toContain('새 페이지');
+    expect(band.style.border).toContain('dashed');
+    fireEvent.click(band);
+    saveNow();
+    await waitFor(() => expect(saved('ns91').pages).toHaveLength(3));
+  });
+
+  it('태그 칩은 종이 면 + 테두리이고, 안내문은 없다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_ns92', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns92&title=x');
+    const chip = (await waitFor(() => container.querySelector('[data-note-tag-pick]'))) as HTMLElement;
+
+    expect(chip.style.background).toBe('var(--mf-panel)');
+    fireEvent.click(chip);
+    const menu = (await waitFor(() => container.querySelector('[data-note-tag-menu]'))) as HTMLElement;
+    fireEvent.click(menu.querySelector('[data-note-tag-add]')!);
+    await waitFor(() => expect(menu.querySelector('[data-note-tag-new]')).toBeTruthy());
+    // 색 고르개는 남고 안내문만 뺐다.
+    expect(menu.querySelectorAll('[data-note-tag-hue]')).toHaveLength(8);
+    expect(menu.textContent).not.toContain('Esc로 취소');
   });
 });

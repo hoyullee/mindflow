@@ -42,6 +42,7 @@ import {
   badgePayload,
   isHexColor,
   TITLEBAR_HEIGHT,
+  TITLEBAR_OVERLAY_HEIGHT,
   titleBarHeightFor,
   usesCustomTitleBar,
   DEFAULT_APP_URL,
@@ -376,7 +377,7 @@ function createWindow(startHidden: boolean): BrowserWindow {
       ? {
           titleBarStyle: 'hidden' as const,
           ...(process.platform === 'win32'
-            ? { titleBarOverlay: { color: TITLEBAR_BG, symbolColor: TITLEBAR_INK, height: TITLEBAR_HEIGHT } }
+            ? { titleBarOverlay: { color: TITLEBAR_BG, symbolColor: TITLEBAR_INK, height: TITLEBAR_OVERLAY_HEIGHT } }
             : // macOS 신호등을 바 높이 가운데로. 기본 자리는 20px대 타이틀 바 기준이라
               // 40px 바에서는 위쪽에 붙는다.
               { trafficLightPosition: { x: 15, y: Math.round((TITLEBAR_HEIGHT - 16) / 2) } }),
@@ -558,7 +559,7 @@ if (!app.requestSingleInstanceLock()) {
       const win = BrowserWindow.fromWebContents(e.sender);
       if (!win || win.isDestroyed()) return false;
       try {
-        win.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_HEIGHT });
+        win.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_OVERLAY_HEIGHT });
         return true;
       } catch {
         // 오버레이 없이 만들어진 창(프레임을 그대로 쓰는 경우)에서는 던진다 —

@@ -11,7 +11,6 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from 'react';
 import type { Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, NotePage, RichRun } from '@mindflow/mindmap-core';
 import {
-  NOTE_COVERS,
   NOTE_HIGHLIGHTS,
   NOTE_TAG_COLORS,
   NOTE_TAGS,
@@ -59,9 +58,9 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   { kind: 'h1', name: '제목 1', hint: '⌘⌥1', desc: '가장 큰 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M12 5v14M4 12h8" /><path d="M17 9.5 19.5 8V19" /></>) },
   { kind: 'h2', name: '제목 2', hint: '⌘⌥2', desc: '섹션 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 10a2 2 0 1 1 3.4 1.4L15.5 16H20" /></>) },
   { kind: 'h3', name: '제목 3', hint: '⌘⌥3', desc: '작은 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 9.5h4.5l-2.5 3a2.2 2.2 0 1 1-2 3.6" /></>) },
-  { kind: 'ul', name: '글머리 목록', hint: '', desc: '점으로 나열', group: '목록', inMenu: true, sepBefore: true, icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
-  { kind: 'ol', name: '번호 목록', hint: '', desc: '순서가 있는 나열', group: '목록', inMenu: true, icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
-  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록', inMenu: true, icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
+  { kind: 'ul', name: '글머리 목록', hint: '', desc: '점으로 나열', group: '목록',   icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
+  { kind: 'ol', name: '번호 목록', hint: '', desc: '순서가 있는 나열', group: '목록',  icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
+  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록',  icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
   { kind: 'q', name: '인용', hint: '⌘⇧.', desc: '다른 글이나 말을 인용', group: '강조', inMenu: true, sepBefore: true, icon: <path d="M7 7h4v5c0 2-1 3.5-3 4.5M14 7h4v5c0 2-1 3.5-3 4.5" /> },
   { kind: 'callout', name: '콜아웃', hint: '', desc: '주의 · 결정 · 질문', group: '강조', inMenu: true, icon: (<><rect x="3.5" y="5" width="17" height="14" rx="3" /><path d="M12 9v3.5M12 15.5h.01" /></>) },
   { kind: 'toggle', name: '접기', hint: '', desc: '긴 내용을 접어 두기', group: '강조', inMenu: true, icon: (<><path d="m8 6 6 6-6 6" /><path d="M4 21h16" opacity=".35" /></>) },
@@ -135,6 +134,7 @@ export function noteTokens(t: Theme): CSSProperties {
       '--mf-note-bar-dot': mix(t.border, 70, 'transparent'),
       '--mf-note-body': t.panel,
       '--mf-note-hover': t.panel2,
+      '--mf-tag-on': mix(t.accent, 10, t.panel),
       '--mf-note-ck': t.border,
       '--mf-note-code-bg': t.panel2,
       '--mf-note-code-fg': t.text,
@@ -165,7 +165,8 @@ export function noteTokens(t: Theme): CSSProperties {
     '--mf-note-bar': '#f6f0e8', // 상단 바 — 본문보다 한 톤 짙다
     '--mf-note-bar-dot': 'rgba(199,186,172,.28)', // 그 위의 도트 무늬(14px)
     '--mf-note-body': '#fdfbf8', // 본문 바탕 — 면보다 아주 살짝 어둡다
-    '--mf-note-hover': '#f6efe7', // 툴바 단추에 마우스를 얹었을 때
+    '--mf-note-hover': '#f7f0e8', // 메뉴·단추에 마우스를 얹었을 때(요청 값)
+    '--mf-tag-on': '#fbf3ee', // 태그 메뉴에서 **고른** 태그의 면(요청 값)
     '--mf-note-ck': '#dcd1c6', // 체크 상자의 빈 테두리
     '--mf-note-code-bg': '#332e29',
     '--mf-note-code-fg': '#e7dacb',
@@ -846,6 +847,9 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
           flex: '0 0 292px',
           boxSizing: 'border-box',
           minWidth: 0,
+          // 면은 **아래 목록과 같은 종이**(#FBF7F1 = `--mf-panel`, 요청) — 한 칸이
+          // 위아래로 이어져 보이고, 오른쪽의 경로·툴바와도 선 하나로 갈린다.
+          background: 'var(--mf-panel)',
           borderRight: '1px solid var(--mf-border-soft)',
         }}
       >
@@ -1115,20 +1119,6 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
               </button>
             )}
           </span>
-          {!controller.readOnly && (
-            <button
-              type="button"
-              data-note-new-page
-              onClick={() => controller.addNotePage()}
-              title="새 페이지"
-              aria-label="새 페이지"
-              style={{ width: 30, height: 30, flex: '0 0 auto', border: 0, borderRadius: 10, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-            </button>
-          )}
         </div>
 
         {searching ? (
@@ -1209,6 +1199,42 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
           </>
         )}
       </div>
+
+      {/* 새 페이지 — 검색칸 옆의 주황 `+`에서 **목록 바로 위의 점선 띠**로(요청·시안).
+          한 칸짜리 단추는 "무엇을 만드는지"를 아이콘 하나로만 말했고, 거르개 줄과 붙어
+          있어 검색의 일부처럼 보였다. 지금은 목록의 첫 줄처럼 서서 그 아래 페이지들과
+          같은 폭을 쓴다(점선이라 "아직 없는 것"으로 읽힌다). */}
+      {!controller.readOnly && !searching && (
+        <button
+          type="button"
+          data-note-new-page
+          className="mf-note-item"
+          onClick={() => controller.addNotePage()}
+          title="새 페이지"
+          style={{
+            flex: '0 0 auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 7,
+            height: 38,
+            margin: '0 14px 10px',
+            border: '1.5px dashed var(--mf-border)',
+            borderRadius: 11,
+            background: 'transparent',
+            color: 'var(--mf-subtext)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          새 페이지
+        </button>
+      )}
 
       {/* 거르개와 목록 사이의 선(요청) — 위는 "무엇을 볼까"를 고르는 줄, 아래는 그
           결과다. 선 하나가 그 둘을 갈라 준다. */}
@@ -1759,9 +1785,12 @@ function TagPick({
           height: 24,
           padding: '0 8px 0 10px',
           borderRadius: 999,
-          border: `1px solid ${open ? 'var(--mf-border-hover)' : 'transparent'}`,
-          background: tag ? `color-mix(in srgb, ${noteTagColor(tag, inks)} 18%, var(--mf-card))` : 'var(--mf-panel2)',
-          color: tag ? noteTagColor(tag, inks) : 'var(--mf-muted)',
+          // 칩은 **종이 면 + 테두리**다(요청·시안) — 태그 색을 면에 풀면 태그마다
+          // 칩의 무게가 달라 보이고, 옆의 사람·시각 줄보다 튄다. 색은 점 하나가 맡고
+          // 글자는 본문 잉크를 쓴다.
+          border: `1px solid ${open ? 'var(--mf-border-hover)' : 'var(--mf-border)'}`,
+          background: 'var(--mf-panel)',
+          color: tag ? 'var(--mf-text)' : 'var(--mf-muted)',
           fontFamily: 'inherit',
           fontSize: 11,
           fontWeight: 700,
@@ -1790,7 +1819,7 @@ function TagPick({
                   controller.setNotePageTag(page.id, on ? null : t);
                   setOpen(() => false);
                 }}
-                style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, background: on ? 'var(--mf-accent-soft)' : 'transparent' }}
+                style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, background: on ? 'var(--mf-tag-on)' : 'transparent' }}
               >
                 <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t, inks), display: 'block' }} />
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
@@ -1871,7 +1900,6 @@ function TagPick({
                   );
                 })}
               </div>
-              <span style={{ padding: '3px 9px 4px', fontSize: 10.5, color: 'var(--mf-faint)' }}>색을 고르고 Enter로 추가 · Esc로 취소</span>
             </>
           ) : (
             <button type="button" data-note-tag-add className="btn mf-note-item" onClick={() => setAdding(true)} style={{ ...MENU_ITEM, height: 30, gap: 8, color: 'var(--mf-accent)', fontWeight: 700 }}>
@@ -2253,7 +2281,9 @@ function FormatToolbar({
         }}
         style={TOOL_BTN}
       >
-        <span aria-hidden="true" style={{ padding: '2px 6px', borderRadius: 6, background: 'var(--mf-panel2)', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 700, color: 'var(--mf-subtext)', lineHeight: 1 }}>/</span>
+        {/* 키캡 — **정사각**이다(제보: 면이 너무 좁다). 좌우 여백만 주면 `/` 한 글자
+            폭에 맞춰 납작해져 옆의 30×30 단추들과 다른 리듬으로 보인다. */}
+        <span aria-hidden="true" style={{ width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, background: 'var(--mf-panel2)', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 700, color: 'var(--mf-subtext)', lineHeight: 1 }}>/</span>
       </button>
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
       {/* 집중 — 본문 단을 좁히고 여백을 키운다(디자인의 `toggleFocus`: 700→640px). */}
@@ -2285,11 +2315,8 @@ function FormatToolbar({
       >
         ?
       </button>
-      {/* 표지 — **디자인 툴바에는 없다.** 원본은 표지를 홈의 공책 우클릭 메뉴에서만
-          바꾸는데, 우리는 에디터에서도 바꿀 수 있게 해 뒀다. 프로토타입에 없다는
-          이유로 동작하는 길을 없애는 것은 맞바꿀 만한 일이 아니라 그대로 둔다 —
-          대신 맨 끝에서 30×30 한 칸만 차지하게 해 줄의 인상은 건드리지 않는다. */}
-      <CoverMenu controller={controller} />
+      {/* 표지 색은 **툴바에서 뺐다**(요청) — 원본 디자인에도 없고, 표지는 글을 쓰는
+          동안 건드릴 것이 아니라 공책을 고르는 자리(홈의 우클릭 메뉴)의 일이다. */}
     </div>
   );
 }
@@ -2320,6 +2347,12 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
           display: 'inline-flex',
           alignItems: 'center',
           gap: 7,
+          // **폭을 고정한다**(제보) — 이름이 `본문`에서 `코드 블록`으로 바뀔 때마다
+          // 단추가 늘어 오른쪽 단추들이 통째로 밀렸다. 가장 긴 이름(`글머리 목록`)이
+          // 들어가는 폭으로 못박고 넘치면 말줄임한다.
+          width: 118,
+          flex: '0 0 auto',
+          boxSizing: 'border-box',
           height: 30,
           padding: '0 8px 0 10px',
           border: '1px solid var(--mf-border)',
@@ -2336,8 +2369,8 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           {curType.icon}
         </svg>
-        {curType.name}
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+        <span style={{ flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}>{curType.name}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
@@ -2377,6 +2410,20 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
       )}
     </>
   );
+}
+
+/* ── 블록 ─────────────────────────────────────────────────────────────────── */
+
+interface BlockProps {
+  controller: EditorController;
+  block: NoteBlock;
+  index: number;
+  freshId: string | null;
+  setFreshId: (id: string | null) => void;
+  rememberBox: () => void;
+  focusBox: (el: HTMLElement) => void;
+  /** 빈 블록에서 `/`를 쳤다 — 종류 목록을 연다. */
+  openSlash: (blockId: string) => void;
 }
 
 /**
@@ -2490,53 +2537,6 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
       )}
     </>
   );
-}
-
-/** 공책 표지 — 색·스케치는 홈의 우클릭 메뉴와 같은 값을 쓴다(여기서도 바꿀 수 있다). */
-function CoverMenu({ controller }: { controller: EditorController }) {
-  const [open, setOpen] = useState(false);
-  const cover = controller.doc.cover;
-  const color = noteCoverColor(cover);
-  if (controller.readOnly) return null;
-  return (
-    <div style={{ position: 'relative' }}>
-      <button type="button" data-note-cover-btn className="btn mf-note-tb" title="공책 표지 색" aria-label="공책 표지 색" onClick={() => setOpen((v) => !v)} style={{ ...TOOL_BTN, background: open ? 'var(--mf-accent-soft)' : 'transparent' }}>
-        <span aria-hidden="true" style={{ width: 14, height: 14, borderRadius: 4, background: color, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.12)' }} />
-      </button>
-      {open && (
-        <div data-note-cover-menu style={{ ...SWATCH_POP, right: 0, left: 'auto' }}>
-          {NOTE_COVERS.map(([hex, name]) => (
-            <button
-              key={hex}
-              type="button"
-              title={name}
-              aria-label={name}
-              className="btn"
-              onClick={() => {
-                controller.setNoteCover({ color: hex });
-                setOpen(false);
-              }}
-              style={{ ...SWATCH, background: hex, border: color === hex ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)' }}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── 블록 ─────────────────────────────────────────────────────────────────── */
-
-interface BlockProps {
-  controller: EditorController;
-  block: NoteBlock;
-  index: number;
-  freshId: string | null;
-  setFreshId: (id: string | null) => void;
-  rememberBox: () => void;
-  focusBox: (el: HTMLElement) => void;
-  /** 빈 블록에서 `/`를 쳤다 — 종류 목록을 연다. */
-  openSlash: (blockId: string) => void;
 }
 
 function BlockView({ controller, block, index, freshId, setFreshId, rememberBox, focusBox, openSlash }: BlockProps) {
@@ -3822,6 +3822,9 @@ function SlashMenu({
   onPick: (kind: NoteBlockKind) => void;
   onClose: () => void;
 }) {
+  // 바깥을 누르면 닫힌다(제보) — 지금까지는 Esc로만 닫혀서, 목록을 열어 둔 채
+  // 다른 곳을 눌러도 그대로 떠 있었다. 목록 안의 누름은 뿌리에서 막는다.
+  useAnchored(true, onClose);
   const q = query.trim().toLowerCase();
   const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
