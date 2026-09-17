@@ -410,7 +410,8 @@ export function noteCardData(raw: string | null | undefined): NoteCardData | nul
     cover: noteCoverColor(doc.cover),
     sketch: noteCoverSketch(doc.cover),
     tag,
-    tagColor: noteTagColor(tag),
+    // 표지 태그 색 — 그 공책에서 **고른 색**이 있으면 그것(`tagColors`).
+    tagColor: noteTagColor(tag, doc.tagColors),
     pageCount: pages.length,
     pageTitles: titles.slice(0, 3),
     moreCount: Math.max(0, titles.length - 3),

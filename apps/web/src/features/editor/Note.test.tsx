@@ -958,3 +958,74 @@ describe('공책 7판 — 본문 우클릭 메뉴', () => {
     expect(saved('kb1').cards[0].text).toBe('릴리즈 범위를 좁혔습니다.');
   });
 });
+
+describe('공책 8판 — 태그 색 고르기', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 태그 칩을 눌러 팝업을 열고 `태그 만들기`까지 편다. */
+  async function openNewTag(container: HTMLElement): Promise<HTMLElement> {
+    const chip = (await waitFor(() => container.querySelector('[data-note-tag-pick]'))) as HTMLElement;
+    fireEvent.click(chip);
+    const menu = (await waitFor(() => container.querySelector('[data-note-tag-menu]'))) as HTMLElement;
+    fireEvent.click(menu.querySelector('[data-note-tag-add]')!);
+    await waitFor(() => expect(menu.querySelector('[data-note-tag-new]')).toBeTruthy());
+    return menu;
+  }
+
+  it('새 태그를 만들 때 **점 색을 고를 수 있고**, 고른 값이 문서에 남는다', async () => {
+    localStorage.setItem('mindflow_doc_ns70', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns70&title=x');
+    const menu = await openNewTag(container);
+
+    // 고를 수 있는 색 여덟(해시 팔레트와 같은 목록).
+    expect(menu.querySelectorAll('[data-note-tag-hue]')).toHaveLength(8);
+    fireEvent.click(menu.querySelector('[data-note-tag-hue="#7C9BD8"]')!);
+    // 입력 줄의 점이 고른 색으로 바뀐다 — 넣기 전에 결과가 보인다.
+    await waitFor(() => expect((menu.querySelector('[data-note-tag-newdot]') as HTMLElement).style.background).toBe('rgb(124, 155, 216)'));
+
+    const input = menu.querySelector('[data-note-tag-new]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '스프린트' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    saveNow();
+
+    await waitFor(() => expect(saved('ns70').pages[0].tag).toBe('스프린트'));
+    expect(saved('ns70').tagColors).toEqual({ 스프린트: '#7C9BD8' });
+  });
+
+  it('색을 고르지 않으면 이름에서 정해진다 — 문서에 칸이 생기지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_ns71', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns71&title=x');
+    const menu = await openNewTag(container);
+
+    const input = menu.querySelector('[data-note-tag-new]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '릴리즈' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    saveNow();
+
+    await waitFor(() => expect(saved('ns71').pages[0].tag).toBe('릴리즈'));
+    expect(saved('ns71').tagColors).toBeUndefined();
+  });
+
+  it('고른 색은 **목록과 칩에도** 그대로 쓰인다', async () => {
+    const picked = {
+      ...NOTE,
+      tagColors: { 회의록: '#69B08A' },
+      pages: [{ ...NOTE.pages[0], tag: '회의록' }, NOTE.pages[1]],
+    };
+    localStorage.setItem('mindflow_doc_ns72', JSON.stringify(picked));
+    const { container } = renderEditor('/editor?map=ns72&title=x');
+
+    const chip = (await waitFor(() => container.querySelector('[data-note-tag-pick]'))) as HTMLElement;
+    // 칩의 점 — 기본 자두(#C98BB4)가 아니라 고른 초록이다.
+    const dot = chip.querySelector('span') as HTMLElement;
+    expect(dot.style.background).toBe('rgb(105, 176, 138)');
+    // 페이지 목록의 태그 점도 같은 색.
+    const row = container.querySelector('[data-note-page-row="p1"] [data-note-page-tag] span') as HTMLElement;
+    expect(row.style.background).toBe('rgb(105, 176, 138)');
+  });
+});

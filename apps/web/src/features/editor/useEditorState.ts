@@ -857,6 +857,14 @@ export interface EditorController {
   moveNoteTableCol: (blockId: string, at: number, delta: number) => void;
   setNoteCover: (patch: Partial<NoteCover>) => void;
   setNotePageTag: (pageId: string, tag: string | null) => void;
+  /**
+   * 태그 점 색을 **문서에 적는다**(`tagColors`) — 태그를 만들 때 고른 색.
+   *
+   * `null`이면 그 항목을 지워 이름에서 정해지는 기본색으로 되돌린다. 문서에 적히므로
+   * 그 공책을 여는 모든 사람이 같은 색을 본다(이름 해시는 기기마다 같지만 "이 팀의
+   * 회의록은 파랑"이라는 약속은 담지 못한다).
+   */
+  setNoteTagColor: (tag: string, color: string | null) => void;
   /** 이미지 블록에 파일을 붙인다(플로트 이미지와 같은 저장 경로). */
   setNoteImage: (blockId: string, file: File | Blob) => Promise<void>;
   setNoteLinkDoc: (blockId: string, docId: string) => void;
@@ -1780,7 +1788,10 @@ export function useEditorState(): EditorController {
         next.tags !== prev.tags ||
         // 공책 페이지·표지 — 위 칸반과 **같은 이유로** 반드시 여기 있어야 한다.
         next.pages !== prev.pages ||
-        next.cover !== prev.cover;
+        next.cover !== prev.cover ||
+        // 태그 색도 같은 목록에 있어야 한다 — 빠뜨리면 색을 골라도 "바뀐 게 없다"로
+        // 판정돼 조용히 버려진다(이 줄이 없어 실제로 한 번 그랬다).
+        next.tagColors !== prev.tagColors;
       if (changed) {
         historyRef.current!.record(
           { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [], pages: next.pages ?? [], cover: next.cover ?? null },
@@ -7052,6 +7063,22 @@ export function useEditorState(): EditorController {
     [commitPage],
   );
 
+  const setNoteTagColor = useCallback(
+    (tag: string, color: string | null) => {
+      const name = tag.trim();
+      if (!name) return;
+      commitDoc((d) => {
+        const cur = d.tagColors ?? {};
+        if ((cur[name] ?? null) === color) return d;
+        const next = { ...cur };
+        if (color) next[name] = color;
+        else delete next[name];
+        return Object.keys(next).length ? { ...d, tagColors: next } : { ...d, tagColors: undefined };
+      });
+    },
+    [commitDoc],
+  );
+
   // ---- keyboard shortcuts — port of `Component#onKey` (MindFlow.dc.html:2838-2905):
   // the map-view branch (Editor-b), plus the outline-view branch and the multi-select
   // (marquee) Delete/Escape branch (Editor-c). ----
@@ -7523,6 +7550,7 @@ export function useEditorState(): EditorController {
     toggleNoteTableHead,
     setNoteCover,
     setNotePageTag,
+    setNoteTagColor,
     setNoteImage,
     setNoteLinkDoc,
     linkTargets,

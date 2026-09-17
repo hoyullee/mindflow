@@ -27,6 +27,7 @@ export interface SerializableState {
   tags?: KanbanTag[] | null;
   pages?: NotePage[] | null;
   cover?: NoteCover | null;
+  tagColors?: Record<string, string> | null;
 }
 
 /**
@@ -57,6 +58,9 @@ export function serializeDoc(state: SerializableState): Doc {
     // 구분되지 않는다(칸반 열·카드와 같은 판단). 표지는 고른 것이 있을 때만.
     ...(state.kind === 'note' ? { pages: state.pages ?? [] } : {}),
     ...(state.kind === 'note' && state.cover ? { cover: state.cover } : {}),
+    // 사용자가 고른 태그 색 — **하나라도 있을 때만**(표지와 같은 규칙: 고르지 않은
+    // 문서의 저장본은 지금까지와 같다).
+    ...(state.kind === 'note' && state.tagColors && Object.keys(state.tagColors).length ? { tagColors: state.tagColors } : {}),
     // 그리기 획 — 비어 있지 않을 때만(kind와 같은 규칙: 골든·기존 저장본 무변경).
     ...(state.strokes && state.strokes.length ? { strokes: state.strokes } : {}),
     ...(state.commentPins && state.commentPins.length ? { commentPins: state.commentPins } : {}),
@@ -125,6 +129,16 @@ export function parseDoc(raw: unknown): Doc | null {
           // 사용자는 빈 화면 대신 쓸 수 있는 페이지를 본다).
           pages: normalizePages(d.pages),
           ...(d.cover && typeof d.cover === 'object' ? { cover: d.cover as NoteCover } : {}),
+          ...(() => {
+            // 태그 색 — **모양이 맞는 항목만** 줍는다(저장본은 검증되지 않은 JSON이다).
+            const raw = d.tagColors;
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+            const out: Record<string, string> = {};
+            for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+              if (k.trim() && typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v)) out[k] = v;
+            }
+            return Object.keys(out).length ? { tagColors: out } : {};
+          })(),
         }
       : {}),
     ...(Array.isArray(d.strokes) && d.strokes.length ? { strokes: d.strokes as Stroke[] } : {}),

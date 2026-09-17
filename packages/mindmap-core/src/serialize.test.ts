@@ -192,3 +192,36 @@ describe('Float.rich — 메모 부분 서식 직렬화', () => {
     expect('rich' in round.floats[1]!).toBe(false);
   });
 });
+
+describe('공책 태그 색 — 고른 값만 저장본에 남는다', () => {
+  const note = (extra: Record<string, unknown>) => ({
+    v: 1,
+    nodes: {},
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'white',
+    kind: 'note',
+    pages: [{ id: 'p1', title: '회의록', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '글', b: false, c: null }] }], tag: '스프린트' }],
+    ...extra,
+  });
+
+  it('라운드트립을 통과하고, 고르지 않은 문서에는 칸 자체가 없다', () => {
+    const picked = parseDoc(note({ tagColors: { 스프린트: '#E45DA0' } }))!;
+    expect(picked.tagColors).toEqual({ 스프린트: '#E45DA0' });
+    const round = parseDoc(JSON.parse(JSON.stringify(serializeDoc(picked))))!;
+    expect(round.tagColors).toEqual({ 스프린트: '#E45DA0' });
+
+    const plain = parseDoc(note({}))!;
+    expect('tagColors' in plain).toBe(false);
+    expect('tagColors' in serializeDoc(plain)).toBe(false);
+  });
+
+  it('모양이 어긋난 값은 줍지 않는다 — 저장본은 검증되지 않은 JSON이다', () => {
+    const doc = parseDoc(note({ tagColors: { 스프린트: 'red', 디자인: '#7C9BD8', '': '#000000', 릴리즈: 12 } }))!;
+    expect(doc.tagColors).toEqual({ 디자인: '#7C9BD8' });
+    // 아예 다른 모양이면 칸이 서지 않는다.
+    expect('tagColors' in parseDoc(note({ tagColors: ['#fff'] }))!).toBe(false);
+  });
+});

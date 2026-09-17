@@ -107,6 +107,7 @@ export {
   noteTagColor,
   noteHighlightColor,
   NOTE_COVER_FALLBACK,
+  NOTE_TAG_COLORS,
   NOTE_TAGS,
   NOTE_COVERS,
   NOTE_HIGHLIGHTS,
