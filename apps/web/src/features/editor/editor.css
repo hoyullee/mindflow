@@ -545,8 +545,11 @@ input[type='search']::-webkit-search-results-decoration {
   background: var(--mf-note-hover);
   color: var(--mf-text);
 }
-/* 메뉴 한 줄 */
-.mf-note-item:hover {
+/* 메뉴 한 줄 — 기본 면과 hover를 **여기서** 정한다(인라인으로 박으면 hover를 덮는다). */
+.mf-note-item {
+  background: transparent;
+}
+.mf-note-item:hover:not(:disabled) {
   background: var(--mf-note-hover);
 }
 /* 공책 이름 — 눌러서 고칠 수 있음을 밑줄이 알린다(제목과 같은 규칙) */
@@ -562,4 +565,13 @@ input[type='search']::-webkit-search-results-decoration {
 ::highlight(mf-note-sel) {
   background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
   color: inherit;
+}
+/* 한 줄 안의 선택은 **브라우저가** 그린다(그쪽이 정확하다) — 색만 위와 같게 맞춘다.
+   그러지 않으면 한 줄은 OS 파랑, 여러 줄은 우리 주황으로 갈려 같은 동작이 다른 일로
+   보인다(제보). 글자색은 건드리지 않는다 — 굵기·강조가 살아 있어야 한다. */
+[data-note-editor] ::selection {
+  background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
+}
+[data-note-editor] ::-moz-selection {
+  background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
 }

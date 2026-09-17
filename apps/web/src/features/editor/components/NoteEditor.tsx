@@ -268,13 +268,30 @@ export function NoteEditor({ controller }: Props) {
    * 툴바 단추로 열었으면 `null`이고, 그때는 예전처럼 목록이 그대로 다 보인다.
    */
   const [slashAtChar, setSlashAtChar] = useState<number | null>(null);
-  const openSlashAt = (blockId: string, from?: Element | number | null) => {
+  const openSlashAt = (lineKey: string, from?: Element | number | null) => {
     const at = typeof from === 'number' ? from : null;
-    const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${blockId}"]`) : from;
+    const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
     setSlashAt(el ? el.getBoundingClientRect() : null);
-    setSlashFor(blockId);
+    setSlashFor(lineKey);
     setSlashAtChar(at);
   };
+  /**
+   * 본문을 굴려도 목록이 **따라간다**(제보: 스크롤하면 닫힌다) — 기준 줄을 다시 재
+   * 자리만 고친다. 목록 쪽은 스크롤로 닫지 않도록 꺼 뒀다(`closeOnScroll: false`).
+   */
+  useEffect(() => {
+    if (slashFor === null) return;
+    const follow = () => {
+      const el = document.querySelector(`[data-note-line="${slashFor}"]`);
+      if (el) setSlashAt(el.getBoundingClientRect());
+    };
+    document.addEventListener('scroll', follow, true);
+    window.addEventListener('resize', follow);
+    return () => {
+      document.removeEventListener('scroll', follow, true);
+      window.removeEventListener('resize', follow);
+    };
+  }, [slashFor]);
   const closeSlash = useCallback(() => {
     setSlashFor(null);
     setSlashAtChar(null);
@@ -551,9 +568,10 @@ export function NoteEditor({ controller }: Props) {
                 onPick={(kind) => {
                   // 본문에 친 `/질의`는 **지우고** 종류를 바꾼다(노션과 같은 결과).
                   if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
-                  controller.retypeNoteBlock(slashFor, kind);
+                  const id = blockIdOf(slashFor);
+                  controller.retypeNoteBlock(id, kind);
                   closeSlash();
-                  setFreshId(slashFor);
+                  setFreshId(id);
                 }}
               />
             )}
@@ -599,7 +617,7 @@ export function NoteEditor({ controller }: Props) {
  * 스크롤 · 창 크기 변경**이 모두 닫는다. 스크롤과 크기 변경까지 닫는 이유는 기준점이
  * 움직였는데 팝업만 제자리에 남으면 엉뚱한 것에 붙어 보이기 때문이다.
  */
-function useAnchored(open: boolean, close: () => void): { ref: RefObject<HTMLElement | null>; rect: DOMRect | null } {
+function useAnchored(open: boolean, close: () => void, opts: { closeOnScroll?: boolean } = {}): { ref: RefObject<HTMLElement | null>; rect: DOMRect | null } {
   const ref = useRef<HTMLElement | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   useLayoutEffect(() => {
@@ -612,17 +630,21 @@ function useAnchored(open: boolean, close: () => void): { ref: RefObject<HTMLEle
     };
     const onDown = () => close();
     // 캡처 단계 — 팝업 안의 클릭은 그쪽에서 `stopPropagation`으로 막는다.
+    // 스크롤에서 닫을지는 고를 수 있다(기본은 닫는다 — 기준점이 움직였는데 팝업만
+    // 제자리에 남으면 엉뚱한 것에 붙어 보인다). `/` 목록은 **본문을 스크롤하며 고르는**
+    // 자리라 닫지 않고 따라간다(제보: 스크롤하면 닫힌다).
+    const scrollCloses = opts.closeOnScroll !== false;
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', onDown);
-    document.addEventListener('scroll', onDown, true);
+    if (scrollCloses) document.addEventListener('scroll', onDown, true);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onDown);
-      document.removeEventListener('scroll', onDown, true);
+      if (scrollCloses) document.removeEventListener('scroll', onDown, true);
     };
-  }, [open, close]);
+  }, [open, close, opts.closeOnScroll]);
   return { ref, rect };
 }
 
@@ -1888,7 +1910,7 @@ function TagPick({
                   controller.setNotePageTag(page.id, on ? null : t);
                   setOpen(() => false);
                 }}
-                style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, background: on ? 'var(--mf-tag-on)' : 'transparent' }}
+                style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, ...(on ? { background: 'var(--mf-tag-on)' } : {}) }}
               >
                 <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t, inks), display: 'block' }} />
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
@@ -1900,6 +1922,24 @@ function TagPick({
               </button>
             );
           })}
+          {/* `태그 없음` — **목록의 마지막 줄**이다(요청). 태그를 고르는 자리에서 "안
+              고르겠다"도 하나의 선택이라 같은 묶음에 있어야 하고, `태그 만들기` 아래에
+              있으면 만들기의 부속처럼 읽힌다. */}
+          {tag && (
+            <button
+              type="button"
+              data-note-tag-clear
+              className="btn mf-note-item"
+              onClick={() => {
+                controller.setNotePageTag(page.id, null);
+                setOpen(() => false);
+              }}
+              style={{ ...MENU_ITEM, height: 30, gap: 8, color: 'var(--mf-muted)' }}
+            >
+              <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: 'var(--mf-faint2)', display: 'block' }} />
+              태그 없음
+            </button>
+          )}
           <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px 2px' }} />
           {adding ? (
             <>
@@ -1978,11 +2018,6 @@ function TagPick({
                 </svg>
               </span>
               태그 만들기
-            </button>
-          )}
-          {tag && (
-            <button type="button" data-note-tag-clear className="btn mf-note-item" onClick={() => { controller.setNotePageTag(page.id, null); setOpen(() => false); }} style={{ ...MENU_ITEM, height: 28, color: 'var(--mf-muted)', fontSize: 11.5 }}>
-              태그 없음
             </button>
           )}
         </div>
@@ -2464,7 +2499,7 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
                 if (id) controller.retypeNoteBlock(id, t.kind);
                 setOpen(false);
               }}
-              style={{ ...MENU_ITEM, fontWeight: cur?.kind === t.kind ? 800 : 600, background: cur?.kind === t.kind ? 'var(--mf-accent-soft)' : 'transparent' }}
+              style={{ ...MENU_ITEM, fontWeight: cur?.kind === t.kind ? 800 : 600, ...(cur?.kind === t.kind ? { background: 'var(--mf-accent-soft)' } : {}) }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
                 {t.icon}
@@ -2491,8 +2526,9 @@ interface BlockProps {
   setFreshId: (id: string | null) => void;
   rememberBox: () => void;
   focusBox: (el: HTMLElement) => void;
-  /** `/`를 쳤다 — 그 **글자 자리**와 함께 종류 목록을 연다(글자는 본문에 남는다). */
-  openSlash: (blockId: string, at?: number) => void;
+  /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
+   * 칸에서도 열린다(그 줄의 글로 좁혀져야 하므로 블록 id로는 모자란다). */
+  openSlash: (lineKey: string, at?: number) => void;
 }
 
 /**
@@ -2761,7 +2797,11 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
                 else controller.addNoteItem(block.id);
               }}
               style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--mf-subtext)' }}
-            />
+            onSlash={(at) => {
+                if (readOnly) return;
+                openSlash(`${block.id}:body`, at);
+              }}
+              />
           </div>
         )}
       </div>
@@ -2819,6 +2859,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               placeholder={j === 0 ? '항목' : ''}
               autoFocus={freshId === item.id}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
+              onSlash={(at) => {
+                if (readOnly) return;
+                openSlash(`${block.id}:${item.id}`, at);
+              }}
               onEnter={() => {
                 if (readOnly) return false;
                 // 빈 항목에서 엔터 = 목록을 **끝낸다**(문단으로 빠져나온다) —
@@ -2859,7 +2903,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   }
 
   if (shape === 'table') {
-    return <TableBlock controller={controller} block={block} focusBox={focusBox} />;
+    return <TableBlock controller={controller} block={block} focusBox={focusBox} openSlash={openSlash} />;
   }
 
   // 글 한 덩이(문단·제목·인용·코드) — 종류가 겉모습만 정한다.
@@ -2920,7 +2964,7 @@ type TablePick = { kind: 'cell' | 'row' | 'col' | 'all'; r: number; c: number };
  * 우클릭(행과 열을 함께). 마지막 한 행·한 열은 지우지 못한다 — 0칸짜리 표는 화면에서
  * 사라져 되돌릴 손잡이조차 없어진다(표 자체를 지우려면 블록을 지운다).
  */
-function TableBlock({ controller, block, focusBox }: { controller: EditorController; block: NoteBlock; focusBox: (el: HTMLElement) => void }) {
+function TableBlock({ controller, block, focusBox, openSlash }: { controller: EditorController; block: NoteBlock; focusBox: (el: HTMLElement) => void; openSlash: BlockProps['openSlash'] }) {
   const readOnly = controller.readOnly;
   const rows = block.rows ?? [];
   const width = rows[0]?.length ?? 0;
@@ -3052,7 +3096,11 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                         placeholder={head ? '머리' : ''}
                         onChange={(runs) => controller.setNoteCell(block.id, ri, ci, runs)}
                         style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--mf-text)', textAlign: align }}
-                      />
+                      onSlash={(at) => {
+                          if (readOnly) return;
+                          openSlash(`${block.id}:r${ri}c${ci}`, at);
+                        }}
+                        />
                     </td>
                   );
                 })}
@@ -3517,7 +3565,9 @@ function CtxItem({
         height: 33,
         color: disabled ? 'var(--mf-faint)' : danger ? 'var(--mf-danger)' : 'var(--mf-text)',
         cursor: disabled ? 'default' : 'pointer',
-        background: on ? 'var(--mf-accent-soft)' : 'transparent',
+        // 면은 **켜졌을 때만** 적는다 — 인라인으로 `transparent`를 박으면 클래스의
+        // hover(`.mf-note-item:hover`)를 덮어 마우스를 얹어도 아무 일이 없다(제보).
+        ...(on ? { background: 'var(--mf-accent-soft)' } : {}),
       }}
     >
       {icon && (
@@ -3894,7 +3944,9 @@ function SlashMenu({
 }) {
   // 바깥을 누르면 닫힌다(제보) — 지금까지는 Esc로만 닫혀서, 목록을 열어 둔 채
   // 다른 곳을 눌러도 그대로 떠 있었다. 목록 안의 누름은 뿌리에서 막는다.
-  useAnchored(true, onClose);
+  // **스크롤로는 닫지 않는다**(제보) — 본문을 굴리며 고르는 자리다(자리는 호출부가
+  // 다시 재 준다).
+  useAnchored(true, onClose, { closeOnScroll: false });
   const q = query.trim().toLowerCase();
   const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
@@ -3923,6 +3975,10 @@ function SlashMenu({
         e.preventDefault();
         e.stopPropagation();
         setCursor((c) => Math.max(0, Math.min(flat.length - 1, c + (e.key === 'ArrowDown' ? 1 : -1))));
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+        // 캐럿을 옮기는 것은 **고르는 일이 아니다**(요청) — 목록만 접고 글자는 그대로
+        // 둔다(막지 않으므로 캐럿은 평소처럼 움직인다).
+        onClose();
       }
     };
     document.addEventListener('keydown', onKey, true);
@@ -3956,7 +4012,7 @@ function SlashMenu({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onPick(t.kind)}
                     aria-selected={flat[cursor]?.kind === t.kind}
-                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, background: flat[cursor]?.kind === t.kind ? 'var(--mf-note-hover)' : 'transparent' }}
+                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, ...(flat[cursor]?.kind === t.kind ? { background: 'var(--mf-note-hover)' } : {}) }}
                   >
                     {/* 아이콘 **타일** — 디자인은 28×28 면 위에 글리프를 얹는다(글자 옆의
                         맨 아이콘보다 줄이 또렷하게 나뉜다). */}
@@ -4108,7 +4164,9 @@ const MENU_ITEM: CSSProperties = {
   padding: '0 9px',
   borderRadius: 9,
   border: 'none',
-  background: 'transparent',
+  // **면은 여기서 정하지 않는다** — 인라인으로 `transparent`를 박으면 클래스의
+  // hover(`.mf-note-item:hover`)를 덮어 마우스를 얹어도 아무 일이 없다(제보). 기본
+  // 면은 그 클래스가 준다(`editor.css`).
   color: 'var(--mf-text)',
   fontFamily: 'inherit',
   fontSize: 12.5,

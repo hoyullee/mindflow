@@ -1208,6 +1208,56 @@ describe('공책 11판 — `/`는 글자로 남는다', () => {
   });
 });
 
+describe('공책 12판 — `/`는 어느 줄에서나, 태그 메뉴 정돈', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('`/`가 **목록 항목**에서도 열리고 그 줄의 글로 좁혀진다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_nsB0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nsB0&title=x');
+    // NOTE의 b3은 체크리스트 — 첫 항목 줄에서 친다.
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b3:i1"]'))) as HTMLElement;
+
+    // 낱말의 시작에서만 열린다 — 글 끝에 빈칸을 두고 `/`를 친다(사람이 치는 순서).
+    type(line, '알림을 멘션과 시스템으로 분리한다 ');
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '알림을 멘션과 시스템으로 분리한다 /인용');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-q]')?.textContent).toBe('인용'));
+    expect([...container.querySelectorAll('[data-note-slash-item]')].map((b) => b.getAttribute('data-note-slash-item'))).toEqual(['q']);
+  });
+
+  it('캐럿을 옮기면(←·→) 목록만 접히고 글자는 남는다(요청)', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_nsB1', JSON.stringify(empty));
+    const { container } = renderEditor('/editor?map=nsB1&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/인용');
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
+    fireEvent.keyDown(document, { key: 'ArrowLeft' });
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
+
+    saveNow();
+    await waitFor(() => expect(saved('nsB1').pages[0].blocks[0].runs[0].t).toBe('/인용'));
+  });
+
+  it('태그 메뉴 — `태그 없음`이 **목록의 마지막 줄**이다(요청)', async () => {
+    const tagged = { ...NOTE, pages: [{ ...NOTE.pages[0], tag: '회의록' }, NOTE.pages[1]] };
+    localStorage.setItem('mindflow_doc_nsB2', JSON.stringify(tagged));
+    const { container } = renderEditor('/editor?map=nsB2&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-tag-pick]'))) as HTMLElement);
+    const menu = (await waitFor(() => container.querySelector('[data-note-tag-menu]'))) as HTMLElement;
+
+    const names = [...menu.querySelectorAll('button')].map((b) => b.textContent?.trim());
+    expect(names.slice(-2)).toEqual(['태그 없음', '태그 만들기']);
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');
