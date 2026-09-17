@@ -554,3 +554,12 @@ input[type='search']::-webkit-search-results-decoration {
 [data-note-book-title]:focus { border-bottom-color: var(--mf-accent) !important; }
 /* 스와치 — 얹으면 살짝 커진다(디자인) */
 [data-note-editor] [style*='border-radius: 7px']:hover { transform: none; }
+
+/* 공책 본문의 **글자 선택** — 블록을 넘어 끈 구간을 `CSS.highlights`로 칠한다.
+   DOM을 건드리지 않으므로 비제어 편집 박스와 부딪히지 않고, 첫 줄은 중간부터
+   마지막 줄은 중간까지 칠해져 메모장·업노트의 그 선택으로 보인다. 색은 브라우저
+   기본 선택과 같은 결로(강조색을 옅게) — 글자는 그대로 읽혀야 한다. */
+::highlight(mf-note-sel) {
+  background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
+  color: inherit;
+}
