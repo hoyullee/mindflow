@@ -483,11 +483,16 @@ describe('공책 3판 — 디자인 이식', () => {
     expect(surface.style.getPropertyValue('--mf-card')).toBe('#fffdfb');
     expect(surface.style.getPropertyValue('--mf-note-body')).toBe('#fdfbf8');
     expect(surface.style.getPropertyValue('--mf-note-bar')).toBe('#f6f0e8');
-    // 상단 바는 **평평하다**(요청·시안) — 한때 한 톤 짙은 면에 14px 도트를 깔았는데,
-    // 지금은 본문과 같은 바탕으로 이어지고 그 위의 카드만 한 톤 희다.
+    // 상단 바는 **평평하고**(한때 한 톤 짙은 면에 14px 도트를 깔았다) 아래 툴바와
+    // 같은 면을 쓴다 — 둘이 한 장으로 이어지고, 갈리는 것은 선뿐이다(요청·시안).
     const bar = container.querySelector('[data-note-topbar]') as HTMLElement;
     expect(bar.style.backgroundImage).toBe('');
-    expect(bar.style.background).toBe('var(--mf-note-body)');
+    expect(bar.style.background).toBe('var(--mf-card)');
+    expect(bar.style.borderBottom).toBe('1px solid var(--mf-border-soft)');
+    // 문서 칸은 **아래 목록과 같은 폭**이라 그 오른쪽 선이 목록의 경계선으로 이어진다.
+    const chip = container.querySelector('[data-doc-chip]') as HTMLElement;
+    expect(chip.style.flex).toBe('0 0 292px');
+    expect(chip.style.borderRight).toBe('1px solid var(--mf-border-soft)');
   });
 
   it('상단 바에 **공유**가 있다(요청) — GNB의 것과 별개로', async () => {
