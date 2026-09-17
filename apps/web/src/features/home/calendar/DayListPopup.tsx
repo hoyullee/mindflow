@@ -18,7 +18,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CalendarEntry, HolidayInfo } from './entries';
-import { entryChip, type ChipSurface } from './chips';
+import { declinedStyle, entryChip, type ChipSurface } from './chips';
 import { dayProgress, entriesOn, isSpan, minutesOf, partsOf, timeLabel } from './model';
 
 /** 행의 둘째 줄 — 원본의 `v.sub`: 기간은 `8.24–8.30 · 3/7일째`, 나머지는 출처. */
@@ -162,7 +162,7 @@ export function DayListPopup({
             >
               <span aria-hidden style={{ width: 4, height: 30, flex: '0 0 auto', borderRadius: 999, background: chip.base, display: 'block' }} />
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '제목 없음'}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(e) }}>{e.title || '제목 없음'}</span>
                 <span style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subOf(e, iso)}</span>
               </span>
               {/* 칸반 카드만 — 그 카드가 있는 **열(상태)** 색이다(달력 칸의 시간 일정

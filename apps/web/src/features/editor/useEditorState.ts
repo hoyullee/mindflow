@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -820,6 +820,17 @@ export interface EditorController {
   moveNotePageTo: (pageId: string, targetDocId: string) => Promise<boolean>;
   addNoteBlock: (kind?: NoteBlockKind, after?: string) => string | null;
   removeNoteBlock: (blockId: string) => void;
+  /** 블록 복제 — 바로 아래에 같은 내용으로(항목·칸 id는 새로 찍는다). */
+  duplicateNoteBlock: (blockId: string) => void;
+  /**
+   * 이 블록의 글을 **칸반 보드의 할 일로** 보낸다(본문 우클릭 `할 일로 보내기`).
+   *
+   * 받는 보드의 **첫 열 맨 끝**에 카드를 만든다 — "할 일"은 시작 칸에 서는 것이
+   * 기대이고, 어느 열인지 고르게 하면 메뉴가 두 겹이 된다. 두 문서를 건드리므로
+   * 페이지 옮기기와 같은 규칙이다: 받는 쪽 쓰기가 성공해야 참을 돌려준다(이쪽은
+   * 아무것도 잃지 않으므로 실패해도 원상 그대로다).
+   */
+  sendNoteBlockToBoard: (blockId: string, targetDocId: string) => Promise<boolean>;
   retypeNoteBlock: (blockId: string, kind: NoteBlockKind) => void;
   moveNoteBlock: (blockId: string, index: number) => void;
   setNoteBlockRuns: (blockId: string, runs: RichRun[]) => void;
@@ -6570,6 +6581,65 @@ export function useEditorState(): EditorController {
   );
 
   /** 블록 종류 바꾸기 — 글은 살린다(코어 `retypeBlock`). */
+  /** 블록 복제 — 항목·칸까지 그대로, id만 새로(같은 id가 둘이면 함께 바뀐다). */
+  const duplicateNoteBlock = useCallback(
+    (blockId: string) => {
+      if (readOnlyRef.current || !notePage) return;
+      const pageId = notePage.id;
+      commitPage(
+        pageId,
+        (pg) => {
+          const at = pg.blocks.findIndex((b) => b.id === blockId);
+          if (at < 0) return pg;
+          const src = pg.blocks[at]!;
+          const copy: NoteBlock = {
+            ...src,
+            id: noteId('bk'),
+            ...(src.items ? { items: src.items.map((it) => ({ ...it, id: noteId('it') })) } : {}),
+          };
+          return { ...pg, blocks: [...pg.blocks.slice(0, at + 1), copy, ...pg.blocks.slice(at + 1)] };
+        },
+        false,
+      );
+    },
+    [commitPage, notePage],
+  );
+
+  const sendNoteBlockToBoard = useCallback(
+    async (blockId: string, targetDocId: string): Promise<boolean> => {
+      const block = (notePage?.blocks ?? []).find((b) => b.id === blockId);
+      const text = block ? blockText(block).trim() : '';
+      if (!text) return false;
+      let loaded: LoadedDoc | null = null;
+      try {
+        loaded = await docStore.load(targetDocId);
+      } catch {
+        return false;
+      }
+      if (!loaded || loaded.doc.kind !== 'kanban') return false;
+      const columns = loaded.doc.columns ?? [];
+      const colId = columns[0]?.id;
+      if (!colId) return false;
+      const list = loaded.doc.cards ?? [];
+      const card: KanbanCard = {
+        id: idFactory('card'),
+        col: colId,
+        pos: posForIndex(list, colId, list.filter((c) => c.col === colId).length),
+        // 여러 줄짜리 블록(목록·표)은 첫 줄만 카드 제목이 된다 — 카드 한 장에
+        // 문단을 통째로 넣으면 보드에서 읽히지 않는다.
+        text: text.split('\n')[0]!.slice(0, 200),
+      };
+      const next: Doc = { ...loaded.doc, cards: [...list, card] };
+      try {
+        const res = await docStore.save(targetDocId, next, { prevVersion: loaded.version, title: loaded.title });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    [docStore, idFactory, notePage],
+  );
+
   const retypeNoteBlock = useCallback(
     (blockId: string, kind: NoteBlockKind) => {
       if (!notePage) return;
@@ -7401,6 +7471,8 @@ export function useEditorState(): EditorController {
     moveNotePageTo,
     addNoteBlock,
     removeNoteBlock,
+    duplicateNoteBlock,
+    sendNoteBlockToBoard,
     retypeNoteBlock,
     moveNoteBlock,
     setNoteBlockRuns,

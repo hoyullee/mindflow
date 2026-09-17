@@ -9,8 +9,10 @@ import { beginPointerDrag } from "../../editor/components/KanbanBoard";
 import {
   chipTimeLabel,
   dayNumTone,
+  declinedStyle,
   entryChip,
   isAllDayEntry,
+  isDeclined,
   markStyle,
   type ChipSurface,
 } from "./chips";
@@ -329,7 +331,7 @@ function DragGhost({
     >
       <span style={markStyle(chip)} />
       <span
-        style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
+        style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", ...declinedStyle(drag.entry) }}
       >
         {drag.entry.title || "제목 없음"}
       </span>
@@ -759,6 +761,7 @@ function DayCell({
                   flex: 1,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
+                  ...declinedStyle(b.entry),
                 }}
               >
                 {b.label ? b.entry.title : ""}
@@ -855,13 +858,17 @@ function DayCell({
                 {chipTimeLabel(e.startTime)}
               </span>
             ) : null}
+            {/* 참석을 거부한 일정은 **제목에 줄을 긋는다**(요청) — 지우지 않는 이유는
+                거부한 일정도 그 시간에 무슨 일이 있는지는 말해 주기 때문이다. */}
             <span
               data-cal-chip-title
+              data-cal-declined={isDeclined(e) ? '1' : undefined}
               style={{
                 minWidth: 0,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                ...declinedStyle(e),
               }}
             >
               {e.title}

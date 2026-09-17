@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { CalendarEntry, HolidayInfo } from './entries';
-import { entryChip, type ChipSurface } from './chips';
+import { declinedStyle, entryChip, type ChipSurface } from './chips';
 import { HOUR_ROW, dateLabel, dayProgress, dayTimeline, entriesOn, hourLabel, timeLabel } from './model';
 import { MiniCalendar, MiniNav } from './MiniCalendar';
 import type { DayTimeline } from './model';
@@ -220,7 +220,7 @@ function DayTimelineView({
                 overflow: 'hidden',
               }}
             >
-              <span style={{ fontSize: n > 2 ? 11 : 12.5, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title}</span>
+              <span style={{ fontSize: n > 2 ? 11 : 12.5, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(b.entry) }}>{b.entry.title}</span>
               {n <= 2 && (
                 <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {timeLabel(b.from)} – {timeLabel(b.to)}
@@ -269,7 +269,7 @@ function DayChip({ entry, iso, surface, onPick }: { entry: CalendarEntry; iso: s
         cursor: 'pointer',
       }}
     >
-      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(entry) }}>{entry.title || '제목 없음'}</span>
       <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{note}</span>
     </button>
   );

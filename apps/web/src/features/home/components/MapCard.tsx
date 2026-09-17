@@ -156,6 +156,13 @@ function NoteCardBody({ card, controller, selectMode }: { card: CardViewData; co
               {when}
             </span>
           )}
+          {/* 검색 중이면 **이 문서에서 걸린 줄 수**(`본문 2`) — 위의 `내용에서 찾은 것`과
+              같은 셈이라, 카드만 보고도 왜 결과에 있는지 알 수 있다(디자인). */}
+          {card.hits && (
+            <span data-card-hits style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 4, height: 18, padding: '0 7px', borderRadius: 6, background: 'var(--mf-mark)', color: 'var(--mf-text)', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+              {card.hits.kind} {card.hits.count}
+            </span>
+          )}
           {/* 검색 결과 카드의 위치 — 검색은 폴더 경계를 넘으므로 어느 폴더인지 알려 준다. */}
           {card.pathLabel && (
             <span data-card-path title={card.pathLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
@@ -958,16 +965,23 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             폴더의 맵인지 알려 줘야 한다. 평소 그리드 카드는 `pathLabel`이 비어 있어
             이 줄 자체가 없다(레이아웃 무변화), 검색 중에는 결과 카드가 모두 같은
             조건이라 한 행 안에서 높이가 어긋나지 않는다. */}
-        {!compact && card.pathLabel && (
-          <div
-            data-card-path
-            title={card.pathLabel}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, minWidth: 0 }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--mf-faint)', flexShrink: 0 }}>
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-            <span style={{ fontSize: 11.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.pathLabel}</span>
+        {!compact && (card.pathLabel || card.hits) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, minWidth: 0 }}>
+            {card.pathLabel && (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--mf-faint)', flexShrink: 0 }}>
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+                {/* 위치는 **이 span 하나**다 — 옆의 `본문 N` 배지까지 감싸면 "어느
+                    폴더인가"를 읽는 자리에 다른 글자가 섞인다. */}
+                <span data-card-path title={card.pathLabel} style={{ fontSize: 11.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.pathLabel}</span>
+              </>
+            )}
+            {card.hits && (
+              <span data-card-hits style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 4, height: 18, padding: '0 7px', borderRadius: 6, background: 'var(--mf-mark)', color: 'var(--mf-text)', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                {card.hits.kind} {card.hits.count}
+              </span>
+            )}
           </div>
         )}
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.

@@ -11,6 +11,7 @@ import type { CSSProperties } from 'react';
 import { UI_THEME, mixHex } from '../../editor/theme';
 import { columnColor, tagColor, tagInk } from '../../editor/kanbanMeta';
 import type { CalendarEntry } from './entries';
+import { myRsvpOf } from './googleCalendar';
 
 /**
  * 구글에서 온 일정의 표식 색(요청) — 캘린더마다 다른 색 대신 **구글 파랑 하나**로
@@ -156,4 +157,20 @@ export function dayNumTone(selected: boolean, isToday: boolean, dayInk?: string)
     ? { background: dayInk, color: 'var(--mf-card)', fontWeight: 800 }
     : { background: 'var(--mf-accent-mute)', color: 'var(--mf-text)', fontWeight: 800 };
   return {};
+}
+
+/**
+ * 내가 **참석을 거부한** 일정인가 — 제목에 취소선을 긋는다(요청).
+ *
+ * 구글 일정에만 있는 개념이다: 우리 일정(`CalendarEvent`)과 칸반 카드에는 참석자가
+ * 없다. 목록에서 지우지 않고 **긋기만** 하는 이유는 거부한 일정도 그 시간에 무슨
+ * 일이 있는지는 말해 주기 때문이다(구글 캘린더도 같은 규칙).
+ */
+export function isDeclined(e: Pick<CalendarEntry, 'google'>): boolean {
+  return !!e.google && myRsvpOf(e.google) === 'declined';
+}
+
+/** 거부한 일정의 제목 꾸밈 — 취소선은 **글자색을 따른다**(칩마다 잉크가 다르다). */
+export function declinedStyle(e: Pick<CalendarEntry, 'google'>): CSSProperties {
+  return isDeclined(e) ? { textDecoration: 'line-through' } : {};
 }

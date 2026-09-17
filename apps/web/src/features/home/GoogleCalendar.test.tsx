@@ -1497,6 +1497,59 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(markOf('색 없는 회의')).toBe('rgb(66, 133, 244)');
   });
 
+  it('참석을 **거부한** 일정은 칸에서 취소선으로 선다(요청)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'no',
+              summary: '안 갈 회의',
+              start: { dateTime: `${day}T09:00:00+09:00` },
+              end: { dateTime: `${day}T10:00:00+09:00` },
+              attendees: [
+                { email: 'boss@example.com', organizer: true, responseStatus: 'accepted' },
+                { email: 'me@example.com', self: true, responseStatus: 'declined' },
+              ],
+            },
+            {
+              id: 'yes',
+              summary: '갈 회의',
+              start: { dateTime: `${day}T11:00:00+09:00` },
+              end: { dateTime: `${day}T12:00:00+09:00` },
+              attendees: [
+                { email: 'boss@example.com', organizer: true, responseStatus: 'accepted' },
+                { email: 'me@example.com', self: true, responseStatus: 'accepted' },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const cell = await waitFor(() => {
+      const el = container.querySelector<HTMLElement>(`[data-day-cell="${day}"]`);
+      expect(el?.textContent).toContain('안 갈 회의');
+      return el as HTMLElement;
+    });
+    const titleOf = (t: string) => [...cell.querySelectorAll<HTMLElement>('[data-cal-chip-title]')].find((el) => el.textContent === t)!;
+    expect(titleOf('안 갈 회의').style.textDecoration).toBe('line-through');
+    // 거부한 일정도 **목록에서 사라지지는 않는다** — 그 시간에 무슨 일이 있는지는 말해 준다.
+    expect(titleOf('갈 회의').style.textDecoration).toBe('');
+  });
+
   it('대시보드를 떠났다 돌아오면 구글 일정이 곧바로 그려진다 — 문서 위젯이 세션 캐시를 비우지 않는다(제보 ⑦)', async () => {
     // 제보: 대시보드 재진입마다 구글 일정이 깜빡였다. 원인은 **연동이 꺼진 것과
     // 아직 안 켜진 것을 같게 본 것** — 조회하지 않는 소비처(문서 위젯 `mode: 'off'`,
