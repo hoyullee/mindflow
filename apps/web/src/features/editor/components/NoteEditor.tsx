@@ -809,6 +809,7 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
   const readOnly = controller.readOnly;
   const saving = controller.saveState;
   const saveLabel = readOnly ? '보기 전용' : saving === 'saved' ? '저장됨' : saving === 'saving' ? '저장 중…' : saving === 'unsaved' ? '저장 전' : '변경됨';
+  const cover = noteCoverColor(controller.doc.cover);
   const tabs: { name: string; on: boolean; onPick: () => void }[] = [
     { name: '댓글', on: controller.commentsOpen, onPick: () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) },
     { name: '기록', on: controller.historyOpen, onPick: () => controller.setHistoryOpen(!controller.historyOpen) },
@@ -822,43 +823,48 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
         alignItems: 'center',
         gap: 10,
         flexWrap: 'wrap',
-        padding: '10px 14px 10px 12px',
-        background: 'var(--mf-note-bar)',
-        backgroundImage: 'radial-gradient(var(--mf-note-bar-dot) 1px, transparent 1px)',
-        backgroundSize: '14px 14px',
+        padding: '9px 14px 9px 12px',
+        // **평평한 바**(요청·시안) — 예전에는 한 톤 짙은 면(`--mf-note-bar`)에 14px
+        // 도트를 깔아 그 위의 흰 알약을 띄웠는데, 시안은 종이 한 장처럼 이어진다.
+        // 본문과 같은 바탕을 쓰고 카드만 한 톤 희게 둔다(그래서 그림자도 뺐다 —
+        // 무늬가 없으면 띄울 이유도 없고, 선 하나로 선다).
+        background: 'var(--mf-note-body)',
         minWidth: 0,
       }}
     >
-      {/* 문서 알약 — 46px, 반지름 15, 떠 있는 그림자. */}
+      {/* 문서 카드 — [뒤로 · 표지 띠 + 이름/쪽수·상태 · 저장]. 알약(반지름 15 · 그림자)에서
+          **평평한 카드**로 바뀌었다(시안): 반지름 13 · 1px 선 · 그림자 없음. */}
       <span
         data-doc-chip
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 10,
-          // 다른 에디터의 문서 칩과 **같은 높이**(요청) — 34px 단추 + 위아래 9px = 52.
-          height: 52,
-          padding: '0 9px',
+          gap: 9,
+          height: 46,
+          padding: '0 8px 0 6px',
           flex: '0 0 auto',
-          borderRadius: 15,
+          minWidth: 0,
+          borderRadius: 13,
           background: 'var(--mf-card)',
-          border: '1px solid var(--mf-border)',
-          boxShadow: '0 2px 4px -2px rgba(46,42,38,.1), 0 14px 28px -20px rgba(46,42,38,.4)',
+          border: '1px solid var(--mf-border-soft)',
         }}
       >
         <button
           type="button"
-          className="mf-note-pill-btn"
+          className="mf-note-tb"
           onClick={controller.goBack}
           title="홈으로"
           aria-label="홈으로"
-          style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 11, border: '1px solid var(--mf-border)', background: 'var(--mf-note-body)', color: 'var(--mf-text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+          style={{ width: 30, height: 30, flex: '0 0 auto', borderRadius: 9, border: 0, background: 'transparent', color: 'var(--mf-subtext)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M19 12H5M11 18l-6-6 6-6" />
           </svg>
         </button>
-        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, maxWidth: 260 }}>
+        {/* 표지 색 띠 — 시안이 이름 앞에 세워 둔 3px 막대. 어느 공책을 보고 있는지가
+            이름을 읽기 전에 색으로 먼저 온다(목록의 고른 줄과 같은 표식). */}
+        <span aria-hidden="true" style={{ width: 3, height: 24, flex: '0 0 auto', borderRadius: 999, background: cover, display: 'block' }} />
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, maxWidth: 230 }}>
           <input
             data-note-book-title
             defaultValue={controller.docTitle}
@@ -877,33 +883,38 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
             style={{
               width: '100%',
               boxSizing: 'border-box',
-              padding: '0 0 1px',
+              padding: 0,
               border: 0,
               borderBottom: '1.5px dashed transparent',
               background: 'transparent',
               fontFamily: 'inherit',
-              fontSize: 13.5,
+              fontSize: 13,
               fontWeight: 800,
               letterSpacing: '-.02em',
               color: 'var(--mf-text)',
               outline: 'none',
             }}
           />
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--mf-subtext)', whiteSpace: 'nowrap', minWidth: 0 }}>
-            <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: saving === 'saved' ? 'var(--mf-note-ok)' : 'var(--mf-accent)', display: 'block' }} />
-            <span style={{ color: saving === 'saved' ? 'var(--mf-note-ok-ink)' : 'var(--mf-subtext)', fontWeight: 700 }}>{saveLabel}</span>
+          {/* `6쪽 · 저장됨` — 시안의 아래 줄. 쪽수가 먼저인 이유는 그것이 이 공책의
+              크기이고, 저장 상태는 대개 `저장됨`으로 잠잠하기 때문이다. 잠잠하지 않을
+              때만(저장 전·저장 중) 글자에 색이 든다. */}
+          <span data-note-save-state style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap', minWidth: 0 }}>
+            <span>{controller.notePages.length}쪽</span>
+            <span aria-hidden="true">·</span>
+            <span style={{ color: saving === 'saved' || readOnly ? 'var(--mf-faint)' : 'var(--mf-accent-deep)', fontWeight: saving === 'saved' || readOnly ? 600 : 800 }}>{saveLabel}</span>
           </span>
         </span>
         {!readOnly && (
           <button
             type="button"
             data-note-save
+            className="mf-note-tb"
             onClick={controller.saveNow}
             title="저장"
             aria-label="저장"
-            style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 11, border: 0, background: 'linear-gradient(180deg, color-mix(in srgb, var(--mf-accent) 88%, #fff), var(--mf-accent))', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, boxShadow: '0 8px 18px -10px color-mix(in srgb, var(--mf-accent) 90%, transparent)' }}
+            style={{ width: 30, height: 30, flex: '0 0 auto', borderRadius: 9, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M5 4h11l3 3v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
               <path d="M8 4v5h7V4M8 21v-6h8v6" />
             </svg>
@@ -912,7 +923,7 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
       </span>
 
       {/* 경로 — `스페이스 › ● 공책 › 페이지`. */}
-      <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, height: 52, padding: '0 6px', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, height: 46, padding: '0 6px', boxSizing: 'border-box', overflow: 'hidden' }}>
         {space && (
           <>
             <button type="button" className="mf-note-crumb" onClick={controller.goBack} style={{ flex: '0 0 auto', height: 26, padding: '0 9px', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--mf-muted)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -928,52 +939,54 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
         </span>
       </nav>
 
-      {/* 오른쪽 알약 — 공유(+ 함께 보는 얼굴들) | 댓글 · 기록. */}
-      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, height: 52, padding: '0 9px', borderRadius: 15, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', boxShadow: '0 2px 4px -2px rgba(46,42,38,.1), 0 14px 28px -20px rgba(46,42,38,.4)' }}>
+      {/* 오른쪽 — **공유는 맨몸으로**(얼굴들과 한 덩이), 댓글·기록만 카드 안에(시안).
+          예전에는 셋이 한 알약 안에 있어 "지금 이 문서를 누가 보나"(공유·얼굴)와
+          "무엇을 펼까"(댓글·기록)가 한 묶음으로 읽혔다. */}
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <button
           type="button"
           className="mf-note-crumb"
           data-note-share
           onClick={controller.openShare}
           title="공유"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 11, border: 0, background: 'transparent', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 30, padding: '0 10px', borderRadius: 9, border: 0, background: 'transparent', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="9" cy="8" r="3" />
             <path d="M3 19a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M21 19a5 5 0 0 0-4-4.9" />
           </svg>
           공유
-          {/* 함께 보고 있는 얼굴들 — 겹쳐 놓는다(디자인). 혼자면 아무것도 그리지 않는다.
+          {/* 함께 보고 있는 얼굴들 — 겹쳐 놓는다(시안). 혼자면 아무것도 그리지 않는다.
               GNB가 쓰는 그 컴포넌트를 그대로 쓴다(같은 뜻은 같은 그림). */}
           <PresenceAvatars controller={controller} isMobile />
         </button>
-        <span aria-hidden="true" style={{ width: 1, height: 20, background: 'var(--mf-border)', display: 'block', flex: '0 0 auto', margin: '0 2px' }} />
-        <span style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 11, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)' }}>
-          {tabs.map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              className="mf-note-crumb"
-              data-note-tab={t.name}
-              aria-pressed={t.on}
-              onClick={t.onPick}
-              title={t.name}
-              style={{
-                height: 26,
-                padding: '0 12px',
-                borderRadius: 8,
-                border: 0,
-                background: t.on ? 'var(--mf-card)' : 'transparent',
-                color: t.on ? 'var(--mf-text)' : 'var(--mf-subtext)',
-                fontFamily: 'inherit',
-                fontSize: 12,
-                fontWeight: t.on ? 800 : 600,
-                cursor: 'pointer',
-                boxShadow: t.on ? '0 1px 2px rgba(46,42,38,.16)' : 'none',
-              }}
-            >
-              {t.name}
-            </button>
+        <span data-note-panels style={{ display: 'inline-flex', alignItems: 'center', height: 38, padding: '0 4px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)' }}>
+          {tabs.map((t, i) => (
+            <Fragment key={t.name}>
+              {i > 0 && <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', display: 'block', flex: '0 0 auto' }} />}
+              <button
+                type="button"
+                className="mf-note-crumb"
+                data-note-tab={t.name}
+                aria-pressed={t.on}
+                onClick={t.onPick}
+                title={t.name}
+                style={{
+                  height: 30,
+                  padding: '0 13px',
+                  borderRadius: 9,
+                  border: 0,
+                  background: t.on ? 'var(--mf-accent-soft)' : 'transparent',
+                  color: t.on ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
+                  fontFamily: 'inherit',
+                  fontSize: 12,
+                  fontWeight: t.on ? 800 : 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {t.name}
+              </button>
+            </Fragment>
           ))}
         </span>
       </div>
