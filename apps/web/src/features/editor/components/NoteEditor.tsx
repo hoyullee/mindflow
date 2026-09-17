@@ -820,33 +820,33 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
       style={{
         flex: '0 0 auto',
         display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        flexWrap: 'wrap',
-        padding: '9px 14px 9px 12px',
-        // **평평한 바**(요청·시안) — 예전에는 한 톤 짙은 면(`--mf-note-bar`)에 14px
-        // 도트를 깔아 그 위의 흰 알약을 띄웠는데, 시안은 종이 한 장처럼 이어진다.
-        // 본문과 같은 바탕을 쓰고 카드만 한 톤 희게 둔다(그래서 그림자도 뺐다 —
-        // 무늬가 없으면 띄울 이유도 없고, 선 하나로 선다).
-        background: 'var(--mf-note-body)',
+        alignItems: 'stretch',
+        height: 58,
+        // **알약도 카드도 아니다**(요청·시안): 한 줄이 통째로 화면 폭을 쓰고, 그 안이
+        // **선으로만** 갈린다 — 왼쪽 칸의 오른쪽 선은 아래 목록의 경계선과 **같은
+        // 선상**이고, 바 아래의 가로선은 그 목록의 윗변이 된다. 그래서 바탕도 아래
+        // 툴바와 같은 면(`--mf-card`)을 쓴다 — 바와 툴바가 한 장으로 이어진다.
+        background: 'var(--mf-card)',
+        borderBottom: '1px solid var(--mf-border-soft)',
         minWidth: 0,
       }}
     >
-      {/* 문서 카드 — [뒤로 · 표지 띠 + 이름/쪽수·상태 · 저장]. 알약(반지름 15 · 그림자)에서
-          **평평한 카드**로 바뀌었다(시안): 반지름 13 · 1px 선 · 그림자 없음. */}
+      {/* 문서 칸 — [뒤로 · 표지 띠 + 이름/쪽수·상태 · 저장]. **아래 페이지 목록과 같은
+          폭**(292)이라 오른쪽 선이 그 목록의 경계선으로 그대로 이어진다(시안). 집중
+          모드로 목록이 접혀도 이 칸은 남는다 — 이름과 저장은 목록이 아니라 **문서**의
+          것이고, 폭이 흔들리면 경로까지 함께 출렁인다. */}
       <span
         data-doc-chip
         style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: 9,
-          height: 46,
-          padding: '0 8px 0 6px',
-          flex: '0 0 auto',
+          height: '100%',
+          padding: '0 10px 0 8px',
+          flex: '0 0 292px',
+          boxSizing: 'border-box',
           minWidth: 0,
-          borderRadius: 13,
-          background: 'var(--mf-card)',
-          border: '1px solid var(--mf-border-soft)',
+          borderRight: '1px solid var(--mf-border-soft)',
         }}
       >
         <button
@@ -864,7 +864,7 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
         {/* 표지 색 띠 — 시안이 이름 앞에 세워 둔 3px 막대. 어느 공책을 보고 있는지가
             이름을 읽기 전에 색으로 먼저 온다(목록의 고른 줄과 같은 표식). */}
         <span aria-hidden="true" style={{ width: 3, height: 24, flex: '0 0 auto', borderRadius: 999, background: cover, display: 'block' }} />
-        <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, maxWidth: 230 }}>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
           <input
             data-note-book-title
             defaultValue={controller.docTitle}
@@ -923,7 +923,7 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
       </span>
 
       {/* 경로 — `스페이스 › ● 공책 › 페이지`. */}
-      <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, height: 46, padding: '0 6px', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, height: '100%', padding: '0 10px', boxSizing: 'border-box', overflow: 'hidden' }}>
         {space && (
           <>
             <button type="button" className="mf-note-crumb" onClick={controller.goBack} style={{ flex: '0 0 auto', height: 26, padding: '0 9px', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--mf-muted)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -942,7 +942,7 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
       {/* 오른쪽 — **공유는 맨몸으로**(얼굴들과 한 덩이), 댓글·기록만 카드 안에(시안).
           예전에는 셋이 한 알약 안에 있어 "지금 이 문서를 누가 보나"(공유·얼굴)와
           "무엇을 펼까"(댓글·기록)가 한 묶음으로 읽혔다. */}
-      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px 0 0', minWidth: 0 }}>
         <button
           type="button"
           className="mf-note-crumb"
