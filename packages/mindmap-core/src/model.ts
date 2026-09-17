@@ -333,8 +333,15 @@ export interface NoteBlock {
   runs?: RichRun[];
   /** `ul`·`ol`·`ck`의 항목들. */
   items?: NoteListItem[];
-  /** `table` — 행 × 칸. **첫 행이 머리**다(디자인의 `tb`와 같은 모양). */
+  /** `table` — 행 × 칸. 첫 행이 머리다(`head`가 거짓이면 아니다). */
   rows?: RichRun[][][];
+  /**
+   * `table` — **첫 행을 머리로 쓸까**(없으면 쓴다). 자료가 아니라 목록을 담은
+   * 표에서는 머리가 없는 편이 맞고, 그때 첫 줄만 진하게 서면 잘못 읽힌다.
+   */
+  head?: boolean;
+  /** `table` — **열별 가로 정렬**(없으면 왼쪽). 길이가 열 수보다 짧아도 된다. */
+  colAlign?: ('left' | 'center' | 'right')[];
   /** `link` — 이 앱의 다른 문서 id(마인드맵·화이트보드·칸반). */
   docId?: string;
   /** `img` — 이미지 참조(`mfimg:<경로>` 또는 데이터 URL. 맵의 규칙과 같다). */
