@@ -193,6 +193,28 @@ export function docToYDoc(doc: Doc): Y.Doc {
   return ydoc;
 }
 
+/**
+ * 이 종류의 문서 **본문이 CRDT를 타는가**.
+ *
+ * 답은 바로 아래 `yDocToDoc`이 무엇을 읽어 내느냐다 — 캔버스 셋(`nodes`·`floats`·
+ * `lines`·`zones`)과 칸반의 `columns`·`cards`·`tags`는 실리고, **공책의 `pages`·
+ * `cover`는 실리지 않는다**(실시간 공동 편집을 붙이지 않기로 한 결정. 붙이려면
+ * 페이지·블록의 **순서 모델부터** 정해야 한다 — `CLAUDE.md`의 그 항목).
+ *
+ * 이 한 줄을 굳이 함수로 두는 이유: 앱 쪽이 여러 자리에서 **"협업 중이니 이미
+ * 수렴해 있다"**는 전제를 쓰는데, 그 전제는 본문이 CRDT를 탈 때만 참이다. 공책에
+ * 그대로 적용하면 저장 충돌을 조용히 덮어써 **상대의 편집이 경고도 없이 사라진다**
+ * (제보: 설치형 앱과 브라우저에서 같은 공책을 고쳤더니 서로의 내용이 보이지 않았다).
+ * 추측하지 말고 여기에 묻는다.
+ *
+ * `binding.test.ts`에 **감시 테스트**가 있다 — 공책을 왕복시켜 `pages`가 사라지는
+ * 것을 단정한다. 나중에 `pages`를 CRDT에 태우면 그 테스트가 먼저 깨지고, 그때 이
+ * 함수도 함께 고치라는 신호가 된다.
+ */
+export function docSyncsViaCrdt(kind: DocKind | undefined): boolean {
+  return kind !== 'note';
+}
+
 /** Reads a `Y.Doc`'s current CRDT state back out as a plain `Doc` (M5 task
  * brief: `yDocToDoc(ydoc): Doc`). Never mutates `ydoc`. */
 export function yDocToDoc(ydoc: Y.Doc): Doc {

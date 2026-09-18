@@ -200,7 +200,10 @@ export function Editor() {
                 여기 **줄 안에** 서므로(inline) 왼쪽 페이지 목록을 덮지 않는다. */}
             <NoteTopBar controller={controller} />
             <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-            <NoteEditor controller={controller} />
+            {/* `key` — 서버 판을 채택하면 본문을 **다시 마운트**한다. 공책의 편집
+                박스는 비제어라(innerHTML을 마운트할 때 한 번만 심는다) 모델만 갈아
+                끼우면 화면의 글자가 옛것 그대로 남는다(`docEpoch` 참고). */}
+            <NoteEditor key={controller.docEpoch} controller={controller} />
             <PresenceBar controller={controller} />
             {/* 댓글 — **공책 한 권에 대한 논의**다(디자인: "이 공책에 댓글 남기기").
                 캔버스가 없어 핀을 꽂을 자리가 없으므로 대상은 문서 자신 하나뿐이고,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import type { Doc } from '../model';
 import { ROOT_ID } from '../model';
-import { addNode, applyDocToYDoc, applyUpdate, docToYDoc, encodeStateAsUpdate, removeNode, setNodeField, yDocToDoc } from './binding';
+import { addNode, applyDocToYDoc, applyUpdate, docSyncsViaCrdt, docToYDoc, encodeStateAsUpdate, removeNode, setNodeField, yDocToDoc } from './binding';
 
 function baseDoc(): Doc {
   return {
@@ -227,5 +227,35 @@ describe('edgeStyle 동기화', () => {
 
     expect(yDocToDoc(ydocB).edgeStyle).toBe('elbow');
     expect(yDocToDoc(ydocA)).toEqual(yDocToDoc(ydocB));
+  });
+
+  /**
+   * **감시 테스트** — `docSyncsViaCrdt`가 말하는 것이 실제와 같은지 못박는다.
+   *
+   * 앱의 저장 충돌 처리와 원격 판 적용이 이 한 줄에 기대고 있다(그 전제가 틀려
+   * 공책에서 서로의 편집이 조용히 사라졌다 — 제보). 나중에 `pages`를 CRDT에
+   * 태우면 **이 테스트가 먼저 깨지고**, 그때 `docSyncsViaCrdt`도 함께 고치라는
+   * 신호가 된다.
+   */
+  it('공책 본문은 CRDT를 타지 않는다 — `docSyncsViaCrdt`가 그 사실과 일치한다', () => {
+    const note: Doc = {
+      ...baseDoc(),
+      kind: 'note',
+      pages: [{ id: 'p1', title: '한 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '본문', b: false, c: null }] }] }],
+      cover: { tag: '회의록' },
+    };
+    const back = yDocToDoc(docToYDoc(note));
+    // 실려 가지 않는다 — 왕복하면 페이지도 표지도 사라진다.
+    expect(back.pages).toBeUndefined();
+    expect(back.cover).toBeUndefined();
+    expect(docSyncsViaCrdt('note')).toBe(false);
+
+    // 캔버스 셋은 실려 간다.
+    expect(yDocToDoc(docToYDoc(baseDoc())).nodes).toEqual(baseDoc().nodes);
+    expect(docSyncsViaCrdt('map')).toBe(true);
+    expect(docSyncsViaCrdt('board')).toBe(true);
+    expect(docSyncsViaCrdt('kanban')).toBe(true);
+    // 종류가 없는 옛 문서는 맵이다(모델의 기본값).
+    expect(docSyncsViaCrdt(undefined)).toBe(true);
   });
 });

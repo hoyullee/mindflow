@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -735,6 +735,16 @@ export interface EditorController {
    * tab/device saved first) — a place for the UI (`DocChip`) to tell the user,
    * per CLAUDE.md's M4 task brief ("충돌 시 사용자 고지 자리 마련"). */
   saveConflict: { currentVersion: number } | null;
+  /**
+   * **바깥에서 온 판을 채택한 횟수** — 공책 본문을 다시 그리게 하는 열쇠.
+   *
+   * 공책의 편집 박스는 **비제어**다(`NoteLine`: innerHTML을 마운트할 때 한 번만
+   * 심는다 — 값이 바뀔 때마다 다시 심으면 타이핑 중에 캐럿이 맨 앞으로 튄다).
+   * 그래서 모델만 갈아 끼우면 **화면의 글자는 옛것 그대로** 남는다. 서버 판을
+   * 채택할 때 이 값을 올리고 `key`로 쓰면 그 순간에만 다시 마운트되어 새 본문이
+   * 그려진다(타이핑 중에는 올라가지 않으므로 캐럿이 튀지 않는다).
+   */
+  docEpoch: number;
   /** 이 맵이 **새 id로 옮겨졌다**(원래 id가 다른 계정의 문서였다). 배너로 한 번
    * 알리고 사용자가 닫으면 사라진다 — `moveToFreshId` 참고. */
   movedNotice: boolean;
@@ -1009,9 +1019,23 @@ function nudgeBoxOf(cand: NodeMap, geom: Record<string, { x: number; y: number; 
   };
 }
 
+/**
+ * "문서가 달라졌나"의 유일한 판정 — **모든 저장·동기화 판단이 이 한 줄에 달려 있다.**
+ * 자동저장이 걸릴지(`dirty`), 숨는 순간 강제 저장할지, 상대가 만든 상태인지
+ * (`remoteSigRef`), 서버 판을 다시 읽어도 안전한지가 전부 이 값의 비교다.
+ *
+ * 🚨 **여기에 빠진 필드는 "바뀌지 않은 것"이 된다.** 공책의 `pages`·`cover`가 실제로
+ * 빠져 있었고(제보), 그래서 **본문을 아무리 고쳐도 자동저장이 한 번도 걸리지 않았다** —
+ * 문서는 `저장됨`이라고 적힌 채 서버에 올라가지 않았고, 두 기기가 각자의 로컬 사본만
+ * 들고 서로를 영영 보지 못했다(설치형 앱 ↔ 브라우저). ⌘S·저장 단추·닫기 직전 강제
+ * 저장처럼 **서명을 보지 않는 경로**로만 올라가던 것이라, 테스트가 ⌘S로 확인하는 동안
+ * 드러나지 않았다.
+ *
+ * 새 문서 종류나 새 최상위 필드를 더하면 **반드시 여기에도 더한다.**
+ */
 function docSignature(d: Doc): string {
   try {
-    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? [], d.commentPins ?? [], d.columns ?? [], d.cards ?? [], d.tags ?? []]);
+    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? [], d.commentPins ?? [], d.columns ?? [], d.cards ?? [], d.tags ?? [], d.pages ?? [], d.cover ?? null]);
   } catch {
     return '';
   }
@@ -1021,6 +1045,30 @@ function docSignature(d: Doc): string {
 function safeDocTitle(doc: Doc, fallbackTitle: string): string {
   const raw = doc.nodes[ROOT_ID]?.text || fallbackTitle || (doc.kind === 'board' ? '화이트보드' : '마인드맵');
   return raw.trim().replace(/[\\/:*?"<>|]/g, '_');
+}
+
+/**
+ * 되돌리기 스택의 **바닥** 한 벌 — 서버 판을 채택하는 두 자리(최초 로드 · 서버
+ * 새로고침)가 같은 모양을 써야 한다. 한 곳이 필드를 빠뜨리면 그 필드는 ⌘Z 한 번에
+ * 사라진다(공책의 `pages`가 실제로 그랬다).
+ */
+function historyBaseOf(d: Doc): Snapshot {
+  return {
+    nodes: d.nodes,
+    floats: d.floats,
+    lines: d.lines,
+    zones: d.zones,
+    layoutMode: d.layoutMode,
+    edgeStyle: (d.edgeStyle as EdgeStyle | undefined) ?? 'curve',
+    strokes: d.strokes ?? [],
+    reactions: d.reactions ?? [],
+    commentPins: d.commentPins ?? [],
+    columns: d.columns ?? [],
+    cards: d.cards ?? [],
+    tags: d.tags ?? [],
+    pages: d.pages ?? [],
+    cover: d.cover ?? null,
+  };
 }
 
 export function useEditorState(): EditorController {
@@ -1081,6 +1129,8 @@ export function useEditorState(): EditorController {
   // reads the same localStorage), so it paints instantly with no spinner.
   const [hydrating, setHydrating] = useState(() => backendMode === 'supabase' && !hasStoredDoc(mapId));
   const [saveConflict, setSaveConflict] = useState<{ currentVersion: number } | null>(null);
+  /** 바깥에서 온 판을 채택한 횟수 — 비제어 편집 박스를 다시 마운트시키는 `key`. */
+  const [docEpoch, setDocEpoch] = useState(0);
   // connector style lives on the doc (persisted like layoutMode/themeKey); mirror
   // it into local state for rendering, seeded from the loaded doc.
   const [edgeStyle, setEdgeStyleState] = useState<EdgeStyle>(() => (doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
@@ -1275,22 +1325,10 @@ export function useEditorState(): EditorController {
             // bottom of the undo stack — one Undo past the first edit would restore
             // it and wipe the whole map. Port of dc's post-load history reset
             // (MindFlow.dc.html:862, the `_loadingDoc` branch).
-            historyRef.current?.reset({
-              nodes: res.doc.nodes,
-              floats: res.doc.floats,
-              lines: res.doc.lines,
-              zones: res.doc.zones,
-              layoutMode: res.doc.layoutMode,
-              edgeStyle: (res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve',
-              strokes: res.doc.strokes ?? [],
-              reactions: res.doc.reactions ?? [], commentPins: res.doc.commentPins ?? [],
-              columns: res.doc.columns ?? [],
-              cards: res.doc.cards ?? [],
-              tags: res.doc.tags ?? [],
-              pages: res.doc.pages ?? [],
-              cover: res.doc.cover ?? null,
-            });
+            historyRef.current?.reset(historyBaseOf(res.doc));
             setHistoryTick((t) => t + 1);
+            // 비제어 편집 박스를 다시 그리게 한다(공책 — `docEpoch` 주석 참고).
+            setDocEpoch((n) => n + 1);
           }
           if (localPending) {
             // 못 올린 편집이 남아 있다 — 서버가 아는 판을 기준선으로 삼아 지금 올린다.
@@ -1424,8 +1462,13 @@ export function useEditorState(): EditorController {
      *
      * 연결은 그대로 둔다(접속자 얼굴이 그 채널을 쓴다). 실시간 공동 편집을 붙이려면
      * 먼저 **페이지·블록의 순서 모델부터** 정해야 한다(`CLAUDE.md`의 그 항목).
+     *
+     * 판단은 종류를 손으로 적지 않고 **코어에 묻는다**(`docSyncsViaCrdt`) — 무엇이
+     * 실려 가는지는 바인딩이 아는 사실이고, 여기에 베껴 두면 바인딩이 바뀔 때 이
+     * 자리가 조용히 틀린 채로 남는다. 대신 공책은 아래 `refreshFromServer`가
+     * **서버 판을 다시 읽어** 수렴시킨다.
      */
-    if (docRef.current.kind === 'note') return;
+    if (!docSyncsViaCrdt(docRef.current.kind)) return;
     // 이 상태를 만든 건 **상대**다. 아래 자동저장 효과가 그걸 알아야 한다 —
     // 받은 쪽이 같이 저장하면 같은 문서에 두 명이 써서 버전 레이스가 나고(제보:
     // "B가 편집했는데 소유자 A가 저장되고 B에게 충돌 경고"), `updated_by`도 실제로
@@ -1448,6 +1491,13 @@ export function useEditorState(): EditorController {
   // 그래서 offline을 한 번 봤으면 실제로 다시 붙을 때('connected*')까지 끊김으로
   // 취급한다. 첫 접속 과정의 'connecting'(고장 아님)은 offline을 본 적이 없으므로
   // 그대로 통과한다.
+  /**
+   * awareness를 저장 경로에서도 읽는다 — 본문이 CRDT를 타지 않는 문서(공책)는
+   * "내가 방금 v<N>으로 저장했다"를 여기에 적어 상대에게 알린다(아래 `persistDoc`).
+   * 커서·선택과 같은 통로라 새 채널이 필요 없다.
+   */
+  const awarenessRef = useRef<typeof awareness>(null);
+  awarenessRef.current = awareness;
   const [collabDown, setCollabDown] = useState(false);
   useEffect(() => {
     if (collabStatus === 'offline') setCollabDown(true);
@@ -2848,6 +2898,19 @@ export function useEditorState(): EditorController {
       } catch {
         /* 히스토리는 부가 기능 — 실패해도 저장 흐름을 막지 않는다 */
       }
+      /**
+       * **본문이 CRDT를 타지 않는 문서**(공책)는 이 한 줄이 유일한 "새 판이 있다"
+       * 신호다 — 상대는 이것을 보고 서버를 다시 읽는다(`refreshFromServer`).
+       * 커서·선택과 같은 awareness 통로라 새 채널이 필요 없고, 저장할 때만 한 번
+       * 나가므로 트래픽도 커서와 비교가 되지 않는다.
+       */
+      if (!docSyncsViaCrdt(docRef.current.kind)) {
+        try {
+          awarenessRef.current?.setLocalStateField('saved', { v: result.version });
+        } catch {
+          /* awareness가 없거나 끊겼다 — 상대는 창을 옮길 때 새로 읽는다(포커스 계기) */
+        }
+      }
       setSaveStateState('saved');
       setSaveConflict(null);
       return;
@@ -2863,8 +2926,35 @@ export function useEditorState(): EditorController {
       // 편집하면 두 문서는 수렴하지 않고 갈라진다 — 그 상태에서 조용히 덮어쓰면
       // 상대의 편집이 경고도 없이 사라진다(질문으로 드러난 구멍). 끊겨 있으면
       // 충돌은 진짜 충돌이므로 덮어쓰지 않고 배너로 알린다.
+      /**
+       * **그리고 그 전제는 본문이 CRDT를 탈 때만 성립한다.** 공책은 바인딩에 페이지가
+       * 없어(코어 `docSyncsViaCrdt`) 채널이 아무리 멀쩡해도 두 기기가 수렴하지 않는다 —
+       * 그때 조용히 다시 쓰면 상대의 편집이 **경고도 없이 사라진다**(제보: 설치형 앱과
+       * 브라우저에서 같은 공책을 고쳤더니 서로의 내용이 보이지 않았다). 그래서 종류를
+       * 손으로 적는 대신 코어에 묻는다.
+       */
       const live = collabStatusRef.current === 'connected' || collabStatusRef.current === 'connected-insecure';
-      if (collabSessionRef.current && live && attempt === 0) continue;
+      if (docSyncsViaCrdt(docRef.current.kind) && collabSessionRef.current && live && attempt === 0) continue;
+      /**
+       * 수렴하지 않는 문서의 진짜 충돌 — **덮기 전에 서버 판을 이 기기의 버전 기록에
+       * 남긴다**(되찾을 길). 다음 자동저장은 새 버전을 기준으로 성공하므로 내 편집은
+       * 잃지 않고, 상대의 판은 `기록`에서 복원할 수 있다. 완전한 병합은 아니지만
+       * **어느 쪽도 흔적 없이 사라지지는 않는다**.
+       *
+       * 이 자리에 오는 일 자체가 드물다 — 평소에는 상대가 저장하는 즉시
+       * `refreshFromServer`가 내 화면을 최신 판으로 올려 놓아 충돌이 생기지 않는다.
+       * 여기까지 오는 건 둘이 **1초 안에 동시에** 고쳤거나 실시간이 끊겼을 때다.
+       */
+      if (!docSyncsViaCrdt(docRef.current.kind)) {
+        void docStore
+          .load(docStoreId)
+          .then((server) => {
+            if (server) recordVersion(docStoreId, server.doc, { force: true });
+          })
+          .catch(() => {
+            /* 기록은 안전망 — 실패해도 저장 흐름을 막지 않는다 */
+          });
+      }
       setSaveConflict({ currentVersion: result.currentVersion });
       setSaveStateState('saved');
       return;
@@ -2888,6 +2978,111 @@ export function useEditorState(): EditorController {
     }
     }
   }, [docStore, docStoreId, mapId]);
+
+  /**
+   * 서버 판을 **다시 읽어 채택한다** — 본문이 CRDT를 타지 않는 문서(공책)의 유일한
+   * 수렴 경로.
+   *
+   * 왜 필요한가(제보): 같은 계정으로 설치형 앱과 브라우저에 같은 공책을 열어 각각
+   * 고쳤더니 **서로의 내용이 보이지 않았다.** 공책은 실시간 공동 편집을 붙이지
+   * 않기로 한 문서라 CRDT 바인딩에 페이지가 없고(`docSyncsViaCrdt`), 그래서 한쪽의
+   * 편집이 다른 쪽 화면에 닿을 길이 **하나도 없었다**. 저장까지 last-writer-wins로
+   * 조용히 덮여, 보이지 않을 뿐 아니라 실제로 사라지고 있었다.
+   *
+   * 안전 규칙 셋 — 이 함수는 **절대 내 편집을 덮지 않는다**:
+   * ① 못 올린 편집이 있으면(서명이 마지막 저장과 다르면) 아무것도 하지 않는다.
+   * ② 오프라인 사본이 서버보다 새것이면(`hasPendingDoc`) 하지 않는다.
+   * ③ `await` 사이에 사람이 타이핑했을 수 있으므로 **읽고 나서 한 번 더** 확인한다.
+   * 그래서 "내가 쓰지 않고 있는 동안"에만 화면이 최신 판으로 바뀐다.
+   */
+  const lastRefreshAtRef = useRef(0);
+  const refreshFromServer = useCallback(async (): Promise<void> => {
+    if (!canPersistDocRef.current || readOnlyRef.current) return;
+    // 캔버스 셋은 CRDT가 수렴시킨다 — 서버 판을 덧씌우면 오히려 그쪽과 싸운다.
+    if (docSyncsViaCrdt(docRef.current.kind)) return;
+    if (docSignature(docRef.current) !== lastSavedSigRef.current) return; // ①
+    if (hasPendingDoc(mapId)) return; // ②
+    // 계기가 겹쳐 온다(창 포커스와 visibilitychange가 함께 뜬다) — 잇단 요청을 막는다.
+    const now = Date.now();
+    if (now - lastRefreshAtRef.current < 1200) return;
+    lastRefreshAtRef.current = now;
+    let res: Awaited<ReturnType<typeof docStore.load>>;
+    try {
+      res = await docStore.load(docStoreId);
+    } catch {
+      return; // 오프라인·일시 오류 — 지금 화면을 그대로 둔다(옛 판이어도 내 것이다)
+    }
+    if (!res) return;
+    if (docSignature(docRef.current) !== lastSavedSigRef.current) return; // ③
+    docVersionRef.current = res.version;
+    if (res.title) setMetaTitle(res.title);
+    const sig = docSignature(res.doc);
+    if (sig === docSignature(docRef.current)) return; // 내용이 같다 — 그릴 것이 없다
+    setDoc(res.doc);
+    setEdgeStyleState((res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
+    lastSavedSigRef.current = sig;
+    mountDocSigRef.current = sig;
+    // 되돌리기 바닥도 함께 옮긴다 — 그러지 않으면 ⌘Z 한 번이 **내가 본 적 없는**
+    // 옛 판으로 되돌린다(공책이 통째로 비던 사고와 같은 계열).
+    historyRef.current?.reset(historyBaseOf(res.doc));
+    setHistoryTick((t) => t + 1);
+    setDocEpoch((n) => n + 1);
+    try {
+      saveDoc(mapId, res.doc);
+    } catch {
+      /* storage unavailable — non-fatal */
+    }
+    setSaveStateState('saved');
+    setSaveConflict(null);
+  }, [docStore, docStoreId, mapId]);
+  const refreshFromServerRef = useRef(refreshFromServer);
+  refreshFromServerRef.current = refreshFromServer;
+
+  /**
+   * 다시 읽을 **계기 둘** — 창이 앞으로 올 때(`focus`)와 탭이 보일 때
+   * (`visibilitychange`). 둘 다 거는 이유가 있다: **설치형 앱(Electron)에서는
+   * `visibilityState`가 늘 `visible`이라**(이 저장소에서 한 번 겪은 함정)
+   * `visibilitychange`가 오지 않는다 — 앱↔브라우저를 오가는 바로 이 제보의
+   * 시나리오에서 동작하는 것은 `focus` 쪽이다. 반대로 브라우저 탭 전환은
+   * `visibilitychange`가 더 정확하다.
+   */
+  useEffect(() => {
+    if (hydrating || readOnly || bodyMissing || loadError) return;
+    const wake = (): void => {
+      void refreshFromServerRef.current();
+    };
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') wake();
+    };
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', wake);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [hydrating, readOnly, bodyMissing, loadError]);
+
+  /**
+   * 세 번째 계기 — **상대가 방금 저장했다**는 awareness 신호(`saved.v`).
+   *
+   * 창을 옮기지 않아도 몇 초 안에 따라잡게 하는 자리다(두 창을 나란히 놓고 쓰는
+   * 것이 제보의 상황이었다). 내가 아는 버전보다 큰 값을 누가 들고 있으면 다시 읽는다 —
+   * 읽고 나면 내 `docVersionRef`가 그 값이 되므로 되풀이되지 않는다.
+   */
+  useEffect(() => {
+    if (!awareness) return;
+    const onChange = (): void => {
+      let top = 0;
+      awareness.getStates().forEach((state, id) => {
+        if (id === awareness.clientID) return;
+        const v = (state as { saved?: { v?: number } } | undefined)?.saved?.v;
+        if (typeof v === 'number' && v > top) top = v;
+      });
+      if (top > (docVersionRef.current ?? 0)) void refreshFromServerRef.current();
+    };
+    awareness.on('change', onChange);
+    return () => awareness.off('change', onChange);
+  }, [awareness]);
 
   /** 다시 온라인이 되면 못 올린 편집을 바로 올린다 — 편집을 멈춘 채 연결이 돌아오면
    * 다음 자동저장 계기(=다음 편집)가 없어 영영 대기 상태로 남았다. */
@@ -7922,6 +8117,7 @@ export function useEditorState(): EditorController {
     saveNow,
     flushSave,
     saveConflict,
+    docEpoch,
     movedNotice,
     dismissMovedNotice,
     imageNotice,
