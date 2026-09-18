@@ -552,6 +552,19 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-table:hover .mf-note-tgrip:hover::after {
   background: var(--mf-accent);
 }
+/* 마지막 행·열의 그립은 잡는 자리를 **안쪽으로 6px** 당겨 두었다(넘치면 모든 표에
+   유령 스크롤바가 생긴다). 그래서 가운데에 그린 선이 경계선보다 3px 앞에 섰다
+   (제보) — 보이는 선만 끝으로 되돌린다. 잡는 자리는 그대로다. */
+.mf-note-tgrip[data-note-table-grip-end='col']::after {
+  left: auto;
+  right: 0;
+  margin: auto 0 auto auto;
+}
+.mf-note-tgrip[data-note-table-grip-end='row']::after {
+  top: auto;
+  bottom: 0;
+  margin: auto auto 0 auto;
+}
 .mf-note-tplus-end:hover {
   border-color: var(--mf-accent-mute) !important;
   background: var(--mf-accent-soft) !important;
