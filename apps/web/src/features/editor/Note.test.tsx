@@ -1528,16 +1528,47 @@ describe('공책 15판 — 표 제보 6건(＋의 자리 · 끝 추가 · 테두
   });
   afterEach(cleanup);
 
-  it('＋는 레일의 **맨 앞 하나**뿐이다 — 칸마다 달리지 않는다(제보)', async () => {
+  it('＋는 **손잡이마다 그 앞쪽**에 있고, 끝에도 둘 있다(요청)', async () => {
     localStorage.setItem('mindflow_doc_ntd0', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ntd0&title=x');
     await waitFor(() => expect(container.querySelector('[data-note-table-colhandle="0"]')).toBeTruthy());
 
-    // 2×2 표라면 레일 앞의 ＋ 둘 + 끝의 ＋ 둘 = 넷. 손잡이마다 달렸다면 여섯이다.
-    const all = container.querySelectorAll('.mf-note-tplus');
-    const ends = container.querySelectorAll('.mf-note-tplus-end');
-    expect(all).toHaveLength(4);
-    expect(ends).toHaveLength(2);
+    // 2×2 표 → 열 둘 + 행 둘 + 끝 둘 = 여섯.
+    expect(container.querySelectorAll('.mf-note-tplus')).toHaveLength(6);
+    expect(container.querySelectorAll('.mf-note-tplus-end')).toHaveLength(2);
+    // 두 번째 열의 ＋는 그 열 **왼쪽**에 넣는다(앞쪽).
+    const before = (container.querySelector('[data-note-table-colrail]') as HTMLElement).querySelectorAll('.mf-note-tplus');
+    expect(before[1]?.getAttribute('title')).toBe('2번째 열 왼쪽에 열 넣기');
+  });
+
+  it('레일의 두 번째 열 ＋를 누르면 그 자리에 열이 들어간다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_ntd0b', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ntd0b&title=x');
+    const rail = (await waitFor(() => container.querySelector('[data-note-table-colrail]'))) as HTMLElement;
+
+    fireEvent.click(rail.querySelectorAll('.mf-note-tplus')[1]!);
+    saveNow();
+    await waitFor(() => expect(saved('ntd0b').pages[0].blocks[3].rows[0]).toHaveLength(3));
+    // `할 일`은 그대로 첫 칸, 새 칸이 그 오른쪽(둘째)에 들어간다.
+    expect(saved('ntd0b').pages[0].blocks[3].rows[0][0][0].t).toBe('할 일');
+    expect(saved('ntd0b').pages[0].blocks[3].rows[0][2][0].t).toBe('담당');
+  });
+
+  it('손잡이 hover는 **그 손잡이만** 물들인다 — 레일 전체가 아니다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_ntd0c', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ntd0c&title=x');
+    const h0 = (await waitFor(() => container.querySelector('[data-note-table-colhandle="0"]'))) as HTMLElement;
+    const h1 = container.querySelector('[data-note-table-colhandle="1"]') as HTMLElement;
+    const bar = (el: HTMLElement) => (el.firstElementChild as HTMLElement).style.background;
+
+    expect(bar(h0)).toBe('var(--mf-th)');
+    fireEvent.mouseEnter(h1);
+    await waitFor(() => expect(bar(h1)).toBe('var(--mf-accent-mute)'));
+    // 옆 손잡이는 가만히 있다 — 예전에는 레일 전체가 함께 물들었다.
+    expect(bar(h0)).toBe('var(--mf-th)');
+
+    fireEvent.mouseLeave(h1);
+    await waitFor(() => expect(bar(h1)).toBe('var(--mf-th)'));
   });
 
   it('오른쪽 끝·아래쪽 끝의 ＋가 열과 행을 하나 더 붙인다(제보)', async () => {

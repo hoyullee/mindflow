@@ -3062,10 +3062,11 @@ interface TableGeom {
  * 따라 달라져, 손잡이를 따로 그리면 어긋난다. 표를 한 번 재서(`ResizeObserver`) 그
  * 값으로 손잡이를 세운다 — 재지 못하는 환경(jsdom·숨은 표)에서는 균등 배분으로 물러선다.
  *
- * **＋는 넷뿐이다** — 레일의 **맨 앞**(열은 왼쪽, 행은 위쪽)에 하나씩, 그리고 표의
- * **오른쪽 끝·아래쪽 끝**에 하나씩. 손잡이마다 하나씩 달아 봤더니 레일에 마우스를
- * 얹는 순간 칸마다 동그라미가 떠 "고르는 자리"가 "더하는 자리"로 읽혔다(제보).
- * 중간에 끼워 넣는 일은 우클릭 메뉴(`왼쪽에 열 추가`·`아래에 행 추가`)가 맡는다.
+ * **＋는 손잡이마다 그 앞쪽에** 하나씩(열은 왼쪽, 행은 위쪽) — 그 자리에 열·행을
+ * 끼워 넣는다. 더해서 표의 **오른쪽 끝·아래쪽 끝**에 하나씩 있어 "마지막에 하나 더"가
+ * 메뉴를 거치지 않는다. (한때 맨 앞 하나로 줄여 봤는데, 칸마다 동그라미가 떠 보이던
+ * 진짜 원인은 ＋의 개수가 아니라 **레일에 마우스를 얹으면 손잡이 전체가 강조색으로
+ * 물들던 것**이었다 — 그래서 아래처럼 얹은 손잡이 하나만 물들인다.)
  *
  * **한 번 누르면 고르기, 두 번 누르면 편집**(제보). 공책의 다른 블록은 상시 편집이지만
  * 표는 "무엇을 고쳤나"보다 "어느 칸이냐"를 먼저 묻는 자리라, 한 번의 누름이 곧 선택이고
@@ -3080,6 +3081,14 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   const [menu, setMenu] = useState<{ sel: TableSel; at: { x: number; y: number } } | null>(null);
   const [fillOpen, setFillOpen] = useState(false);
   const [rail, setRail] = useState<'row' | 'col' | null>(null);
+  /**
+   * **마우스를 얹은 손잡이 하나**(제보) — 레일 전체가 아니다.
+   *
+   * 레일 단위로 물들였더니 열 하나에 마우스를 얹어도 모든 열이 강조색이 되어 "지금
+   * 어느 열을 겨냥했나"를 손잡이가 말해 주지 못했다. 레일 hover(`rail`)는 ＋를
+   * 드러내고 좌상단 코너를 숨기는 데만 쓰고, 색은 이 값이 정한다.
+   */
+  const [hot, setHot] = useState<{ axis: 'row' | 'col'; i: number } | null>(null);
   const [geom, setGeom] = useState<TableGeom | null>(null);
   /**
    * **글을 고치는 중인 칸**(제보) — 두 번 눌러야 열린다.
@@ -3289,7 +3298,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   };
 
   /* ── 레일 ───────────────────────────────────────────────────────────────── */
-  const handleTone = (on: boolean, hot: boolean) => (on ? 'var(--mf-accent)' : hot ? 'var(--mf-accent-mute)' : 'var(--mf-th)');
+  const handleTone = (on: boolean, warm: boolean) => (on ? 'var(--mf-accent)' : warm ? 'var(--mf-accent-mute)' : 'var(--mf-th)');
   const plus = (label: string, onClick: () => void, style: CSSProperties) => (
     <button
       type="button"
@@ -3325,9 +3334,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         const place: CSSProperties = box ? { position: 'absolute', left: box.l + 2, width: Math.max(6, box.w - 4), top: 0, height: 14 } : { position: 'relative', flex: 1, minWidth: 0, height: 14 };
         return (
           <div key={ci} style={place}>
-            {/* ＋는 **맨 앞 하나**다(제보) — 손잡이마다 달면 레일에 마우스를 얹는
-                순간 칸마다 동그라미가 떠 고르는 자리가 더하는 자리로 읽힌다. */}
-            {ci === 0 && plus('맨 앞에 열 넣기', () => controller.addNoteTableCol(block.id, 0), { left: -10, top: -3 })}
+            {/* ＋는 **이 손잡이의 앞쪽**(왼쪽)에 — 그 자리에 열을 끼워 넣는다(요청). */}
+            {plus(ci === 0 ? '맨 앞에 열 넣기' : `${ci + 1}번째 열 왼쪽에 열 넣기`, () => controller.addNoteTableCol(block.id, ci), { left: -10, top: -3 })}
             <button
               type="button"
               className="mf-note-thandle"
@@ -3335,10 +3343,12 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
               aria-label={`${ci + 1}번째 열 선택`}
               title="열 선택 · 한 번 더 누르면 메뉴"
               onMouseDown={(e) => e.stopPropagation()}
+              onMouseEnter={() => setHot({ axis: 'col', i: ci })}
+              onMouseLeave={() => setHot(null)}
               onClick={(e) => handleClick(e, { mode: 'col', c: ci }, sel?.mode === 'col' && sel.c === ci)}
               style={{ width: '100%', height: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
             >
-              <span aria-hidden="true" style={{ display: 'block', width: '100%', height: 5, borderRadius: 999, background: handleTone(!!on, rail === 'col') }} />
+              <span aria-hidden="true" style={{ display: 'block', width: '100%', height: 5, borderRadius: 999, background: handleTone(!!on, hot?.axis === 'col' && hot.i === ci) }} />
             </button>
           </div>
         );
@@ -3360,7 +3370,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         const place: CSSProperties = box ? { position: 'absolute', top: box.t + 2, height: Math.max(6, box.h - 4), left: 0, width: 14 } : { position: 'relative', flex: 1, minHeight: 24, width: 14 };
         return (
           <div key={ri} style={place}>
-            {ri === 0 && plus('맨 위에 행 넣기', () => controller.addNoteTableRow(block.id, 0), { top: -10, left: -3 })}
+            {plus(ri === 0 ? '맨 위에 행 넣기' : `${ri + 1}번째 행 위에 행 넣기`, () => controller.addNoteTableRow(block.id, ri), { top: -10, left: -3 })}
             <button
               type="button"
               className="mf-note-thandle"
@@ -3368,10 +3378,12 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
               aria-label={head && ri === 0 ? '머리글 행 선택' : `${ri + 1}번째 행 선택`}
               title="행 선택 · 한 번 더 누르면 메뉴"
               onMouseDown={(e) => e.stopPropagation()}
+              onMouseEnter={() => setHot({ axis: 'row', i: ri })}
+              onMouseLeave={() => setHot(null)}
               onClick={(e) => handleClick(e, { mode: 'row', r: ri }, sel?.mode === 'row' && sel.r === ri)}
               style={{ width: '100%', height: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
             >
-              <span aria-hidden="true" style={{ display: 'block', width: 5, height: '100%', borderRadius: 999, background: handleTone(!!on, rail === 'row') }} />
+              <span aria-hidden="true" style={{ display: 'block', width: 5, height: '100%', borderRadius: 999, background: handleTone(!!on, hot?.axis === 'row' && hot.i === ri) }} />
             </button>
           </div>
         );
