@@ -3062,9 +3062,14 @@ interface TableGeom {
  * 따라 달라져, 손잡이를 따로 그리면 어긋난다. 표를 한 번 재서(`ResizeObserver`) 그
  * 값으로 손잡이를 세운다 — 재지 못하는 환경(jsdom·숨은 표)에서는 균등 배분으로 물러선다.
  *
- * **＋는 각 손잡이의 "앞쪽"에만** 뜬다(열은 왼쪽, 행은 위쪽). 뒤쪽까지 두면 두 칸
- * 사이에 ＋가 둘 겹쳐 어느 쪽이 어디에 넣는지 알 수 없다. 끝에 붙이는 일은 메뉴의
- * `아래에 행 추가`·`오른쪽에 열 추가`가 맡는다.
+ * **＋는 넷뿐이다** — 레일의 **맨 앞**(열은 왼쪽, 행은 위쪽)에 하나씩, 그리고 표의
+ * **오른쪽 끝·아래쪽 끝**에 하나씩. 손잡이마다 하나씩 달아 봤더니 레일에 마우스를
+ * 얹는 순간 칸마다 동그라미가 떠 "고르는 자리"가 "더하는 자리"로 읽혔다(제보).
+ * 중간에 끼워 넣는 일은 우클릭 메뉴(`왼쪽에 열 추가`·`아래에 행 추가`)가 맡는다.
+ *
+ * **한 번 누르면 고르기, 두 번 누르면 편집**(제보). 공책의 다른 블록은 상시 편집이지만
+ * 표는 "무엇을 고쳤나"보다 "어느 칸이냐"를 먼저 묻는 자리라, 한 번의 누름이 곧 선택이고
+ * 글은 두 번 눌러 연다(스프레드시트의 관례). 그래서 칸 위의 커서도 `cell`이다.
  */
 function TableBlock({ controller, block, focusBox, openSlash }: { controller: EditorController; block: NoteBlock; focusBox: (el: HTMLElement) => void; openSlash: BlockProps['openSlash'] }) {
   const readOnly = controller.readOnly;
@@ -3076,21 +3081,22 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   const [fillOpen, setFillOpen] = useState(false);
   const [rail, setRail] = useState<'row' | 'col' | null>(null);
   const [geom, setGeom] = useState<TableGeom | null>(null);
+  /**
+   * **글을 고치는 중인 칸**(제보) — 두 번 눌러야 열린다.
+   *
+   * 이 칸만 `contentEditable`이고 나머지는 읽기 전용이다. 한 번의 누름을 선택으로
+   * 쓰기로 했으니 그러지 않으면 누를 때마다 캐럿이 들어가 선택이 흐려진다.
+   */
+  const [edit, setEdit] = useState<{ r: number; c: number } | null>(null);
+  /** 편집을 연 뒤 캐럿을 놓을 자리 — 상태가 바뀐 **다음** 렌더에서만 놓을 수 있다. */
+  const wantCaret = useRef<{ r: number; c: number; x?: number; y?: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   /** 고른 시각 — 바깥 클릭으로 즉시 풀리는 것을 막는 가드(스펙 400ms). */
   const pickedAt = useRef(0);
-  /**
-   * 끌어서 고르는 중 — 누른 칸이 기준이고, 다른 칸에 닿으면 구간이 된다.
-   *
-   * `inLine`은 **글 위에서 눌렀는가**다. 스펙의 프로토타입은 칸이 편집 상자가 아니라
-   * 한 번 누르는 것이 곧 고르기였지만, 우리 칸은 그대로 고칠 수 있는 자리다 — 글을
-   * 쓰려고 누를 때마다 주황 링과 칩이 뜨면 고르는 일과 고치는 일이 섞인다. 그래서
-   * 글 위에서 시작한 누름은 **칸을 넘어갈 때만** 선택이 되고, 칸 여백에서 시작한
-   * 누름은 그 자리에서 칸 하나를 고른다.
-   */
-  const drag = useRef<{ r: number; c: number; inLine: boolean } | null>(null);
+  /** 끌어서 고르는 중 — 누른 칸이 기준이고, 다른 칸에 닿으면 구간이 된다. */
+  const drag = useRef<{ r: number; c: number } | null>(null);
 
   const pick = useCallback((next: TableSel | null) => {
     pickedAt.current = Date.now();
@@ -3127,16 +3133,51 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
 
   /* 표 밖을 누르면 선택이 풀린다 — 단 방금 고른 것은 제 클릭으로 풀리지 않는다. */
   useEffect(() => {
-    if (!sel) return;
+    if (!sel && !edit) return;
     const onDoc = (e: MouseEvent) => {
       if (Date.now() - pickedAt.current < 400) return;
       if (rootRef.current?.contains(e.target as HTMLElement)) return;
       setSel(null);
+      setEdit(null);
       setFillOpen(false);
     };
     document.addEventListener('click', onDoc);
     return () => document.removeEventListener('click', onDoc);
-  }, [sel]);
+  }, [sel, edit]);
+
+  /* 편집을 연 다음 렌더에서 캐럿을 놓는다 — 그 전에는 `contentEditable`이 아니다. */
+  useEffect(() => {
+    const want = wantCaret.current;
+    if (!want) return;
+    wantCaret.current = null;
+    const el = cellLine(want.r, want.c);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    focusBox(el);
+    try {
+      const sp = want.x != null && want.y != null ? caretAt(want.x, want.y) : null;
+      const range = document.createRange();
+      // 두 번 누른 **그 자리**에 캐럿을 둔다. 자리를 모르면 글 끝으로(이어 쓰려는 뜻).
+      if (sp && el.contains(sp.node)) range.setStart(sp.node, sp.offset);
+      else range.selectNodeContents(el);
+      range.collapse(!!sp);
+      const s = window.getSelection();
+      s?.removeAllRanges();
+      s?.addRange(range);
+    } catch {
+      /* 캐럿을 못 놓아도 포커스는 갔다 */
+    }
+  }, [edit]);
+
+  /** 그 칸의 글을 연다 — 두 번 누르기·Tab 이동이 함께 쓴다. */
+  const openEdit = (r: number, c: number, at?: { x: number; y: number }) => {
+    if (readOnly) return;
+    wantCaret.current = { r, c, x: at?.x, y: at?.y };
+    setSel(null);
+    setMenu(null);
+    setFillOpen(false);
+    setEdit({ r, c });
+  };
 
   /* 끌기는 문서에서 끝난다 — 표 밖에서 손을 떼는 일이 흔하다. */
   useEffect(() => {
@@ -3176,18 +3217,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   /* ── 키보드(스펙 6) ─────────────────────────────────────────────────────── */
   const cellLine = (r: number, c: number): HTMLElement | null =>
     rootRef.current?.querySelector<HTMLElement>(`[data-note-line="${block.id}:r${r}c${c}"]`) ?? null;
-  const focusCell = (r: number, c: number) => {
-    const el = cellLine(r, c);
-    if (!el) return;
-    el.focus({ preventScroll: true });
-    focusBox(el);
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    const s = window.getSelection();
-    s?.removeAllRanges();
-    s?.addRange(range);
-  };
+  const focusCell = (r: number, c: number) => openEdit(r, c);
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (readOnly) return;
     const editing = (e.target as HTMLElement).closest('[data-note-line]') !== null;
@@ -3214,7 +3244,16 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       else controller.addNoteTableCol(block.id, anchor.c + 1);
       return;
     }
-    if (editing || !sel) return;
+    if (editing) {
+      // 글을 고치는 중의 Esc는 **편집만** 닫는다(선택은 애초에 없다).
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setEdit(null);
+        boxRef.current?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    if (!sel) return;
     // 아래는 **표에 포커스가 있을 때**(글을 고치는 중이 아닐 때)만 — 그러지 않으면
     // 글 안에서 캐럿을 옮기는 화살표를 빼앗는다.
     if (e.key === 'Escape') {
@@ -3286,7 +3325,9 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         const place: CSSProperties = box ? { position: 'absolute', left: box.l + 2, width: Math.max(6, box.w - 4), top: 0, height: 14 } : { position: 'relative', flex: 1, minWidth: 0, height: 14 };
         return (
           <div key={ci} style={place}>
-            {plus(`${ci + 1}번째 열 왼쪽에 열 넣기`, () => controller.addNoteTableCol(block.id, ci), { left: -10, top: -3 })}
+            {/* ＋는 **맨 앞 하나**다(제보) — 손잡이마다 달면 레일에 마우스를 얹는
+                순간 칸마다 동그라미가 떠 고르는 자리가 더하는 자리로 읽힌다. */}
+            {ci === 0 && plus('맨 앞에 열 넣기', () => controller.addNoteTableCol(block.id, 0), { left: -10, top: -3 })}
             <button
               type="button"
               className="mf-note-thandle"
@@ -3319,7 +3360,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         const place: CSSProperties = box ? { position: 'absolute', top: box.t + 2, height: Math.max(6, box.h - 4), left: 0, width: 14 } : { position: 'relative', flex: 1, minHeight: 24, width: 14 };
         return (
           <div key={ri} style={place}>
-            {plus(head && ri === 0 ? '맨 위에 행 넣기' : `${ri + 1}번째 행 위에 행 넣기`, () => controller.addNoteTableRow(block.id, ri), { top: -10, left: -3 })}
+            {ri === 0 && plus('맨 위에 행 넣기', () => controller.addNoteTableRow(block.id, 0), { top: -10, left: -3 })}
             <button
               type="button"
               className="mf-note-thandle"
@@ -3337,6 +3378,32 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       })}
     </div>
   );
+
+  /**
+   * 끝에 붙이는 ＋ 둘(제보) — **오른쪽 끝에 열**, **아래쪽 끝에 행**.
+   *
+   * 예전의 점선 띠를 스펙에 맞춰 뺐더니 "마지막에 하나 더" 하는 가장 흔한 동작이
+   * 메뉴 안으로 들어가 버렸다. 그리드의 세 번째 열(18px)·세 번째 행(18px)이 원래
+   * 이 자리를 위해 비워 둔 칸이라 거기에 세운다. 레일이 아니라 **표**에 마우스를
+   * 얹으면 보인다 — 손잡이를 지나야 닿는 자리가 아니기 때문이다.
+   */
+  const endPlus = (label: string, onClick: () => void, area: string, style: CSSProperties) =>
+    !readOnly && (
+      <button
+        type="button"
+        className="mf-note-trail mf-note-tplus mf-note-tplus-end"
+        data-note-table-append={area}
+        title={label}
+        aria-label={label}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={onClick}
+        style={{ gridArea: area === 'col' ? '2 / 3' : '3 / 2', width: 20, height: 20, border: 0, borderRadius: 999, padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...style }}
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+    );
 
   const chipLabel = sel ? selLabel(sel, rows.length, width, head) : null;
 
@@ -3406,6 +3473,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         )}
         {colRail}
         {rowRail}
+        {endPlus('오른쪽 끝에 열 추가', () => controller.addNoteTableCol(block.id), 'col', { alignSelf: 'center', justifySelf: 'start' })}
+        {endPlus('아래쪽 끝에 행 추가', () => controller.addNoteTableRow(block.id), 'row', { alignSelf: 'start', justifySelf: 'center' })}
 
         <div
           ref={boxRef}
@@ -3428,17 +3497,23 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                   {row.map((cell, ci) => {
                     const isHead = ri === 0 && head;
                     const on = selHas(sel, ri, ci);
+                    const editing = edit?.r === ri && edit.c === ci;
                     const align = block.colAlign?.[ci] ?? 'left';
                     const paint = fillAt(block.fills, ri, ci);
                     // 링은 **고른 구역의 바깥 경계에만** 그린다 — 네 이웃이 선택에
-                    // 들었는지 보고 그쪽 변만 뺀다(스펙 3-3). 표 밖은 "선택 아님"이라
-                    // 모서리에서 링이 닫힌다.
+                    // 들었는지 보고 그쪽 변만 뺀다(스펙 3-3).
+                    //
+                    // **표 밖의 이웃은 "선택 아님"이다**(제보로 놓친 것을 잡았다):
+                    // `selHas`만 물으면 행 선택에서 `c = -1`도 참이라 왼쪽·오른쪽
+                    // 변이 빠지고, 표 전체 선택에서는 네 변이 다 빠져 **테두리가
+                    // 아예 그려지지 않았다**. 범위를 먼저 재고 묻는다.
+                    const inRing = (r: number, c: number) => r >= 0 && r < rows.length && c >= 0 && c < row.length && selHas(sel, r, c);
                     const ring = on
                       ? [
-                          selHas(sel, ri - 1, ci) ? '' : 'inset 0 1.5px 0 0 var(--mf-tsel-ring)',
-                          selHas(sel, ri + 1, ci) ? '' : 'inset 0 -1.5px 0 0 var(--mf-tsel-ring)',
-                          selHas(sel, ri, ci - 1) ? '' : 'inset 1.5px 0 0 0 var(--mf-tsel-ring)',
-                          selHas(sel, ri, ci + 1) ? '' : 'inset -1.5px 0 0 0 var(--mf-tsel-ring)',
+                          inRing(ri - 1, ci) ? '' : 'inset 0 1.5px 0 0 var(--mf-tsel-ring)',
+                          inRing(ri + 1, ci) ? '' : 'inset 0 -1.5px 0 0 var(--mf-tsel-ring)',
+                          inRing(ri, ci - 1) ? '' : 'inset 1.5px 0 0 0 var(--mf-tsel-ring)',
+                          inRing(ri, ci + 1) ? '' : 'inset -1.5px 0 0 0 var(--mf-tsel-ring)',
                         ]
                           .filter(Boolean)
                           .join(', ')
@@ -3453,7 +3528,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                         data-picked={on ? '1' : undefined}
                         onMouseDown={(e) => {
                           if (readOnly || e.button !== 0) return;
-                          drag.current = { r: ri, c: ci, inLine: (e.target as HTMLElement).closest('[data-note-line]') !== null };
+                          drag.current = { r: ri, c: ci };
                         }}
                         onMouseEnter={() => {
                           const from = drag.current;
@@ -3466,9 +3541,14 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                         onMouseUp={() => {
                           const from = drag.current;
                           drag.current = null;
-                          if (readOnly || !from || from.r !== ri || from.c !== ci || from.inLine) return;
+                          if (readOnly || !from || from.r !== ri || from.c !== ci) return;
+                          // 글을 고치는 중인 칸을 다시 누른 것은 캐럿을 옮기는 일이다.
+                          if (editing) return;
+                          setEdit(null);
                           pick({ mode: 'cell', r: ri, c: ci });
                         }}
+                        // 두 번 누르면 그 자리에 캐럿이 들어간다(제보).
+                        onDoubleClick={(e) => openEdit(ri, ci, { x: e.clientX, y: e.clientY })}
                         onContextMenu={(e) => {
                           if (readOnly) return;
                           e.preventDefault();
@@ -3493,20 +3573,26 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           color: isHead ? 'var(--mf-subtext)' : 'var(--mf-text)',
                           textAlign: align,
                           minWidth: 84,
+                          // 칸 위의 커서는 `cell`이다(제보·스펙 3-2) — 한 번의 누름이
+                          // 글자를 고르는 일이 아니라 **칸을 고르는 일**임을 커서가
+                          // 먼저 말해 준다. 글을 여는 칸에서만 글자 커서로 돌아간다.
+                          cursor: editing ? 'text' : 'cell',
+                          // 고르려고 끄는 동안 글자가 함께 잡히면 둘 다 엉킨다.
+                          userSelect: editing ? 'text' : 'none',
                         }}
                       >
                         <NoteLine
                           onFocusLine={focusBox}
                           lineKey={`${block.id}:r${ri}c${ci}`}
                           runs={cell}
-                          readOnly={readOnly}
+                          readOnly={readOnly || !editing}
                           placeholder={isHead ? '머리글' : ''}
                           onSlash={(at) => {
                             if (readOnly) return;
                             openSlash(`${block.id}:r${ri}c${ci}`, at);
                           }}
                           onChange={(runs) => controller.setNoteCell(block.id, ri, ci, runs)}
-                          style={{ fontSize: isHead ? 11.5 : 13, lineHeight: isHead ? '17px' : '16px', fontWeight: isHead ? 800 : 400, color: 'inherit', textAlign: align }}
+                          style={{ fontSize: isHead ? 11.5 : 13, lineHeight: isHead ? '17px' : '16px', fontWeight: isHead ? 800 : 400, color: 'inherit', textAlign: align, cursor: editing ? 'text' : 'cell' }}
                         />
                       </td>
                     );
