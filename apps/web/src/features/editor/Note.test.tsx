@@ -1678,6 +1678,111 @@ describe('공책 15판 — 표 제보 6건(＋의 자리 · 끝 추가 · 테두
   });
 });
 
+describe('공책 16판 — 표 크기 조절 · 행열 삭제 · Enter로 닫기', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('손으로 정한 열 너비가 문서에 남고 `colgroup`으로 그려진다(요청)', async () => {
+    const sized = {
+      ...NOTE,
+      pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0]!.blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, colW: [120, 260] } : b)) }, NOTE.pages[1]],
+    };
+    localStorage.setItem('mindflow_doc_ntz0', JSON.stringify(sized));
+    const { container } = renderEditor('/editor?map=ntz0&title=x');
+    const table = (await waitFor(() => container.querySelector('[data-note-table-box] table'))) as HTMLElement;
+
+    // 너비를 정한 순간부터 고정 레이아웃이다 — 아니면 브라우저가 글에 맞춰 다시 나눈다.
+    expect(table.style.tableLayout).toBe('fixed');
+    const cols = table.querySelectorAll('col');
+    expect(cols).toHaveLength(2);
+    expect((cols[0] as HTMLElement).style.width).toBe('120px');
+    expect((cols[1] as HTMLElement).style.width).toBe('260px');
+  });
+
+  it('행 높이는 `tr`에 걸리고, 열을 지우면 너비도 함께 당겨진다(요청)', async () => {
+    const sized = {
+      ...NOTE,
+      pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0]!.blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, colW: [120, 260], rowH: [40, 90] } : b)) }, NOTE.pages[1]],
+    };
+    localStorage.setItem('mindflow_doc_ntz1', JSON.stringify(sized));
+    const { container } = renderEditor('/editor?map=ntz1&title=x');
+    const rowsEl = (await waitFor(() => container.querySelectorAll('[data-note-table-box] tr'))) as NodeListOf<HTMLElement>;
+    expect(rowsEl[1]?.style.height).toBe('90px');
+
+    // 첫 열을 지우면 그 너비도 사라지고 뒤가 당겨진다.
+    const cell = container.querySelector('[data-note-table-cell="0:0"]') as HTMLElement;
+    fireEvent.contextMenu(cell);
+    await waitFor(() => expect(container.querySelector('[data-note-table-menu]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-ctx="t-col"]')!);
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-ctx="col-del"]'))) as HTMLElement);
+    saveNow();
+    await waitFor(() => expect(saved('ntz1').pages[0].blocks[3].colW).toEqual([260]));
+  });
+
+  it('칩의 휴지통이 고른 행을 그 자리에서 지운다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_ntz2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ntz2&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-table-rowhandle="1"]'))) as HTMLElement);
+
+    const drop = (await waitFor(() => container.querySelector('[data-note-table-drop]'))) as HTMLButtonElement;
+    expect(drop.getAttribute('title')).toBe('이 행 삭제');
+    fireEvent.click(drop);
+    saveNow();
+    await waitFor(() => expect(saved('ntz2').pages[0].blocks[3].rows).toHaveLength(1));
+    // 지우고 나면 선택도 함께 놓는다 — 없어진 줄을 가리킨 칩이 남으면 거짓말이다.
+    expect(container.querySelector('[data-note-table-chip]')).toBeNull();
+  });
+
+  it('마지막 한 행·한 열은 칩에서도 지우지 못한다', async () => {
+    const one = {
+      ...NOTE,
+      pages: [{ ...NOTE.pages[0], blocks: [{ id: 'b4', kind: 'table', rows: [[[{ t: '하나', b: false, c: null }]]] }] }, NOTE.pages[1]],
+    };
+    localStorage.setItem('mindflow_doc_ntz3', JSON.stringify(one));
+    const { container } = renderEditor('/editor?map=ntz3&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-table-rowhandle="0"]'))) as HTMLElement);
+
+    const drop = (await waitFor(() => container.querySelector('[data-note-table-drop]'))) as HTMLButtonElement;
+    expect(drop.disabled).toBe(true);
+  });
+
+  it('칸 편집 중 Enter는 **편집을 닫고** 그 칸을 고른다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_ntz4', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ntz4&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+
+    fireEvent.doubleClick(cell);
+    await waitFor(() => expect(container.querySelector('[data-note-line="b4:r1c0"]')?.getAttribute('contenteditable')).toBe('true'));
+
+    fireEvent.keyDown(container.querySelector('[data-note-line="b4:r1c0"]')!, { key: 'Enter' });
+    await waitFor(() => expect(container.querySelector('[data-note-line="b4:r1c0"]')?.getAttribute('contenteditable')).toBe('false'));
+    // 닫고 나면 그 칸이 골라져 있다 — 다음 동작(색·삭제)이 바로 이어진다.
+    expect(cell.getAttribute('data-picked')).toBe('1');
+  });
+
+  it('Shift+Enter는 줄을 바꾸고 편집을 이어 간다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_ntz5', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ntz5&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+
+    fireEvent.doubleClick(cell);
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b4:r1c0"]'))) as HTMLElement;
+    fireEvent.keyDown(line, { key: 'Enter', shiftKey: true });
+    // 편집은 그대로다 — 줄바꿈은 브라우저가 넣는다(`NoteLine`이 막지 않는다).
+    expect(line.getAttribute('contenteditable')).toBe('true');
+
+    // 줄바꿈이 든 글은 `\n`으로 저장된다(`<br>` → `\n`).
+    line.innerHTML = '문구 검수<br>둘째 줄';
+    fireEvent.input(line);
+    saveNow();
+    await waitFor(() => expect((saved('ntz5').pages[0].blocks[3].rows[1][0] as { t: string }[]).map((r) => r.t).join('')).toBe('문구 검수\n둘째 줄'));
+  });
+});
+
 describe('공책 14판 — 얹으면 반응하고, 목록은 이 스페이스의 것이다', () => {
   beforeEach(() => {
     localStorage.clear();

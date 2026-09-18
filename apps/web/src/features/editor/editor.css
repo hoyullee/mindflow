@@ -532,6 +532,26 @@ input[type='search']::-webkit-search-results-decoration {
     border-color 0.12s ease,
     background 0.12s ease;
 }
+/* 경계선 그립 — 평소에는 보이지 않고, 표에 마우스를 얹으면 잡을 수 있음을 알린다.
+   보이는 선은 2px이고 잡는 자리는 6px다(시각 요소보다 히트 영역이 크다). */
+.mf-note-tgrip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.12s ease;
+}
+.mf-note-tgrip[data-note-table-grip^='col']::after {
+  width: 2px;
+}
+.mf-note-tgrip[data-note-table-grip^='row']::after {
+  height: 2px;
+}
+.mf-note-table:hover .mf-note-tgrip:hover::after {
+  background: var(--mf-accent);
+}
 .mf-note-tplus-end:hover {
   border-color: var(--mf-accent-mute) !important;
   background: var(--mf-accent-soft) !important;

@@ -477,6 +477,28 @@ export function applyFill(fills: Record<string, string> | undefined, target: Tab
 }
 
 /**
+ * 행·열을 넣고 빼고 옮길 때 **손으로 정한 크기도 함께 움직인다**(열 너비·행 높이).
+ *
+ * 채움색과 같은 이유다 — 3번 열을 지웠는데 너비 배열이 그대로면 그 뒤 열들이 한 칸씩
+ * 어긋난 너비를 쓴다. 넣을 때는 이웃의 값을 물려받는다(새 열만 홀로 좁으면 눈에 띈다).
+ */
+export function shiftSizes(list: number[] | undefined, op: 'insert' | 'remove' | 'move', at: number, to = at): number[] | undefined {
+  if (!list || !list.length) return list;
+  const next = list.slice();
+  if (op === 'insert') {
+    next.splice(at, 0, next[at] ?? next[at - 1] ?? next[next.length - 1] ?? 0);
+  } else if (op === 'remove') {
+    if (at < 0 || at >= next.length) return list;
+    next.splice(at, 1);
+  } else {
+    if (at < 0 || at >= next.length || to < 0 || to >= next.length) return list;
+    const [v] = next.splice(at, 1);
+    next.splice(to, 0, v!);
+  }
+  return next.length ? next : undefined;
+}
+
+/**
  * 행·열을 넣고 빼고 옮길 때 **채움색도 함께 움직인다**.
  *
  * 이 함수가 없으면 3번 행을 지웠을 때 그 아래 칸들의 색이 한 줄씩 어긋난 채 남는다
