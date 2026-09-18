@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, shiftFills, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -857,7 +857,9 @@ export interface EditorController {
    * 고른 칸들에 **색을 붓는다**(`null`이면 지운다) — 표 선택 칩의 `색 채우기`.
    * 좌표는 `[행, 열]` 짝이고, 칠하지 않은 표에는 그 칸 자체가 생기지 않는다.
    */
-  fillNoteTableCells: (blockId: string, cells: [number, number][], color: string | null) => void;
+  setNoteTableFill: (blockId: string, target: TableFillTarget, color: string | null) => void;
+  /** 표의 한 행을 바로 아래에 복제한다(글과 색을 함께). */
+  duplicateNoteTableRow: (blockId: string, at: number) => void;
   /** 열을 왼쪽(`-1`)·오른쪽(`+1`)으로 한 칸. */
   moveNoteTableCol: (blockId: string, at: number, delta: number) => void;
   setNoteCover: (patch: Partial<NoteCover>) => void;
@@ -6897,19 +6899,45 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
-  const fillNoteTableCells = useCallback(
-    (blockId: string, cells: [number, number][], color: string | null) => {
-      if (!notePage || !cells.length) return;
+  /**
+   * 고른 자리에 색을 붓는다 — **칸·구간·행·열·표 전체**를 한 길로 받는다.
+   *
+   * 행·열·전체는 키 하나로 남는다(코어 `applyFill`) — 칸마다 풀어 적으면 나중에
+   * 열을 하나 더할 때 그 칸만 비어 남아, 행을 칠한 사람의 뜻과 어긋난다.
+   */
+  const setNoteTableFill = useCallback(
+    (blockId: string, target: TableFillTarget, color: string | null) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, fills: applyFill(b.fills, target, color) }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  const duplicateNoteTableRow = useCallback(
+    (blockId: string, at: number) => {
+      if (!notePage) return;
       commitBlock(
         notePage.id,
         blockId,
         (b) => {
-          const next = { ...(b.fills ?? {}) };
-          for (const [r, c] of cells) {
-            if (color) next[cellKey(r, c)] = color;
-            else delete next[cellKey(r, c)];
+          const rows = b.rows ?? [];
+          const row = rows[at];
+          if (!row) return b;
+          const copy = row.map((cell) => cell.map((run) => ({ ...run })));
+          // 색은 **자리를 밀고 나서** 복제한 행에 다시 칠한다 — 밀기만 하면 새 행이
+          // 원본의 색을 물려받지 못한다(복제는 "그대로 하나 더"라는 뜻이다).
+          const shifted = shiftFills(b.fills, 'row', 'insert', at + 1);
+          const next = { ...b, rows: [...rows.slice(0, at + 1), copy, ...rows.slice(at + 1)], fills: shifted };
+          const width = row.length;
+          let fills = next.fills;
+          if (fills?.[rowKey(at)]) fills = applyFill(fills, { kind: 'row', r: at + 1 }, fills[rowKey(at)]!);
+          else {
+            for (let c = 0; c < width; c += 1) {
+              const color = fillAt(b.fills, at, c);
+              if (color && b.fills?.[cellKey(at, c)]) fills = applyFill(fills, { kind: 'cell', r: at + 1, c }, color);
+            }
           }
-          return { ...b, fills: Object.keys(next).length ? next : undefined };
+          return { ...next, fills };
         },
         false,
       );
@@ -7574,7 +7602,8 @@ export function useEditorState(): EditorController {
     moveNoteTableCol,
     setNoteTableAlign,
     toggleNoteTableHead,
-    fillNoteTableCells,
+    setNoteTableFill,
+    duplicateNoteTableRow,
     setNoteCover,
     setNotePageTag,
     setNoteTagColor,
