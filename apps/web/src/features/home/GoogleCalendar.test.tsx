@@ -3308,11 +3308,19 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
       const { open } = await openWorkModal(container, user, day);
       const modal = await open();
-      // 다음 달 20일까지 → 31일을 넘는다.
+      // **두 달 뒤 20일까지** → 31일을 반드시 넘는다.
+      //
+      // 예전에는 한 달만 넘겨 그 달 20일을 골랐는데, 그러면 `day`가 달의 어디쯤인지에
+      // 따라 구간이 31일을 못 넘길 수 있다 — 달의 20일에 돌리면 `20일 → 다음 달 20일`이
+      // 30일이라 상한을 넘지 않아 **그 날짜에만 깨졌다**(2026-09-18 CI에서 실제로 났다).
+      // 두 달을 넘기면 시작이 달의 마지막 날이어도 최소 48일이라 날짜와 무관해진다.
       fireEvent.click(modal.querySelector('[data-work-to]')!);
-      fireEvent.click(document.querySelector('[data-radix-popper-content-wrapper] [aria-label="다음 달"]')!);
-      const nextMonth = `${new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 20).getFullYear()}-${String(new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 20).getMonth() + 1).padStart(2, '0')}-20`;
-      fireEvent.click(document.querySelector(`[data-datepop-day="${nextMonth}"]`)!);
+      const next = document.querySelector('[data-radix-popper-content-wrapper] [aria-label="다음 달"]')!;
+      fireEvent.click(next);
+      fireEvent.click(next);
+      const twoMonths = new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)) + 1, 20);
+      const target = `${twoMonths.getFullYear()}-${String(twoMonths.getMonth() + 1).padStart(2, '0')}-20`;
+      fireEvent.click(document.querySelector(`[data-datepop-day="${target}"]`)!);
       await waitFor(() => expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('31일까지'));
       expect(modal.querySelector<HTMLButtonElement>('[data-work-save]')?.disabled).toBe(true);
       fireEvent.click(modal.querySelector('[data-work-save]')!);
