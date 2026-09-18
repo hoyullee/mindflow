@@ -3177,14 +3177,13 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   const width = rows[0]?.length ?? 0;
   const [sel, setSel] = useState<TableSel | null>(null);
   const [menu, setMenu] = useState<{ sel: TableSel; at: { x: number; y: number } } | null>(null);
-  const [fillOpen, setFillOpen] = useState(false);
-  const [rail, setRail] = useState<'row' | 'col' | null>(null);
   /**
    * **마우스를 얹은 손잡이 하나**(제보) — 레일 전체가 아니다.
    *
    * 레일 단위로 물들였더니 열 하나에 마우스를 얹어도 모든 열이 강조색이 되어 "지금
-   * 어느 열을 겨냥했나"를 손잡이가 말해 주지 못했다. 레일 hover(`rail`)는 ＋를
-   * 드러내고 좌상단 코너를 숨기는 데만 쓰고, 색은 이 값이 정한다.
+   * 어느 열을 겨냥했나"를 손잡이가 말해 주지 못했다. ＋의 노출과 색은 **이 값 하나**가
+   * 정한다(레일 전체의 hover는 좌상단 코너를 숨기는 데만 쓰였고, 그 코너를 걷으면서
+   * 함께 사라졌다).
    */
   const [hot, setHot] = useState<{ axis: 'row' | 'col'; i: number } | null>(null);
   const [geom, setGeom] = useState<TableGeom | null>(null);
@@ -3245,7 +3244,6 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   const pick = useCallback((next: TableSel | null) => {
     pickedAt.current = Date.now();
     setSel(next);
-    setFillOpen(false);
   }, []);
 
   /* 표를 재서 레일을 맞춘다 — 행 높이·열 너비가 글에 따라 달라지기 때문이다. */
@@ -3292,8 +3290,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       if (rootRef.current?.contains(e.target as HTMLElement)) return;
       setSel(null);
       setEdit(null);
-      setFillOpen(false);
-    };
+      };
     document.addEventListener('click', onDoc);
     return () => document.removeEventListener('click', onDoc);
   }, [sel, edit]);
@@ -3339,7 +3336,6 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     wantCaret.current = { r, c, x: at?.x, y: at?.y, seed };
     setSel(null);
     setMenu(null);
-    setFillOpen(false);
     setEdit({ r, c });
   };
 
@@ -3413,7 +3409,6 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     controller.setNoteTableFill(block.id, target, color);
     // 칠하고 나면 선택을 놓는다(스펙 3-2) — 색을 보려면 면이 가리지 않아야 한다.
     setSel(null);
-    setFillOpen(false);
   };
 
   /* ── 키보드(스펙 6) ─────────────────────────────────────────────────────── */
@@ -3526,8 +3521,6 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     <div
       className="mf-note-trail"
       data-note-table-colrail
-      onMouseEnter={() => setRail('col')}
-      onMouseLeave={() => setRail(null)}
       // **클립 뷰포트**다 — `position`을 주지 않는 것이 중요하다(절대 배치의 원점은
       // 패딩 박스라, 여기가 positioned이면 손잡이가 패딩만큼 통째로 밀린다). 패딩과
       // 같은 크기의 음수 여백을 줘 ＋가 잘리지 않을 만큼만 클립 상자를 넓힌다.
@@ -3578,8 +3571,6 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     <div
       className="mf-note-trail"
       data-note-table-rowrail
-      onMouseEnter={() => setRail('row')}
-      onMouseLeave={() => setRail(null)}
       style={{ gridArea: '2 / 1', position: 'relative', width: 14, display: geom ? 'block' : 'flex', flexDirection: 'column', gap: 4 }}
     >
       {rows.map((_, ri) => {
@@ -3661,11 +3652,18 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
    * 레이아웃으로 넘어가는 순간 나머지 열도 값이 있어야 손대지 않은 열이 제멋대로
    * 줄어들지 않는다. 최소값을 둬(열 56 · 행 28) 잡을 수 없게 작아지는 것을 막는다.
    */
-  const grip = (axis: 'col' | 'row', i: number, place: CSSProperties) => (
+  /**
+   * @param end 마지막 행·열의 그립인가 — 그때는 잡는 자리를 **안쪽으로 6px** 당겨 두어
+   *   (넘치면 모든 표에 유령 스크롤바가 생긴다) 보이는 선이 경계선보다 3px 앞에 섰다
+   *   (제보: 선이 줄에 맞지 않고 틀어져 있다). 표식을 실어 보내면 CSS가 그 선만
+   *   오른쪽·아래 끝으로 되돌린다.
+   */
+  const grip = (axis: 'col' | 'row', i: number, place: CSSProperties, end = false) => (
     <div
       key={`${axis}-${i}`}
       className="mf-note-tgrip"
       data-note-table-grip={`${axis}:${i}`}
+      data-note-table-grip-end={end ? axis : undefined}
       role="separator"
       aria-label={axis === 'col' ? `${i + 1}번째 열 너비 조절` : `${i + 1}번째 행 높이 조절`}
       title={axis === 'col' ? '끌어서 열 너비 조절' : '끌어서 행 높이 조절'}
@@ -3715,7 +3713,12 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     };
   }, [live, block.id, controller]);
 
-  const chipLabel = sel ? selLabel(sel, rows.length, width) : null;
+  /**
+   * 고른 것을 말하던 **떠 있는 칩**은 걷었다(제보: "칸 선택 · 1칸 · 색 채우기" 툴팁 제거).
+   * 표 위에 늘 떠 있어 바로 윗줄을 가리는 데다, 거기 있던 일은 전부 **우클릭 메뉴**에
+   * 그대로 있다(색 채우기 › · 행 › 삭제 · 열 › 삭제 · 선택 ›). 고른 것이 무엇인지는
+   * 칸에 칠해지는 면과 링이 이미 말해 준다.
+   */
 
   return (
     <div
@@ -3730,81 +3733,32 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       onKeyDown={onKeyDown}
       style={{ ...blockFlow(block), position: 'relative' }}
     >
-      {/* 고른 것을 말하는 칩 — 표 오른쪽 위(스펙 3-3). */}
-      {sel && chipLabel && !readOnly && (
-        <div
-          data-note-table-chip
-          onPointerDown={(e) => e.stopPropagation()}
-          style={{ position: 'absolute', top: -30, right: 0, zIndex: 5, display: 'inline-flex', alignItems: 'center', gap: 7, height: 28, padding: '0 6px 0 10px', borderRadius: 999, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', boxShadow: '0 6px 18px rgba(58,53,47,.1)' }}
-        >
-          <span data-note-table-name style={{ fontSize: 11, fontWeight: 700, color: 'var(--mf-subtext)', whiteSpace: 'nowrap' }}>{chipLabel.name}</span>
-          <span data-note-table-count style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{chipLabel.count}</span>
-          <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <button
-              type="button"
-              data-note-table-fill
-              className="btn"
-              onClick={() => setFillOpen((v) => !v)}
-              style={{ height: 20, padding: '0 8px', borderRadius: 999, border: 0, background: fillOpen ? 'var(--mf-accent)' : 'var(--mf-accent-soft)', color: fillOpen ? 'var(--mf-accent-ink)' : 'var(--mf-accent-deep)', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
-            >
-              색 채우기
-            </button>
-            {fillOpen && <FillSwatches onPick={(color) => fill(fillTargetOf(sel), color)} style={{ top: 26, right: 0 }} />}
-          </span>
-          {/* 고른 행·열을 **그 자리에서** 지운다(요청) — 메뉴를 두 번 열지 않는다.
-              마지막 한 줄은 지우지 못한다(0행 0열짜리 표는 되돌릴 손잡이가 없다). */}
-          {(sel.mode === 'row' || sel.mode === 'col') && (
-            <button
-              type="button"
-              data-note-table-drop
-              className="btn mf-note-tb"
-              title={sel.mode === 'row' ? '이 행 삭제' : '이 열 삭제'}
-              aria-label={sel.mode === 'row' ? '이 행 삭제' : '이 열 삭제'}
-              disabled={sel.mode === 'row' ? rows.length <= 1 : width <= 1}
-              onClick={() => {
-                if (sel.mode === 'row') controller.removeNoteTableRow(block.id, sel.r);
-                else controller.removeNoteTableCol(block.id, sel.c);
-                setSel(null);
-                setFillOpen(false);
-              }}
-              style={{ width: 20, height: 20, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-danger)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-              </svg>
-            </button>
-          )}
-          <button
-            type="button"
-            data-note-table-unpick
-            className="btn mf-note-tb"
-            title="선택 놓기"
-            aria-label="선택 놓기"
-            onClick={() => setSel(null)}
-            style={{ width: 20, height: 20, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '18px minmax(0,1fr) 18px', gridTemplateRows: '14px auto 18px', columnGap: 4, rowGap: 4 }}>
-        {/* 좌상단 — 표 전체. 레일에 마우스가 있으면 숨는다(첫 ＋와 겹친다). */}
-        {!readOnly && (
-          <button
-            type="button"
-            className="mf-note-trail mf-note-tcorner"
-            data-note-table-corner
-            aria-label="표 전체 선택"
-            title="표 전체 선택 · 우클릭하면 메뉴"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => handleClick(e, { mode: 'all' }, sel?.mode === 'all')}
-            onContextMenu={(e) => handleContext(e, { mode: 'all' })}
-            style={{ gridArea: '1 / 1', alignSelf: 'end', justifySelf: 'end', width: 9, height: 9, padding: 0, border: 0, borderRadius: 3, cursor: 'pointer', background: sel?.mode === 'all' ? 'var(--mf-accent)' : 'var(--mf-th)', ...(rail ? { opacity: 0, pointerEvents: 'none' } : {}) }}
-          />
-        )}
+      <div
+        style={{
+          display: 'grid',
+          // 끝의 ＋ 띠는 **24px**이다(제보: 너무 좁다 — 18px은 아이콘 11px에 여백이
+          // 3px씩이라 겨냥하기 어려웠다).
+          gridTemplateColumns: '18px minmax(0,1fr) 24px',
+          gridTemplateRows: '14px auto 24px',
+          columnGap: 4,
+          rowGap: 4,
+          /**
+           * 너비를 손으로 정한 표는 **그 합만큼만** 자리를 차지한다(제보: 열을 지워도
+           * 표 넓이가 줄지 않고 오른쪽이 빈칸으로 남는다).
+           *
+           * 표 자신은 `colW`의 합으로 줄어드는데 담는 상자가 `1fr`이라 늘 가로를 다
+           * 썼고, 그 차이가 상자 안의 흰 여백으로 보였다. 가운데 트랙을 내용 크기로
+           * 두고 전체를 `fit-content`로 재면 상자·레일·끝의 ＋가 함께 따라온다.
+           * 표가 화면보다 넓으면 `maxWidth: 100%`가 잡아 상자가 가로로 스크롤된다.
+           *
+           * 크기를 손대지 않은 표(`colW` 없음)는 예전처럼 가로를 다 쓴다 — 그때 표는
+           * `width: 100%`라 내용 크기로 재면 서로를 참조해 폭이 제멋대로 접힌다.
+           */
+          ...(colW ? { gridTemplateColumns: '18px minmax(0,auto) 24px', width: 'fit-content', maxWidth: '100%' } : {}),
+        }}
+      >
+        {/* 좌상단의 **표 전체 선택 점**은 걷었다(요청) — 9×9짜리라 조준하기 어려웠고,
+            레일에 마우스를 얹으면 어차피 숨었다. 표 전체는 우클릭 메뉴의 `선택 › 표 전체`로. */}
         {colRail}
         {rowRail}
         {endPlus('오른쪽 끝에 열 추가', () => controller.addNoteTableCol(block.id), 'col')}
@@ -3861,8 +3815,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
               보고 끝의 하나를 빼서 맨 아래 행을 끌 수 없었다. 끝의 그립만 안쪽으로
               당기는 이유: 상자가 `overflow-x: auto`라 세로도 `auto`로 계산되어, 3px라도
               넘치면 그립이 잘리고 **모든 표에 유령 스크롤바**가 생긴다. */}
-          {!readOnly && geom && geom.cols.map((c, ci) => grip('col', ci, { left: c.l + c.w - (ci === geom.cols.length - 1 ? 6 : 3), top: 0, width: 6, bottom: 0, cursor: 'col-resize' }))}
-          {!readOnly && geom && geom.rows.map((r, ri) => grip('row', ri, { top: r.t + r.h - (ri === geom.rows.length - 1 ? 6 : 3), left: 0, height: 6, right: 0, cursor: 'row-resize' }))}
+          {!readOnly && geom && geom.cols.map((c, ci) => grip('col', ci, { left: c.l + c.w - (ci === geom.cols.length - 1 ? 6 : 3), top: 0, width: 6, bottom: 0, cursor: 'col-resize' }, ci === geom.cols.length - 1))}
+          {!readOnly && geom && geom.rows.map((r, ri) => grip('row', ri, { top: r.t + r.h - (ri === geom.rows.length - 1 ? 6 : 3), left: 0, height: 6, right: 0, cursor: 'row-resize' }, ri === geom.rows.length - 1))}
           <table
             ref={tableRef}
             style={{
@@ -3911,9 +3865,19 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           .filter(Boolean)
                           .join(', ')
                       : undefined;
-                    const corner = (a: boolean, b: boolean, c: boolean, d: boolean) => `${a ? 12 : 0}px ${b ? 12 : 0}px ${c ? 12 : 0}px ${d ? 12 : 0}px`;
                     const first = ci === 0;
                     const last = ci === row.length - 1;
+                    const top = ri === 0;
+                    const bottom = ri === rows.length - 1;
+                    /**
+                     * 모서리 반지름은 **네 귀퉁이를 따로** 센다(제보: 행이 하나면 테두리가 깨진다).
+                     *
+                     * 예전에는 `첫 행·첫 열이면 … 아니면 첫 행·끝 열이면 …`처럼 **먼저 맞는
+                     * 가지 하나**만 골랐다. 행이 하나뿐인 표에서는 그 칸이 첫 행이면서 끝 행이라
+                     * 위쪽 귀퉁이만 둥글어지고 아래쪽은 각져, 상자의 12px 곡선 밖으로 칸이
+                     * 삐져나와 테두리가 잘려 보였다(열이 하나일 때도 같다).
+                     */
+                    const radius = `${top && first ? 12 : 0}px ${top && last ? 12 : 0}px ${bottom && last ? 12 : 0}px ${bottom && first ? 12 : 0}px`;
                     return (
                       <td
                         key={ci}
@@ -3963,7 +3927,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           verticalAlign: 'top',
                           // 모서리 칸에는 상자와 같은 12px를 따로 준다 — 없으면 선택
                           // 링이 곡선을 따라가지 못하고 모서리에서 잘린다.
-                          borderRadius: ri === 0 && first ? corner(true, false, false, false) : ri === 0 && last ? corner(false, true, false, false) : ri === rows.length - 1 && first ? corner(false, false, false, true) : ri === rows.length - 1 && last ? corner(false, false, true, false) : undefined,
+                          borderRadius: radius,
                           boxShadow: ring,
                           // 선택 하이라이트가 채움색보다 앞선다(스펙 3-4).
                           background: on ? 'var(--mf-tsel-bg)' : paint,
@@ -4041,37 +4005,6 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
 }
 
 /** 색 팔레트 여섯 + 지우기 — 칩과 메뉴가 같은 것을 쓴다. */
-function FillSwatches({ onPick, style }: { onPick: (color: string | null) => void; style?: CSSProperties }) {
-  return (
-    <span data-note-table-fills style={{ ...POP, display: 'flex', alignItems: 'center', gap: 5, padding: 7, ...style }}>
-      {CELL_FILLS.map(([hex, name]) => (
-        <button
-          key={hex}
-          type="button"
-          data-note-table-fill-color={hex}
-          title={name}
-          aria-label={name}
-          className="btn"
-          onClick={() => onPick(hex)}
-          style={{ width: 18, height: 18, flex: '0 0 auto', borderRadius: 6, border: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.07)', background: hex, cursor: 'pointer', padding: 0 }}
-        />
-      ))}
-      <button
-        type="button"
-        data-note-table-fill-clear
-        title="색 지우기"
-        aria-label="색 지우기"
-        className="btn"
-        onClick={() => onPick(null)}
-        style={{ width: 18, height: 18, flex: '0 0 auto', borderRadius: 6, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.07)', border: 0, background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 10, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-      >
-        ✕
-      </button>
-    </span>
-  );
-}
-
-
 /** 표를 CSV 한 덩이로 — 쉼표·따옴표·줄바꿈이 든 칸은 따옴표로 감싸고 `"`를 두 번 쓴다. */
 function tableCsv(rows: RichRun[][][]): string {
   return rows
