@@ -706,14 +706,14 @@ function anchoredStyle(rect: DOMRect | null, width: number, opts: { align?: 'lef
 /**
  * `/` 목록의 **앵커** — 스펙 §2의 네 값.
  *
- * `DOMRect`를 그대로 들고 다니지 않는 이유: 칩과 패널을 각각 `fixed`로 놓으면 화면
+ * `DOMRect`를 그대로 들고 다니지 않는 이유: 앵커와 패널을 각각 `fixed`로 놓으면 화면
  * 밖으로 나가지 않게 당기는 계산(clamp)이 **따로 돌아** 둘이 서로 떨어진다(스펙 §3).
- * 그래서 자리는 여기서 한 번만 정하고, 패널은 칩의 `absolute` 자식으로 붙인다.
+ * 그래서 자리는 여기서 한 번만 정하고, 패널은 앵커의 `absolute` 자식으로 붙인다.
  */
 interface SlashAnchor {
-  /** 칩의 화면 X — 블록 왼쪽, 뷰포트 안으로 당긴다. */
+  /** 앵커의 화면 X — 블록 왼쪽, 뷰포트 안으로 당긴다. */
   gx: number;
-  /** 칩의 화면 Y — 블록의 아랫선. */
+  /** 앵커의 화면 Y — 블록의 아랫선. */
   gy: number;
   /** 패널을 위로 띄울지 — 아래 여백이 모자랄 때만. */
   up: boolean;
@@ -4941,41 +4941,14 @@ function SlashMenu({
           left: anchor ? anchor.gx : -9999,
           top: anchor ? anchor.gy : -9999,
           zIndex: 40,
+          // 블록 아랫선에서 20px 내려온 자리에 패널이 매달린다. 예전에는 그 20px에
+          // **검색어 칩**이 있었는데, 친 글자가 본문에 그대로 있는데 바로 그 아래에
+          // 한 번 더 보여서 걷었다(제보) — 자리를 잡는 구실만 남았다.
           height: inline ? 20 : 0,
-          // 칩은 장식일 뿐이다 — 본문의 그 자리를 덮어 클릭을 먹지 않게(스펙 §7).
+          // 본문의 그 자리를 덮어 클릭을 먹지 않게 — 자리를 잡을 뿐 아무것도 받지 않는다.
           pointerEvents: 'none',
         }}
       >
-        {inline && (
-          <span
-            data-note-slash-chip
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 2,
-              height: 20,
-              maxWidth: SLASH_W,
-              padding: '0 7px',
-              borderRadius: 999,
-              background: 'var(--mf-accent-soft)',
-              border: '1px solid var(--mf-border-hover)',
-              boxSizing: 'border-box',
-              fontSize: 11.5,
-              lineHeight: 1,
-              color: 'var(--mf-accent-deep)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-            }}
-          >
-            <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontWeight: 800, color: 'var(--mf-accent)' }}>
-              /
-            </span>
-            <span data-note-slash-q style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {query}
-            </span>
-            <span aria-hidden="true" className="mf-note-slash-caret" />
-          </span>
-        )}
         <div
           data-note-slash-panel
           style={{
@@ -4995,8 +4968,9 @@ function SlashMenu({
             pointerEvents: 'auto',
           }}
         >
-          {/* 머리 — 이름과, 검색어가 **비어 있을 때만** 안내 한 줄. 검색어는 칩에 이미
-              있으므로 여기 다시 적지 않는다(스펙 §7 — 같은 글자가 두 번 보인다). */}
+          {/* 머리 — 이름과, 검색어가 **비어 있을 때만** 안내 한 줄. **검색어는 어디에도
+              다시 그리지 않는다**(스펙 §7 + 제보): 친 글자는 본문에 그대로 있으므로
+              머리에 적든 칩에 적든 같은 글자가 두 번 보인다. */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
             <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>블록 넣기</span>
             {!query && (
