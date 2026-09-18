@@ -106,7 +106,12 @@ export {
   noteCoverSketch,
   noteTagColor,
   cellKey,
+  rowKey,
+  colKey,
+  fillAt,
+  applyFill,
   shiftFills,
+  ALL_FILL_KEY,
   noteHighlightColor,
   NOTE_COVER_FALLBACK,
   NOTE_TAG_COLORS,
@@ -114,7 +119,7 @@ export {
   NOTE_COVERS,
   NOTE_HIGHLIGHTS,
 } from './note';
-export type { NoteBlockShape } from './note';
+export type { NoteBlockShape, TableFillTarget } from './note';
 
 /** 공책 내보내기 — 페이지의 블록을 마크다운·글자·중간 표현으로(순수 함수). */
 export { noteMarkdown, notePlainText, noteLines, notePagesFor } from './noteExport';

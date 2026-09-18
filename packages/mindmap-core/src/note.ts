@@ -365,9 +365,115 @@ export const NOTE_HIGHLIGHTS: readonly (readonly [string, string])[] = [
 
 /* ── 표의 칸 채움색 ──────────────────────────────────────────────────────── */
 
-/** 칸 하나의 키 — 성긴 표(`NoteBlock.fills`)가 쓰는 `"행:열"`. */
+/**
+ * **칠한 자리**를 가리키는 값 — 칸 하나 · 네모 구간 · 행 · 열 · 표 전체.
+ *
+ * 성긴 표(`NoteBlock.fills`)에 키로 적힌다. 행·열·전체를 **한 키로** 두는 이유는
+ * 그 색이 "이 행의 색"이라는 뜻을 잃지 않기 때문이다 — 칸마다 풀어 적으면 나중에
+ * 열을 하나 더할 때 새 칸만 비어 남는다(행을 칠한 사람의 뜻은 그게 아니다).
+ *
+ * 좌표는 **화면에 보이는 그대로의 행 번호**다(머리 행이 0). 스펙 문서는 머리를
+ * `-1`로 두지만, 그쪽은 머리글이 `cols[].title`에 따로 있어 본문 행만 0부터
+ * 세는 모델이다. 우리 모델은 머리도 `rows[0]`이라 음수 자리가 없다 — 규칙은
+ * 하나뿐이어야 하므로 이 모델의 좌표계를 따른다.
+ */
+export type TableFillTarget =
+  | { kind: 'cell'; r: number; c: number }
+  | { kind: 'range'; r0: number; c0: number; r1: number; c1: number }
+  | { kind: 'row'; r: number }
+  | { kind: 'col'; c: number }
+  | { kind: 'all' };
+
+/** 칸 하나의 키 — `c{행}:{열}`. */
 export function cellKey(r: number, c: number): string {
-  return `${r}:${c}`;
+  return `c${r}:${c}`;
+}
+/** 행 전체의 키 — `r{행}`. */
+export function rowKey(r: number): string {
+  return `r${r}`;
+}
+/** 열 전체의 키 — `k{열}`(`c`는 칸이 이미 쓰고 있다). */
+export function colKey(c: number): string {
+  return `k${c}`;
+}
+/** 표 전체의 키. */
+export const ALL_FILL_KEY = 'all';
+
+/** 키 하나를 좌표로 — 옛 저장본의 `"행:열"`(접두사 없음)도 칸으로 읽는다. */
+function readFillKey(key: string): { kind: 'cell'; r: number; c: number } | { kind: 'row'; r: number } | { kind: 'col'; c: number } | { kind: 'all' } | null {
+  if (key === ALL_FILL_KEY) return { kind: 'all' };
+  if (key.startsWith('r')) {
+    const r = Number(key.slice(1));
+    return Number.isFinite(r) ? { kind: 'row', r } : null;
+  }
+  if (key.startsWith('k')) {
+    const c = Number(key.slice(1));
+    return Number.isFinite(c) ? { kind: 'col', c } : null;
+  }
+  const body = key.startsWith('c') ? key.slice(1) : key;
+  const [rs, cs] = body.split(':');
+  const r = Number(rs);
+  const c = Number(cs);
+  return Number.isFinite(r) && Number.isFinite(c) ? { kind: 'cell', r, c } : null;
+}
+
+/**
+ * 이 칸이 실제로 어떤 색인가 — **칸 > 행 > 열 > 전체** 순으로 먼저 찾은 것을 쓴다.
+ *
+ * 그 순서인 까닭은 좁게 말한 것이 넓게 말한 것을 이긴다는 것뿐이다: 표 전체를
+ * 칠해 두고 한 칸만 다른 색으로 바꾸는 것이 사람이 하는 일의 순서다.
+ */
+export function fillAt(fills: Record<string, string> | undefined, r: number, c: number): string | undefined {
+  if (!fills) return undefined;
+  return fills[cellKey(r, c)] ?? fills[`${r}:${c}`] ?? fills[rowKey(r)] ?? fills[colKey(c)] ?? fills[ALL_FILL_KEY];
+}
+
+/**
+ * 고른 자리에 색을 붓는다(`null`이면 지운다).
+ *
+ * 행·열·전체를 칠할 때는 **그 아래의 좁은 키들을 걷어 낸다** — 남겨 두면 방금 칠한
+ * 색이 옛 칸 색에 가려 "칠했는데 안 변하는" 자리가 생긴다(우선순위가 칸부터라서다).
+ */
+export function applyFill(fills: Record<string, string> | undefined, target: TableFillTarget, color: string | null): Record<string, string> | undefined {
+  const next: Record<string, string> = {};
+  // 옛 형식(`"행:열"`)은 이 기회에 새 키로 옮겨 적는다 — 읽는 쪽이 둘을 다 알지만
+  // 쓰는 쪽은 하나만 쓴다(형식이 둘로 남으면 다음 사람이 반드시 한쪽을 잊는다).
+  for (const [key, value] of Object.entries(fills ?? {})) {
+    const at = readFillKey(key);
+    if (!at) continue;
+    next[at.kind === 'cell' ? cellKey(at.r, at.c) : at.kind === 'row' ? rowKey(at.r) : at.kind === 'col' ? colKey(at.c) : ALL_FILL_KEY] = value;
+  }
+  const put = (key: string) => {
+    if (color) next[key] = color;
+    else delete next[key];
+  };
+  const clearCells = (hit: (r: number, c: number) => boolean) => {
+    for (const key of Object.keys(next)) {
+      const at = readFillKey(key);
+      if (at?.kind === 'cell' && hit(at.r, at.c)) delete next[key];
+    }
+  };
+  if (target.kind === 'cell') {
+    put(cellKey(target.r, target.c));
+  } else if (target.kind === 'range') {
+    const [r0, r1] = [Math.min(target.r0, target.r1), Math.max(target.r0, target.r1)];
+    const [c0, c1] = [Math.min(target.c0, target.c1), Math.max(target.c0, target.c1)];
+    for (let r = r0; r <= r1; r += 1) for (let c = c0; c <= c1; c += 1) put(cellKey(r, c));
+  } else if (target.kind === 'row') {
+    clearCells((r) => r === target.r);
+    put(rowKey(target.r));
+  } else if (target.kind === 'col') {
+    clearCells((_, c) => c === target.c);
+    for (const key of Object.keys(next)) {
+      const at = readFillKey(key);
+      if (at?.kind === 'row') delete next[key];
+    }
+    put(colKey(target.c));
+  } else {
+    for (const key of Object.keys(next)) if (key !== ALL_FILL_KEY) delete next[key];
+    put(ALL_FILL_KEY);
+  }
+  return Object.keys(next).length ? next : undefined;
 }
 
 /**
@@ -375,6 +481,7 @@ export function cellKey(r: number, c: number): string {
  *
  * 이 함수가 없으면 3번 행을 지웠을 때 그 아래 칸들의 색이 한 줄씩 어긋난 채 남는다
  * (성긴 표를 쓰기로 한 값이다). `axis`는 어느 쪽을 건드렸는지, `op`는 무엇을 했는지.
+ * `all` 키는 좌표가 없으므로 무엇을 해도 그대로 남는다.
  */
 export function shiftFills(
   fills: Record<string, string> | undefined,
@@ -384,24 +491,42 @@ export function shiftFills(
   to = at,
 ): Record<string, string> | undefined {
   if (!fills || !Object.keys(fills).length) return fills;
+  /** 한 좌표를 옮긴다 — 지워진 줄 위에 있었으면 `null`(그 색도 함께 사라진다). */
+  const shift = (i: number): number | null => {
+    if (op === 'insert') return i >= at ? i + 1 : i;
+    if (op === 'remove') return i === at ? null : i > at ? i - 1 : i;
+    // 옮기기 — 두 줄만 자리를 바꾼 것으로 본다(한 칸씩 움직이는 조작이다).
+    return i === at ? to : i === to ? at : i;
+  };
   const out: Record<string, string> = {};
   for (const [key, color] of Object.entries(fills)) {
-    const [rs, cs] = key.split(':');
-    const r = Number(rs);
-    const c = Number(cs);
-    if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
-    let i = axis === 'row' ? r : c;
-    if (op === 'insert') {
-      if (i >= at) i += 1;
-    } else if (op === 'remove') {
-      if (i === at) continue; // 지운 줄의 색은 함께 사라진다
-      if (i > at) i -= 1;
-    } else {
-      // 옮기기 — 두 줄만 자리를 바꾼 것으로 본다(한 칸씩 움직이는 조작이다).
-      if (i === at) i = to;
-      else if (i === to) i = at;
+    const spot = readFillKey(key);
+    if (!spot) continue;
+    if (spot.kind === 'all') {
+      out[ALL_FILL_KEY] = color;
+      continue;
     }
-    out[axis === 'row' ? cellKey(i, c) : cellKey(r, i)] = color;
+    if (spot.kind === 'row') {
+      if (axis === 'col') {
+        out[rowKey(spot.r)] = color;
+        continue;
+      }
+      const r = shift(spot.r);
+      if (r !== null) out[rowKey(r)] = color;
+      continue;
+    }
+    if (spot.kind === 'col') {
+      if (axis === 'row') {
+        out[colKey(spot.c)] = color;
+        continue;
+      }
+      const c = shift(spot.c);
+      if (c !== null) out[colKey(c)] = color;
+      continue;
+    }
+    const moved = shift(axis === 'row' ? spot.r : spot.c);
+    if (moved === null) continue;
+    out[axis === 'row' ? cellKey(moved, spot.c) : cellKey(spot.r, moved)] = color;
   }
   return Object.keys(out).length ? out : undefined;
 }

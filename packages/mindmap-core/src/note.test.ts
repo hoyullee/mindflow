@@ -5,8 +5,11 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  applyFill,
   blockText,
   emptyBlock,
+  fillAt,
+  shiftFills,
   moveBlock,
   movePage,
   newPage,
@@ -301,5 +304,48 @@ describe('형광펜', () => {
     expect(noteHighlightColor('yellow')).toBe('#FBEFC0');
     expect(noteHighlightColor('무지개')).toBe(null);
     expect(noteHighlightColor(null)).toBe(null);
+  });
+});
+
+describe('표의 채움색 — 키 넷과 우선순위', () => {
+  it('좁게 말한 것이 이긴다 — 칸 > 행 > 열 > 전체', () => {
+    const fills = { all: '#ALL', k1: '#COL', r2: '#ROW', 'c2:1': '#CELL' };
+    expect(fillAt(fills, 2, 1)).toBe('#CELL');
+    expect(fillAt(fills, 2, 0)).toBe('#ROW');
+    expect(fillAt(fills, 0, 1)).toBe('#COL');
+    expect(fillAt(fills, 0, 0)).toBe('#ALL');
+    expect(fillAt(undefined, 0, 0)).toBeUndefined();
+  });
+
+  it('옛 저장본의 접두사 없는 `"행:열"`도 칸으로 읽는다', () => {
+    expect(fillAt({ '1:0': '#OLD' }, 1, 0)).toBe('#OLD');
+    // 다음에 칠할 때 새 형식으로 옮겨 적는다 — 형식이 둘로 남지 않는다.
+    expect(applyFill({ '1:0': '#OLD' }, { kind: 'cell', r: 0, c: 0 }, '#NEW')).toEqual({ 'c1:0': '#OLD', 'c0:0': '#NEW' });
+  });
+
+  it('행·열·전체는 **키 하나**로 남고, 그 아래의 좁은 키를 걷어 낸다', () => {
+    expect(applyFill({ 'c1:0': '#a', 'c1:1': '#a' }, { kind: 'row', r: 1 }, '#b')).toEqual({ r1: '#b' });
+    expect(applyFill({ 'c0:2': '#a', r0: '#c' }, { kind: 'col', c: 2 }, '#b')).toEqual({ k2: '#b' });
+    expect(applyFill({ r0: '#a', k1: '#b', 'c2:2': '#c' }, { kind: 'all' }, '#d')).toEqual({ all: '#d' });
+  });
+
+  it('구간은 칸마다 적는다 — 뒤집힌 좌표도 같은 결과', () => {
+    const a = applyFill(undefined, { kind: 'range', r0: 0, c0: 0, r1: 1, c1: 1 }, '#x');
+    const b = applyFill(undefined, { kind: 'range', r0: 1, c0: 1, r1: 0, c1: 0 }, '#x');
+    expect(a).toEqual({ 'c0:0': '#x', 'c0:1': '#x', 'c1:0': '#x', 'c1:1': '#x' });
+    expect(b).toEqual(a);
+  });
+
+  it('색을 지우면 그 키만 빠지고, 다 비면 칸 자체가 사라진다', () => {
+    expect(applyFill({ 'c0:0': '#a', r1: '#b' }, { kind: 'cell', r: 0, c: 0 }, null)).toEqual({ r1: '#b' });
+    expect(applyFill({ r1: '#b' }, { kind: 'row', r: 1 }, null)).toBeUndefined();
+  });
+
+  it('행·열을 넣고 빼고 옮기면 좌표가 따라 움직인다 — `all`은 그대로', () => {
+    expect(shiftFills({ 'c1:0': '#a', r2: '#b', k0: '#c', all: '#d' }, 'row', 'insert', 1)).toEqual({ 'c2:0': '#a', r3: '#b', k0: '#c', all: '#d' });
+    expect(shiftFills({ r1: '#a', r2: '#b' }, 'row', 'remove', 1)).toEqual({ r1: '#b' });
+    expect(shiftFills({ k0: '#a', k1: '#b' }, 'col', 'move', 0, 1)).toEqual({ k1: '#a', k0: '#b' });
+    // 다른 축을 건드리면 그 키는 가만히 있다 — 열을 넣어도 `행 전체`는 같은 행이다.
+    expect(shiftFills({ r1: '#a' }, 'col', 'insert', 0)).toEqual({ r1: '#a' });
   });
 });

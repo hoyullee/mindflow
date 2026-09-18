@@ -480,14 +480,11 @@ input[type='search']::-webkit-search-results-decoration {
 }
 
 /* 공책 — **읽는 줄에 조작을 얹지 않는다**(디자인 원본). 페이지 머리의 복제·삭제,
-   표의 행·열 추가, 링크 카드의 바꾸기는 평소 보이지 않다가 그 자리에 마우스를
-   얹으면 나타난다. 터치 기기에는 hover가 없으므로 언제나 보인다(아래 미디어 질의). */
+   표의 레일, 링크 카드의 바꾸기는 평소 보이지 않다가 그 자리에 마우스를 얹으면
+   나타난다. 터치 기기에는 hover가 없으므로 언제나 보인다(아래 미디어 질의). */
 .mf-note-pageact,
 .mf-note-tableact,
-.mf-note-thandle-row,
-.mf-note-thandle-col,
-.mf-note-tband,
-.mf-note-tplus,
+.mf-note-trail,
 .mf-note-linkact {
   opacity: 0;
   transition: opacity 0.14s ease;
@@ -496,59 +493,57 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-head:focus-within .mf-note-pageact,
 .mf-note-table:hover .mf-note-tableact,
 .mf-note-table:focus-within .mf-note-tableact,
-.mf-note-table:hover .mf-note-thandle-row,
-.mf-note-table:focus-within .mf-note-thandle-row,
-.mf-note-table:hover .mf-note-thandle-col,
-.mf-note-table:focus-within .mf-note-thandle-col,
-.mf-note-table:hover .mf-note-tband,
-.mf-note-table:focus-within .mf-note-tband,
-.mf-note-table:hover .mf-note-tplus,
-.mf-note-table:focus-within .mf-note-tplus,
+.mf-note-table:hover .mf-note-trail,
+.mf-note-table:focus-within .mf-note-trail,
+/* 메뉴가 열려 있는 동안에는 마우스가 떠나도 레일이 남는다 — 무엇을 겨냥한
+   메뉴인지 보이지 않으면 고를 수 없다. */
+.mf-note-table[data-menu='1'] .mf-note-trail,
 .mf-note-link:hover .mf-note-linkact,
 .mf-note-link:focus-within .mf-note-linkact {
   opacity: 1;
 }
-/* 고른 행·열의 손잡이는 마우스를 떼도 남는다 — 무엇을 고쳤는지 표시가 사라지면
-   방금 연 메뉴가 어느 줄의 것인지 알 수 없다. */
-.mf-note-table [data-note-table-rowhandle]:focus-visible,
-.mf-note-table [data-note-table-colhandle]:focus-visible {
-  opacity: 1;
+/* 손잡이 알약 — 레일에 마우스를 얹으면 한 톤 진해진다(색은 인라인이 정한다:
+   고른 줄은 강조색이라 상태가 셋이다). 히트 영역은 알약보다 넓다(스펙 3-1). */
+.mf-note-thandle > span {
+  transition: background 0.12s ease;
 }
-/* 띠 **사이**의 `+` — 폭이 0인 자리 표시자이고, 동그란 단추는 그 자리에서 바깥으로
-   그려진다(그래야 띠의 크기를 밀어내지 않는다 — 시안 3번의 사이 `+`). */
-.mf-note-tplus > svg {
-  position: absolute;
-  top: -8px;
-  left: -8px;
+/* ＋는 **그 레일에 마우스가 올라갔을 때만** 보인다 — 표 전체 hover만으로 뜨면
+   손잡이보다 ＋가 먼저 눈에 들어와 "고르는 자리"가 "더하는 자리"로 읽힌다. */
+.mf-note-tplus {
+  opacity: 0;
+  pointer-events: none;
+  color: var(--mf-faint);
+  background: var(--mf-card) !important;
+  border: 1px solid var(--mf-border-soft) !important;
   box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  padding: 2px;
-  border-radius: 999px;
-  background: var(--mf-card);
-  border: 1px solid var(--mf-border);
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.mf-note-trail:hover .mf-note-tplus {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mf-note-tplus:hover {
   color: var(--mf-accent);
-}
-.mf-note-tplus:hover > svg {
-  background: var(--mf-accent);
-  border-color: var(--mf-accent);
-  color: var(--mf-accent-ink);
-}
-/* 끝에 더하는 점선 띠 — 얹으면 강조색으로 물든다. */
-.mf-note-tband:hover {
   border-color: var(--mf-accent-mute) !important;
-  background: var(--mf-accent-soft) !important;
-  color: var(--mf-accent) !important;
+}
+/* 표 안의 글자 선택 — 본문과 같은 결이되 칸 위에서 더 또렷하다(스펙 5). */
+.mf-note-table ::selection {
+  background: var(--mf-tsel-text);
+  color: var(--mf-text);
 }
 @media (hover: none) {
   .mf-note-pageact,
-  .mf-note-tableact,
-  .mf-note-thandle-row,
-  .mf-note-thandle-col,
-  .mf-note-tband,
+  .mf-note-trail,
   .mf-note-tplus,
+  .mf-note-tableact,
   .mf-note-linkact {
     opacity: 1;
+  }
+  .mf-note-tplus {
+    pointer-events: auto;
   }
 }
 /* 페이지 제목 — 눌러서 고칠 수 있다는 것을 밑줄이 나타나며 알린다(디자인 원본). */
