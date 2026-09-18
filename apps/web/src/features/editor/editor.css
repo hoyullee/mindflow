@@ -525,6 +525,13 @@ input[type='search']::-webkit-search-results-decoration {
   opacity: 1;
   pointer-events: auto;
 }
+/* 끝에 붙이는 ＋ 둘(오른쪽·아래)은 **표**에 마우스를 얹으면 보인다 — 레일을 지나야
+   닿는 자리가 아니고, "마지막에 하나 더"는 가장 흔한 동작이다(제보). */
+.mf-note-table:hover .mf-note-tplus-end,
+.mf-note-table[data-menu='1'] .mf-note-tplus-end {
+  opacity: 1;
+  pointer-events: auto;
+}
 .mf-note-tplus:hover {
   color: var(--mf-accent);
   border-color: var(--mf-accent-mute) !important;
