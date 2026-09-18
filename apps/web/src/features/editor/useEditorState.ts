@@ -1762,12 +1762,23 @@ export function useEditorState(): EditorController {
     historyRef.current = new HistoryStack<Snapshot>({ now: () => Date.now() });
   }
   const historyInitRef = useRef(false);
+  /**
+   * 되돌리기의 **바닥 스냅샷**은 불러온 문서여야 한다(제보: 공책이 통째로 빈 화면).
+   *
+   * 예전에는 마운트 때 한 번(`[]`) 찍었다. 로컬 캐시가 있으면 그 시점의 `doc`이
+   * 이미 진짜 문서라 문제가 없었지만, **서버에서 본문을 받아 오는 동안**
+   * (`hydrating`) 찍으면 바닥이 **빈 문서**가 된다 — 공책이면 `pages: []`다.
+   * 그 뒤 한 번이라도 고치고 ⌘Z를 바닥까지 누르면 페이지가 0장으로 되돌아가고,
+   * `NoteEditor`는 열 페이지가 없어 아무것도 그리지 않으며(빈 화면), 자동 저장이
+   * 그 상태를 문서에 적는다. 그래서 **본문이 도착한 뒤에** 찍는다.
+   */
   useEffect(() => {
-    if (historyInitRef.current) return;
+    if (historyInitRef.current || hydrating) return;
     historyInitRef.current = true;
     historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], commentPins: doc.commentPins ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [], tags: doc.tags ?? [], pages: doc.pages ?? [], cover: doc.cover ?? null });
-    // deliberately empty deps: only the initial (mount-time) doc/edgeStyle matter here
-  }, []);
+    // `hydrating`만 본다 — 본문이 온 **그 순간의** 문서가 바닥이고, 그 뒤의 편집은
+    // `record`가 쌓는다(여기서 doc을 의존성에 넣으면 편집마다 바닥이 바뀐다).
+  }, [hydrating]);
 
   /** Commits a doc mutation and records an undo/redo step when it actually changed
    * something — the React-hook counterpart of `Component#recordHistory`
@@ -1832,7 +1843,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, commentPins: snap.commentPins?.length ? snap.commentPins : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [], tags: snap.tags ?? [] } : {}), ...(prev.kind === 'note' ? { pages: snap.pages ?? [], cover: snap.cover ?? undefined } : {}) }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, commentPins: snap.commentPins?.length ? snap.commentPins : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [], tags: snap.tags ?? [] } : {}), ...(prev.kind === 'note' ? { pages: snap.pages?.length ? snap.pages : prev.pages, cover: snap.cover ?? undefined } : {}) }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
