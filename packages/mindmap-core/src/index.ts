@@ -111,6 +111,7 @@ export {
   fillAt,
   applyFill,
   shiftFills,
+  shiftSizes,
   ALL_FILL_KEY,
   noteHighlightColor,
   NOTE_COVER_FALLBACK,

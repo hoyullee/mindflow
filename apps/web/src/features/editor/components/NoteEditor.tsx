@@ -3113,6 +3113,14 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   const pickedAt = useRef(0);
   /** 끌어서 고르는 중 — 누른 칸이 기준이고, 다른 칸에 닿으면 구간이 된다. */
   const drag = useRef<{ r: number; c: number } | null>(null);
+  /**
+   * **크기를 끄는 중**(요청) — 경계선을 잡고 끌면 그 열·행만 커지고 줄어든다.
+   *
+   * 끄는 동안은 화면에만 반영하고(`live`), 손을 뗄 때 한 번 문서에 적는다 — 픽셀마다
+   * 커밋하면 실행 취소가 한 칸씩 수십 개로 쌓인다(맵의 드래그와 같은 처방).
+   */
+  const sizing = useRef<{ axis: 'col' | 'row'; i: number; from: number; base: number[] } | null>(null);
+  const [live, setLive] = useState<{ axis: 'col' | 'row'; sizes: number[] } | null>(null);
 
   const pick = useCallback((next: TableSel | null) => {
     pickedAt.current = Date.now();
@@ -3443,6 +3451,68 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       </button>
     );
 
+  /** 지금 쓰는 크기 — 끄는 중이면 그 값, 아니면 문서의 값. */
+  const colW = (live?.axis === 'col' ? live.sizes : block.colW) ?? null;
+  const rowH = (live?.axis === 'row' ? live.sizes : block.rowH) ?? null;
+
+  /**
+   * 경계선 그립 — 열의 오른쪽 변·행의 아래 변에 얹힌 **얇은 띠**다.
+   *
+   * 값이 아직 없으면 지금 화면의 치수(`geom`)를 그대로 받아 적고 시작한다: 고정
+   * 레이아웃으로 넘어가는 순간 나머지 열도 값이 있어야 손대지 않은 열이 제멋대로
+   * 줄어들지 않는다. 최소값을 둬(열 56 · 행 28) 잡을 수 없게 작아지는 것을 막는다.
+   */
+  const grip = (axis: 'col' | 'row', i: number, place: CSSProperties) => (
+    <div
+      key={`${axis}-${i}`}
+      className="mf-note-tgrip"
+      data-note-table-grip={`${axis}:${i}`}
+      role="separator"
+      aria-label={axis === 'col' ? `${i + 1}번째 열 너비 조절` : `${i + 1}번째 행 높이 조절`}
+      title={axis === 'col' ? '끌어서 열 너비 조절' : '끌어서 행 높이 조절'}
+      onMouseDown={(e) => {
+        if (readOnly) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // 재어 온 값은 소수점이 붙는다 — 문서에는 **반올림한 정수**만 적는다
+        // (`178.984375`가 저장본에 남으면 사람이 읽을 수 없고 diff도 시끄럽다).
+        const base = (axis === 'col' ? (colW ?? geom?.cols.map((c) => c.w) ?? []) : (rowH ?? geom?.rows.map((r) => r.h) ?? [])).map((v) => Math.round(v));
+        if (!base.length) return;
+        sizing.current = { axis, i, from: axis === 'col' ? e.clientX : e.clientY, base: base.slice() };
+        setLive({ axis, sizes: base.slice() });
+      }}
+      style={{ position: 'absolute', ...place }}
+    />
+  );
+
+  /* 끄는 동안은 화면만, 손을 떼면 문서에 한 번. */
+  useEffect(() => {
+    if (!live) return;
+    const move = (e: MouseEvent) => {
+      const g = sizing.current;
+      if (!g) return;
+      const min = g.axis === 'col' ? 56 : 28;
+      const d = (g.axis === 'col' ? e.clientX : e.clientY) - g.from;
+      const next = g.base.slice();
+      next[g.i] = Math.max(min, Math.round((g.base[g.i] ?? min) + d));
+      setLive({ axis: g.axis, sizes: next });
+    };
+    const up = () => {
+      const g = sizing.current;
+      sizing.current = null;
+      setLive((cur) => {
+        if (g && cur) controller.setNoteTableSizes(block.id, g.axis, cur.sizes);
+        return null;
+      });
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+    return () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+  }, [live, block.id, controller]);
+
   const chipLabel = sel ? selLabel(sel, rows.length, width, head) : null;
 
   return (
@@ -3479,6 +3549,29 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
             </button>
             {fillOpen && <FillSwatches onPick={(color) => fill(fillTargetOf(sel), color)} style={{ top: 26, right: 0 }} />}
           </span>
+          {/* 고른 행·열을 **그 자리에서** 지운다(요청) — 메뉴를 두 번 열지 않는다.
+              마지막 한 줄은 지우지 못한다(0행 0열짜리 표는 되돌릴 손잡이가 없다). */}
+          {(sel.mode === 'row' || sel.mode === 'col') && (
+            <button
+              type="button"
+              data-note-table-drop
+              className="btn mf-note-tb"
+              title={sel.mode === 'row' ? '이 행 삭제' : '이 열 삭제'}
+              aria-label={sel.mode === 'row' ? '이 행 삭제' : '이 열 삭제'}
+              disabled={sel.mode === 'row' ? rows.length <= 1 : width <= 1}
+              onClick={() => {
+                if (sel.mode === 'row') controller.removeNoteTableRow(block.id, sel.r);
+                else controller.removeNoteTableCol(block.id, sel.c);
+                setSel(null);
+                setFillOpen(false);
+              }}
+              style={{ width: 20, height: 20, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-danger)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             data-note-table-unpick
@@ -3520,6 +3613,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
           tabIndex={-1}
           style={{
             gridArea: '2 / 2',
+            position: 'relative',
             minWidth: 0,
             overflowX: 'auto',
             border: '1px solid var(--mf-hairline)',
@@ -3528,10 +3622,33 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
             outline: 'none',
           }}
         >
-          <table ref={tableRef} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          {/* 크기를 끌 수 있는 경계선 — 표 위에 얹은 얇은 띠(요청). 잡는 자리는
+              보이는 선보다 넓고(6px), 재어 둔 치수가 있어야 놓을 수 있다. */}
+          {!readOnly &&
+            geom &&
+            geom.cols.map((c, ci) => (ci === geom.cols.length - 1 ? null : grip('col', ci, { left: c.l + c.w - 3, top: 0, width: 6, bottom: 0, cursor: 'col-resize' })))}
+          {!readOnly && geom && geom.rows.map((r, ri) => (ri === geom.rows.length - 1 ? null : grip('row', ri, { top: r.t + r.h - 3, left: 0, height: 6, right: 0, cursor: 'row-resize' })))}
+          <table
+            ref={tableRef}
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: 13,
+              // 너비를 손으로 정한 순간부터 **고정 레이아웃**이다 — 그러지 않으면
+              // 브라우저가 글 길이에 맞춰 다시 나눠 끈 값이 무시된다.
+              ...(colW ? { tableLayout: 'fixed' as const } : {}),
+            }}
+          >
+            {colW && (
+              <colgroup>
+                {Array.from({ length: width }, (_, ci) => (
+                  <col key={ci} style={{ width: colW[ci] ?? undefined }} />
+                ))}
+              </colgroup>
+            )}
             <tbody>
               {rows.map((row, ri) => (
-                <tr key={ri}>
+                <tr key={ri} style={rowH?.[ri] ? { height: rowH[ri] } : undefined}>
                   {row.map((cell, ci) => {
                     const isHead = ri === 0 && head;
                     const on = selHas(sel, ri, ci);
@@ -3625,6 +3742,16 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           runs={cell}
                           readOnly={readOnly || !editing}
                           placeholder={isHead ? '머리글' : ''}
+                          // Enter는 **편집을 닫는다**(요청) — 표의 칸은 문단이 아니라
+                          // 값이라 "다 썼다"의 신호가 필요하다. 줄을 바꾸려면
+                          // Shift+Enter(`NoteLine`이 그때는 이 고리를 부르지 않아
+                          // 브라우저의 줄바꿈이 그대로 들어간다).
+                          onEnter={() => {
+                            setEdit(null);
+                            pick({ mode: 'cell', r: ri, c: ci });
+                            boxRef.current?.focus({ preventScroll: true });
+                            return true;
+                          }}
                           onSlash={(at) => {
                             if (readOnly) return;
                             openSlash(`${block.id}:r${ri}c${ci}`, at);

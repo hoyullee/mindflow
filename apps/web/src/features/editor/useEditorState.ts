@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -858,6 +858,8 @@ export interface EditorController {
    * 좌표는 `[행, 열]` 짝이고, 칠하지 않은 표에는 그 칸 자체가 생기지 않는다.
    */
   setNoteTableFill: (blockId: string, target: TableFillTarget, color: string | null) => void;
+  /** 손으로 끈 열 너비·행 높이(px). `null`이면 그 축의 값을 걷어 글에 맡긴다. */
+  setNoteTableSizes: (blockId: string, axis: 'col' | 'row', sizes: number[] | null) => void;
   /** 표의 한 행을 바로 아래에 복제한다(글과 색을 함께). */
   duplicateNoteTableRow: (blockId: string, at: number) => void;
   /** 열을 왼쪽(`-1`)·오른쪽(`+1`)으로 한 칸. */
@@ -6793,7 +6795,7 @@ export function useEditorState(): EditorController {
           const width = rows[0]?.length ?? 2;
           const row = Array.from({ length: width }, () => textRuns(''));
           const to = at == null ? rows.length : Math.max(0, Math.min(rows.length, at));
-          return { ...b, rows: [...rows.slice(0, to), row, ...rows.slice(to)], fills: shiftFills(b.fills, 'row', 'insert', to) };
+          return { ...b, rows: [...rows.slice(0, to), row, ...rows.slice(to)], fills: shiftFills(b.fills, 'row', 'insert', to), rowH: shiftSizes(b.rowH, 'insert', to) };
         },
         false,
       );
@@ -6811,7 +6813,7 @@ export function useEditorState(): EditorController {
           const rows = b.rows ?? [];
           const width = rows[0]?.length ?? 0;
           const to = at == null ? width : Math.max(0, Math.min(width, at));
-          return { ...b, rows: rows.map((r) => [...r.slice(0, to), textRuns(''), ...r.slice(to)]), fills: shiftFills(b.fills, 'col', 'insert', to) };
+          return { ...b, rows: rows.map((r) => [...r.slice(0, to), textRuns(''), ...r.slice(to)]), fills: shiftFills(b.fills, 'col', 'insert', to), colW: shiftSizes(b.colW, 'insert', to) };
         },
         false,
       );
@@ -6832,7 +6834,7 @@ export function useEditorState(): EditorController {
         (b) => {
           const rows = b.rows ?? [];
           if (rows.length <= 1 || at < 0 || at >= rows.length) return b;
-          return { ...b, rows: rows.filter((_, i) => i !== at), fills: shiftFills(b.fills, 'row', 'remove', at) };
+          return { ...b, rows: rows.filter((_, i) => i !== at), fills: shiftFills(b.fills, 'row', 'remove', at), rowH: shiftSizes(b.rowH, 'remove', at) };
         },
         false,
       );
@@ -6850,7 +6852,7 @@ export function useEditorState(): EditorController {
           const rows = b.rows ?? [];
           const width = rows[0]?.length ?? 0;
           if (width <= 1 || at < 0 || at >= width) return b;
-          return { ...b, rows: rows.map((r) => r.filter((_, i) => i !== at)), fills: shiftFills(b.fills, 'col', 'remove', at) };
+          return { ...b, rows: rows.map((r) => r.filter((_, i) => i !== at)), fills: shiftFills(b.fills, 'col', 'remove', at), colW: shiftSizes(b.colW, 'remove', at) };
         },
         false,
       );
@@ -6871,7 +6873,7 @@ export function useEditorState(): EditorController {
           const next = rows.slice();
           const [row] = next.splice(at, 1);
           next.splice(to, 0, row!);
-          return { ...b, rows: next, fills: shiftFills(b.fills, 'row', 'move', at, to) };
+          return { ...b, rows: next, fills: shiftFills(b.fills, 'row', 'move', at, to), rowH: shiftSizes(b.rowH, 'move', at, to) };
         },
         false,
       );
@@ -6905,6 +6907,14 @@ export function useEditorState(): EditorController {
    * 행·열·전체는 키 하나로 남는다(코어 `applyFill`) — 칸마다 풀어 적으면 나중에
    * 열을 하나 더할 때 그 칸만 비어 남아, 행을 칠한 사람의 뜻과 어긋난다.
    */
+  const setNoteTableSizes = useCallback(
+    (blockId: string, axis: 'col' | 'row', sizes: number[] | null) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => (axis === 'col' ? { ...b, colW: sizes ?? undefined } : { ...b, rowH: sizes ?? undefined }), false);
+    },
+    [commitBlock, notePage],
+  );
+
   const setNoteTableFill = useCallback(
     (blockId: string, target: TableFillTarget, color: string | null) => {
       if (!notePage) return;
@@ -6927,7 +6937,7 @@ export function useEditorState(): EditorController {
           // 색은 **자리를 밀고 나서** 복제한 행에 다시 칠한다 — 밀기만 하면 새 행이
           // 원본의 색을 물려받지 못한다(복제는 "그대로 하나 더"라는 뜻이다).
           const shifted = shiftFills(b.fills, 'row', 'insert', at + 1);
-          const next = { ...b, rows: [...rows.slice(0, at + 1), copy, ...rows.slice(at + 1)], fills: shifted };
+          const next = { ...b, rows: [...rows.slice(0, at + 1), copy, ...rows.slice(at + 1)], fills: shifted, rowH: shiftSizes(b.rowH, 'insert', at + 1) };
           const width = row.length;
           let fills = next.fills;
           if (fills?.[rowKey(at)]) fills = applyFill(fills, { kind: 'row', r: at + 1 }, fills[rowKey(at)]!);
@@ -6973,6 +6983,7 @@ export function useEditorState(): EditorController {
               return next;
             }),
             fills: shiftFills(b.fills, 'col', 'move', at, to),
+            colW: shiftSizes(b.colW, 'move', at, to),
           };
         },
         false,
@@ -7603,6 +7614,7 @@ export function useEditorState(): EditorController {
     setNoteTableAlign,
     toggleNoteTableHead,
     setNoteTableFill,
+    setNoteTableSizes,
     duplicateNoteTableRow,
     setNoteCover,
     setNotePageTag,
