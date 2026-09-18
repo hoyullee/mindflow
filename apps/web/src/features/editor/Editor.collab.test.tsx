@@ -182,3 +182,52 @@ describe('Editor collaboration (M5)', () => {
     expect(screen.queryByText(/충돌|conflict/i)).toBeNull();
   });
 });
+
+/**
+ * 공책은 실시간 공동 편집을 붙이지 않기로 한 문서라 **CRDT 바인딩에 페이지가 없다**.
+ * 그런데 연결 자체는 종류를 가리지 않고 맺힌다(접속자 얼굴이 그 채널을 쓴다). 그래서
+ * 두 번째 사람이 같은 공책을 여는 순간 원격 갱신이 한 번 오고, 그 판에는 페이지가
+ * 없어 **화면이 통째로 비었다**(제보: 로컬 사본은 2쪽인데 화면만 `0쪽`).
+ */
+describe('공책 — 원격 판이 본문을 비우지 못한다(제보)', () => {
+  const NOTE_DOC = {
+    v: 1,
+    nodes: {},
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'white',
+    kind: 'note',
+    pages: [
+      { id: 'p1', title: '첫 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '지켜야 할 글', b: false, c: null }] }] },
+      { id: 'p2', title: '둘째 장', blocks: [{ id: 'b2', kind: 'p', runs: [{ t: '두 번째', b: false, c: null }] }] },
+    ],
+  };
+
+  it('두 번째 사람이 같은 공책을 열어도 페이지와 본문이 남는다', async () => {
+    const docId = `note-collab-${Math.random()}`;
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(NOTE_DOC));
+    const { container } = renderEditor(`/editor?map=${docId}&title=x`);
+
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    expect(container.querySelectorAll('[data-note-page-row]')).toHaveLength(2);
+
+    // "다른 탭" — 같은 방에 붙는 제 Y.Doc. 공책은 CRDT에 페이지가 없으므로 이 판에는
+    // `pages`가 담기지 않는다(그것이 이 사고의 뿌리다).
+    const remoteYdoc = new Y.Doc();
+    const remoteProvider = new BroadcastChannelProvider();
+    remoteProvider.connect(docId, remoteYdoc);
+    // 원격이 무엇이든 한 번 건드려 갱신을 흘려보낸다.
+    await waitFor(() => expect(remoteYdoc.getMap('meta').size >= 0).toBe(true));
+    remoteYdoc.getMap('meta').set('layoutMode', 'down');
+
+    // 원격 갱신이 오고도 **페이지와 본문이 그대로**여야 한다.
+    await new Promise((r) => setTimeout(r, 120));
+    expect(container.querySelector('[data-note-editor]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-note-page-row]')).toHaveLength(2);
+    expect(screen.getAllByText('지켜야 할 글').length).toBeGreaterThan(0);
+    remoteProvider.disconnect();
+  });
+});
