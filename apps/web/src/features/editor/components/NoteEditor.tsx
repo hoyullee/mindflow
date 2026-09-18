@@ -274,7 +274,7 @@ export function NoteEditor({ controller }: Props) {
    * 열든 **본문 맨 아래**에 떴다(제보). 이제 연 자리를 기준으로 뜬다.
    */
   const [slashFor, setSlashFor] = useState<string | null>(null);
-  const [slashAt, setSlashAt] = useState<DOMRect | null>(null);
+  const [slashAt, setSlashAt] = useState<SlashAnchor | null>(null);
   /**
    * `/`가 놓인 **글자 자리** — 목록이 그 뒤에 이어 친 글자로 좁혀진다(요청·노션).
    * 툴바 단추로 열었으면 `null`이고, 그때는 예전처럼 목록이 그대로 다 보인다.
@@ -283,7 +283,7 @@ export function NoteEditor({ controller }: Props) {
   const openSlashAt = (lineKey: string, from?: Element | number | null) => {
     const at = typeof from === 'number' ? from : null;
     const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
-    setSlashAt(el ? el.getBoundingClientRect() : null);
+    setSlashAt(measureSlash(el));
     setSlashFor(lineKey);
     setSlashAtChar(at);
   };
@@ -295,7 +295,7 @@ export function NoteEditor({ controller }: Props) {
     if (slashFor === null) return;
     const follow = () => {
       const el = document.querySelector(`[data-note-line="${slashFor}"]`);
-      if (el) setSlashAt(el.getBoundingClientRect());
+      if (el) setSlashAt(measureSlash(el));
     };
     document.addEventListener('scroll', follow, true);
     window.addEventListener('resize', follow);
@@ -395,9 +395,27 @@ export function NoteEditor({ controller }: Props) {
       closeSlash(); // `/`를 지웠다
       return;
     } else return; // 아직 글자가 들어오기 전
-    // 이름에 없는 글자를 이어 쳐 맞는 것이 하나도 없으면 접는다(노션과 같은 결).
+    /**
+     * **글을 쓰는 중으로 넘어갔을 때** 접는다(스펙 §4) — 연속 공백이나 줄바꿈이
+     * 들어오면 그건 더 이상 블록 이름이 아니다. 어느 쪽이든 **친 글자는 그대로
+     * 둔다**(스펙 §8: 지우는 것은 항목을 고른 경우뿐이다).
+     */
+    if (/\s\s|\n/.test(slashQuery)) {
+      closeSlash();
+      return;
+    }
+    /**
+     * 스펙의 "공백 + 다섯 글자"에 **맞는 것이 없을 때**라는 조건을 하나 더 얹었다.
+     *
+     * 스펙의 규칙을 글자 그대로 옮기면 우리 목록을 쓸 수 없다 — `글머리 목록`(6)
+     * `번호 목록`·`코드 블록`·`문서 링크`(각 5)처럼 **이름에 공백이 든 블록**이
+     * 다섯이라, 이름을 끝까지 치는 순간 목록이 닫힌다(프로토타입의 이름들은 그
+     * 길이에 걸리지 않았다). 그래서 "길다 + 공백" 위에 "그래도 맞는 것이 하나도
+     * 없다"를 더해, 정말 산문으로 넘어간 경우에만 접는다.
+     */
     const q = slashQuery.trim().toLowerCase();
-    if (q && !BLOCK_TYPES.some((t) => `${t.name}${t.desc}`.toLowerCase().includes(q))) closeSlash();
+    const bare = slashQuery.replace(/\s/g, '');
+    if (/\s/.test(slashQuery) && bare.length >= 5 && q && !BLOCK_TYPES.some((t) => `${t.name}${t.desc}`.toLowerCase().includes(q))) closeSlash();
   }, [slashFor, slashAtChar, slashQuery, page, closeSlash]);
 
   /** 고른 줄들의 블록 id — 칠하기가 안 되는 브라우저에서 면으로 물러설 때 쓴다. */
@@ -683,6 +701,59 @@ function anchoredStyle(rect: DOMRect | null, width: number, opts: { align?: 'lef
     maxHeight: Math.max(160, flip ? rect.top - gap - 12 : below),
     overflowY: 'auto',
   };
+}
+
+/**
+ * `/` 목록의 **앵커** — 스펙 §2의 네 값.
+ *
+ * `DOMRect`를 그대로 들고 다니지 않는 이유: 칩과 패널을 각각 `fixed`로 놓으면 화면
+ * 밖으로 나가지 않게 당기는 계산(clamp)이 **따로 돌아** 둘이 서로 떨어진다(스펙 §3).
+ * 그래서 자리는 여기서 한 번만 정하고, 패널은 칩의 `absolute` 자식으로 붙인다.
+ */
+interface SlashAnchor {
+  /** 칩의 화면 X — 블록 왼쪽, 뷰포트 안으로 당긴다. */
+  gx: number;
+  /** 칩의 화면 Y — 블록의 아랫선. */
+  gy: number;
+  /** 패널을 위로 띄울지 — 아래 여백이 모자랄 때만. */
+  up: boolean;
+  /** 목록 영역의 `max-height`. */
+  listH: number;
+}
+
+const SLASH_W = 306;
+
+function clampN(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/**
+ * `/`를 친 줄을 기준으로 목록이 뜰 자리(스펙 §3).
+ *
+ * 스크롤 컨테이너는 **계산으로** 찾는다(클래스 이름으로 찾지 않는다 — 에디터 구조가
+ * 바뀌면 조용히 틀린 자리에 뜬다): 부모를 거슬러 올라가며 `scrollHeight`가
+ * `clientHeight`보다 크고 `overflow-y`가 `auto|scroll`인 첫 조상이 그것이다.
+ */
+function measureSlash(el: Element | null): SlashAnchor | null {
+  if (!el || typeof window === 'undefined') return null;
+  const rect = el.getBoundingClientRect();
+  const iw = window.innerWidth;
+  const ih = window.innerHeight;
+  let sc: HTMLElement | null = el.parentElement;
+  while (sc) {
+    const oy = getComputedStyle(sc).overflowY;
+    if (sc.scrollHeight > sc.clientHeight + 4 && (oy === 'auto' || oy === 'scroll')) break;
+    sc = sc.parentElement;
+  }
+  const vpTop = sc ? sc.getBoundingClientRect().top : 0;
+  const vpBottom = sc ? sc.getBoundingClientRect().bottom : ih;
+  const gx = clampN(rect.left, 8, Math.max(8, iw - (SLASH_W + 8)));
+  const gy = clampN(rect.bottom - 1, vpTop + 4, Math.max(vpTop + 4, Math.min(vpBottom, ih) - 30));
+  // 머리·푸터 크롬 78px을 뺀 **목록이 쓸 수 있는** 높이.
+  const roomBelow = Math.min(vpBottom, ih) - gy - 78;
+  const roomAbove = gy - Math.max(vpTop, 0) - 78;
+  const up = roomBelow < 110 && roomAbove > roomBelow;
+  return { gx, gy, up, listH: clampN(up ? roomAbove : roomBelow, 90, 288) };
 }
 
 /** 전환 팝업이 보여 주는 한 권. */
@@ -4788,8 +4859,9 @@ function LinkBlock({ controller, block }: { controller: EditorController; block:
 /**
  * `/` 커맨드 목록 — 지금 블록의 **종류를 바꾼다**(새 블록을 만들지 않는다).
  *
- * 빈 블록에서만 열리므로 "이 줄을 무엇으로 만들까"가 곧 요청이고, 새로 만들면
- * 빈 줄이 하나 남는다. 좁혀 찾을 수 있게 입력칸을 함께 둔다(블록이 열다섯이다).
+ * 입력칸을 따로 두지 않는다(스펙 §1): `/`와 이어 친 글자는 **본문의 진짜 글자**이고,
+ * 이 패널은 그것을 읽기만 한다. 그래서 취소하면 쓴 글이 그대로 남고, 조합 중인 한글을
+ * 우리가 다시 그릴 일이 없다(그 순간 `안녕하세요`가 `안ㄴ녕ㅎ하세세요`가 된다).
  */
 function SlashMenu({
   anchor,
@@ -4798,8 +4870,8 @@ function SlashMenu({
   onPick,
   onClose,
 }: {
-  /** 연 자리 — 여기 아래에 뜬다. `null`이면 화면 가운데 위쪽에 뜬다(안전망). */
-  anchor: DOMRect | null;
+  /** 연 자리 — 칩이 놓일 곳과 패널이 위로 뒤집힐지. `null`이면 화면 밖(안전망). */
+  anchor: SlashAnchor | null;
   /** 좁히는 글자 — **본문에 친 그 글자**다(`/` 뒤). 툴바로 열었으면 빈 문자열. */
   query: string;
   /** 본문에서 `/`로 열렸는가 — 그때는 키보드가 본문에 있으므로 우리가 가로챈다. */
@@ -4807,10 +4879,8 @@ function SlashMenu({
   onPick: (kind: NoteBlockKind) => void;
   onClose: () => void;
 }) {
-  // 바깥을 누르면 닫힌다(제보) — 지금까지는 Esc로만 닫혀서, 목록을 열어 둔 채
-  // 다른 곳을 눌러도 그대로 떠 있었다. 목록 안의 누름은 뿌리에서 막는다.
-  // **스크롤로는 닫지 않는다**(제보) — 본문을 굴리며 고르는 자리다(자리는 호출부가
-  // 다시 재 준다).
+  // 바깥을 누르면 닫힌다(제보) — 목록 안의 누름은 뿌리에서 막는다. **스크롤로는 닫지
+  // 않는다**(제보: 본문을 굴리며 고르는 자리다 — 자리는 호출부가 다시 재 준다).
   useAnchored(true, onClose, { closeOnScroll: false });
   const q = query.trim().toLowerCase();
   const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
@@ -4822,24 +4892,33 @@ function SlashMenu({
   useEffect(() => setCursor(0), [q]);
   /**
    * 키보드는 **본문에 있다**(캐럿이 그대로다 — 글은 계속 본문에 들어간다). 그래서
-   * Enter·↑·↓·Esc만 **캡처 단계**에서 가로채 본문 핸들러에 닿지 않게 한다: 그러지
+   * Enter·Tab·↑·↓·Esc만 **캡처 단계**에서 가로채 본문 핸들러에 닿지 않게 한다: 그러지
    * 않으면 Enter가 목록을 고르면서 새 블록도 만든다.
    */
   useEffect(() => {
     if (!inline) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // **패널만** 접는다(스펙 §5) — blur도, 글자 손질도 하지 않는다. 조합 중에
+        // `textContent`를 다시 쓰면 글자가 겹친다(`/안녕` → `/안녕녕`).
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         onClose();
-      } else if (e.key === 'Enter' && flat.length) {
+        return;
+      }
+      // 한글을 **확정하는** Enter는 가로채지 않는다(스펙 §5) — 조합 중이면 흘린다.
+      const composing = e.isComposing || e.keyCode === 229;
+      if ((e.key === 'Enter' || e.key === 'Tab') && !composing && flat.length) {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         onPick(flat[Math.min(cursor, flat.length - 1)]!.kind);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();
-        setCursor((c) => Math.max(0, Math.min(flat.length - 1, c + (e.key === 'ArrowDown' ? 1 : -1))));
+        // 끝에서 멈추지 않고 **돈다**(스펙 §5의 모듈러 순환).
+        if (flat.length) setCursor((c) => (c + (e.key === 'ArrowDown' ? 1 : flat.length - 1)) % flat.length);
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
         // 캐럿을 옮기는 것은 **고르는 일이 아니다**(요청) — 목록만 접고 글자는 그대로
         // 둔다(막지 않으므로 캐럿은 평소처럼 움직인다).
@@ -4849,53 +4928,160 @@ function SlashMenu({
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
   }, [inline, flat, cursor, onPick, onClose]);
+  const up = anchor?.up ?? false;
   return (
     <div data-note-slash onPointerDown={(e) => e.stopPropagation()}>
-      <div style={{ ...POP, ...anchoredStyle(anchor, 290, { maxHeight: 380 }), padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {/* 머리 — **본문에 친 글자**를 그대로 되비친다(입력칸이 아니다). 글은 본문에
-            들어가고 목록은 그것으로 좁혀지므로, 여기서 한 번 더 받을 이유가 없다. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
-          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)' }}>
-            /
+      {/* **앵커는 하나다**(스펙 §3) — 칩 래퍼만 `fixed`로 놓고, 패널은 그 안의
+          `absolute` 자식이다. 둘을 각각 `fixed`로 두면 화면 밖으로 나가지 않게 당기는
+          계산이 **따로 돌아** 칩과 패널이 서로 떨어진 자리에 뜬다. */}
+      <div
+        data-note-slash-anchor
+        style={{
+          position: 'fixed',
+          left: anchor ? anchor.gx : -9999,
+          top: anchor ? anchor.gy : -9999,
+          zIndex: 40,
+          height: inline ? 20 : 0,
+          // 칩은 장식일 뿐이다 — 본문의 그 자리를 덮어 클릭을 먹지 않게(스펙 §7).
+          pointerEvents: 'none',
+        }}
+      >
+        {inline && (
+          <span
+            data-note-slash-chip
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 2,
+              height: 20,
+              maxWidth: SLASH_W,
+              padding: '0 7px',
+              borderRadius: 999,
+              background: 'var(--mf-accent-soft)',
+              border: '1px solid var(--mf-border-hover)',
+              boxSizing: 'border-box',
+              fontSize: 11.5,
+              lineHeight: 1,
+              color: 'var(--mf-accent-deep)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}
+          >
+            <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontWeight: 800, color: 'var(--mf-accent)' }}>
+              /
+            </span>
+            <span data-note-slash-q style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {query}
+            </span>
+            <span aria-hidden="true" className="mf-note-slash-caret" />
           </span>
-          <span data-note-slash-q style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: query ? 'var(--mf-text)' : 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {query || '이어서 이름을 치면 좁혀져요'}
-          </span>
-          <span style={POP_KEY}>Esc</span>
-        </div>
-        <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: 300, overflowY: 'auto' }}>
-          {groups.map((g) =>
-            g.items.length === 0 ? null : (
-              <div key={g.name || 'hits'} style={{ display: 'contents' }}>
-                {g.name && <span style={POP_HEAD}>{g.name}</span>}
-                {g.items.map((t) => (
-                  <button
-                    key={t.kind}
-                    type="button"
-                    data-note-slash-item={t.kind}
-                    className="btn mf-note-item"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onPick(t.kind)}
-                    aria-selected={flat[cursor]?.kind === t.kind}
-                    style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, ...(flat[cursor]?.kind === t.kind ? { background: 'var(--mf-note-hover)' } : {}) }}
-                  >
-                    {/* 아이콘 **타일** — 디자인은 28×28 면 위에 글리프를 얹는다(글자 옆의
-                        맨 아이콘보다 줄이 또렷하게 나뉜다). */}
-                    <span aria-hidden="true" style={{ width: 28, height: 28, flex: '0 0 auto', borderRadius: 8, background: 'var(--mf-note-hover)', color: 'var(--mf-subtext)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                        {t.icon}
-                      </svg>
-                    </span>
-                    <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)' }}>{t.name}</span>
-                      <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.desc}</span>
-                    </span>
-                  </button>
-                ))}
+        )}
+        <div
+          data-note-slash-panel
+          style={{
+            position: 'absolute',
+            left: 0,
+            ...(up ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
+            width: SLASH_W,
+            boxSizing: 'border-box',
+            borderRadius: 14,
+            background: 'var(--mf-card)',
+            border: '1px solid var(--mf-border)',
+            boxShadow: '0 24px 48px -22px rgba(46,42,38,.5)',
+            animation: 'mf-note-pop .13s ease both',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            pointerEvents: 'auto',
+          }}
+        >
+          {/* 머리 — 이름과, 검색어가 **비어 있을 때만** 안내 한 줄. 검색어는 칩에 이미
+              있으므로 여기 다시 적지 않는다(스펙 §7 — 같은 글자가 두 번 보인다). */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
+            <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>블록 넣기</span>
+            {!query && (
+              <span style={{ minWidth: 0, fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {inline ? '블록 이름을 이어서 입력하세요' : '넣을 블록을 고르세요'}
+              </span>
+            )}
+          </div>
+          <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : 288, overflowY: 'auto' }}>
+            {groups.map((g) =>
+              g.items.length === 0 ? null : (
+                <div key={g.name || 'hits'} style={{ display: 'contents' }}>
+                  {g.name && <span style={POP_HEAD}>{g.name}</span>}
+                  {g.items.map((t) => {
+                    const active = flat[cursor] === t;
+                    return (
+                      <button
+                        key={t.kind}
+                        type="button"
+                        data-note-slash-item={t.kind}
+                        className="btn mf-note-item"
+                        onMouseDown={(e) => e.preventDefault()}
+                        // 마우스를 얹으면 **키보드 활성도 그리로 옮긴다**(스펙 §7) —
+                        // 그러지 않으면 손으로 가리킨 줄과 Enter가 넣을 줄이 다르다.
+                        onMouseEnter={() => setCursor(flat.indexOf(t))}
+                        onClick={() => onPick(t.kind)}
+                        aria-selected={active}
+                        style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, ...(active ? { background: 'var(--mf-note-hover)' } : {}) }}
+                      >
+                        {/* 아이콘 **타일** — 디자인은 28×28 면 위에 글리프를 얹는다(글자 옆의
+                            맨 아이콘보다 줄이 또렷하게 나뉜다). */}
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 28,
+                            height: 28,
+                            flex: '0 0 auto',
+                            borderRadius: 8,
+                            background: active ? 'var(--mf-accent-soft)' : 'var(--mf-note-hover)',
+                            color: active ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                            {t.icon}
+                          </svg>
+                        </span>
+                        <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)' }}>{t.name}</span>
+                          <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.desc}</span>
+                        </span>
+                        {/* `↵` — **고른 줄에만**. 항상 켜 두면 열다섯 줄이 모두 같은 말을
+                            해서 어느 줄이 들어갈지를 도리어 흐린다(스펙 §7). */}
+                        {active && <span style={{ ...POP_KEY, color: 'var(--mf-accent-deep)' }}>↵</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              ),
+            )}
+            {hits.length === 0 && (
+              // 맞는 것이 없어도 **닫지 않는다**(스펙 §8) — 한 글자 더 쳤다가 지우는
+              // 일이 흔하고, 그때마다 목록이 사라지면 다시 `/`부터 쳐야 한다.
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '18px 9px' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)' }}>맞는 블록이 없어요</span>
+                <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>⌫ 로 글자를 지워 보세요</span>
               </div>
-            ),
-          )}
-          {hits.length === 0 && <span style={{ padding: '14px 9px', fontSize: 12, color: 'var(--mf-faint)' }}>맞는 블록이 없어요</span>}
+            )}
+          </div>
+          {/* 푸터 — 이 패널에서 쓸 수 있는 키 셋. 본문에 캐럿이 남아 있어 "지금 무엇을
+              누를 수 있나"가 보이지 않으므로, 여기에 적어 둔다(스펙 §7). */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 11px', borderTop: '1px solid var(--mf-border-soft)', background: 'var(--mf-note-body)' }}>
+            {[
+              ['↑↓', '고르기'],
+              ['↵', '넣기'],
+              ['esc', '닫기'],
+            ].map(([cap, name]) => (
+              <span key={cap} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--mf-faint)' }}>
+                <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 9.5, padding: '1px 4px', borderRadius: 4, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)' }}>{cap}</span>
+                {name}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>
