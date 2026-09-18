@@ -2055,6 +2055,151 @@ describe('공책 14판 — 얹으면 반응하고, 목록은 이 스페이스의
   });
 });
 
+describe('공책 19판 — `/` 블록 넣기 스펙', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 빈 문단 하나짜리 공책을 깔고 연다. */
+  async function openEmpty(id: string): Promise<HTMLElement> {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(empty));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
+    return container;
+  }
+
+  /** `/`를 치고 이어 친 글자까지 — 브라우저가 글자를 넣는 자리를 흉내. */
+  function slash(container: HTMLElement, text: string): HTMLElement {
+    const line = container.querySelector('[data-note-line="b1"]') as HTMLElement;
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, text);
+    return line;
+  }
+
+  const items = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll('[data-note-slash-item]')].map((b) => b.getAttribute('data-note-slash-item'));
+  const activeItem = (c: HTMLElement): string | null => c.querySelector('[data-note-slash-item][aria-selected="true"]')?.getAttribute('data-note-slash-item') ?? null;
+
+  it('앵커는 **하나**다 — 칩만 `fixed`이고 패널은 그 안의 `absolute` 자식이다(스펙 §3)', async () => {
+    const c = await openEmpty('nq0');
+    slash(c, '/');
+    const wrap = (await waitFor(() => c.querySelector('[data-note-slash-anchor]'))) as HTMLElement;
+    expect(wrap.style.position).toBe('fixed');
+
+    const panel = wrap.querySelector('[data-note-slash-panel]') as HTMLElement;
+    expect(panel).toBeTruthy();
+    // 패널을 따로 `fixed`로 두면 화면 밖 clamp가 따로 돌아 칩과 떨어진다.
+    expect(panel.style.position).toBe('absolute');
+    expect(panel.parentElement).toBe(wrap);
+    expect(panel.style.width).toBe('306px');
+  });
+
+  it('검색어는 **칩에만** 있다 — 머리에 다시 적지 않는다(스펙 §7)', async () => {
+    const c = await openEmpty('nq1');
+    slash(c, '/인용');
+    await waitFor(() => expect(c.querySelector('[data-note-slash-q]')?.textContent).toBe('인용'));
+
+    expect(c.querySelector('[data-note-slash-chip] [data-note-slash-q]')).toBeTruthy();
+    expect(c.querySelector('[data-note-slash-panel] [data-note-slash-q]')).toBeNull();
+    // 안내 한 줄은 **검색어가 비어 있을 때만** 나온다.
+    expect(c.querySelector('[data-note-slash-panel]')!.textContent).not.toContain('블록 이름을 이어서 입력하세요');
+  });
+
+  it('↑↓는 끝에서 멈추지 않고 **돈다**(스펙 §5의 모듈러 순환)', async () => {
+    const c = await openEmpty('nq2');
+    slash(c, '/');
+    await waitFor(() => expect(c.querySelector('[data-note-slash-panel]')).toBeTruthy());
+    expect(activeItem(c)).toBe('p');
+
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    await waitFor(() => expect(activeItem(c)).toBe('hr')); // 첫 줄에서 위 → 마지막 줄
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    await waitFor(() => expect(activeItem(c)).toBe('p')); // 마지막에서 아래 → 첫 줄
+  });
+
+  it('Tab으로도 넣는다(스펙 §5)', async () => {
+    const c = await openEmpty('nq3');
+    slash(c, '/콜아웃');
+    await waitFor(() => expect(items(c)).toEqual(['callout']));
+
+    fireEvent.keyDown(document, { key: 'Tab' });
+    saveNow();
+    await waitFor(() => expect(saved('nq3').pages[0].blocks[0].kind).toBe('callout'));
+  });
+
+  it('**조합 중의 Enter는 가로채지 않는다** — 한글을 확정하는 그 Enter다(스펙 §5)', async () => {
+    const c = await openEmpty('nq4');
+    slash(c, '/인용');
+    await waitFor(() => expect(items(c)).toEqual(['q']));
+
+    fireEvent.keyDown(document, { key: 'Enter', keyCode: 229 });
+    fireEvent.keyDown(document, { key: 'Enter', isComposing: true });
+    await new Promise((r) => setTimeout(r, 30));
+    // 목록은 그대로 열려 있고 종류도 그대로다 — 확정용 Enter를 먹지 않았다.
+    expect(c.querySelector('[data-note-slash]')).toBeTruthy();
+    saveNow();
+    await waitFor(() => expect(saved('nq4').pages[0].blocks[0].kind).toBe('p'));
+
+    // 조합이 끝난 Enter는 넣는다.
+    fireEvent.keyDown(document, { key: 'Enter' });
+    saveNow();
+    await waitFor(() => expect(saved('nq4').pages[0].blocks[0].kind).toBe('q'));
+  });
+
+  it('맞는 것이 없어도 **닫지 않는다** — 빈 상태로 기다린다(스펙 §8)', async () => {
+    const c = await openEmpty('nq5');
+    slash(c, '/zzzz');
+    await waitFor(() => expect(c.querySelector('[data-note-slash-panel]')!.textContent).toContain('맞는 블록이 없어요'));
+
+    expect(c.querySelector('[data-note-slash-panel]')!.textContent).toContain('⌫ 로 글자를 지워 보세요');
+    expect(items(c)).toEqual([]);
+  });
+
+  it('연속 공백이면 접히고 **친 글자는 남는다**(스펙 §4·§8)', async () => {
+    const c = await openEmpty('nq6');
+    const line = c.querySelector('[data-note-line="b1"]') as HTMLElement;
+    fireEvent.keyDown(line, { key: '/' });
+    await waitFor(() => expect(c.querySelector('[data-note-slash]')).toBeTruthy());
+
+    type(line, '/메모  하나');
+    await waitFor(() => expect(c.querySelector('[data-note-slash]')).toBeNull());
+    saveNow();
+    await waitFor(() => expect(saved('nq6').pages[0].blocks[0].runs[0].t).toBe('/메모  하나'));
+  });
+
+  it('**공백이 든 이름**을 끝까지 쳐도 목록이 남는다 — `글머리 목록`', async () => {
+    const c = await openEmpty('nq7');
+    slash(c, '/글머리 목록');
+    await waitFor(() => expect(items(c)).toEqual(['ul']));
+  });
+
+  it('마우스를 얹으면 **키보드 활성도 그리로** 옮겨 간다(스펙 §7)', async () => {
+    const c = await openEmpty('nq8');
+    slash(c, '/');
+    await waitFor(() => expect(c.querySelector('[data-note-slash-item="code"]')).toBeTruthy());
+
+    fireEvent.mouseEnter(c.querySelector('[data-note-slash-item="code"]')!);
+    await waitFor(() => expect(activeItem(c)).toBe('code'));
+    // 그래서 Enter가 넣는 것도 손으로 가리킨 그 줄이다.
+    fireEvent.keyDown(document, { key: 'Enter' });
+    saveNow();
+    await waitFor(() => expect(saved('nq8').pages[0].blocks[0].kind).toBe('code'));
+  });
+
+  it('푸터가 쓸 수 있는 키 셋을 적어 둔다(스펙 §7)', async () => {
+    const c = await openEmpty('nq9');
+    slash(c, '/');
+    const panel = (await waitFor(() => c.querySelector('[data-note-slash-panel]'))) as HTMLElement;
+
+    expect(panel.textContent).toContain('고르기');
+    expect(panel.textContent).toContain('넣기');
+    expect(panel.textContent).toContain('닫기');
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');

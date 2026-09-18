@@ -108,7 +108,13 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
       const at = sel && sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode) ? charOffset(el, sel.anchorNode, sel.anchorOffset) : text.length;
       const before = text.slice(0, at);
       // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`에서 열리지 않게.
-      if (!before || /\s$/.test(before)) onSlash(at);
+      if (!before || /\s$/.test(before)) {
+        // **글자는 막지 않는다**(`preventDefault` 금지 — `/`는 본문에 들어가야 한다).
+        // 대신 전파만 끊어 전역 단축키 핸들러가 같은 키를 또 잡지 않게 한다(스펙 §3).
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
+        onSlash(at);
+      }
     }
     if (e.key === 'Backspace' && !e.nativeEvent.isComposing) {
       const sel = window.getSelection();
