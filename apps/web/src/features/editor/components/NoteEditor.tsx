@@ -3187,6 +3187,9 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
    */
   const [hot, setHot] = useState<{ axis: 'row' | 'col'; i: number } | null>(null);
   const [geom, setGeom] = useState<TableGeom | null>(null);
+  /** 문서에 건 리스너가 읽는 최신 치수·칸 찾개 — 효과가 렌더마다 다시 붙지 않게. */
+  const geomRef = useRef<TableGeom | null>(null);
+  geomRef.current = geom;
   /**
    * **글을 고치는 중인 칸**(제보) — 두 번 눌러야 열린다.
    *
@@ -3230,6 +3233,20 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     el.value = '';
     el.focus({ preventScroll: true });
   }, [touch]);
+  /**
+   * 고른 것에 **키를 받을 자리**를 준다.
+   *
+   * 칸 하나를 고른 경우에는 **그 칸 자신**이 받는다(아래 `armed` 효과) — 숨은
+   * `<input>`을 거치면 한글이 한 박자 늦는다(제보). 행·열·표 전체는 옮겨 적을 칸이
+   * 정해져 있지 않으므로 지금까지처럼 숨은 상자가 받는다.
+   */
+  const focusFor = useCallback(
+    (next: TableSel | null) => {
+      if (next?.mode === 'cell') return;
+      focusKeys();
+    },
+    [focusKeys],
+  );
   /** 끌어서 고르는 중 — 누른 칸이 기준이고, 다른 칸에 닿으면 구간이 된다. */
   const drag = useRef<{ r: number; c: number } | null>(null);
   /**
@@ -3339,14 +3356,70 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     setEdit({ r, c });
   };
 
-  /* 끌기는 문서에서 끝난다 — 표 밖에서 손을 떼는 일이 흔하다. */
+  /**
+   * **고른 칸이 스스로 키를 받는다** — 한글이 첫 글자부터 들어가게(제보).
+   *
+   * 예전에는 숨은 `<input>`이 조합을 끝까지 돌리고 `compositionend`에서 그 결과를
+   * 칸으로 옮겼다. 그런데 한글은 **다음 글자를 치는 순간**에야 앞 글자의 조합이
+   * 끝나므로, 화면에는 두 번째 글자를 칠 때 첫 글자가 나타났고 그때 포커스가 옮겨
+   * 가면서 이어지던 조합이 깨졌다(영어는 조합이 없어 첫 글자부터 멀쩡했다).
+   *
+   * 그래서 칸 하나를 고르면 **그 칸에 바로 포커스를 주고 글자를 통째로 고른다**.
+   * 다음 글자는 브라우저가 "고른 글자를 갈아 끼우는" 평범한 입력으로 처리하므로
+   * 조합이 한 번도 끊기지 않고, 스프레드시트의 "고른 칸에 치면 덮어쓴다"도 그대로다.
+   * 터치 기기에서는 하지 않는다 — 탭만 해도 소프트 키보드가 화면 절반을 덮는다.
+   */
   useEffect(() => {
+    if (readOnly || touch || edit || sel?.mode !== 'cell') return;
+    const el = cellLineRef.current(sel.r, sel.c);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const s = window.getSelection();
+      s?.removeAllRanges();
+      s?.addRange(range);
+    } catch {
+      /* 글자를 못 골라도 포커스는 갔다 — 치면 이어 쓰기가 된다 */
+    }
+  }, [sel, edit, readOnly, touch]);
+
+  /**
+   * 끌기는 **문서에서** 이어지고 끝난다.
+   *
+   * 칸마다 `onMouseEnter`로만 넓히면 포인터가 표를 벗어나는 순간 구간이 멈췄다가
+   * 돌아와야 다시 움직인다(제보). 표 밖에서도 좌표를 **가장 가까운 칸으로 눌러**
+   * 계속 넓힌다 — 재어 둔 치수(`geom`)가 곧 칸의 경계다.
+   */
+  useEffect(() => {
+    const near = (spans: { a: number; b: number }[], v: number): number => {
+      for (let i = 0; i < spans.length; i++) if (v < spans[i]!.b || i === spans.length - 1) return v < spans[0]!.a ? 0 : i;
+      return Math.max(0, spans.length - 1);
+    };
+    const move = (e: MouseEvent) => {
+      const from = drag.current;
+      const t = tableRef.current;
+      const g = geomRef.current;
+      if (!from || !t || !g || !g.rows.length || !g.cols.length) return;
+      const base = t.getBoundingClientRect();
+      const r = near(g.rows.map((x) => ({ a: x.t, b: x.t + x.h })), e.clientY - base.top);
+      const c = near(g.cols.map((x) => ({ a: x.l, b: x.l + x.w })), e.clientX - base.left);
+      if (r === from.r && c === from.c) return; // 아직 한 칸 안이다 — 구간이 아니다
+      // 브라우저가 반쯤 그려 둔 글자 선택은 지운다(고른 것과 고치는 것이 갈린다).
+      window.getSelection()?.removeAllRanges();
+      pick({ mode: 'range', r0: from.r, c0: from.c, r1: r, c1: c, r: from.r, c: from.c });
+    };
     const up = () => {
       drag.current = null;
     };
+    document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
-    return () => document.removeEventListener('mouseup', up);
-  }, []);
+    return () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+  }, [pick]);
 
   const closeMenu = useCallback(() => setMenu(null), []);
   useAnchored(!!menu, closeMenu);
@@ -3395,7 +3468,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       return;
     }
     pick(next);
-    focusKeys();
+    focusFor(next);
   };
 
   /** 레일·코너 우클릭 — 그 행·열·표의 메뉴를 연다(없으면 본문 블록 메뉴가 뜬다). */
@@ -3414,6 +3487,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   /* ── 키보드(스펙 6) ─────────────────────────────────────────────────────── */
   const cellLine = (r: number, c: number): HTMLElement | null =>
     rootRef.current?.querySelector<HTMLElement>(`[data-note-line="${block.id}:r${r}c${c}"]`) ?? null;
+  const cellLineRef = useRef(cellLine);
+  cellLineRef.current = cellLine;
   const focusCell = (r: number, c: number) => openEdit(r, c);
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (readOnly) return;
@@ -3428,15 +3503,21 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       else controller.undo();
       return;
     }
-    const editing = (e.target as HTMLElement).closest('[data-note-line]') !== null;
+    /**
+     * **글을 고치는 중인가**는 이제 상태로 가른다(`edit`).
+     *
+     * 예전에는 "이벤트 대상이 편집 박스 안인가"로 봤는데, 고른 칸도
+     * `contentEditable`이 되면서(한글 첫 글자를 받으려고) 그 판정이 늘 참이 됐다 —
+     * 그러면 화살표·Esc·⌫가 선택이 아니라 캐럿에 걸린다.
+     */
+    const editing = edit !== null;
     const anchor = sel ? selAnchor(sel) : { r: 0, c: 0 };
-    // Tab — 다음/이전 칸으로. 글을 고치는 중에도 도는 것이 표의 관례다.
-    if (e.key === 'Tab' && editing) {
-      const key = (e.target as HTMLElement).getAttribute('data-note-line') ?? '';
-      const m = /:r(\d+)c(\d+)$/.exec(key);
-      if (!m) return;
-      const r = Number(m[1]);
-      const c = Number(m[2]);
+    // Tab — 다음/이전 칸으로. 고른 칸에서도, 글을 고치는 중에도 돈다(표의 관례).
+    // 자리는 셋에서 찾는다: 고치는 중인 칸 → 키가 난 칸 → 고른 칸.
+    const atCell = /:r(\d+)c(\d+)$/.exec((e.target as HTMLElement).closest?.('[data-note-line]')?.getAttribute('data-note-line') ?? '');
+    if (e.key === 'Tab' && (editing || atCell || sel)) {
+      const r = editing ? edit.r : atCell ? Number(atCell[1]) : anchor.r;
+      const c = editing ? edit.c : atCell ? Number(atCell[2]) : anchor.c;
       const flat = r * width + c + (e.shiftKey ? -1 : 1);
       if (flat < 0 || flat >= rows.length * width) return;
       e.preventDefault();
@@ -3470,12 +3551,13 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       return;
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
+      // **언제나 막는다** — 고른 칸은 이제 `contentEditable`이라(한글 첫 글자를 받으려고)
+      // 막지 않으면 고르기만 해 둔 칸에서 글자가 하나 지워진다.
+      e.preventDefault();
       if (sel.mode === 'row' && rows.length > 1) {
-        e.preventDefault();
         controller.removeNoteTableRow(block.id, sel.r);
         setSel(null);
       } else if (sel.mode === 'col' && width > 1) {
-        e.preventDefault();
         controller.removeNoteTableCol(block.id, sel.c);
         setSel(null);
       }
@@ -3845,6 +3927,12 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                   {row.map((cell, ci) => {
                     const on = selHas(sel, ri, ci);
                     const editing = edit?.r === ri && edit.c === ci;
+                    /**
+                     * **고른 칸**(한 칸짜리 선택) — 글을 고치는 중은 아니지만 키는 받는다.
+                     * 그래서 `contentEditable`이어야 하고 글자를 고를 수 있어야 한다.
+                     * 커서는 `cell` 그대로다 — 한 번의 누름은 여전히 "칸을 고르는 일"이다.
+                     */
+                    const armed = !editing && sel?.mode === 'cell' && sel.r === ri && sel.c === ci;
                     const align = block.colAlign?.[ci] ?? 'left';
                     const paint = fillAt(block.fills, ri, ci);
                     // 링은 **고른 구역의 바깥 경계에만** 그린다 — 네 이웃이 선택에
@@ -3884,7 +3972,9 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                         data-note-table-cell={`${ri}:${ci}`}
                         data-picked={on ? '1' : undefined}
                         onMouseDown={(e) => {
-                          if (readOnly || e.button !== 0) return;
+                          // 글을 고치는 중인 칸 안의 끌기는 **글자 선택**이다 — 문서에
+                          // 걸린 끌기 감시가 그것을 칸 선택으로 바꾸지 않게 비워 둔다.
+                          if (readOnly || e.button !== 0 || editing) return;
                           drag.current = { r: ri, c: ci };
                         }}
                         onMouseEnter={() => {
@@ -3908,7 +3998,6 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           }
                           setEdit(null);
                           pick({ mode: 'cell', r: ri, c: ci });
-                          focusKeys();
                         }}
                         // 두 번 누르면 그 자리에 캐럿이 들어간다(제보).
                         onDoubleClick={(e) => openEdit(ri, ci, { x: e.clientX, y: e.clientY })}
@@ -3941,14 +4030,15 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           // 먼저 말해 준다. 글을 여는 칸에서만 글자 커서로 돌아간다.
                           cursor: editing ? 'text' : 'cell',
                           // 고르려고 끄는 동안 글자가 함께 잡히면 둘 다 엉킨다.
-                          userSelect: editing ? 'text' : 'none',
+                          // 고른 칸만 예외다 — 그 칸의 글자를 통째로 골라 두기 때문이다.
+                          userSelect: editing || armed ? 'text' : 'none',
                         }}
                       >
                         <NoteLine
                           onFocusLine={focusBox}
                           lineKey={`${block.id}:r${ri}c${ci}`}
                           runs={cell}
-                          readOnly={readOnly || !editing}
+                          readOnly={readOnly || !(editing || armed)}
                           placeholder=""
                           // Enter는 **편집을 닫는다**(요청) — 표의 칸은 문단이 아니라
                           // 값이라 "다 썼다"의 신호가 필요하다. 줄을 바꾸려면
@@ -3957,14 +4047,28 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           onEnter={() => {
                             setEdit(null);
                             pick({ mode: 'cell', r: ri, c: ci });
-                            focusKeys();
                             return true;
                           }}
                           onSlash={(at) => {
                             if (readOnly) return;
                             openSlash(`${block.id}:r${ri}c${ci}`, at);
                           }}
-                          onChange={(runs) => controller.setNoteCell(block.id, ri, ci, runs)}
+                          onChange={(runs) => {
+                            /**
+                             * 고른 칸에 **글자가 실제로 들어온 순간** 편집으로 넘어간다 —
+                             * 포커스는 이미 이 칸에 있으므로 조합이 끊기지 않는다.
+                             *
+                             * 글이 달라졌는지 반드시 본다: `NoteLine`은 포커스를 잃을 때도
+                             * 커밋하므로(`onBlur`), 그냥 `armed`만 보면 **다른 곳을 누르는
+                             * 것만으로** 편집이 열리고 선택이 풀린다(우클릭 메뉴가 아예
+                             * 동작하지 않았다).
+                             */
+                            if (armed && runsText(runs) !== runsText(cell)) {
+                              setSel(null);
+                              setEdit({ r: ri, c: ci });
+                            }
+                            controller.setNoteCell(block.id, ri, ci, runs);
+                          }}
                           style={{ fontSize: 13, lineHeight: '16px', color: 'inherit', textAlign: align, cursor: editing ? 'text' : 'cell' }}
                         />
                       </td>
@@ -3988,7 +4092,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
           onPick={(next) => {
             pick(next);
             setMenu(null);
-            focusKeys();
+            focusFor(next);
           }}
           onFill={(color) => {
             fill(fillTargetOf(menu.sel), color);

@@ -5,7 +5,7 @@
 // 블록 종류를 바꿔도 글을 잃지 않는다 · **열 것이 없어지지 않는다**(마지막 페이지).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
@@ -1676,13 +1676,15 @@ describe('공책 15판 — 표 제보 6건(＋의 자리 · 끝 추가 · 테두
     const { container } = renderEditor('/editor?map=ntd6&title=x');
     const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
     const line = container.querySelector('[data-note-line="b4:r1c0"]') as HTMLElement;
-    // 평소에는 글을 고칠 수 없다 — 한 번의 누름이 선택이기 때문이다.
+    // 건드리지 않은 칸은 글을 고칠 수 없다 — 한 번의 누름이 선택이기 때문이다.
     expect(line.getAttribute('contenteditable')).toBe('false');
 
     fireEvent.mouseDown(cell, { button: 0 });
     fireEvent.mouseUp(cell);
+    // **고른 칸은 키를 받는다**(한글 첫 글자부터 — 아래 20판) — 그래서 고른 뒤에는
+    // 편집 가능하지만, 아직 고른 상태다(글자가 통째로 골라져 있어 치면 덮어쓴다).
     await waitFor(() => expect(cell.getAttribute('data-picked')).toBe('1'));
-    expect(line.getAttribute('contenteditable')).toBe('false');
+    expect(line.getAttribute('contenteditable')).toBe('true');
 
     fireEvent.doubleClick(cell);
     await waitFor(() => expect(container.querySelector('[data-note-line="b4:r1c0"]')?.getAttribute('contenteditable')).toBe('true'));
@@ -1780,7 +1782,8 @@ describe('공책 16판 — 표 크기 조절 · 행열 삭제 · Enter로 닫기
     await waitFor(() => expect(container.querySelector('[data-note-line="b4:r1c0"]')?.getAttribute('contenteditable')).toBe('true'));
 
     fireEvent.keyDown(container.querySelector('[data-note-line="b4:r1c0"]')!, { key: 'Enter' });
-    await waitFor(() => expect(container.querySelector('[data-note-line="b4:r1c0"]')?.getAttribute('contenteditable')).toBe('false'));
+    // 편집이 닫히고 **그 칸이 골라진다**(고른 칸은 계속 키를 받으므로 편집 가능은 유지).
+    await waitFor(() => expect(picked(container)).toEqual(['1:0']));
     // 닫고 나면 그 칸이 골라져 있다 — 다음 동작(색·삭제)이 바로 이어진다.
     expect(cell.getAttribute('data-picked')).toBe('1');
   });
@@ -1881,23 +1884,18 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
     await waitFor(() => expect((saved('nu3').pages[0].blocks[3].rows[1][0] as { t: string }[]).map((r) => r.t).join('')).toBe('가'));
   });
 
-  it('한글 조합은 **끝난 뒤에** 칸으로 옮긴다(제보 3)', async () => {
+  it('행을 고른 채 글자를 치면 **첫 칸**에 들어간다 — 그때는 숨은 상자가 받는다', async () => {
     localStorage.setItem('mindflow_doc_nu4', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=nu4&title=x');
-    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="0:1"]'))) as HTMLElement;
-    fireEvent.mouseDown(cell, { button: 0 });
-    fireEvent.mouseUp(cell);
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-table-rowhandle="0"]'))) as HTMLElement);
     const keys = (await waitFor(() => container.querySelector('[data-note-table-keys]'))) as HTMLInputElement;
 
-    // 조합 중의 입력은 흘려보낸다 — 첫 자모가 칸에 따로 떨어지지 않는다.
+    // 행·열·표 전체는 옮겨 적을 칸이 하나로 정해지지 않아 숨은 상자가 조합을 돌린다.
     fireEvent.compositionStart(keys);
-    fireEvent.change(keys, { target: { value: 'ㄱ' } });
-    expect(container.querySelector('[data-note-line="b4:r0c1"]')?.getAttribute('contenteditable')).toBe('false');
-
     keys.value = '가';
     fireEvent.compositionEnd(keys, { data: '가' });
     saveNow();
-    await waitFor(() => expect((saved('nu4').pages[0].blocks[3].rows[0][1] as { t: string }[]).map((r) => r.t).join('')).toBe('가'));
+    await waitFor(() => expect((saved('nu4').pages[0].blocks[3].rows[0][0] as { t: string }[]).map((r) => r.t).join('')).toBe('가'));
   });
 
   it('우클릭 메뉴는 **표 안의 다른 곳**을 눌러도 닫힌다(제보 5)', async () => {
@@ -2303,6 +2301,76 @@ describe('공책 20판 — 표 모양 6건(칩·코너·한 줄 테두리·끝 �
 
     expect(grid.style.gridTemplateColumns).toBe('18px minmax(0,1fr) 24px');
     expect(grid.style.width).toBe('');
+  });
+});
+
+describe('공책 21판 — 표 동작 2건(표 밖으로 끌기 · 고른 칸이 키를 받는다)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('고른 칸이 **스스로 키를 받는다** — 포커스가 그 칸에 가고 글자가 통째로 골라진다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_nw0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nw0&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+
+    fireEvent.mouseDown(cell, { button: 0 });
+    fireEvent.mouseUp(cell);
+
+    // 숨은 `<input>`이 아니라 **그 칸**이 받는다 — 거기서 조합을 돌려야 한글이
+    // 첫 글자부터 보인다(예전에는 두 번째 글자를 칠 때 첫 글자가 나타났다).
+    const line = container.querySelector('[data-note-line="b4:r1c0"]') as HTMLElement;
+    await waitFor(() => expect(document.activeElement).toBe(line));
+    expect(line.getAttribute('contenteditable')).toBe('true');
+    // 글자가 통째로 골라져 있어 치면 덮어쓴다(스프레드시트의 관례).
+    expect(cell.style.userSelect).toBe('text');
+  });
+
+  it('고른 칸에 글자가 들어오면 **편집으로 넘어간다** — 선택은 풀린다', async () => {
+    localStorage.setItem('mindflow_doc_nw1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nw1&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+    fireEvent.mouseDown(cell, { button: 0 });
+    fireEvent.mouseUp(cell);
+    await waitFor(() => expect(picked(container)).toEqual(['1:0']));
+
+    const line = container.querySelector('[data-note-line="b4:r1c0"]') as HTMLElement;
+    line.innerHTML = '새 값';
+    fireEvent.input(line);
+
+    await waitFor(() => expect(picked(container)).toEqual([]));
+    saveNow();
+    await waitFor(() => expect((saved('nw1').pages[0].blocks[3].rows[1][0] as { t: string }[]).map((r) => r.t).join('')).toBe('새 값'));
+  });
+
+  it('**다른 곳을 누르는 것만으로는** 편집이 열리지 않는다 — 포커스를 잃을 때의 커밋과 갈린다', async () => {
+    localStorage.setItem('mindflow_doc_nw2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nw2&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+    fireEvent.mouseDown(cell, { button: 0 });
+    fireEvent.mouseUp(cell);
+    await waitFor(() => expect(picked(container)).toEqual(['1:0']));
+
+    // `NoteLine`은 blur에서도 커밋한다 — 글이 그대로면 편집으로 넘어가지 않아야 한다.
+    fireEvent.blur(container.querySelector('[data-note-line="b4:r1c0"]')!);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(picked(container)).toEqual(['1:0']);
+  });
+
+  it('고른 칸에서 ⌫는 **글자를 지우지 않는다** — 고르기만 해 둔 상태다', async () => {
+    localStorage.setItem('mindflow_doc_nw3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nw3&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+    fireEvent.mouseDown(cell, { button: 0 });
+    fireEvent.mouseUp(cell);
+    await waitFor(() => expect(picked(container)).toEqual(['1:0']));
+
+    const ev = createEvent.keyDown(container.querySelector('[data-note-block="b4"]')!, { key: 'Backspace' });
+    fireEvent(container.querySelector('[data-note-block="b4"]')!, ev);
+    expect(ev.defaultPrevented).toBe(true);
   });
 });
 
