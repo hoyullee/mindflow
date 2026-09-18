@@ -71,7 +71,7 @@ export { computeFreeNudge } from './overlap';
 // §2's `crdt/` seam). Pure — `yjs` has no DOM/network dependency itself, so
 // this stays framework-agnostic; transport lives in `apps/web/src/collab/`.
 export type { YDoc } from './crdt';
-export { docToYDoc, yDocToDoc, applyDocToYDoc, addNode, removeNode, setNodeField, encodeStateAsUpdate, applyUpdate } from './crdt';
+export { docToYDoc, yDocToDoc, applyDocToYDoc, docSyncsViaCrdt, addNode, removeNode, setNodeField, encodeStateAsUpdate, applyUpdate } from './crdt';
 
 export type { StrokeBox } from './strokes';
 export { strokeBounds, strokeHit, strokePathD, translateStrokePts } from './strokes';

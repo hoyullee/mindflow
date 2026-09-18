@@ -1086,9 +1086,29 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
               크기이고, 저장 상태는 대개 `저장됨`으로 잠잠하기 때문이다. 잠잠하지 않을
               때만(저장 전·저장 중) 글자에 색이 든다. */}
           <span data-note-save-state style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap', minWidth: 0 }}>
-            <span>{controller.notePages.length}쪽</span>
-            <span aria-hidden="true">·</span>
-            <span style={{ color: saving === 'saved' || readOnly ? 'var(--mf-faint)' : 'var(--mf-accent-deep)', fontWeight: saving === 'saved' || readOnly ? 600 : 800 }}>{saveLabel}</span>
+            {/* **충돌은 저장 상태보다 먼저 말해야 한다**(제보) — 공책에는 이 자리가
+                유일한 알림 자리다(캔버스의 `DocChip` 배너가 여기엔 없어서, 다른 기기가
+                먼저 저장해도 화면은 그냥 `저장됨`이라고만 적혀 있었다). 공책은 실시간
+                공동 편집을 붙이지 않은 문서라 두 기기가 자동으로 합쳐지지 않으므로,
+                덮인 판이 `기록`에 남아 있다는 것까지 함께 알린다(저장 경로가 충돌
+                직전에 서버 판을 거기 넣어 둔다). 눌러서 닫는다. */}
+            {controller.saveConflict ? (
+              <button
+                type="button"
+                data-note-save-conflict
+                onClick={controller.dismissSaveConflict}
+                title="다른 기기에서 먼저 저장했습니다. 그 판은 `기록`에 남겨 뒀어요. (눌러서 닫기)"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, padding: 0, border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800, color: 'var(--mf-danger)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              >
+                ⚠ 다른 기기에서 먼저 저장됨 — 그 판은 `기록`에
+              </button>
+            ) : (
+              <>
+                <span>{controller.notePages.length}쪽</span>
+                <span aria-hidden="true">·</span>
+                <span style={{ color: saving === 'saved' || readOnly ? 'var(--mf-faint)' : 'var(--mf-accent-deep)', fontWeight: saving === 'saved' || readOnly ? 600 : 800 }}>{saveLabel}</span>
+              </>
+            )}
           </span>
         </span>
         {!readOnly && (
