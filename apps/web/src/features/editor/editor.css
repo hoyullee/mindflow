@@ -596,21 +596,6 @@ input[type='search']::-webkit-search-results-decoration {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-note-editor] [style*='mf-note-pop'] { animation: none !important; }
-  .mf-note-slash-caret { animation: none !important; }
-}
-/* `/` 칩의 깜빡이는 캐럿 — **본문에 계속 치고 있다**는 신호(스펙 §7의 `ghBlink`).
-   패널은 목록일 뿐이고 글자가 들어가는 곳은 본문이라, 그 자리를 이 캐럿이 가리킨다. */
-@keyframes mf-note-blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
-}
-.mf-note-slash-caret {
-  width: 1.5px;
-  height: 11px;
-  flex: 0 0 auto;
-  border-radius: 1px;
-  background: var(--mf-accent);
-  animation: mf-note-blink 1s steps(1) infinite;
 }
 /* 툴바 단추 — 평소엔 글리프만, 마우스를 얹으면 옅은 면이 깔린다(디자인). */
 .mf-note-tb:hover {

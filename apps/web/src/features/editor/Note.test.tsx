@@ -1178,8 +1178,8 @@ describe('공책 11판 — `/`는 글자로 남는다', () => {
     await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
 
     typeSlash(container, 'b1', '/인용');
-    await waitFor(() => expect(container.querySelector('[data-note-slash-q]')?.textContent).toBe('인용'));
-    // 좁혀진 목록에는 그 하나만 남는다.
+    // 좁혀진 목록에는 그 하나만 남는다(친 글자는 어디에도 다시 그리지 않는다 — 제보).
+    await waitFor(() => expect(container.querySelector('[data-note-slash-item="q"]')).toBeTruthy());
     expect([...container.querySelectorAll('[data-note-slash-item]')].map((b) => b.getAttribute('data-note-slash-item'))).toEqual(['q']);
     // 그리고 글자는 본문에 그대로 있다.
     saveNow();
@@ -1237,7 +1237,7 @@ describe('공책 12판 — `/`는 어느 줄에서나, 태그 메뉴 정돈', ()
     type(line, '알림을 멘션과 시스템으로 분리한다 ');
     fireEvent.keyDown(line, { key: '/' });
     type(line, '알림을 멘션과 시스템으로 분리한다 /인용');
-    await waitFor(() => expect(container.querySelector('[data-note-slash-q]')?.textContent).toBe('인용'));
+    await waitFor(() => expect(container.querySelector('[data-note-slash-item="q"]')).toBeTruthy());
     expect([...container.querySelectorAll('[data-note-slash-item]')].map((b) => b.getAttribute('data-note-slash-item'))).toEqual(['q']);
   });
 
@@ -2097,13 +2097,19 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     expect(panel.style.width).toBe('306px');
   });
 
-  it('검색어는 **칩에만** 있다 — 머리에 다시 적지 않는다(스펙 §7)', async () => {
+  it('친 글자를 **어디에도 다시 그리지 않는다** — 본문에 그대로 있다(제보)', async () => {
     const c = await openEmpty('nq1');
     slash(c, '/인용');
-    await waitFor(() => expect(c.querySelector('[data-note-slash-q]')?.textContent).toBe('인용'));
+    await waitFor(() => expect(c.querySelector('[data-note-slash-item="q"]')).toBeTruthy());
 
-    expect(c.querySelector('[data-note-slash-chip] [data-note-slash-q]')).toBeTruthy();
-    expect(c.querySelector('[data-note-slash-panel] [data-note-slash-q]')).toBeNull();
+    // 머리는 이름뿐이고, 앵커에도 칩이 없다 — 본문의 `/인용`이 유일한 표시다.
+    const head = c.querySelector('[data-note-slash-panel]')!.firstElementChild as HTMLElement;
+    expect(head.textContent).toBe('블록 넣기');
+    expect(c.querySelector('[data-note-slash-chip]')).toBeNull();
+    // 앵커에는 패널 말고 아무것도 없다 — 20px 자리만 잡는다.
+    const kids = [...c.querySelector('[data-note-slash-anchor]')!.children];
+    expect(kids.length).toBe(1);
+    expect(kids[0]!.hasAttribute('data-note-slash-panel')).toBe(true);
     // 안내 한 줄은 **검색어가 비어 있을 때만** 나온다.
     expect(c.querySelector('[data-note-slash-panel]')!.textContent).not.toContain('블록 이름을 이어서 입력하세요');
   });
