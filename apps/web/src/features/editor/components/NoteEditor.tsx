@@ -77,6 +77,22 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   { kind: 'hr', name: '구분선', hint: '', desc: '섹션 나누기', group: '넣기', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
 ];
 
+/**
+ * 잘라내기 — **평범한 가위**다(제보: 아이콘이 이상하다).
+ *
+ * 예전 모양은 손잡이를 `a 3 3 0 1 0`짜리 반원 두 개로 그리고 날을 그 위에 엇갈려
+ * 얹은 것이었는데, 16px에서는 반원이 열린 고리처럼 보여 가위로 읽히지 않았다.
+ * 손잡이를 **닫힌 원** 둘로 두고 날을 그 사이에서 교차시키는, 어디서나 쓰는 그
+ * 모양으로 돌린다.
+ */
+const CUT_ICON = (
+  <>
+    <circle cx="6" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
+  </>
+);
+
 /** 콜아웃 어조 셋 — 디자인의 `CALLOUTS`(이름, 바탕, 잉크). */
 const TONES: { tone: NoteCalloutTone; name: string; bg: string; ink: string }[] = [
   { tone: 'warn', name: '주의', bg: 'var(--mf-accent-soft)', ink: 'var(--mf-accent-deep)' },
@@ -405,17 +421,15 @@ export function NoteEditor({ controller }: Props) {
       return;
     }
     /**
-     * 스펙의 "공백 + 다섯 글자"에 **맞는 것이 없을 때**라는 조건을 하나 더 얹었다.
+     * **공백이 있고 공백을 뺀 길이가 7 이상**이면 접는다(요청).
      *
-     * 스펙의 규칙을 글자 그대로 옮기면 우리 목록을 쓸 수 없다 — `글머리 목록`(6)
+     * 스펙의 값은 5였는데 그대로는 우리 목록을 쓸 수 없었다 — `글머리 목록`(6)
      * `번호 목록`·`코드 블록`·`문서 링크`(각 5)처럼 **이름에 공백이 든 블록**이
-     * 다섯이라, 이름을 끝까지 치는 순간 목록이 닫힌다(프로토타입의 이름들은 그
-     * 길이에 걸리지 않았다). 그래서 "길다 + 공백" 위에 "그래도 맞는 것이 하나도
-     * 없다"를 더해, 정말 산문으로 넘어간 경우에만 접는다.
+     * 다섯이라 이름을 끝까지 치는 순간 닫혔다. 7이면 가장 긴 이름(6)을 넘어서므로
+     * 조건 하나로 깔끔하다(예전에 덧대 두었던 "맞는 것이 없을 때"는 걷었다).
      */
-    const q = slashQuery.trim().toLowerCase();
     const bare = slashQuery.replace(/\s/g, '');
-    if (/\s/.test(slashQuery) && bare.length >= 5 && q && !BLOCK_TYPES.some((t) => `${t.name}${t.desc}`.toLowerCase().includes(q))) closeSlash();
+    if (/\s/.test(slashQuery) && bare.length >= 7) closeSlash();
   }, [slashFor, slashAtChar, slashQuery, page, closeSlash]);
 
   /** 고른 줄들의 블록 id — 칠하기가 안 되는 브라우저에서 면으로 물러설 때 쓴다. */
@@ -477,6 +491,9 @@ export function NoteEditor({ controller }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [textSel, page, controller, readOnly]);
 
+  /** 본문 단을 창 너비에 맞출지 — 공책 한 권의 읽기 설정(`cover.wide`). */
+  const wide = controller.doc.cover?.wide === true;
+
   if (!page) return null;
 
   return (
@@ -495,6 +512,7 @@ export function NoteEditor({ controller }: Props) {
             openSlash={(id, from) => openSlashAt(id, from)}
             focus={focus}
             setFocus={setFocus}
+            wide={wide}
           />
         )}
         <div className="lnb-scroll" data-note-page style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}>
@@ -550,12 +568,15 @@ export function NoteEditor({ controller }: Props) {
               if (box) focusBox(box);
               setCtxAt({ blockId: id, box, x: e.clientX, y: e.clientY });
             }}
-            style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}
+            // 폭은 **공책 한 권의 읽기 설정**이다(요청·`cover.wide`) — 가운데 정렬
+            // (700px)이 기본이고, `창 너비에 맞춤`이면 단이 화면을 가득 쓴다.
+            style={{ ...(wide ? {} : { maxWidth: 700 }), margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}
           >
             <PageHead controller={controller} page={page} />
             {/* 머리와 본문 사이의 선(요청) — 위는 이 장이 무엇인지(제목·태그·사람),
                 아래는 그 내용이다. 블록 간격(19px)만으로는 그 경계가 서지 않는다. */}
-            <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', marginTop: -6 }} />
+            {/* 간격은 **18px**이다(요청) — 단의 기본 틈이 9px이라 9를 더해 맞춘다. */}
+            <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', marginTop: 9 }} />
             {page.blocks.map((block, i) => (
               // 선택 면은 **감싸는 칸**이 그린다 — 블록마다 뿌리가 달라서(표·이미지·
               // 콜아웃…) 각 뿌리에 면을 얹으면 같은 코드를 여덟 번 쓰게 된다. 이 칸은
@@ -626,9 +647,12 @@ export function NoteEditor({ controller }: Props) {
               </button>
             )}
 
-            <PageStats page={page} />
           </div>
         </div>
+        {/* 글의 부피는 **본문 밖의 고정 띠**다(요청) — 예전에는 본문 맨 끝에 붙어
+            있어 끝까지 굴려야 보였고, 글을 쓰는 동안 계속 아래로 밀려났다. 이제
+            페이지 바닥에 붙어 늘 같은 자리에서 같은 값을 말한다. */}
+        <PageStats page={page} wide={wide} />
       </div>
     </div>
   );
@@ -1897,14 +1921,25 @@ function pageHit(page: NotePage, query: string): string | null {
  * 회의록·정책처럼 **읽을 사람이 있는 글**에서 "이거 길어요?"에 답해 주는 줄이다.
  * 읽기 시간은 한국어 분당 500자(일반적인 추정치)로, 1분 미만도 `1분`으로 적는다.
  */
-function PageStats({ page }: { page: NotePage }) {
+function PageStats({ page, wide }: { page: NotePage; wide: boolean }) {
   const text = pageText(page);
   const chars = [...text.replace(/\s+/g, '')].length;
   const words = text.split(/\s+/).filter(Boolean).length;
   return (
     <div
       data-note-stats
-      style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 14, borderTop: '1px solid var(--mf-border-soft)', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10.5, color: 'var(--mf-faint)', flexWrap: 'wrap' }}
+      style={{
+        // **자리를 따로 잡는다**(요청) — 본문과 함께 구르지 않고 페이지 바닥에 붙는다.
+        flex: '0 0 auto',
+        // 선은 화면을 가로지르고, 값은 본문 단에 맞춰 선다 — 글자와 세로줄이 맞는다.
+        borderTop: '1px solid var(--mf-border-soft)',
+        background: 'var(--mf-note-body)',
+        padding: '9px 30px',
+        boxSizing: 'border-box',
+      }}
+    >
+    <div
+      style={{ ...(wide ? {} : { maxWidth: 700 }), margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10.5, color: 'var(--mf-faint)', flexWrap: 'wrap' }}
     >
       <span>{chars}자</span>
       <span aria-hidden="true">·</span>
@@ -1914,6 +1949,7 @@ function PageStats({ page }: { page: NotePage }) {
       <span>{words}단어</span>
       <span style={{ flex: 1, minWidth: 0 }} />
       {page.updatedAt && <span>{formatLastEdited(page.updatedAt)} 수정</span>}
+    </div>
     </div>
   );
 }
@@ -2155,7 +2191,7 @@ function PageHead({ controller, page }: { controller: EditorController; page: No
   const mine = !page.updatedBy?.trim();
   const linked = page.linkedDocId ? controller.linkTargets.find((t) => t.docId === page.linkedDocId) : undefined;
   return (
-    <div className="mf-note-head" style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+    <div className="mf-note-head" data-note-page-head style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
       <input
         data-note-title
         value={page.title}
@@ -2220,6 +2256,7 @@ function FormatToolbar({
   openSlash,
   focus,
   setFocus,
+  wide,
 }: {
   controller: EditorController;
   boxRef: { current: HTMLElement | null };
@@ -2230,6 +2267,8 @@ function FormatToolbar({
   openSlash: (blockId: string, from?: Element | null) => void;
   focus: boolean;
   setFocus: (fn: (v: boolean) => boolean) => void;
+  /** 본문 단이 창 너비를 쓰는가(`cover.wide`) — 폭 단추의 켜짐 상태. */
+  wide: boolean;
 }) {
   const [open, setOpen] = useState<'hl' | 'ink' | null>(null);
   /**
@@ -2512,6 +2551,39 @@ function FormatToolbar({
         <span aria-hidden="true" style={{ width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, background: 'var(--mf-panel2)', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 700, color: 'var(--mf-subtext)', lineHeight: 1 }}>/</span>
       </button>
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
+      {/* **본문 폭**(요청) — `가운데 정렬`(700px)과 `창 너비에 맞춤` 둘을 오간다.
+          표가 넓거나 화면이 큰 사람에게는 700px 단이 답답하고, 글만 읽는 사람에게는
+          화면 폭 한 줄이 너무 길다 — 둘 다 옳아서 고를 수 있게 둔다. 값은 **공책
+          한 권**에 적힌다(`cover.wide`): 한 권 안에서 장마다 폭이 달라지면 페이지를
+          넘길 때마다 글이 출렁인다. */}
+      <button
+        type="button"
+        data-note-width
+        aria-pressed={wide}
+        title={wide ? '본문 폭 — 창 너비에 맞춤 (눌러서 가운데 정렬)' : '본문 폭 — 가운데 정렬 (눌러서 창 너비에 맞춤)'}
+        aria-label={wide ? '본문 폭 가운데 정렬로' : '본문 폭 창 너비에 맞춤'}
+        className="btn mf-note-tb"
+        onMouseDown={stop}
+        onClick={() => controller.setNoteCover({ wide: !wide })}
+        style={{ ...TOOL_BTN, background: wide ? 'var(--mf-accent-soft)' : 'transparent', color: wide ? 'var(--mf-accent)' : 'var(--mf-subtext)' }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {wide ? (
+            // 창 너비에 맞춤 — 바깥 테두리를 가득 채운 단.
+            <>
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="M6 10h12M6 14h9" />
+            </>
+          ) : (
+            // 가운데 정렬 — 양옆에 여백을 둔 단.
+            <>
+              <rect x="3" y="5" width="18" height="14" rx="2" opacity=".35" />
+              <path d="M8 10h8M8 14h6" />
+              <path d="M7 5v14M17 5v14" opacity=".5" />
+            </>
+          )}
+        </svg>
+      </button>
       {/* 집중 — 본문 단을 좁히고 여백을 키운다(디자인의 `toggleFocus`: 700→640px). */}
       <button
         type="button"
@@ -2788,11 +2860,46 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   };
 
   /** 맨 앞 백스페이스 — 빈 블록이면 지우고, 글이 있으면 문단으로 되돌린다. */
+  /**
+   * 이 블록을 지운 **다음**, 캐럿을 바로 앞 줄의 **끝**으로 보낸다(제보: 한 줄을
+   * 지워도 커서가 올라가지 않는다).
+   *
+   * 왜 `freshId`로 안 되나: 그 길은 **새로 마운트되는** 줄에만 듣는다
+   * (`NoteLine`의 `autoFocus`는 마운트할 때 한 번이다). 앞 줄은 이미 떠 있으므로
+   * 우리가 직접 옮겨야 한다. 지우면 DOM이 다시 그려지므로 다음 프레임에 찾는다.
+   */
+  const caretToPrevLine = (): void => {
+    const go = () => {
+      const wrap = document.querySelector<HTMLElement>(`[data-note-blockwrap="${block.id}"]`);
+      // 지워졌으면 그 자리에 **다음** 블록이 와 있다 — 앞 블록은 언제나 이전 형제다.
+      const prev = (wrap?.previousElementSibling ?? document.querySelectorAll('[data-note-blockwrap]')[index - 1]) as HTMLElement | null;
+      if (!prev) return;
+      // 표처럼 **고쳐 쓸 수 없는 줄**만 가진 블록은 건너뛴다(캐럿이 갈 자리가 없다).
+      const lines = [...prev.querySelectorAll<HTMLElement>('[data-note-line][contenteditable="true"]')];
+      const el = lines[lines.length - 1];
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false); // 끝 — 이어 쓰려던 자리다
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      } catch {
+        /* 캐럿을 못 놓아도 포커스는 갔다 */
+      }
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+    else setTimeout(go, 0);
+  };
+
   const backBlock = (): boolean => {
     if (readOnly) return false;
     const empty = runsText(block.runs) === '';
     if (empty && index > 0) {
       controller.removeNoteBlock(block.id);
+      caretToPrevLine();
       return true;
     }
     if (block.kind !== 'p') {
@@ -4211,7 +4318,7 @@ function TableMenu({
         <span style={{ ...POP_HEAD, textTransform: 'none', letterSpacing: 0 }}>표 · {label.name}</span>
         {cellish && (
           <>
-            <CtxItem mark="t-cut" name="잘라내기" hint="⌘X" icon={<><path d="M6 3v12a3 3 0 1 0 3 3" /><path d="M18 3v12a3 3 0 1 1-3 3" /><path d="m6 9 12 6M18 9 6 15" /></>} onClick={run(() => { void write(runsText(cell ?? [])); controller.setNoteCell(block.id, spot.r, spot.c, textRuns('')); })} />
+            <CtxItem mark="t-cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={run(() => { void write(runsText(cell ?? [])); controller.setNoteCell(block.id, spot.r, spot.c, textRuns('')); })} />
         <CtxItem mark="t-copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={run(() => void write(runsText(cell ?? [])))} />
         <CtxItem
           mark="t-paste"
@@ -4408,7 +4515,7 @@ function BlockMenu({ controller, at, onClose }: { controller: EditorController; 
       style={{ ...POP, ...base, display: 'flex', flexDirection: 'column', gap: 1 }}
     >
       <span style={POP_HEAD}>블록</span>
-      <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={<><path d="M6 3v12a3 3 0 1 0 3 3" /><path d="M18 3v12a3 3 0 1 1-3 3" /><path d="m6 9 12 6M18 9 6 15" /></>} onClick={done(() => void copy().then((ok) => ok && controller.removeNoteBlock(at.blockId)))} />
+      <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={done(() => void copy().then((ok) => ok && controller.removeNoteBlock(at.blockId)))} />
       <CtxItem mark="copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(() => void copy())} />
       <CtxItem mark="paste" name="붙여넣기" hint="⌘V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>} onClick={done(() => void paste(false))} />
       <CtxItem mark="paste-plain" name="서식 없이 붙여넣기" hint="⌘⇧V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /><path d="M9 13h6" /></>} onClick={done(() => void paste(true))} />

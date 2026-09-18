@@ -2374,6 +2374,109 @@ describe('공책 21판 — 표 동작 2건(표 밖으로 끌기 · 고른 칸이
   });
 });
 
+describe('공책 22판 — 본문 6건(통계 띠·지우고 올라가는 커서·간격·슬래시·가위·본문 폭)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('통계는 **본문 밖의 고정 띠**다 — 굴러가지 않는다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nx0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nx0&title=x');
+    const stats = (await waitFor(() => container.querySelector('[data-note-stats]'))) as HTMLElement;
+
+    // 굴러가는 단(`[data-note-page]`) **안**에 있으면 끝까지 내려야 보인다.
+    expect(stats.closest('[data-note-page]')).toBeNull();
+    expect(stats.style.flex).toBe('0 0 auto');
+    // 구분선도 함께 온다(요청: "바로 위의 구분선과 함께").
+    expect(stats.style.borderTop).toContain('1px solid');
+  });
+
+  it('빈 줄에서 ⌫를 누르면 그 줄이 사라지고 **캐럿이 앞 줄 끝으로** 간다(제보)', async () => {
+    const doc = {
+      ...NOTE,
+      pages: [
+        {
+          id: 'p1',
+          title: '빈 장',
+          blocks: [
+            { id: 'b1', kind: 'p', runs: [{ t: '앞 줄', b: false, c: null }] },
+            { id: 'b2', kind: 'p', runs: [{ t: '', b: false, c: null }] },
+          ],
+        },
+      ],
+    };
+    localStorage.setItem('mindflow_doc_nx1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=nx1&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b2"]'))) as HTMLElement;
+
+    line.focus();
+    fireEvent.keyDown(line, { key: 'Backspace' });
+
+    await waitFor(() => expect(container.querySelector('[data-note-line="b2"]')).toBeNull());
+    // 캐럿이 갈 자리는 **앞 줄**이다 — 예전에는 줄만 사라지고 포커스를 잃었다.
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+  });
+
+  it('태그 영역과 아래 구분선 사이가 **18px**이다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nx2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nx2&title=x');
+    const head = (await waitFor(() => container.querySelector('[data-note-page-head]'))) as HTMLElement;
+    const rule = head.nextElementSibling as HTMLElement;
+
+    // 단의 기본 틈이 9px이라 9를 더해 18이 된다.
+    expect(rule.style.marginTop).toBe('9px');
+    expect((head.parentElement as HTMLElement).style.gap).toBe('9px');
+  });
+
+  it('`/` 뒤에 **공백 + 일곱 글자**면 접히고 친 글자는 남는다(요청)', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_nx3', JSON.stringify(empty));
+    const { container } = renderEditor('/editor?map=nx3&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    fireEvent.keyDown(line, { key: '/' });
+    // 여섯 글자(`글머리 목록`)까지는 남는다 — 가장 긴 블록 이름이다.
+    type(line, '/글머리 목록');
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
+
+    type(line, '/글머리 목록입니다');
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
+    saveNow();
+    await waitFor(() => expect(saved('nx3').pages[0].blocks[0].runs[0].t).toBe('/글머리 목록입니다'));
+  });
+
+  it('우클릭 메뉴의 `잘라내기`는 **평범한 가위**다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_nx4', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nx4&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    fireEvent.contextMenu(line);
+
+    const cut = (await waitFor(() => container.querySelector('[data-note-ctx="cut"]'))) as HTMLElement;
+    // 손잡이가 **닫힌 원** 둘이다 — 예전의 반원 두 개는 16px에서 고리로 보였다.
+    expect(cut.querySelectorAll('circle')).toHaveLength(2);
+  });
+
+  it('본문 폭을 **창 너비에 맞춤**으로 바꾸면 단의 상한이 풀린다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nx5', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nx5&title=x');
+    const head = (await waitFor(() => container.querySelector('[data-note-page-head]'))) as HTMLElement;
+    const col = head.parentElement as HTMLElement;
+    expect(col.style.maxWidth).toBe('700px');
+
+    fireEvent.click(container.querySelector('[data-note-width]')!);
+    await waitFor(() => expect((container.querySelector('[data-note-page-head]')!.parentElement as HTMLElement).style.maxWidth).toBe(''));
+    // 통계 띠도 함께 넓어진다 — 단과 세로줄이 어긋나지 않게.
+    expect((container.querySelector('[data-note-stats]')!.firstElementChild as HTMLElement).style.maxWidth).toBe('');
+
+    // 값은 **공책 한 권**에 남는다(`cover.wide`).
+    saveNow();
+    await waitFor(() => expect(saved('nx5').cover.wide).toBe(true));
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');
