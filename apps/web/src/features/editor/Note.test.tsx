@@ -1952,6 +1952,33 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
   });
 });
 
+describe('공책 18판 — 되돌리기가 공책을 비우지 못한다(제보: 빈 화면)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('⌘Z를 바닥까지 눌러도 페이지가 남는다 — 에디터가 사라지지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_nv0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nv0&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 한 번 고쳐 되돌리기 스택에 한 칸을 쌓는다.
+    type(line, '고친 글');
+    saveNow();
+    await waitFor(() => expect(saved('nv0').pages[0].blocks[0].runs[0].t).toBe('고친 글'));
+
+    // 바닥까지 되돌린다. **바닥이 빈 문서면** 페이지가 0장이 되고 본문이 통째로
+    // 사라졌다(제보) — 서버에서 본문을 받는 동안 바닥을 찍었기 때문이다.
+    for (let i = 0; i < 5; i += 1) fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    expect(container.querySelectorAll('[data-note-page-row]').length).toBeGreaterThan(0);
+    expect(container.querySelector('[data-note-save-state]')?.textContent).toContain('2쪽');
+  });
+});
+
 describe('공책 14판 — 얹으면 반응하고, 목록은 이 스페이스의 것이다', () => {
   beforeEach(() => {
     localStorage.clear();
