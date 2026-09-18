@@ -1528,17 +1528,38 @@ describe('공책 15판 — 표 제보 6건(＋의 자리 · 끝 추가 · 테두
   });
   afterEach(cleanup);
 
-  it('＋는 **손잡이마다 그 앞쪽**에 있고, 끝에도 둘 있다(요청)', async () => {
+  it('＋는 **얹은 손잡이 하나**의 앞쪽에만 보인다(요청)', async () => {
     localStorage.setItem('mindflow_doc_ntd0', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ntd0&title=x');
-    await waitFor(() => expect(container.querySelector('[data-note-table-colhandle="0"]')).toBeTruthy());
+    const rail = (await waitFor(() => container.querySelector('[data-note-table-colrail]'))) as HTMLElement;
+    const pluses = rail.querySelectorAll<HTMLElement>('.mf-note-tplus');
 
-    // 2×2 표 → 열 둘 + 행 둘 + 끝 둘 = 여섯.
-    expect(container.querySelectorAll('.mf-note-tplus')).toHaveLength(6);
+    // 2×2 표 → 열 손잡이마다 하나씩(둘). 끝의 점선 띠는 레일 밖에 따로 있다.
+    expect(pluses).toHaveLength(2);
+    expect(pluses[1]?.getAttribute('title')).toBe('2번째 열 왼쪽에 열 넣기');
+    // 아무 손잡이에도 얹지 않았으면 전부 숨어 있다.
+    expect(pluses[0]?.style.opacity).toBe('0');
+    expect(pluses[1]?.style.opacity).toBe('0');
+
+    // 두 번째 열에 얹으면 **그 하나만** 뜬다.
+    fireEvent.mouseEnter(pluses[1]!.parentElement!);
+    await waitFor(() => expect(pluses[1]?.style.opacity).toBe('1'));
+    expect(pluses[0]?.style.opacity).toBe('0');
+
+    fireEvent.mouseLeave(pluses[1]!.parentElement!);
+    await waitFor(() => expect(pluses[1]?.style.opacity).toBe('0'));
+  });
+
+  it('끝의 열·행 추가는 표를 두르는 **점선 띠**다(요청·시안)', async () => {
+    localStorage.setItem('mindflow_doc_ntd0d', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ntd0d&title=x');
+    const band = (await waitFor(() => container.querySelector('[data-note-table-append="col"]'))) as HTMLElement;
+
     expect(container.querySelectorAll('.mf-note-tplus-end')).toHaveLength(2);
-    // 두 번째 열의 ＋는 그 열 **왼쪽**에 넣는다(앞쪽).
-    const before = (container.querySelector('[data-note-table-colrail]') as HTMLElement).querySelectorAll('.mf-note-tplus');
-    expect(before[1]?.getAttribute('title')).toBe('2번째 열 왼쪽에 열 넣기');
+    expect(band.style.border).toContain('dashed');
+    // 표의 높이를 그대로 두른다 — 동그라미 하나가 아니라 띠다.
+    expect(band.style.alignSelf).toBe('stretch');
+    expect(container.querySelector<HTMLElement>('[data-note-table-append="row"]')?.style.justifySelf).toBe('stretch');
   });
 
   it('레일의 두 번째 열 ＋를 누르면 그 자리에 열이 들어간다(요청)', async () => {
