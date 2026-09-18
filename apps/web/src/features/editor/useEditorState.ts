@@ -852,7 +852,6 @@ export interface EditorController {
   /** 열의 가로 정렬 — 왼쪽이면 칸을 비운다(기본값은 적지 않는다). */
   setNoteTableAlign: (blockId: string, col: number, align: 'left' | 'center' | 'right') => void;
   /** 첫 행을 머리로 쓸지 — 켜짐이 기본이라 **끌 때만** 문서에 적힌다. */
-  toggleNoteTableHead: (blockId: string) => void;
   /**
    * 고른 칸들에 **색을 붓는다**(`null`이면 지운다) — 표 선택 칩의 `색 채우기`.
    * 좌표는 `[행, 열]` 짝이고, 칠하지 않은 표에는 그 칸 자체가 생기지 않는다.
@@ -6955,14 +6954,6 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
-  const toggleNoteTableHead = useCallback(
-    (blockId: string) => {
-      if (!notePage) return;
-      commitBlock(notePage.id, blockId, (b) => (b.head === false ? { ...b, head: undefined } : { ...b, head: false }), false);
-    },
-    [commitBlock, notePage],
-  );
-
   const moveNoteTableCol = useCallback(
     (blockId: string, at: number, delta: number) => {
       if (!notePage) return;
@@ -7612,7 +7603,6 @@ export function useEditorState(): EditorController {
     moveNoteTableRow,
     moveNoteTableCol,
     setNoteTableAlign,
-    toggleNoteTableHead,
     setNoteTableFill,
     setNoteTableSizes,
     duplicateNoteTableRow,
