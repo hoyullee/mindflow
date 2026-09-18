@@ -521,16 +521,21 @@ input[type='search']::-webkit-search-results-decoration {
     color 0.12s ease,
     border-color 0.12s ease;
 }
-.mf-note-trail:hover .mf-note-tplus {
-  opacity: 1;
-  pointer-events: auto;
+/* 레일의 ＋는 **얹은 손잡이 하나**만 보인다 — 그 판단은 인라인 스타일이 내린다
+   (`showIf`). 여기서는 생김새와 전환만 정한다. */
+/* 끝에 붙이는 점선 띠 둘(오른쪽·아래)은 **표**에 마우스를 얹으면 보인다 — 손잡이를
+   지나야 닿는 자리가 아니고, "마지막에 하나 더"는 가장 흔한 동작이다(제보). */
+.mf-note-tplus-end {
+  transition:
+    opacity 0.14s ease,
+    color 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
-/* 끝에 붙이는 ＋ 둘(오른쪽·아래)은 **표**에 마우스를 얹으면 보인다 — 레일을 지나야
-   닿는 자리가 아니고, "마지막에 하나 더"는 가장 흔한 동작이다(제보). */
-.mf-note-table:hover .mf-note-tplus-end,
-.mf-note-table[data-menu='1'] .mf-note-tplus-end {
-  opacity: 1;
-  pointer-events: auto;
+.mf-note-tplus-end:hover {
+  border-color: var(--mf-accent-mute) !important;
+  background: var(--mf-accent-soft) !important;
+  color: var(--mf-accent) !important;
 }
 .mf-note-tplus:hover {
   color: var(--mf-accent);
@@ -549,8 +554,10 @@ input[type='search']::-webkit-search-results-decoration {
   .mf-note-linkact {
     opacity: 1;
   }
+  /* 터치 기기에는 hover가 없다 — 레일의 ＋도 늘 보여야 누를 수 있다(인라인을 이긴다). */
   .mf-note-tplus {
-    pointer-events: auto;
+    opacity: 1 !important;
+    pointer-events: auto !important;
   }
 }
 /* 페이지 제목 — 눌러서 고칠 수 있다는 것을 밑줄이 나타나며 알린다(디자인 원본). */
