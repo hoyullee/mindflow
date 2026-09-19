@@ -23,6 +23,7 @@ import {
   noteTagColor,
   pageExcerpt,
   pageText,
+  roundSizes,
   runsText,
   textRuns,
   blockText,
@@ -4060,10 +4061,32 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         if (readOnly) return;
         e.preventDefault();
         e.stopPropagation();
-        // 재어 온 값은 소수점이 붙는다 — 문서에는 **반올림한 정수**만 적는다
+        // 재어 온 값은 소수점이 붙는다 — 문서에는 **정수**만 적는다
         // (`178.984375`가 저장본에 남으면 사람이 읽을 수 없고 diff도 시끄럽다).
-        const base = (axis === 'col' ? (colW ?? geom?.cols.map((c) => c.w) ?? []) : (rowH ?? geom?.rows.map((r) => r.h) ?? [])).map((v) => Math.round(v));
+        const raw = (axis === 'col' ? (colW ?? geom?.cols.map((c) => c.w) ?? []) : (rowH ?? geom?.rows.map((r) => r.h) ?? [])).slice();
+        const base = roundSizes(raw);
         if (!base.length) return;
+        /**
+         * **넘치지 않던 표는 잡는 순간에도 넘치지 않는다**(제보: 가로 스크롤이 없던
+         * 크기에서도 열을 줄이면 막대가 생겼다 사라진다).
+         *
+         * 열마다 따로 반올림하면 합이 커질 수 있다(128.6 다섯 개 → 645). `width: 100%`
+         * 로 판에 꼭 맞던 표가 **고정 폭으로 넘어가는 그 순간** 몇 px 넘쳐 막대가
+         * 뜨고, 끌어서 줄이면 사라진다. 그래서 ① 누적 반올림으로 합을 보존하고
+         * (`roundSizes`) ② 그래도 판보다 넓으면 **가장 넓은 열에서** 그만큼 깎는다.
+         * 이미 넘치던 표(가로로 스크롤하던 표)는 건드리지 않는다.
+         */
+        const sc = scrollRef.current;
+        if (axis === 'col' && sc && sc.scrollWidth <= sc.clientWidth + 1) {
+          let over = base.reduce((a, b) => a + b, 0) - sc.clientWidth;
+          while (over > 0) {
+            const wide = base.reduce((best: number, v: number, k: number) => (v > (base[best] ?? 0) ? k : best), 0);
+            const cut = Math.min(over, Math.max(0, (base[wide] ?? 0) - 56));
+            if (cut <= 0) break;
+            base[wide] = (base[wide] ?? 0) - cut;
+            over -= cut;
+          }
+        }
         sizing.current = { axis, i, from: axis === 'col' ? e.clientX : e.clientY, base: base.slice() };
         setLive({ axis, sizes: base.slice() });
       }}
@@ -4404,7 +4427,14 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                             }
                             controller.setNoteCell(block.id, ri, ci, runs);
                           }}
-                          style={{ fontSize: 13, lineHeight: '16px', color: 'inherit', textAlign: align, cursor: editing ? 'text' : 'cell' }}
+                          /**
+                           * **`minHeight`를 줄 높이에 맞춘다**(제보: 칸의 글이 가운데가
+                           * 아니라 살짝 위다). 기본값 `1.6em`은 13px 글씨에서 20.8px인데
+                           * 줄 상자는 16px이라, 남는 4.8px이 **전부 아래에** 깔렸다 —
+                           * `vertical-align: middle`은 그 20.8px짜리 상자를 가운데 놓을
+                           * 뿐이라 글은 3px쯤 위로 떠 보였다(실측: 위 10px · 아래 16.3px).
+                           */
+                          style={{ fontSize: 13, lineHeight: '16px', minHeight: 16, color: 'inherit', textAlign: align, cursor: editing ? 'text' : 'cell' }}
                         />
                       </td>
                     );

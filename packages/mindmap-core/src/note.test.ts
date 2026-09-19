@@ -28,6 +28,7 @@ import {
   pageText,
   removePage,
   retypeBlock,
+  roundSizes,
   runsText,
   textRuns,
 } from './note';
@@ -347,5 +348,23 @@ describe('표의 채움색 — 키 넷과 우선순위', () => {
     expect(shiftFills({ k0: '#a', k1: '#b' }, 'col', 'move', 0, 1)).toEqual({ k1: '#a', k0: '#b' });
     // 다른 축을 건드리면 그 키는 가만히 있다 — 열을 넣어도 `행 전체`는 같은 행이다.
     expect(shiftFills({ r1: '#a' }, 'col', 'insert', 0)).toEqual({ r1: '#a' });
+  });
+});
+
+describe('roundSizes — 잰 치수를 정수로(합을 지킨다)', () => {
+  it('낱낱이 반올림하면 부풀던 합이 그대로 남는다(제보: 유령 가로 스크롤)', () => {
+    // 실측값: 640px 판에 다섯 열이 127.594씩 — 합은 638이다.
+    const raw = [127.594, 127.594, 127.594, 127.594, 127.625];
+    expect(raw.map((v) => Math.round(v)).reduce((a, b) => a + b, 0)).toBe(640); // 옛 방식: 2px 부푼다
+    const out = roundSizes(raw);
+    expect(out.reduce((a, b) => a + b, 0)).toBe(638);
+    expect(out).toEqual([128, 127, 128, 127, 128]);
+  });
+
+  it('칸마다의 오차는 1px 안이고, 이미 정수면 그대로다', () => {
+    const raw = [10.4, 10.4, 10.4];
+    roundSizes(raw).forEach((v, i) => expect(Math.abs(v - (raw[i] as number))).toBeLessThan(1));
+    expect(roundSizes([120, 80, 200])).toEqual([120, 80, 200]);
+    expect(roundSizes([])).toEqual([]);
   });
 });

@@ -2989,6 +2989,80 @@ describe('공책 28판 — 구분선 고르기와 단축키(서식·찾기·도�
   });
 });
 
+describe('공책 29판 — 한글 조합 중 방향키 · 칸의 세로 맞춤', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /**
+   * 캐럿을 그 줄의 **맨 앞**에 둔다(포커스가 먼저다 — jsdom 함정).
+   *
+   * 왜 끝이 아니라 앞인가: jsdom은 좌표를 재지 못해 `caretOnEdgeLine`이 **글자 기준**
+   * 으로 물러선다(↑는 "첫 글자인가"). 글 끝에서 ↑를 한 번에 넘기는 것은 좌표가 있는
+   * 브라우저의 몫이라 실브라우저 프로브가 본다 — 여기서 보는 것은 **조합 중이어도
+   * 넘어가는가**이고, 그 판정은 캐럿 자리와 무관하게 같은 길을 지난다.
+   */
+  function caretAtStart(el: HTMLElement): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, 0);
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  it('**조합 중에 누른 ↑도 한 번에** 윗줄로 간다(제보: 두 번 눌러야 넘어간다)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_s0', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=s0&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b2"]'))) as HTMLElement;
+
+    caretAtStart(two);
+    // 한글의 마지막 글자는 **조합 중**인 채로 남는다 — 그 상태의 keydown이다.
+    fireEvent.keyDown(two, { key: 'ArrowUp', isComposing: true });
+
+    // 조합을 끝내는 것은 브라우저의 몫이라 우리는 **그 다음 차례**에 건너뛴다.
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+  });
+
+  it('조합이 끝난 뒤의 ↑는 예전 그대로(무회귀)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_s1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=s1&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b2"]'))) as HTMLElement;
+
+    caretAtStart(two);
+    fireEvent.keyDown(two, { key: 'ArrowUp' });
+
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+  });
+
+  it('표의 칸은 **줄 높이만큼만** 차지한다 — 남는 틈이 아래로 몰려 글이 위로 떴다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_s2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=s2&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+
+    // 줄 높이(16px)와 같은 `minHeight` — 기본값 `1.6em`(20.8px)이면 4.8px이 전부
+    // 아래에 깔려 `vertical-align: middle`이 글을 3px 위로 올려놓는다.
+    expect(cell.style.minHeight).toBe('16px');
+    expect(cell.style.lineHeight).toBe('16px');
+    const td = cell.closest('td') as HTMLElement;
+    expect(td.style.verticalAlign).toBe('middle');
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');

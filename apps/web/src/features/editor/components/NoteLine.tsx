@@ -156,11 +156,30 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
         return;
       }
     }
-    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.nativeEvent.isComposing && onArrowOut) {
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && onArrowOut) {
       const sel = window.getSelection();
       if (sel?.isCollapsed) {
         const dir = e.key === 'ArrowUp' ? -1 : 1;
-        if (caretOnEdgeLine(el, sel, dir) && onArrowOut(dir)) e.preventDefault();
+        if (caretOnEdgeLine(el, sel, dir)) {
+          /**
+           * **한글을 치던 중에도 넘어간다**(제보: 방향키를 두 번 눌러야 윗줄로 간다).
+           *
+           * 한글은 마지막 글자가 **조합 중**인 채로 남아 있고, 그 상태에서 누른
+           * 방향키의 `keydown`은 `isComposing`이 참이다. 예전에는 그때 손을 뗐으므로
+           * 브라우저가 조합을 끝내며 캐럿을 **줄 안에서** 옮겼고(그래서 첫 번째
+           * 누름이 "문장 처음으로"가 됐다), 두 번째 눌러야 우리 차례가 왔다.
+           *
+           * 조합 중에는 **막지 않는다** — `preventDefault`로 가로채면 조합이 끊긴 채
+           * 글자가 어정쩡하게 남는다. 대신 캐럿이 가장자리 줄에 있다는 것을 지금
+           * 재 두고, 브라우저가 조합을 끝낸 **다음**에 이웃 줄로 건너뛴다(브라우저가
+           * 줄 안에서 옮긴 캐럿은 그 순간 덮어쓰이므로 눈에는 한 번의 이동이다).
+           */
+          if (e.nativeEvent.isComposing) {
+            setTimeout(() => onArrowOut(dir), 0);
+            return;
+          }
+          if (onArrowOut(dir)) e.preventDefault();
+        }
       }
     }
   };
