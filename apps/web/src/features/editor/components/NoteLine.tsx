@@ -26,8 +26,14 @@ interface Props {
   placeholder?: string;
   style?: CSSProperties;
   readOnly?: boolean;
-  /** 엔터 — 대개 "새 블록/항목". 처리했으면 `true`(줄바꿈을 막는다). */
-  onEnter?: () => boolean;
+  /**
+   * 엔터 — 대개 "새 블록/항목". 처리했으면 `true`(줄바꿈을 막는다).
+   *
+   * `at`은 **캐럿이 놓인 글자 자리**다(요청: 문장 가운데서 Enter를 치면 뒤쪽 글이
+   * 따라 내려가야 한다). 캐럿 자리를 모르는 환경에서는 글의 길이 — 즉 "끝에서 쳤다"
+   * 로 본다(예전 동작 그대로).
+   */
+  onEnter?: (at: number) => boolean;
   /** 맨 앞에서 백스페이스 — 대개 "이 블록/항목 지우기". 처리했으면 `true`. */
   onBackspaceAtStart?: () => boolean;
   /**
@@ -94,18 +100,15 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
     const el = ref.current;
     if (!el) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      if (onEnter?.()) {
+      if (onEnter?.(caretOffset(el))) {
         e.preventDefault();
         return;
       }
     }
     if (e.key === '/' && !e.nativeEvent.isComposing && onSlash) {
       // 글자는 막지 않는다 — 브라우저가 `/`를 넣고, 우리는 그 **자리**만 기억한다.
-      const sel = window.getSelection();
       const text = el.textContent ?? '';
-      // 캐럿 자리를 모르는 환경(선택 API가 없는 테스트 하네스 등)에서는 **끝에 친
-      // 것으로** 본다 — 타이핑은 대개 그 자리이고, 아래 낱말 경계 판정도 같다.
-      const at = sel && sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode) ? charOffset(el, sel.anchorNode, sel.anchorOffset) : text.length;
+      const at = caretOffset(el);
       const before = text.slice(0, at);
       // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`에서 열리지 않게.
       if (!before || /\s$/.test(before)) {
@@ -128,10 +131,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
       const sel = window.getSelection();
       if (sel?.isCollapsed) {
         const dir = e.key === 'ArrowUp' ? -1 : 1;
-        // 글의 끝(아래) · 시작(위)에서만 넘어간다 — 여러 줄 블록 안에서는 평범한
-        // 캐럿 이동이어야 한다.
-        const edge = dir === -1 ? caretAtFirstTextNode(el, sel) && sel.anchorOffset === 0 : caretAtLastTextNode(el, sel);
-        if (edge && onArrowOut(dir)) e.preventDefault();
+        if (caretOnEdgeLine(el, sel, dir) && onArrowOut(dir)) e.preventDefault();
       }
     }
   };
@@ -160,6 +160,41 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
       style={{ outline: 'none', minHeight: '1.6em', whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...style }}
     />
   );
+}
+
+/** 캐럿이 놓인 **글자 자리** — 알 수 없으면 글의 끝으로 본다(테스트 하네스 등). */
+function caretOffset(el: HTMLElement): number {
+  const sel = window.getSelection();
+  if (sel && sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode)) return charOffset(el, sel.anchorNode, sel.anchorOffset);
+  return (el.textContent ?? '').length;
+}
+
+/**
+ * 캐럿이 이 박스의 **첫 줄(위) · 마지막 줄(아래)**에 있는가 — 방향키가 블록을 넘을 때다.
+ *
+ * 예전에는 "첫 **글자**인가 / 마지막 **글자**인가"로 봤다(제보: 방향키 동작이 이상하다).
+ * 한 줄짜리 문단에서 글 끝에 캐럿을 두고 ↑를 누르면 넘어가야 하는데, 끝 글자는 첫
+ * 글자가 아니므로 우리가 막지 않고 브라우저가 **그 줄의 처음으로** 캐럿을 옮겼다 —
+ * 그래서 한 번 더 눌러야 윗줄로 갔다.
+ *
+ * 이제 **좌표로** 가른다: 캐럿의 사각형이 박스의 첫 줄(마지막 줄) 안에 있으면 넘어간다.
+ * 여러 줄로 감긴 문단 안에서는 여전히 브라우저가 줄을 오르내린다. 좌표를 못 재는
+ * 환경(jsdom)에서는 예전의 글자 기준으로 물러선다.
+ */
+function caretOnEdgeLine(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean {
+  try {
+    const range = sel.getRangeAt(0).cloneRange();
+    range.collapse(true);
+    const c = range.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    if (c.height > 0 && b.height > 0) {
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || c.height;
+      return dir === -1 ? c.top - b.top < lh * 0.6 : b.bottom - c.bottom < lh * 0.6;
+    }
+  } catch {
+    /* 좌표를 못 잰다 — 아래 글자 기준으로 */
+  }
+  return dir === -1 ? caretAtFirstTextNode(el, sel) && sel.anchorOffset === 0 : caretAtLastTextNode(el, sel);
 }
 
 /** 캐럿이 이 박스의 **첫 텍스트 노드**에 있는가(백스페이스·위 화살표 판정). */
