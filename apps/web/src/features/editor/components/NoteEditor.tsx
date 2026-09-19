@@ -34,6 +34,7 @@ import type { Theme } from '../theme';
 import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
 import { buildSelection, caretAt, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
+import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
@@ -2894,8 +2895,28 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   const pageIsEmpty = (controller.notePage?.blocks ?? []).every((b) => blockText(b).trim() === '');
 
   /** 엔터 — 같은 종류의 새 블록을 아래에 만든다(제목 뒤에는 문단이 자연스럽다). */
-  const enterBlock = (): boolean => {
+  const enterBlock = (at: number): boolean => {
     if (readOnly) return false;
+    /**
+     * **캐럿 뒤의 글이 따라 내려간다**(요청) — 문장 한가운데서 Enter를 치면 거기서
+     * 갈린다. 끝에서 쳤으면 가를 것이 없으므로 예전처럼 빈 줄 하나를 더한다
+     * (새 블록을 만드는 길이 그대로라 제목 뒤의 Enter 같은 규칙도 그대로다).
+     */
+    const len = runsText(block.runs).length;
+    if (at < len) {
+      const made = controller.splitNoteBlock(block.id, at);
+      if (made) {
+        /**
+         * **DOM도 함께 자른다** — 편집 박스는 비제어라(마운트할 때 한 번만 그린다)
+         * 모델만 가르면 화면에는 원래 글이 그대로 남고, 캐럿이 새 줄로 옮겨 가며
+         * 포커스를 잃는 순간 그 옛 글이 통째로 **되덮는다**(실측으로 그랬다).
+         */
+        const el = document.querySelector<HTMLElement>(`[data-note-line="${block.id}"]`);
+        if (el) el.innerHTML = runsToHtml({ text: runsText(made.head), rich: made.head });
+        setFreshId(made.id);
+        return true;
+      }
+    }
     const next = block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3' ? 'p' : block.kind;
     setFreshId(controller.addNoteBlock(next === 'hr' || next === 'table' ? 'p' : next, block.id));
     return true;
@@ -3203,8 +3224,9 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
          */
         const md = block.kind === 'p' && !readOnly ? listShortcutOf(runsText(runs)) : null;
         if (md) {
-          controller.noteListShortcut(block.id, md.kind, md.start);
-          setFreshId(block.id);
+          // 캐럿은 **항목**으로 보낸다(제보: 목록으로 바뀌면 커서가 풀린다) — 목록의
+          // 편집 박스는 블록이 아니라 항목이 갖는다.
+          setFreshId(controller.noteListShortcut(block.id, md.kind, md.start));
           return;
         }
         controller.setNoteBlockRuns(block.id, runs);

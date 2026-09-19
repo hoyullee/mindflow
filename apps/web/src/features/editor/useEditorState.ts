@@ -842,8 +842,10 @@ export interface EditorController {
    */
   sendNoteBlockToBoard: (blockId: string, targetDocId: string) => Promise<boolean>;
   retypeNoteBlock: (blockId: string, kind: NoteBlockKind) => void;
+  /** 문단을 캐럿 자리에서 둘로 가른다 — 새 블록의 id를 돌려준다(요청). */
+  splitNoteBlock: (blockId: string, at: number) => { id: string; head: RichRun[] } | null;
   /** 문단을 목록으로 바꾸고 글을 비운다 — 본문의 `- ` · `3. ` 단축(요청). */
-  noteListShortcut: (blockId: string, kind: 'ul' | 'ol', start?: number) => void;
+  noteListShortcut: (blockId: string, kind: 'ul' | 'ol', start?: number) => string | null;
   moveNoteBlock: (blockId: string, index: number) => void;
   setNoteBlockRuns: (blockId: string, runs: RichRun[]) => void;
   setNoteItemRuns: (blockId: string, itemId: string, runs: RichRun[]) => void;
@@ -6804,6 +6806,43 @@ export function useEditorState(): EditorController {
   );
 
   /**
+   * 문단을 **캐럿 자리에서 둘로 가른다**(요청) — Enter가 하는 일.
+   *
+   * 예전에는 자리를 보지 않고 **빈 블록**을 아래에 끼워 넣어, 문장 한가운데서
+   * Enter를 치면 그 문장은 그대로 남고 빈 줄만 하나 생겼다. 이제 캐럿 뒤의 글이
+   * 새 줄로 따라 내려간다.
+   *
+   * 새 줄의 종류: 제목·표·구분선은 문단으로(제목을 반으로 갈라 둘 다 제목이 되는
+   * 것은 대개 뜻이 아니다), 그 밖은 같은 종류로(인용·코드는 이어 쓰는 것이 맞다).
+   * 글자 단위로 가르는 일은 코어가 이미 안다(`runsToChars`/`charsToRuns`).
+   */
+  const splitNoteBlock = useCallback(
+    (blockId: string, at: number): { id: string; head: RichRun[] } | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const src = notePage.blocks.find((b) => b.id === blockId);
+      if (!src) return null;
+      const chars = runsToChars({ text: runsText(src.runs ?? []), rich: src.runs ?? null });
+      const cut = Math.max(0, Math.min(at, chars.length));
+      const kind: NoteBlockKind = src.kind === 'h1' || src.kind === 'h2' || src.kind === 'h3' || src.kind === 'hr' || src.kind === 'table' ? 'p' : src.kind;
+      const head = charsToRuns(chars.slice(0, cut));
+      const next = { ...emptyBlock(kind), runs: charsToRuns(chars.slice(cut)) };
+      commitPage(
+        notePage.id,
+        (pg) => {
+          const i = pg.blocks.findIndex((b) => b.id === blockId);
+          if (i < 0) return pg;
+          return { ...pg, blocks: [...pg.blocks.slice(0, i), { ...pg.blocks[i]!, runs: head }, next, ...pg.blocks.slice(i + 1)] };
+        },
+        false,
+      );
+      // **앞쪽 글도 함께 돌려준다** — 부르는 쪽이 비제어 편집 박스의 DOM을 그 값으로
+      // 다시 그려야 한다(그러지 않으면 포커스를 잃는 순간 옛 글 전체가 되덮는다).
+      return { id: next.id, head };
+    },
+    [commitPage, notePage],
+  );
+
+  /**
    * 블록을 지운다 — **마지막 블록은 비우기만 한다.**
    *
    * 블록이 하나도 없는 페이지는 캐럿을 놓을 자리가 없어 글을 시작할 수 없다
@@ -6903,18 +6942,28 @@ export function useEditorState(): EditorController {
    * 걸려 "한 번 되돌렸는데 `- `만 남는" 어정쩡한 상태가 보인다.
    */
   const noteListShortcut = useCallback(
-    (blockId: string, kind: 'ul' | 'ol', start?: number) => {
-      if (!notePage) return;
+    (blockId: string, kind: 'ul' | 'ol', start?: number): string | null => {
+      if (!notePage) return null;
+      /**
+       * **새 항목의 id를 돌려준다**(제보: 목록으로 바뀌면 커서가 풀린다) — 블록 id로는
+       * 캐럿을 보낼 수 없다. 목록의 편집 박스는 **항목**이 갖기 때문이다.
+       *
+       * 그래서 항목을 커밋 **바깥에서** 만든다: 커밋 함수는 리액트가 나중에(때로는
+       * 두 번) 부르므로, 그 안에서 만든 id를 밖으로 들고 나오면 아직 비어 있다.
+       */
+      const item = emptyItem();
       commitBlock(
         notePage.id,
         blockId,
         (b) => {
           const next = retypeBlock({ ...b, runs: textRuns('') }, kind);
+          next.items = [{ ...item, runs: textRuns('') }];
           // 1번부터면 적지 않는다 — 기본값을 문서에 남기지 않는다.
           return start && start !== 1 ? { ...next, start } : next;
         },
         false,
       );
+      return item.id;
     },
     [commitBlock, notePage],
   );
@@ -7837,6 +7886,7 @@ export function useEditorState(): EditorController {
     duplicateNoteBlock,
     sendNoteBlockToBoard,
     retypeNoteBlock,
+    splitNoteBlock,
     noteListShortcut,
     moveNoteBlock,
     setNoteBlockRuns,
