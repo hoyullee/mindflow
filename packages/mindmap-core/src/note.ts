@@ -552,3 +552,26 @@ export function shiftFills(
   }
   return Object.keys(out).length ? out : undefined;
 }
+
+/**
+ * 잰 치수를 **정수로** — 낱낱이 반올림하지 않고 **누적**으로 반올림한다.
+ *
+ * `Math.round`를 칸마다 따로 걸면 오차가 같은 방향으로 쌓여 합이 달라진다(127.594가
+ * 다섯이면 합은 638인데 낱낱이 반올림하면 640이다). 그 2px 때문에 판에 꼭 맞던 표가
+ * **고정 폭으로 넘어가는 순간** 넘쳐 가로 막대가 떴다 사라졌다(제보).
+ *
+ * 누적 합을 반올림해 그 차이를 다음 칸이 물려받으면 **총합은 원래 합의 반올림과 같고**
+ * 칸마다의 오차도 1px 안이다.
+ */
+export function roundSizes(list: number[]): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  let prev = 0;
+  for (const v of list) {
+    acc += v;
+    const r = Math.round(acc);
+    out.push(r - prev);
+    prev = r;
+  }
+  return out;
+}

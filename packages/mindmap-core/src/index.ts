@@ -111,6 +111,7 @@ export {
   fillAt,
   applyFill,
   shiftFills,
+  roundSizes,
   shiftSizes,
   ALL_FILL_KEY,
   noteHighlightColor,
