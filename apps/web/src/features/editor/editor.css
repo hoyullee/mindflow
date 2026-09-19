@@ -565,6 +565,33 @@ input[type='search']::-webkit-search-results-decoration {
   bottom: 0;
   margin: auto auto 0 auto;
 }
+/* 표의 가로 스크롤 — **마지막 행의 연장선이 아니다**(제보).
+   기본 막대는 상자 안쪽 바닥에 흰 배경으로 깔려 마지막 행이 한 줄 더 있는 것처럼
+   보였다. 트랙에 윗선과 가라앉은 면을 줘 본문과 갈라 놓고, 썸은 얇은 알약으로 둔다.
+   ⚠️ `scrollbar-width`는 쓰지 않는다 — 크롬 121+는 그 속성이 붙은 요소에서
+   `::-webkit-scrollbar` 커스텀을 통째로 무시한다(#391에서 겪었다). */
+.mf-note-tbox::-webkit-scrollbar {
+  height: 10px;
+}
+.mf-note-tbox::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.mf-note-tbox::-webkit-scrollbar-track {
+  background: var(--mf-panel2);
+  border-top: 1px solid var(--mf-hairline);
+}
+.mf-note-tbox::-webkit-scrollbar-thumb {
+  background: var(--mf-th);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+.mf-note-tbox:hover::-webkit-scrollbar-thumb {
+  background: var(--mf-accent-mute);
+  background-clip: padding-box;
+}
 .mf-note-tplus-end:hover {
   border-color: var(--mf-accent-mute) !important;
   background: var(--mf-accent-soft) !important;

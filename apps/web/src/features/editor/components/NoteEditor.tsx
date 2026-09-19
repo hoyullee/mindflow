@@ -3293,6 +3293,14 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
    * 함께 사라졌다).
    */
   const [hot, setHot] = useState<{ axis: 'row' | 'col'; i: number } | null>(null);
+  /**
+   * **마우스가 얹힌 칸**(요청) — 그 칸의 열·행 손잡이만 보인다.
+   *
+   * 예전에는 표에 마우스를 얹으면 레일이 통째로 나타나, 열이 여섯이면 손잡이 여섯과
+   * 행 손잡이 여럿이 한꺼번에 떠서 "지금 어느 줄을 겨냥했나"가 보이지 않았다.
+   * `A1`에 얹었으면 `A`열과 `1`행의 손잡이 둘만 선다.
+   */
+  const [hoverAt, setHoverAt] = useState<{ r: number; c: number } | null>(null);
   const [geom, setGeom] = useState<TableGeom | null>(null);
   /** 문서에 건 리스너가 읽는 최신 치수·칸 찾개 — 효과가 렌더마다 다시 붙지 않게. */
   const geomRef = useRef<TableGeom | null>(null);
@@ -3706,6 +3714,21 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     </button>
   );
 
+  /**
+   * 그 손잡이를 지금 보일지 — 셋 중 하나면 보인다.
+   * ① 마우스가 그 줄의 칸이나 손잡이 위에 있다 ② 그 줄이 골라져 있다(무엇을 골랐는지
+   * 보이지 않으면 고를 수 없다) ③ 그 줄의 메뉴가 열려 있다.
+   */
+  const railOn = (axis: 'row' | 'col', i: number): boolean => {
+    if (hot?.axis === axis && hot.i === i) return true;
+    if (hoverAt && (axis === 'col' ? hoverAt.c : hoverAt.r) === i) return true;
+    const live = menu?.sel ?? sel;
+    if (live?.mode === 'all') return true;
+    if (axis === 'col' && live?.mode === 'col') return live.c === i;
+    if (axis === 'row' && live?.mode === 'row') return live.r === i;
+    return false;
+  };
+
   const colRail = !readOnly && width > 0 && (
     <div
       className="mf-note-trail"
@@ -3713,7 +3736,18 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       // **클립 뷰포트**다 — `position`을 주지 않는 것이 중요하다(절대 배치의 원점은
       // 패딩 박스라, 여기가 positioned이면 손잡이가 패딩만큼 통째로 밀린다). 패딩과
       // 같은 크기의 음수 여백을 줘 ＋가 잘리지 않을 만큼만 클립 상자를 넓힌다.
-      style={{ gridArea: '1 / 2', height: 14, overflow: 'hidden', padding: '8px 12px', margin: '-8px -12px', boxSizing: 'content-box' }}
+      /**
+       * 상자 **위쪽 바깥**에 뜬다(흐름 밖) — 표가 그만큼 더 넓게 선다(요청).
+       *
+       * 치수 계산: `left/right: 0`에 좌우 음수 여백 −12와 패딩 12를 함께 주어
+       * **내용 상자가 정확히 표 상자의 폭**이 된다(안쪽 트랙의 `width: 100%`가 곧
+       * 표의 폭이다). 세로는 `bottom: 100%`에 아래 여백 −4·패딩 8이라, 14px 트랙의
+       * 아랫변이 상자 윗변에서 4px 위에 선다.
+       *
+       * 바깥이 `positioned`가 되었지만 손잡이의 원점은 **안쪽 트랙**(`relative`)이라
+       * 좌표가 밀리지 않는다 — 그 둘을 가른 것이 스크롤 추종(#669)의 처방이었다.
+       */
+      style={{ position: 'absolute', left: 0, right: 0, bottom: '100%', height: 14, overflow: 'hidden', padding: '8px 12px', margin: '-8px -12px -4px', boxSizing: 'content-box' }}
     >
       {/* 안쪽 트랙 — 손잡이의 절대 배치 원점이자 **스크롤을 따라가는 판**이다.
           변형은 스크롤이 있을 때만 건다: 값이 0이어도 변형이 있으면 그 요소가
@@ -3728,7 +3762,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         return (
           <div
             key={ci}
-            style={place}
+            data-note-table-colslot={ci}
+            style={{ ...place, ...showIf(railOn('col', ci)) }}
             // hover는 **감싸는 칸**이 잡는다 — 손잡이 단추에만 걸면 ＋로 마우스를
             // 옮기는 순간 `hot`이 풀려 ＋가 사라진다(＋는 단추 바깥에 그려진다).
             onMouseEnter={() => setHot({ axis: 'col', i: ci })}
@@ -3760,14 +3795,15 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     <div
       className="mf-note-trail"
       data-note-table-rowrail
-      style={{ gridArea: '2 / 1', position: 'relative', width: 14, display: geom ? 'block' : 'flex', flexDirection: 'column', gap: 4 }}
+      // 상자 **왼쪽 바깥**에 뜬다(흐름 밖).
+      style={{ position: 'absolute', right: '100%', marginRight: 4, top: 0, bottom: 0, width: 14, display: geom ? 'block' : 'flex', flexDirection: 'column', gap: 4 }}
     >
       {rows.map((_, ri) => {
         const box = geom?.rows[ri];
         const on = sel?.mode === 'row' ? sel.r === ri : sel?.mode === 'all';
         const place: CSSProperties = box ? { position: 'absolute', top: box.t + 2, height: Math.max(6, box.h - 4), left: 0, width: 14 } : { position: 'relative', flex: 1, minHeight: 24, width: 14 };
         return (
-          <div key={ri} style={place} onMouseEnter={() => setHot({ axis: 'row', i: ri })} onMouseLeave={() => setHot(null)}>
+          <div key={ri} data-note-table-rowslot={ri} style={{ ...place, ...showIf(railOn('row', ri)) }} onMouseEnter={() => setHot({ axis: 'row', i: ri })} onMouseLeave={() => setHot(null)}>
             {plus(ri === 0 ? '맨 위에 행 넣기' : `${ri + 1}번째 행 위에 행 넣기`, () => controller.addNoteTableRow(block.id, ri), { top: -10, left: -3, ...showIf(hot?.axis === 'row' && hot.i === ri) })}
             <button
               type="button"
@@ -3807,12 +3843,11 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         onMouseDown={(e) => e.stopPropagation()}
         onClick={onClick}
         style={{
-          gridArea: area === 'col' ? '2 / 3' : '3 / 2',
           // 표의 높이·너비를 그대로 두르는 **점선 띠**(시안) — 동그라미 하나보다
-          // 어디에 붙는지가 한눈에 보인다(띠의 길이가 곧 그 축이다).
-          alignSelf: 'stretch',
-          justifySelf: 'stretch',
-          ...(area === 'col' ? { marginLeft: 4 } : { marginTop: 4 }),
+          // 어디에 붙는지가 한눈에 보인다(띠의 길이가 곧 그 축이다). 상자 바깥에
+          // 떠서 페이지 자리를 먹지 않는다(요청).
+          position: 'absolute',
+          ...(area === 'col' ? { left: '100%', marginLeft: 4, top: 0, bottom: 0, width: 20 } : { top: '100%', marginTop: 4, left: 0, right: 0, height: 20 }),
           border: '1.5px dashed var(--mf-border)',
           borderRadius: 9,
           background: 'transparent',
@@ -3920,32 +3955,24 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       // 블록을 가로질러 글을 고르는 일이 한 번에 일어나면 둘 다 엉킨다.
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={onKeyDown}
+      // 표를 벗어나면 얹힌 칸도 없다 — 레일이 마지막 자리에 남아 있지 않게.
+      onMouseLeave={() => setHoverAt(null)}
       style={{ ...blockFlow(block), position: 'relative' }}
     >
-      <div
-        style={{
-          display: 'grid',
-          // 끝의 ＋ 띠는 **24px**이다(제보: 너무 좁다 — 18px은 아이콘 11px에 여백이
-          // 3px씩이라 겨냥하기 어려웠다).
-          gridTemplateColumns: '18px minmax(0,1fr) 24px',
-          gridTemplateRows: '14px auto 24px',
-          columnGap: 4,
-          rowGap: 4,
-          /**
-           * 너비를 손으로 정한 표는 **그 합만큼만** 자리를 차지한다(제보: 열을 지워도
-           * 표 넓이가 줄지 않고 오른쪽이 빈칸으로 남는다).
-           *
-           * 표 자신은 `colW`의 합으로 줄어드는데 담는 상자가 `1fr`이라 늘 가로를 다
-           * 썼고, 그 차이가 상자 안의 흰 여백으로 보였다. 가운데 트랙을 내용 크기로
-           * 두고 전체를 `fit-content`로 재면 상자·레일·끝의 ＋가 함께 따라온다.
-           * 표가 화면보다 넓으면 `maxWidth: 100%`가 잡아 상자가 가로로 스크롤된다.
-           *
-           * 크기를 손대지 않은 표(`colW` 없음)는 예전처럼 가로를 다 쓴다 — 그때 표는
-           * `width: 100%`라 내용 크기로 재면 서로를 참조해 폭이 제멋대로 접힌다.
-           */
-          ...(colW ? { gridTemplateColumns: '18px minmax(0,auto) 24px', width: 'fit-content', maxWidth: '100%' } : {}),
-        }}
-      >
+      {/**
+        * 표가 **페이지에서 차지하는 자리는 상자 하나뿐**이다(요청).
+        *
+        * 예전에는 그리드가 레일 18px·＋ 24px·틈 4px씩을 좌우 위아래로 **비워 두어**
+        * 가로 50px·세로 46px을 표가 아니라 장식에 내주고 있었다. 레일과 ＋는 이제
+        * 흐름 밖(`absolute`)에 떠서 본문 단의 여백 위에 그려진다 — 어차피 표에
+        * 마우스를 얹어야 보이는 것들이라 평소에는 자리도 그림도 없다.
+        *
+        * 이 래퍼가 **상자의 크기를 그대로** 받아(`fit-content`) 레일의 `left/right`가
+        * 표의 좌우 끝과 정확히 맞는다. 너비를 손대지 않은 표는 예전처럼 가로를 다
+        * 쓴다 — 그때 표는 `width: 100%`라 내용 크기로 재면 서로를 참조해 폭이
+        * 제멋대로 접힌다.
+        */}
+      <div style={{ position: 'relative', ...(colW ? { width: 'fit-content', maxWidth: '100%' } : {}) }}>
         {/* 좌상단의 **표 전체 선택 점**은 걷었다(요청) — 9×9짜리라 조준하기 어려웠고,
             레일에 마우스를 얹으면 어차피 숨었다. 표 전체는 우클릭 메뉴의 `선택 › 표 전체`로. */}
         {colRail}
@@ -3956,13 +3983,23 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         <div
           ref={boxRef}
           data-note-table-box
+          className="mf-note-tbox"
           tabIndex={-1}
           onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)}
           style={{
-            gridArea: '2 / 2',
             position: 'relative',
             minWidth: 0,
             overflowX: 'auto',
+            /**
+             * **세로는 절대 스크롤하지 않는다**(제보: 열을 줄이면 아래에 가로
+             * 스크롤이 생겼다 사라졌다 한다).
+             *
+             * `overflow-x: auto`만 주면 `overflow-y`도 `auto`로 계산되어, 그립이나
+             * 그림자가 1px만 넘쳐도 세로 막대가 생기고 → 가로 폭이 그만큼 줄어
+             * → 가로 막대가 생기고 → 다시 세로가… 하며 끄는 동안 깜빡인다.
+             * 세로를 못박으면 그 되먹임이 끊긴다(표는 세로로 스크롤할 것이 없다).
+             */
+            overflowY: 'hidden',
             border: '1px solid var(--mf-hairline)',
             borderRadius: 12,
             background: 'var(--mf-card)',
@@ -4085,6 +4122,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           drag.current = { r: ri, c: ci };
                         }}
                         onMouseEnter={() => {
+                          setHoverAt({ r: ri, c: ci });
                           const from = drag.current;
                           if (!from || (from.r === ri && from.c === ci)) return;
                           // 칸을 넘어선 순간부터 **구간 선택**이다. 브라우저가 반쯤
