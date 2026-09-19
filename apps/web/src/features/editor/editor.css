@@ -601,6 +601,18 @@ input[type='search']::-webkit-search-results-decoration {
   color: var(--mf-accent);
   border-color: var(--mf-accent-mute) !important;
 }
+/* **고른 칸은 캐럿도 선택 표시도 그리지 않는다**(제보: 셀을 고르면 커서가 깜빡인다).
+   칸을 고른 것이지 글을 고치는 중이 아니다. 키를 받으려고 그 칸에 포커스를 주고
+   글자를 통째로 골라 두지만(치면 덮어쓴다 — 스프레드시트의 관례), 그 사정을 화면에
+   캐럿으로 말할 이유는 없다. 첫 글자가 들어와 편집으로 넘어가면 표식이 사라져
+   캐럿이 돌아온다. */
+.mf-note-table td[data-armed='1'] {
+  caret-color: transparent;
+}
+.mf-note-table td[data-armed='1']::selection,
+.mf-note-table td[data-armed='1'] ::selection {
+  background: transparent;
+}
 /* 표 안의 글자 선택 — 본문과 같은 결이되 칸 위에서 더 또렷하다(스펙 5). */
 .mf-note-table ::selection {
   background: var(--mf-tsel-text);
