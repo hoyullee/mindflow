@@ -1571,9 +1571,13 @@ describe('공책 15판 — 표 제보 6건(＋의 자리 · 끝 추가 · 테두
 
     expect(container.querySelectorAll('.mf-note-tplus-end')).toHaveLength(2);
     expect(band.style.border).toContain('dashed');
-    // 표의 높이를 그대로 두른다 — 동그라미 하나가 아니라 띠다.
-    expect(band.style.alignSelf).toBe('stretch');
-    expect(container.querySelector<HTMLElement>('[data-note-table-append="row"]')?.style.justifySelf).toBe('stretch');
+    // 표의 높이·너비를 그대로 두른다 — 동그라미 하나가 아니라 띠다. 자리는
+    // **상자 바깥**이라 페이지 폭을 먹지 않는다(요청).
+    expect(band.style.top).toBe('0px');
+    expect(band.style.bottom).toBe('0px');
+    const rowBand = container.querySelector<HTMLElement>('[data-note-table-append="row"]');
+    expect(rowBand?.style.left).toBe('0px');
+    expect(rowBand?.style.right).toBe('0px');
   });
 
   it('레일의 두 번째 열 ＋를 누르면 그 자리에 열이 들어간다(요청)', async () => {
@@ -1947,10 +1951,11 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
     const { container } = renderEditor('/editor?map=nu8&title=x');
     const rail = (await waitFor(() => container.querySelector('[data-note-table-colrail]'))) as HTMLElement;
 
-    // 바깥은 **클립 뷰포트**다(positioned가 아니어야 손잡이 원점이 밀리지 않는다).
+    // 바깥은 **클립 뷰포트**이자 상자 바깥에 뜬 판이다(요청: 페이지 자리를 먹지 않게).
     expect(rail.style.overflow).toBe('hidden');
-    expect(rail.style.position).toBe('');
-    // 안쪽 트랙이 손잡이의 원점이고, 스크롤만큼 밀린다.
+    expect(rail.style.position).toBe('absolute');
+    expect(rail.style.bottom).toBe('100%');
+    // 손잡이의 원점은 **안쪽 트랙**이라 바깥이 positioned여도 좌표가 밀리지 않는다.
     const track = rail.firstElementChild as HTMLElement;
     expect(track.style.position).toBe('relative');
 
@@ -2273,8 +2278,14 @@ describe('공책 20판 — 표 모양 6건(칩·코너·한 줄 테두리·끝 �
     const col = (await waitFor(() => container.querySelector('[data-note-table-append="col"]'))) as HTMLElement;
     const grid = col.parentElement as HTMLElement;
 
-    expect(grid.style.gridTemplateColumns).toContain('24px');
-    expect(grid.style.gridTemplateRows).toContain('24px');
+    // 그리드 칸이 아니라 **상자 바깥에 뜬다**(요청: 페이지 자리를 먹지 않게).
+    expect(col.style.position).toBe('absolute');
+    expect(col.style.left).toBe('100%');
+    expect(col.style.width).toBe('20px');
+    const row = grid.querySelector('[data-note-table-append="row"]') as HTMLElement;
+    expect(row.style.position).toBe('absolute');
+    expect(row.style.top).toBe('100%');
+    expect(row.style.height).toBe('20px');
   });
 
   it('너비를 손으로 정한 표는 **그 합만큼만** 자리를 차지한다(제보: 열을 지워도 넓이가 그대로)', async () => {
@@ -2287,8 +2298,7 @@ describe('공책 20판 — 표 모양 6건(칩·코너·한 줄 테두리·끝 �
     const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
     const grid = box.parentElement as HTMLElement;
 
-    // `1fr`이면 담는 상자가 늘 가로를 다 써서, 표만 줄고 오른쪽이 빈칸으로 남았다.
-    expect(grid.style.gridTemplateColumns).toBe('18px minmax(0,auto) 24px');
+    // 늘 가로를 다 쓰면 표만 줄고 오른쪽이 빈칸으로 남는다.
     expect(grid.style.width).toBe('fit-content');
     expect(grid.style.maxWidth).toBe('100%');
   });
@@ -2299,7 +2309,6 @@ describe('공책 20판 — 표 모양 6건(칩·코너·한 줄 테두리·끝 �
     const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
     const grid = box.parentElement as HTMLElement;
 
-    expect(grid.style.gridTemplateColumns).toBe('18px minmax(0,1fr) 24px');
     expect(grid.style.width).toBe('');
   });
 });
@@ -2474,6 +2483,66 @@ describe('공책 22판 — 본문 6건(통계 띠·지우고 올라가는 커서
     // 값은 **공책 한 권**에 남는다(`cover.wide`).
     saveNow();
     await waitFor(() => expect(saved('nx5').cover.wide).toBe(true));
+  });
+});
+
+describe('공책 23판 — 표 레이아웃 4건(스크롤·분리·자리·얹은 줄만)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('표 상자는 **세로로 스크롤하지 않는다** — 가로 막대가 깜빡이던 되먹임을 끊는다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_ny0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ny0&title=x');
+    const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
+
+    // `overflow-x: auto`만 주면 세로도 `auto`가 되어, 1px만 넘쳐도
+    // 세로 막대 → 가로가 좁아짐 → 가로 막대 → … 하며 끄는 동안 깜빡인다.
+    expect(box.style.overflowX).toBe('auto');
+    expect(box.style.overflowY).toBe('hidden');
+  });
+
+  it('레일과 끝의 ＋는 **흐름 밖**이라 페이지 자리를 먹지 않는다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_ny1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ny1&title=x');
+    const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
+    const wrap = box.parentElement as HTMLElement;
+
+    // 감싸는 판의 **흐름 안 자식은 상자 하나뿐**이다(나머지 넷은 absolute).
+    const inFlow = [...wrap.children].filter((el) => (el as HTMLElement).style.position !== 'absolute');
+    expect(inFlow).toEqual([box]);
+    expect((container.querySelector('[data-note-table-colrail]') as HTMLElement).style.position).toBe('absolute');
+    expect((container.querySelector('[data-note-table-rowrail]') as HTMLElement).style.position).toBe('absolute');
+  });
+
+  it('**마우스가 얹힌 칸의 열·행 손잡이만** 보인다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_ny2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ny2&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+    const slot = (axis: 'col' | 'row', i: number) => (container.querySelector(`[data-note-table-${axis}slot="${i}"]`) as HTMLElement).style.opacity;
+
+    // 아무 데도 얹지 않았으면 손잡이는 전부 숨어 있다.
+    expect(slot('col', 0)).toBe('0');
+    expect(slot('row', 0)).toBe('0');
+
+    fireEvent.mouseEnter(cell);
+    // `1:0` → 0열과 1행만.
+    await waitFor(() => expect(slot('col', 0)).toBe('1'));
+    expect(slot('row', 1)).toBe('1');
+    expect(slot('col', 1)).toBe('0');
+    expect(slot('row', 0)).toBe('0');
+  });
+
+  it('고른 줄의 손잡이는 마우스를 떼도 남는다 — 무엇을 골랐는지 보여야 한다', async () => {
+    localStorage.setItem('mindflow_doc_ny3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ny3&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-table-rowhandle="1"]'))) as HTMLElement);
+
+    await waitFor(() => expect((container.querySelector('[data-note-table-rowslot="1"]') as HTMLElement).style.opacity).toBe('1'));
+    expect((container.querySelector('[data-note-table-rowslot="0"]') as HTMLElement).style.opacity).toBe('0');
   });
 });
 
