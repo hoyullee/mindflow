@@ -761,3 +761,14 @@ input[type='search']::-webkit-search-results-decoration {
 [data-note-editor] .mf-note-table td[data-armed='1'] ::selection {
   background: transparent !important;
 }
+
+/* 구분선 — 고를 수 있는 블록(제보: 넣고 나면 지울 방법이 없다).
+   `:focus-visible`이 아니라 `:focus`인 것은 **마우스로 눌렀을 때도 보여야** 하기
+   때문이다(키보드로만 오는 초점이 아니라 "이것을 고른 상태"를 그린다). */
+.mf-note-hr:focus {
+  background: var(--mf-accent-soft);
+  box-shadow: 0 0 0 1px var(--mf-accent-soft);
+}
+.mf-note-hr:focus hr {
+  border-top-color: var(--mf-accent) !important;
+}

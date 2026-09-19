@@ -17,7 +17,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { RichRun } from '@mindflow/mindmap-core';
 import { runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, runsToHtml } from '../richtextDom';
-import { NOTE_EDIT_ATTR } from '../noteRichDom';
+import { applyNoteFormat, NOTE_EDIT_ATTR } from '../noteRichDom';
 import { charOffset } from '../noteTextSelect';
 
 interface Props {
@@ -99,6 +99,35 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     const el = ref.current;
     if (!el) return;
+    /**
+     * **서식 단축키** — ⌘B·⌘I·⌘U·⌘⇧S(요청: 공책에서도 단축키를 다 쓰게).
+     *
+     * 툴바 단추와 **같은 길**을 쓴다(`applyNoteFormat` → 이 줄의 `onChange`) — 그래서
+     * 문단이든 목록 항목이든 표의 칸이든 여기 달린 줄이면 모두 같은 서식이 걸린다.
+     * 브라우저의 기본 동작(`<b>`를 직접 끼워 넣거나 ⌘U로 소스 보기)은 막는다.
+     *
+     * 고른 글이 없으면 `applyNoteFormat`이 `null`을 돌려준다 — 그때는 아무 일도
+     * 하지 않는다(캐럿 뒤로 이어 칠 서식을 예약해 두는 것은 다른 일이다).
+     */
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !readOnly && !e.nativeEvent.isComposing) {
+      const k = e.key.toLowerCase();
+      const mark: 'b' | 'i' | 'u' | 's' | null = !e.shiftKey && (k === 'b' || e.code === 'KeyB')
+        ? 'b'
+        : !e.shiftKey && (k === 'i' || e.code === 'KeyI')
+          ? 'i'
+          : !e.shiftKey && (k === 'u' || e.code === 'KeyU')
+            ? 'u'
+            : e.shiftKey && (k === 's' || e.code === 'KeyS')
+              ? 's'
+              : null;
+      if (mark) {
+        e.preventDefault();
+        e.stopPropagation();
+        const runs = applyNoteFormat(el, mark);
+        if (runs) onChange(runs);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       if (onEnter?.(caretOffset(el))) {
         e.preventDefault();

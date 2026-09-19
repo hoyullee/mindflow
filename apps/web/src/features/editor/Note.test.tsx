@@ -2870,6 +2870,125 @@ describe('공책 27판 — 본문 편집 3건(Enter로 가르기·방향키·목
   });
 });
 
+describe('공책 28판 — 구분선 고르기와 단축키(서식·찾기·도움말)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 이 줄의 글 전체를 고른다 — 서식 단축키는 **고른 글**에 걸린다. */
+  function selectAll(el: HTMLElement): void {
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  it('구분선은 **초점을 받는 칸**이다 — 누르면 고를 수 있다(제보: 지울 방법이 없다)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '위', b: false, c: null }] }, { id: 'b2', kind: 'hr' }] }] };
+    localStorage.setItem('mindflow_doc_r0', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=r0&title=x');
+    const hr = (await waitFor(() => container.querySelector('[data-note-hr="b2"]'))) as HTMLElement;
+    expect(hr.getAttribute('tabindex')).toBe('0');
+
+    hr.focus();
+    expect(document.activeElement).toBe(hr);
+  });
+
+  it('고른 구분선에서 Backspace = 그 구분선을 지운다', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '위', b: false, c: null }] }, { id: 'b2', kind: 'hr' }] }] };
+    localStorage.setItem('mindflow_doc_r1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=r1&title=x');
+    const hr = (await waitFor(() => container.querySelector('[data-note-hr="b2"]'))) as HTMLElement;
+
+    hr.focus();
+    fireEvent.keyDown(hr, { key: 'Backspace' });
+    saveNow();
+
+    await waitFor(() => expect(saved('r1').pages[0].blocks).toHaveLength(1));
+    expect(saved('r1').pages[0].blocks[0].id).toBe('b1');
+  });
+
+  it('↓ 방향키가 **구분선 위에 선다** — 지나가 버리면 고를 수가 없다', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '위', b: false, c: null }] }, { id: 'b2', kind: 'hr' }] }] };
+    localStorage.setItem('mindflow_doc_r2', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=r2&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 캐럿을 **마지막 글자 뒤**에 둔다 — 포커스가 먼저다(jsdom의 `focus()`가 선택을
+    // 되돌린다), 그리고 요소가 아니라 **텍스트 노드**에 놓아야 한다(좌표를 못 재는
+    // 환경에서는 "마지막 텍스트 노드의 끝인가"로 가른다).
+    line.focus();
+    const text = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, (text.nodeValue ?? '').length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    fireEvent.keyDown(line, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-hr')).toBe('b2'));
+  });
+
+  it('⌘B = 고른 글을 굵게(요청: 공책에서도 단축키를 다 쓰게)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '굵게', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_r3', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=r3&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    selectAll(line);
+    fireEvent.keyDown(line, { key: 'b', code: 'KeyB', metaKey: true });
+    saveNow();
+
+    await waitFor(() => expect(saved('r3').pages[0].blocks[0].runs.every((r: { b: boolean }) => r.b)).toBe(true));
+  });
+
+  it('⌘⇧S = 취소선 · ⌘U = 밑줄', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '지움', b: false, c: null }] }, { id: 'b2', kind: 'p', runs: [{ t: '밑줄', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_r4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=r4&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    selectAll(one);
+    fireEvent.keyDown(one, { key: 'S', code: 'KeyS', metaKey: true, shiftKey: true });
+
+    const two = container.querySelector('[data-note-line="b2"]') as HTMLElement;
+    selectAll(two);
+    fireEvent.keyDown(two, { key: 'u', code: 'KeyU', metaKey: true });
+    saveNow();
+
+    await waitFor(() => expect(saved('r4').pages[0].blocks[0].runs.every((r: { s?: boolean }) => r.s)).toBe(true));
+    expect(saved('r4').pages[0].blocks[1].runs.every((r: { u?: boolean }) => r.u)).toBe(true);
+  });
+
+  it('⌘F = **이 공책에서 찾기** 칸으로 초점(맵 검색 바는 공책에 없다)', async () => {
+    localStorage.setItem('mindflow_doc_r5', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=r5&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-search]')).toBeTruthy());
+
+    fireEvent.keyDown(document, { key: 'f', code: 'KeyF', metaKey: true });
+
+    await waitFor(() => expect(document.activeElement?.hasAttribute('data-note-search')).toBe(true));
+  });
+
+  it('도움말은 **공책 구획**을 보여 주고 캔버스 구획(선택·이동)은 감춘다', async () => {
+    localStorage.setItem('mindflow_doc_r6', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=r6&title=x');
+    const keys = (await waitFor(() => container.querySelector('[data-note-keys]'))) as HTMLElement;
+
+    fireEvent.click(keys);
+
+    await screen.findByText('공책');
+    expect(screen.queryByText('선택·이동')).toBeNull();
+    expect(screen.getByText('이 공책에서 찾기')).toBeTruthy();
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');
