@@ -61,8 +61,8 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   { kind: 'h1', name: '제목 1', hint: '⌘⌥1', desc: '가장 큰 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M12 5v14M4 12h8" /><path d="M17 9.5 19.5 8V19" /></>) },
   { kind: 'h2', name: '제목 2', hint: '⌘⌥2', desc: '섹션 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 10a2 2 0 1 1 3.4 1.4L15.5 16H20" /></>) },
   { kind: 'h3', name: '제목 3', hint: '⌘⌥3', desc: '작은 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 9.5h4.5l-2.5 3a2.2 2.2 0 1 1-2 3.6" /></>) },
-  { kind: 'ul', name: '글머리 목록', hint: '', desc: '점으로 나열', group: '목록',   icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
-  { kind: 'ol', name: '번호 목록', hint: '', desc: '순서가 있는 나열', group: '목록',  icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
+  { kind: 'ul', name: '글머리 기호', hint: '', desc: '점으로 나열', group: '목록',   icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
+  { kind: 'ol', name: '번호 매기기', hint: '', desc: '순서가 있는 나열', group: '목록',  icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
   { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록',  icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
   { kind: 'q', name: '인용', hint: '⌘⇧.', desc: '다른 글이나 말을 인용', group: '강조', inMenu: true, sepBefore: true, icon: <path d="M7 7h4v5c0 2-1 3.5-3 4.5M14 7h4v5c0 2-1 3.5-3 4.5" /> },
   { kind: 'callout', name: '콜아웃', hint: '', desc: '주의 · 결정 · 질문', group: '강조', inMenu: true, icon: (<><rect x="3.5" y="5" width="17" height="14" rx="3" /><path d="M12 9v3.5M12 15.5h.01" /></>) },
@@ -78,18 +78,18 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
 ];
 
 /**
- * 잘라내기 — **평범한 가위**다(제보: 아이콘이 이상하다).
+ * 잘라내기 — **맵·보드 에디터의 그 가위**다(제보: 다른 에디터와 다르다).
  *
- * 예전 모양은 손잡이를 `a 3 3 0 1 0`짜리 반원 두 개로 그리고 날을 그 위에 엇갈려
- * 얹은 것이었는데, 16px에서는 반원이 열린 고리처럼 보여 가위로 읽히지 않았다.
- * 손잡이를 **닫힌 원** 둘로 두고 날을 그 사이에서 교차시키는, 어디서나 쓰는 그
- * 모양으로 돌린다.
+ * 한 앱에서 같은 동작이 두 모양으로 그려지면 "같은 일인가"를 매번 다시 확인하게
+ * 된다. 그쪽(`ContextMenu.tsx`의 `CutIcon`)은 손잡이 둘을 **아래에** 두고 날을
+ * 위로 벌린 세로 가위다 — 이 파일도 같은 path를 쓴다. 바꿀 일이 생기면 둘을 함께.
  */
 const CUT_ICON = (
   <>
-    <circle cx="6" cy="6" r="3" />
     <circle cx="6" cy="18" r="3" />
-    <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
+    <circle cx="18" cy="18" r="3" />
+    <path d="M8.1 15.9 19 3" />
+    <path d="M15.9 15.9 5 3" />
   </>
 );
 
@@ -228,8 +228,8 @@ function luma(hex: string): number {
 
 /** 넣기 — 디자인 원본의 `TOOL_ICONS`. 아이콘은 그 파일의 path를 그대로 옮겼다. */
 const INSERTS: { kind: NoteBlockKind; name: string; icon: JSX.Element }[] = [
-  { kind: 'ul', name: '글머리 목록', icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none" /></>) },
-  { kind: 'ol', name: '번호 목록', icon: (<><path d="M10 6h10M10 12h10M10 18h10" /><path d="M4 5.5h1.5V9M4 9h3M4 13.5c0-1 2-1.2 2-.2 0 .6-.6.9-2 2.2h2.4M4.2 17.5h1.6c1.2 0 1.2 1.5 0 1.5h-1.6" /></>) },
+  { kind: 'ul', name: '글머리 기호', icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none" /></>) },
+  { kind: 'ol', name: '번호 매기기', icon: (<><path d="M10 6h10M10 12h10M10 18h10" /><path d="M4 5.5h1.5V9M4 9h3M4 13.5c0-1 2-1.2 2-.2 0 .6-.6.9-2 2.2h2.4M4.2 17.5h1.6c1.2 0 1.2 1.5 0 1.5h-1.6" /></>) },
   { kind: 'ck', name: '체크리스트', icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><rect x="3" y="14" width="7" height="7" rx="1.6" /><path d="M13 7.5h8M13 17.5h8" /></>) },
   { kind: 'table', name: '표', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 10h17M9.5 10v9M15 10v9" /></>) },
   { kind: 'img', name: '이미지', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5L14 17l3-3 3 3" /></>) },
@@ -4115,6 +4115,9 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                         key={ci}
                         data-note-table-cell={`${ri}:${ci}`}
                         data-picked={on ? '1' : undefined}
+                        // 고른 칸은 키를 받지만 **글을 고치는 중은 아니다** — CSS가
+                        // 이 표식을 보고 캐럿과 선택 표시를 지운다(제보).
+                        data-armed={armed ? '1' : undefined}
                         onMouseDown={(e) => {
                           // 글을 고치는 중인 칸 안의 끌기는 **글자 선택**이다 — 문서에
                           // 걸린 끌기 감시가 그것을 칸 선택으로 바꾸지 않게 비워 둔다.
@@ -4464,7 +4467,7 @@ const CTX_STYLES: { kind: NoteBlockKind; name: string; dot: string }[] = [
   { kind: 'p', name: '본문', dot: 'var(--mf-faint2)' },
   { kind: 'h2', name: '제목', dot: 'var(--mf-text)' },
   { kind: 'q', name: '인용', dot: '#D8794F' },
-  { kind: 'ul', name: '글머리 목록', dot: '#7C9BD8' },
+  { kind: 'ul', name: '글머리 기호', dot: '#7C9BD8' },
   { kind: 'ck', name: '체크리스트', dot: '#69B08A' },
 ];
 

@@ -1212,13 +1212,13 @@ describe('공책 11판 — `/`는 글자로 남는다', () => {
     const { container } = renderEditor('/editor?map=nsA2&title=x');
     await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
 
-    typeSlash(container, 'b1', '/글머리 목록');
+    typeSlash(container, 'b1', '/글머리 기호');
     await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
 
     saveNow();
-    await waitFor(() => expect(saved('nsA2').pages[0].blocks[0].runs[0].t).toBe('/글머리 목록'));
+    await waitFor(() => expect(saved('nsA2').pages[0].blocks[0].runs[0].t).toBe('/글머리 기호'));
     // 종류도 그대로다 — 취소는 아무것도 바꾸지 않는다.
     expect(saved('nsA2').pages[0].blocks[0].kind).toBe('p');
   });
@@ -2190,9 +2190,9 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     await waitFor(() => expect(saved('nq6').pages[0].blocks[0].runs[0].t).toBe('/메모  하나'));
   });
 
-  it('**공백이 든 이름**을 끝까지 쳐도 목록이 남는다 — `글머리 목록`', async () => {
+  it('**공백이 든 이름**을 끝까지 쳐도 목록이 남는다 — `글머리 기호`', async () => {
     const c = await openEmpty('nq7');
-    slash(c, '/글머리 목록');
+    slash(c, '/글머리 기호');
     await waitFor(() => expect(items(c)).toEqual(['ul']));
   });
 
@@ -2447,14 +2447,14 @@ describe('공책 22판 — 본문 6건(통계 띠·지우고 올라가는 커서
     const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
 
     fireEvent.keyDown(line, { key: '/' });
-    // 여섯 글자(`글머리 목록`)까지는 남는다 — 가장 긴 블록 이름이다.
-    type(line, '/글머리 목록');
+    // 여섯 글자(`글머리 기호`)까지는 남는다 — 가장 긴 블록 이름이다.
+    type(line, '/글머리 기호');
     await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
 
-    type(line, '/글머리 목록입니다');
+    type(line, '/글머리 기호입니다');
     await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
     saveNow();
-    await waitFor(() => expect(saved('nx3').pages[0].blocks[0].runs[0].t).toBe('/글머리 목록입니다'));
+    await waitFor(() => expect(saved('nx3').pages[0].blocks[0].runs[0].t).toBe('/글머리 기호입니다'));
   });
 
   it('우클릭 메뉴의 `잘라내기`는 **평범한 가위**다(제보)', async () => {
@@ -2543,6 +2543,63 @@ describe('공책 23판 — 표 레이아웃 4건(스크롤·분리·자리·얹�
 
     await waitFor(() => expect((container.querySelector('[data-note-table-rowslot="1"]') as HTMLElement).style.opacity).toBe('1'));
     expect((container.querySelector('[data-note-table-rowslot="0"]') as HTMLElement).style.opacity).toBe('0');
+  });
+});
+
+describe('공책 24판 — 고른 칸의 캐럿·잘라내기 가위·블록 이름', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('고른 칸은 **캐럿을 그리지 않는다** — 키는 받지만 글을 고치는 중은 아니다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_nz0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nz0&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+
+    fireEvent.mouseDown(cell, { button: 0 });
+    fireEvent.mouseUp(cell);
+    // CSS가 이 표식을 보고 캐럿과 선택 표시를 지운다.
+    await waitFor(() => expect(cell.getAttribute('data-armed')).toBe('1'));
+    expect(document.activeElement).toBe(container.querySelector('[data-note-line="b4:r1c0"]'));
+
+    // 글자가 들어와 편집으로 넘어가면 표식이 사라져 캐럿이 돌아온다.
+    const line = container.querySelector('[data-note-line="b4:r1c0"]') as HTMLElement;
+    line.innerHTML = '값';
+    fireEvent.input(line);
+    await waitFor(() => expect(cell.getAttribute('data-armed')).toBeNull());
+
+    // Enter는 편집을 닫고 **고른 칸으로 되돌린다**(캐럿 없는 상태).
+    fireEvent.keyDown(line, { key: 'Enter' });
+    await waitFor(() => expect(container.querySelector('[data-note-table-cell="1:0"]')?.getAttribute('data-armed')).toBe('1'));
+  });
+
+  it('잘라내기 가위가 **맵·보드 에디터의 그것과 같다**(제보)', async () => {
+    localStorage.setItem('mindflow_doc_nz1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nz1&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    fireEvent.contextMenu(line);
+
+    const cut = (await waitFor(() => container.querySelector('[data-note-ctx="cut"]'))) as HTMLElement;
+    // 손잡이 둘이 **아래에** 있고 날이 위로 벌어진다(`ContextMenu.tsx`의 `CutIcon`).
+    const cys = [...cut.querySelectorAll('circle')].map((c) => c.getAttribute('cy'));
+    expect(cys).toEqual(['18', '18']);
+    expect([...cut.querySelectorAll('path')].map((p) => p.getAttribute('d'))).toEqual(['M8.1 15.9 19 3', 'M15.9 15.9 5 3']);
+  });
+
+  it('블록 이름 — `글머리 기호` · `번호 매기기`(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nz2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nz2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-btn]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-slash-btn]')!);
+
+    const panel = (await waitFor(() => container.querySelector('[data-note-slash-panel]'))) as HTMLElement;
+    expect(panel.querySelector('[data-note-slash-item="ul"]')?.textContent).toContain('글머리 기호');
+    expect(panel.querySelector('[data-note-slash-item="ol"]')?.textContent).toContain('번호 매기기');
+    expect(panel.textContent).not.toContain('글머리 목록');
+    expect(panel.textContent).not.toContain('번호 목록');
   });
 });
 
