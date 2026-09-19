@@ -316,6 +316,14 @@ export interface NoteListItem {
   runs: RichRun[];
   /** 체크리스트(`'ck'`)에서만 뜻이 있다 — 켜짐 여부. */
   done?: boolean;
+  /**
+   * **항목의 들여쓰기 단계**(없으면 0. Tab·Shift+Tab으로 바꾼다).
+   *
+   * 블록에도 `indent`가 있지만 그것은 **목록 전체**를 미는 값이다 — 목록 안에서
+   * 항목 하나만 한 단계 들이는 것은 여기다(문서 편집기의 몸에 익은 Tab이 하는 일).
+   * 마커도 이 값을 따라 갈린다(`listMarkers`): `•`→`◦`→`▪`, `1.`→`a.`→`i.`.
+   */
+  indent?: number;
 }
 
 /**

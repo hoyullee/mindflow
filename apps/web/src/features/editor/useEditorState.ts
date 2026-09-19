@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, noteBlockShape, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -852,6 +852,10 @@ export interface EditorController {
   toggleNoteCheck: (blockId: string, itemId: string) => void;
   addNoteItem: (blockId: string, after?: string) => string | null;
   removeNoteItem: (blockId: string, itemId: string) => void;
+  /** 목록 항목 들여쓰기·내어쓰기 — 바뀌었으면 `true`. */
+  setNoteItemIndent: (blockId: string, itemId: string, delta: 1 | -1) => boolean;
+  /** 글이 있는 줄의 맨 앞 Backspace — 앞 줄에 잇는다. 이은 자리를 돌려준다. */
+  mergeNoteBlockBack: (blockId: string, itemId?: string) => { key: string; at: number; runs: RichRun[] } | null;
   setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
   /** 표에 행을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 아래. */
   addNoteTableRow: (blockId: string, at?: number) => void;
@@ -6843,6 +6847,85 @@ export function useEditorState(): EditorController {
   );
 
   /**
+   * **앞 줄에 잇는다** — 글이 있는 줄의 맨 앞에서 Backspace를 쳤을 때(제보: 윗줄로
+   * 올라가지 않는다). `itemId`를 주면 그 목록 항목의 줄이다.
+   *
+   * 빈 줄이면 그냥 지우면 되지만(그 길은 `removeNoteBlock`이다) 글이 있으면 그 글을
+   * **앞 줄 끝에 이어 붙이고** 캐럿을 이은 자리에 둔다 — 어느 문서 편집기나 같다.
+   * 한 커밋으로 묶어 되돌리기도 한 걸음이다.
+   *
+   * 앞 블록이 글을 담지 않으면(표·이미지·문서 링크) 아무 일도 하지 않는다 — 표 안에
+   * 문단을 밀어 넣는 것은 뜻이 아니다. 구분선은 `null`을 돌려주고 부르는 쪽이 그
+   * 구분선을 **고른다**(다음 Backspace가 그것을 지운다).
+   *
+   * 돌려주는 값은 **이을 줄의 키와 캐럿 자리, 이어 붙인 글** — 편집 박스가 비제어라
+   * 부르는 쪽이 그 DOM을 다시 그려야 한다(`splitNoteBlock`과 같은 이유).
+   */
+  const mergeNoteBlockBack = useCallback(
+    (blockId: string, itemId?: string): { key: string; at: number; runs: RichRun[] } | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const blocks = notePage.blocks;
+      const i = blocks.findIndex((b) => b.id === blockId);
+      if (i < 0) return null;
+      const src = blocks[i] as NoteBlock;
+      const items = src.items ?? [];
+      const k = itemId ? items.findIndex((it) => it.id === itemId) : -1;
+      if (itemId && k < 0) return null;
+      const mine = itemId ? (items[k]?.runs ?? []) : (src.runs ?? []);
+
+      // ① 같은 목록 안 — 바로 **앞 항목**에 잇는다.
+      if (itemId && k > 0) {
+        const prevItem = items[k - 1] as NoteListItem;
+        const head = prevItem.runs ?? [];
+        const merged = normalizeRuns([...head, ...mine]);
+        commitBlock(
+          notePage.id,
+          blockId,
+          (b) => ({
+            ...b,
+            items: (b.items ?? []).flatMap((it, j) => (it.id === itemId ? [] : j === k - 1 ? [{ ...it, runs: merged }] : [it])),
+          }),
+          false,
+        );
+        return { key: `${blockId}:${prevItem.id}`, at: runsText(head).length, runs: merged };
+      }
+
+      // ② 앞 **블록**의 마지막 줄에 잇는다(목록의 첫 항목도 여기로 온다).
+      if (i <= 0) return null;
+      const prev = blocks[i - 1] as NoteBlock;
+      const shape = noteBlockShape(prev.kind);
+      if (shape !== 'runs' && shape !== 'items') return null;
+      const prevItems = prev.items ?? [];
+      const lastItem = prevItems[prevItems.length - 1];
+      const head = shape === 'runs' ? (prev.runs ?? []) : (lastItem?.runs ?? []);
+      const merged = normalizeRuns([...head, ...mine]);
+      const key = shape === 'runs' ? prev.id : `${prev.id}:${lastItem?.id ?? ''}`;
+      commitPage(
+        notePage.id,
+        (pg) => {
+          const at2 = pg.blocks.findIndex((b) => b.id === blockId);
+          if (at2 <= 0) return pg;
+          const before = pg.blocks[at2 - 1] as NoteBlock;
+          const grown: NoteBlock =
+            shape === 'runs'
+              ? { ...before, runs: merged }
+              : { ...before, items: (before.items ?? []).map((it, j, all) => (j === all.length - 1 ? { ...it, runs: merged } : it)) };
+          // 목록의 첫 항목만 떠났으면 **나머지 목록은 남는다** — 항목이 하나뿐이면 블록째 사라진다.
+          const mineBlock = pg.blocks[at2] as NoteBlock;
+          const rest =
+            itemId && (mineBlock.items ?? []).length > 1
+              ? [{ ...mineBlock, items: (mineBlock.items ?? []).filter((it) => it.id !== itemId) }]
+              : [];
+          return { ...pg, blocks: [...pg.blocks.slice(0, at2 - 1), grown, ...rest, ...pg.blocks.slice(at2 + 1)] };
+        },
+        false,
+      );
+      return { key, at: runsText(head).length, runs: merged };
+    },
+    [commitBlock, commitPage, notePage],
+  );
+
+  /**
    * 블록을 지운다 — **마지막 블록은 비우기만 한다.**
    *
    * 블록이 하나도 없는 페이지는 캐럿을 놓을 자리가 없어 글을 시작할 수 없다
@@ -7056,6 +7139,23 @@ export function useEditorState(): EditorController {
         },
         false,
       );
+    },
+    [commitBlock, notePage],
+  );
+
+  /**
+   * 목록 항목의 **들여쓰기**(Tab · Shift+Tab) — 규칙은 코어가 안다(`indentListItem`):
+   * 앞 항목보다 한 단계까지만, 딸린 항목도 함께. 바뀔 것이 없으면 커밋하지 않는다
+   * (Tab을 더 눌러도 되돌리기 목록이 불어나지 않는다).
+   */
+  const setNoteItemIndent = useCallback(
+    (blockId: string, itemId: string, delta: 1 | -1): boolean => {
+      if (readOnlyRef.current || !notePage) return false;
+      const block = notePage.blocks.find((b) => b.id === blockId);
+      const items = block?.items ?? [];
+      if (indentListItem(items, itemId, delta) === items) return false;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, items: indentListItem(b.items ?? [], itemId, delta) }), false);
+      return true;
     },
     [commitBlock, notePage],
   );
@@ -7919,6 +8019,8 @@ export function useEditorState(): EditorController {
     toggleNoteCheck,
     addNoteItem,
     removeNoteItem,
+    setNoteItemIndent,
+    mergeNoteBlockBack,
     setNoteCell,
     addNoteTableRow,
     addNoteTableCol,

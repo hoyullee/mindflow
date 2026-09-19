@@ -28,6 +28,8 @@ import {
   pageText,
   removePage,
   retypeBlock,
+  indentListItem,
+  listMarkers,
   roundSizes,
   runsText,
   textRuns,
@@ -366,5 +368,62 @@ describe('roundSizes — 잰 치수를 정수로(합을 지킨다)', () => {
     roundSizes(raw).forEach((v, i) => expect(Math.abs(v - (raw[i] as number))).toBeLessThan(1));
     expect(roundSizes([120, 80, 200])).toEqual([120, 80, 200]);
     expect(roundSizes([])).toEqual([]);
+  });
+});
+
+describe('목록 항목 들여쓰기(Tab)와 단계별 표식', () => {
+  const it3 = () => [
+    { id: 'a', runs: [{ t: '가', b: false, c: null }] },
+    { id: 'b', runs: [{ t: '나', b: false, c: null }] },
+    { id: 'c', runs: [{ t: '다', b: false, c: null }] },
+  ];
+
+  it('첫 항목은 들일 수 없다 — 기준이 될 앞 항목이 없다', () => {
+    const items = it3();
+    expect(indentListItem(items, 'a', 1)).toBe(items); // 같은 배열 = 바뀐 것 없음
+  });
+
+  it('앞 항목보다 **한 단계까지만** 깊어진다', () => {
+    let items = indentListItem(it3(), 'b', 1);
+    expect(items[1]?.indent).toBe(1);
+    items = indentListItem(items, 'b', 1); // 앞(0단계)보다 두 단계는 안 된다
+    expect(items[1]?.indent).toBe(1);
+    items = indentListItem(items, 'c', 1);
+    expect(items[2]?.indent).toBe(1);
+    items = indentListItem(items, 'c', 1); // 이제 앞이 1단계라 2단계까지 된다
+    expect(items[2]?.indent).toBe(2);
+  });
+
+  it('딸린 항목도 함께 움직이고, 0단계로 돌아오면 칸이 사라진다', () => {
+    let items = indentListItem(it3(), 'b', 1);
+    items = indentListItem(items, 'c', 1);
+    items = indentListItem(items, 'c', 1); // a(0) b(1) c(2)
+    items = indentListItem(items, 'b', -1); // b를 내어쓰면 c도 따라 나온다
+    expect(items.map((x) => x.indent ?? 0)).toEqual([0, 0, 1]);
+    expect('indent' in (items[1] as object)).toBe(false); // 기본값은 적지 않는다
+  });
+
+  it('표식은 단계마다 따로 센다 — `1. a. i.` · `• ◦ ▪`', () => {
+    const items = [
+      { id: '1', runs: [] },
+      { id: '2', runs: [], indent: 1 },
+      { id: '3', runs: [], indent: 1 },
+      { id: '4', runs: [], indent: 2 },
+      { id: '5', runs: [] },
+    ];
+    expect(listMarkers('ol', items)).toEqual(['1.', 'a.', 'b.', 'i.', '2.']);
+    expect(listMarkers('ul', items)).toEqual(['•', '◦', '◦', '▪', '•']);
+    // 시작 번호는 **첫 단계에만** 걸린다(`3.`을 치고 시작한 목록).
+    expect(listMarkers('ol', items, 3)).toEqual(['3.', 'a.', 'b.', 'i.', '4.']);
+  });
+
+  it('깊이 들어갔다 나오면 그 아래 번호는 **다시 1부터**', () => {
+    const items = [
+      { id: '1', runs: [] },
+      { id: '2', runs: [], indent: 1 },
+      { id: '3', runs: [] },
+      { id: '4', runs: [], indent: 1 },
+    ];
+    expect(listMarkers('ol', items)).toEqual(['1.', 'a.', '2.', 'a.']);
   });
 });

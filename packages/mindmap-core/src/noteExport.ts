@@ -59,12 +59,14 @@ function linesOf(b: NoteBlock): NoteLineOut[] {
       // 콜아웃은 인용으로 적는다 — 세 형식 어디에도 "콜아웃"이 없고, 뜻(눈에 띄게
       // 떼어 둔 한 마디)이 가장 가까운 것이 인용이다.
       return one('quote', runsText(b.runs));
+    // 항목의 단계(`NoteListItem.indent`)는 블록의 단계 **위에** 얹힌다 — 내보낸 글에도
+    // 화면과 같은 층이 보여야 한다(마크다운은 두 칸, 인쇄는 18px씩).
     case 'ul':
-      return (b.items ?? []).map((it) => ({ kind: 'li' as const, text: runsText(it.runs), depth })).filter((l) => l.text);
+      return (b.items ?? []).map((it) => ({ kind: 'li' as const, text: runsText(it.runs), depth: depth + (it.indent ?? 0) })).filter((l) => l.text);
     case 'ol':
-      return (b.items ?? []).map((it) => ({ kind: 'oli' as const, text: runsText(it.runs), depth })).filter((l) => l.text);
+      return (b.items ?? []).map((it) => ({ kind: 'oli' as const, text: runsText(it.runs), depth: depth + (it.indent ?? 0) })).filter((l) => l.text);
     case 'ck':
-      return (b.items ?? []).map((it) => ({ kind: it.done ? ('done' as const) : ('todo' as const), text: runsText(it.runs), depth })).filter((l) => l.text);
+      return (b.items ?? []).map((it) => ({ kind: it.done ? ('done' as const) : ('todo' as const), text: runsText(it.runs), depth: depth + (it.indent ?? 0) })).filter((l) => l.text);
     case 'toggle': {
       const head = runsText(b.runs);
       const body = runsText(b.items?.[0]?.runs);
