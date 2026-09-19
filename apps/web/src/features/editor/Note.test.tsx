@@ -1959,9 +1959,9 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
     const track = rail.firstElementChild as HTMLElement;
     expect(track.style.position).toBe('relative');
 
-    const box = container.querySelector('[data-note-table-box]') as HTMLElement;
-    Object.defineProperty(box, 'scrollLeft', { value: 120, configurable: true });
-    fireEvent.scroll(box);
+    const scroller = container.querySelector('[data-note-table-scroll]') as HTMLElement;
+    Object.defineProperty(scroller, 'scrollLeft', { value: 120, configurable: true });
+    fireEvent.scroll(scroller);
     await waitFor(() => expect((rail.firstElementChild as HTMLElement).style.transform).toBe('translateX(-120px)'));
   });
 });
@@ -2295,12 +2295,14 @@ describe('공책 20판 — 표 모양 6건(칩·코너·한 줄 테두리·끝 �
     };
     localStorage.setItem('mindflow_doc_nv4', JSON.stringify(sized));
     const { container } = renderEditor('/editor?map=nv4&title=x');
-    const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
-    const grid = box.parentElement as HTMLElement;
+    const scroller = (await waitFor(() => container.querySelector('[data-note-table-scroll]'))) as HTMLElement;
+    const grid = scroller.parentElement as HTMLElement;
 
     // 늘 가로를 다 쓰면 표만 줄고 오른쪽이 빈칸으로 남는다.
     expect(grid.style.width).toBe('fit-content');
     expect(grid.style.maxWidth).toBe('100%');
+    // 테두리를 두른 상자는 제 폭만큼만 — 막대는 그 **바깥 아래**에 선다.
+    expect((scroller.firstElementChild as HTMLElement).style.width).toBe('max-content');
   });
 
   it('크기를 손대지 않은 표는 예전처럼 가로를 다 쓴다(무회귀)', async () => {
@@ -2501,23 +2503,27 @@ describe('공책 23판 — 표 레이아웃 4건(스크롤·분리·자리·얹�
   it('표 상자는 **세로로 스크롤하지 않는다** — 가로 막대가 깜빡이던 되먹임을 끊는다(제보)', async () => {
     localStorage.setItem('mindflow_doc_ny0', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ny0&title=x');
-    const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
+    const scroller = (await waitFor(() => container.querySelector('[data-note-table-scroll]'))) as HTMLElement;
 
     // `overflow-x: auto`만 주면 세로도 `auto`가 되어, 1px만 넘쳐도
     // 세로 막대 → 가로가 좁아짐 → 가로 막대 → … 하며 끄는 동안 깜빡인다.
-    expect(box.style.overflowX).toBe('auto');
-    expect(box.style.overflowY).toBe('hidden');
+    expect(scroller.style.overflowX).toBe('auto');
+    expect(scroller.style.overflowY).toBe('hidden');
+    // 테두리·둥근 모서리는 **안쪽** 상자가 갖는다 — 막대가 그것을 가로지르지 않는다.
+    const box = scroller.firstElementChild as HTMLElement;
+    expect(box.getAttribute('data-note-table-box')).not.toBeNull();
+    expect(box.style.borderRadius).toBe('12px');
   });
 
   it('레일과 끝의 ＋는 **흐름 밖**이라 페이지 자리를 먹지 않는다(요청)', async () => {
     localStorage.setItem('mindflow_doc_ny1', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ny1&title=x');
-    const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
-    const wrap = box.parentElement as HTMLElement;
+    const scroller = (await waitFor(() => container.querySelector('[data-note-table-scroll]'))) as HTMLElement;
+    const wrap = scroller.parentElement as HTMLElement;
 
-    // 감싸는 판의 **흐름 안 자식은 상자 하나뿐**이다(나머지 넷은 absolute).
+    // 감싸는 판의 **흐름 안 자식은 스크롤 판 하나뿐**이다(나머지 넷은 absolute).
     const inFlow = [...wrap.children].filter((el) => (el as HTMLElement).style.position !== 'absolute');
-    expect(inFlow).toEqual([box]);
+    expect(inFlow).toEqual([scroller]);
     expect((container.querySelector('[data-note-table-colrail]') as HTMLElement).style.position).toBe('absolute');
     expect((container.querySelector('[data-note-table-rowrail]') as HTMLElement).style.position).toBe('absolute');
   });
@@ -2719,6 +2725,67 @@ describe('공책 25판 — 본문 4건(구분선·방향키·마크다운 단축
     saveNow();
     await waitFor(() => expect(saved('o5').pages[0].blocks[0].runs[0].t).toBe('범위는 3 - 5 '));
     expect(saved('o5').pages[0].blocks[0].kind).toBe('p');
+  });
+});
+
+describe('공책 26판 — 표 5건(선택 배경·행 레일·레일 영역·세로 맞춤·바깥 스크롤)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('**행 레일 쪽의 틈이 레일의 몸이다** — 가는 길에 사라지지 않게(제보)', async () => {
+    localStorage.setItem('mindflow_doc_p0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=p0&title=x');
+    const rail = (await waitFor(() => container.querySelector('[data-note-table-rowrail]'))) as HTMLElement;
+
+    // 4px을 **여백이 아니라 패딩**으로 준다 — 여백이면 그 틈이 어느 요소에도 속하지
+    // 않아, 칸에서 레일로 가는 찰나에 블록 밖으로 나갔다 들어오며 레일이 숨는다.
+    expect(rail.style.marginRight).toBe('0px');
+    expect(rail.style.paddingRight).toBe('4px');
+    expect(rail.style.boxSizing).toBe('content-box');
+  });
+
+  it('**레일 띠에 마우스를 얹으면** 그 축의 손잡이가 모두 보인다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_p1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=p1&title=x');
+    const rail = (await waitFor(() => container.querySelector('[data-note-table-rowrail]'))) as HTMLElement;
+    const slot = (i: number) => (container.querySelector(`[data-note-table-rowslot="${i}"]`) as HTMLElement).style.opacity;
+
+    expect(slot(0)).toBe('0');
+    fireEvent.mouseEnter(rail);
+    await waitFor(() => expect(slot(0)).toBe('1'));
+    expect(slot(1)).toBe('1');
+    // 열 손잡이는 그대로 숨어 있다 — 얹은 축만 켠다.
+    expect((container.querySelector('[data-note-table-colslot="0"]') as HTMLElement).style.opacity).toBe('0');
+
+    fireEvent.mouseLeave(rail);
+    await waitFor(() => expect(slot(0)).toBe('0'));
+  });
+
+  it('칸의 글은 **세로 가운데**에 선다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_p2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=p2&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="0:0"]'))) as HTMLElement;
+
+    expect(cell.style.verticalAlign).toBe('middle');
+  });
+
+  it('가로 막대는 **표 테두리 바깥**에 선다 — 마지막 줄을 가로지르지 않게(제보)', async () => {
+    localStorage.setItem('mindflow_doc_p3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=p3&title=x');
+    const scroller = (await waitFor(() => container.querySelector('[data-note-table-scroll]'))) as HTMLElement;
+    const box = scroller.firstElementChild as HTMLElement;
+
+    // 넘침은 바깥 판이 받고, 테두리·둥근 모서리는 안쪽 상자가 갖는다.
+    expect(scroller.style.overflowX).toBe('auto');
+    expect(scroller.style.border).toBe('');
+    expect(box.getAttribute('data-note-table-box')).not.toBeNull();
+    expect(box.style.border).toContain('1px solid');
+    expect(box.style.borderRadius).toBe('12px');
+    expect(box.style.overflowX).toBe('');
   });
 });
 

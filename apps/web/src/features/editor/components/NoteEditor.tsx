@@ -3361,6 +3361,14 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
    * `A1`에 얹었으면 `A`열과 `1`행의 손잡이 둘만 선다.
    */
   const [hoverAt, setHoverAt] = useState<{ r: number; c: number } | null>(null);
+  /**
+   * **레일 띠 위에 마우스가 있다**(요청 7) — 그 축의 손잡이를 모두 보인다.
+   *
+   * 칸 위에 있을 때만 보이게 두면 손잡이로 마우스를 옮기는 **그 길에서** 사라져
+   * 누를 수가 없다(제보 2 — 행 레일이 그랬다). 레일에 닿는 순간부터는 레일이
+   * 기준이 되어, 띠를 따라 옮겨 다니며 원하는 줄을 고를 수 있다.
+   */
+  const [railZone, setRailZone] = useState<'row' | 'col' | null>(null);
   const [geom, setGeom] = useState<TableGeom | null>(null);
   /** 문서에 건 리스너가 읽는 최신 치수·칸 찾개 — 효과가 렌더마다 다시 붙지 않게. */
   const geomRef = useRef<TableGeom | null>(null);
@@ -3377,6 +3385,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   const rootRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
+  /** 넘침을 받는 바깥 판 — 가로 막대가 여기에 선다(표 테두리 **밖**, 그 아래). */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   /**
    * 표 상자의 **가로 스크롤 위치** — 열 레일이 이 값만큼 따라 움직인다(제보).
    *
@@ -3459,7 +3469,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       setGeom((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       // 열을 지워 표가 좁아지면 브라우저가 `scrollLeft`를 줄인다 — 그 값을 다시 읽지
       // 않으면 레일만 옛 오프셋에 남는다(같은 값이면 리렌더는 건너뛴다).
-      setScrollX(boxRef.current?.scrollLeft ?? 0);
+      setScrollX(scrollRef.current?.scrollLeft ?? 0);
     };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
@@ -3780,6 +3790,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
    * 보이지 않으면 고를 수 없다) ③ 그 줄의 메뉴가 열려 있다.
    */
   const railOn = (axis: 'row' | 'col', i: number): boolean => {
+    if (railZone === axis) return true;
     if (hot?.axis === axis && hot.i === i) return true;
     if (hoverAt && (axis === 'col' ? hoverAt.c : hoverAt.r) === i) return true;
     const live = menu?.sel ?? sel;
@@ -3807,6 +3818,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
        * 바깥이 `positioned`가 되었지만 손잡이의 원점은 **안쪽 트랙**(`relative`)이라
        * 좌표가 밀리지 않는다 — 그 둘을 가른 것이 스크롤 추종(#669)의 처방이었다.
        */
+      onMouseEnter={() => setRailZone('col')}
+      onMouseLeave={() => setRailZone(null)}
       style={{ position: 'absolute', left: 0, right: 0, bottom: '100%', height: 14, overflow: 'hidden', padding: '8px 12px', margin: '-8px -12px -4px', boxSizing: 'content-box' }}
     >
       {/* 안쪽 트랙 — 손잡이의 절대 배치 원점이자 **스크롤을 따라가는 판**이다.
@@ -3855,8 +3868,18 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     <div
       className="mf-note-trail"
       data-note-table-rowrail
-      // 상자 **왼쪽 바깥**에 뜬다(흐름 밖).
-      style={{ position: 'absolute', right: '100%', marginRight: 4, top: 0, bottom: 0, width: 14, display: geom ? 'block' : 'flex', flexDirection: 'column', gap: 4 }}
+      onMouseEnter={() => setRailZone('row')}
+      onMouseLeave={() => setRailZone(null)}
+      /**
+       * 상자 **왼쪽 바깥**에 뜬다(흐름 밖).
+       *
+       * 틈(4px)을 **여백이 아니라 오른쪽 패딩**으로 준다(제보 2: 행 레일에 마우스를
+       * 얹으면 사라져 누를 수가 없다). 여백으로 두면 그 4px이 어느 요소에도 속하지
+       * 않아, 칸에서 레일로 가는 길에 블록 밖으로 나갔다 들어오게 된다 — 그 찰나에
+       * `mouseleave`가 울려 레일이 숨고 `pointer-events: none`이 되어 다시는 닿지
+       * 못한다. 패딩이면 그 4px도 레일의 몸이라 길이 끊기지 않는다.
+       */
+      style={{ position: 'absolute', right: '100%', marginRight: 0, paddingRight: 4, boxSizing: 'content-box', top: 0, bottom: 0, width: 14, display: geom ? 'block' : 'flex', flexDirection: 'column', gap: 4 }}
     >
       {rows.map((_, ri) => {
         const box = geom?.rows[ri];
@@ -4016,7 +4039,10 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={onKeyDown}
       // 표를 벗어나면 얹힌 칸도 없다 — 레일이 마지막 자리에 남아 있지 않게.
-      onMouseLeave={() => setHoverAt(null)}
+      onMouseLeave={() => {
+        setHoverAt(null);
+        setRailZone(null);
+      }}
       style={{ ...blockFlow(block), position: 'relative' }}
     >
       {/**
@@ -4040,14 +4066,20 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         {endPlus('오른쪽 끝에 열 추가', () => controller.addNoteTableCol(block.id), 'col')}
         {endPlus('아래쪽 끝에 행 추가', () => controller.addNoteTableRow(block.id), 'row')}
 
+        {/**
+          * 넘침을 받는 판과 **테두리를 두른 상자**를 갈랐다(제보 3: 가로 스크롤이
+          * 생기면 표의 마지막 줄 UI가 깨진다).
+          *
+          * 막대를 테두리 **안쪽** 바닥에 두면 둥근 모서리를 가로질러 마지막 행을
+          * 잘라 먹는다. 바깥 판이 넘침을 받으면 막대가 **표 아래 제 자리**에 서고
+          * (요청) 표의 테두리·모서리는 온전하다.
+          */}
         <div
-          ref={boxRef}
-          data-note-table-box
-          className="mf-note-tbox"
-          tabIndex={-1}
+          ref={scrollRef}
+          data-note-table-scroll
+          className="mf-note-tscroll"
           onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)}
           style={{
-            position: 'relative',
             minWidth: 0,
             overflowX: 'auto',
             /**
@@ -4060,6 +4092,17 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
              * 세로를 못박으면 그 되먹임이 끊긴다(표는 세로로 스크롤할 것이 없다).
              */
             overflowY: 'hidden',
+          }}
+        >
+        <div
+          ref={boxRef}
+          data-note-table-box
+          tabIndex={-1}
+          style={{
+            position: 'relative',
+            // 크기를 손으로 정한 표는 제 폭만큼, 아니면 판을 가득 — 어느 쪽이든
+            // 테두리가 표를 정확히 두른다.
+            width: colW ? 'max-content' : '100%',
             border: '1px solid var(--mf-hairline)',
             borderRadius: 12,
             background: 'var(--mf-card)',
@@ -4221,7 +4264,9 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           borderBottom: ri === rows.length - 1 ? 0 : '1px solid var(--mf-hairline)',
                           borderRight: last ? 0 : '1px solid var(--mf-border-soft)',
                           padding: '10px 12px',
-                          verticalAlign: 'top',
+                          // 세로 **가운데**(요청) — 위로 붙여 두면 한 줄짜리 칸과
+                          // 두 줄짜리 칸이 한 행에 섞일 때 글줄이 들쭉날쭉해 보인다.
+                          verticalAlign: 'middle',
                           // 모서리 칸에는 상자와 같은 12px를 따로 준다 — 없으면 선택
                           // 링이 곡선을 따라가지 못하고 모서리에서 잘린다.
                           borderRadius: radius,
@@ -4286,6 +4331,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
 
