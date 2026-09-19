@@ -23,6 +23,7 @@ import {
   noteTagColor,
   pageExcerpt,
   pageText,
+  listMarkers,
   roundSizes,
   runsText,
   textRuns,
@@ -2763,7 +2764,17 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
               onClick={() => {
                 const key = boxRef.current?.getAttribute('data-note-line') || '';
                 const id = blockIdOf(key);
-                if (id) controller.retypeNoteBlock(id, t.kind);
+                if (id) {
+                  controller.retypeNoteBlock(id, t.kind);
+                  // 종류를 바꾸면 그 자리의 줄이 다시 그려진다 — **쓰던 자리로 캐럿을
+                  // 돌려준다**(제보: 목록을 풀면 포커스가 풀린다). 목록으로 바뀌면
+                  // 편집 박스는 블록이 아니라 **첫 항목**이 갖는다.
+                  caretToLine(id);
+                  requestAnimationFrame(() => {
+                    const first = document.querySelector<HTMLElement>(`[data-note-block="${id}"] [data-note-line]`);
+                    if (first && first.getAttribute('data-note-line') !== id) caretToLine(first.getAttribute('data-note-line') || id);
+                  });
+                }
                 setOpen(false);
               }}
               style={{ ...MENU_ITEM, fontWeight: cur?.kind === t.kind ? 800 : 600, ...(cur?.kind === t.kind ? { background: 'var(--mf-accent-soft)' } : {}) }}
@@ -2997,7 +3008,33 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
     }
     if (block.kind !== 'p') {
       controller.retypeNoteBlock(block.id, 'p');
+      // 종류만 바뀌고 글은 그대로다 — **그 줄에 캐럿을 남긴다**(제보: 포커스가 풀린다).
+      caretToLine(block.id, 0);
       return true;
+    }
+    /**
+     * **글이 있는 줄의 맨 앞 Backspace = 앞 줄에 잇기**(제보: 윗줄로 올라가지 않는다).
+     *
+     * 예전에는 여기서 손을 뗐고(브라우저가 할 일도 없다 — 앞에 글자가 없다) 그래서
+     * 아무 일도 일어나지 않았다. 이제 앞 줄 끝에 이어 붙이고 캐럿을 이은 자리에 둔다.
+     */
+    if (index > 0) {
+      const joined = controller.mergeNoteBlockBack(block.id);
+      if (joined) {
+        // 비제어 박스라 **앞 줄의 DOM도** 우리가 다시 그린다(Enter로 가를 때와 같은
+        // 이유: 포커스를 잃는 순간 옛 글이 되덮는다).
+        const el = document.querySelector<HTMLElement>(`[data-note-line="${joined.key}"]`);
+        if (el) el.innerHTML = runsToHtml({ text: runsText(joined.runs), rich: joined.runs });
+        caretToLine(joined.key, joined.at);
+        return true;
+      }
+      // 앞이 구분선이면 그것을 **고른다** — 한 번 더 누르면 지워진다.
+      const wrap = document.querySelector<HTMLElement>(`[data-note-blockwrap="${block.id}"]`);
+      const hr = wrap?.previousElementSibling?.querySelector<HTMLElement>('[data-note-hr]');
+      if (hr) {
+        hr.focus();
+        return true;
+      }
     }
     return false;
   };
@@ -3171,10 +3208,16 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   }
 
   if (shape === 'items') {
+    /**
+     * 표식은 **코어가 센다**(`listMarkers`) — 항목마다 단계가 다를 수 있어(Tab)
+     * 번호가 단계별로 따로 매겨지기 때문이다(`1. a. i.` · `• ◦ ▪`).
+     */
+    const items = block.items ?? [];
+    const marks = block.kind === 'ck' ? [] : listMarkers(block.kind === 'ol' ? 'ol' : 'ul', items, block.start ?? 1);
     return (
       <div data-note-block={block.id} data-note-kind={block.kind} style={{ ...blockFlow(block), display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {(block.items ?? []).map((item, j) => (
-          <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        {items.map((item, j) => (
+          <div key={item.id} data-note-item-depth={item.indent ? String(item.indent) : undefined} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingLeft: (item.indent ?? 0) * 22 }}>
             {block.kind === 'ck' ? (
               <button
                 type="button"
@@ -3209,8 +3252,8 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
                 )}
               </button>
             ) : (
-              <span aria-hidden="true" style={{ flex: '0 0 auto', width: 18, marginTop: 3, textAlign: 'right', fontSize: 13, color: 'var(--mf-faint)', fontFamily: block.kind === 'ol' ? 'ui-monospace, monospace' : undefined }}>
-                {block.kind === 'ol' ? `${(block.start ?? 1) + j}.` : '•'}
+              <span aria-hidden="true" data-note-bullet={marks[j] ?? ''} style={{ flex: '0 0 auto', width: 18, marginTop: 3, textAlign: 'right', fontSize: 13, color: 'var(--mf-faint)', fontFamily: block.kind === 'ol' ? 'ui-monospace, monospace' : undefined }}>
+                {marks[j] ?? '•'}
               </span>
             )}
             <NoteLine
@@ -3238,14 +3281,39 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
                 setFreshId(controller.addNoteItem(block.id, item.id));
                 return true;
               }}
+              onTab={(back) => {
+                if (readOnly) return false;
+                // 캐럿은 그대로 둔다 — 이 줄은 다시 마운트되지 않고 **왼쪽 여백만** 바뀐다.
+                return controller.setNoteItemIndent(block.id, item.id, back ? -1 : 1);
+              }}
               onBackspaceAtStart={() => {
                 if (readOnly) return false;
+                // 들여쓴 항목의 맨 앞 Backspace는 **먼저 내어쓴다**(글이 있어도) —
+                // 문서 편집기의 몸에 익은 순서다(지우기 전에 한 단계 나온다).
+                if ((item.indent ?? 0) > 0) return controller.setNoteItemIndent(block.id, item.id, -1);
+                /**
+                 * **앞 줄에 잇는다** — 앞 항목이 있으면 그 항목에, 첫 항목이면 앞
+                 * 블록의 마지막 줄에(그때 목록의 나머지 항목은 그대로 남는다).
+                 * 빈 항목도 같은 길을 지난다(이어 붙일 글이 없을 뿐이다).
+                 */
+                const joined = controller.mergeNoteBlockBack(block.id, item.id);
+                if (joined) {
+                  const el = document.querySelector<HTMLElement>(`[data-note-line="${joined.key}"]`);
+                  if (el) el.innerHTML = runsToHtml({ text: runsText(joined.runs), rich: joined.runs });
+                  caretToLine(joined.key, joined.at);
+                  return true;
+                }
+                // 이을 앞 줄이 없다(페이지의 첫 블록) — 빈 항목만 정리한다.
                 if (runsText(item.runs) !== '') return false;
                 if ((block.items ?? []).length > 1) {
+                  const prev = (block.items ?? [])[j - 1];
                   controller.removeNoteItem(block.id, item.id);
+                  caretToLine(prev ? `${block.id}:${prev.id}` : block.id);
                   return true;
                 }
                 controller.retypeNoteBlock(block.id, 'p');
+                // 목록이 문단으로 돌아간 자리 — 그 문단에 캐럿을 남긴다(제보).
+                caretToLine(block.id);
                 return true;
               }}
               style={{
@@ -5626,6 +5694,52 @@ function moveNoteCaret(dir: -1 | 1): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * **다음 프레임에** 이 키의 줄로 캐럿을 보낸다(기본은 글 끝).
+ *
+ * 모델을 고치면 그 자리의 DOM이 다시 그려지므로 지금 잡아 둔 요소는 쓸 수 없다.
+ * `freshId`(마운트할 때의 `autoFocus`)로도 닿지 않는 자리가 있다 — **이미 떠 있던
+ * 줄**(앞 항목·앞 블록)은 다시 마운트되지 않기 때문이다.
+ */
+function caretToLine(key: string, at: number | 'end' = 'end'): void {
+  const go = () => {
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      if (at === 'end') range.collapse(false);
+      else {
+        // 글자 자리로 — 이어 붙인 자리(앞 글의 길이)에 캐럿을 둔다.
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let seen = 0;
+        let node = walker.nextNode();
+        let done = false;
+        while (node) {
+          const len = (node.nodeValue || '').length;
+          if (seen + len >= at) {
+            range.setStart(node, at - seen);
+            range.collapse(true);
+            done = true;
+            break;
+          }
+          seen += len;
+          node = walker.nextNode();
+        }
+        if (!done) range.collapse(false);
+      }
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } catch {
+      /* 캐럿을 못 놓아도 포커스는 갔다 */
+    }
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+  else setTimeout(go, 0);
 }
 
 /** 편집 박스 키에서 블록 id만. */

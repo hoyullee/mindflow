@@ -49,6 +49,13 @@ interface Props {
   onSlash?: (at: number) => void;
   /** 위/아래 화살표로 블록 사이를 옮긴다(글의 끝·시작에서만). */
   onArrowOut?: (dir: -1 | 1) => boolean;
+  /**
+   * **Tab · Shift+Tab** — 목록에서 들여쓰기·내어쓰기. 처리했으면 `true`.
+   *
+   * 이 고리를 주지 않은 줄에서는 Tab이 브라우저의 것이다(초점이 다음 요소로 간다) —
+   * 목록이 아닌 줄에서 Tab을 먹으면 키보드만 쓰는 사람이 편집기에 갇힌다.
+   */
+  onTab?: (back: boolean) => boolean;
   /** 마운트 직후 캐럿을 놓는다(새로 만든 블록). */
   autoFocus?: boolean;
   /** 이 줄을 가리키는 표식 — 테스트와 캐럿 이동이 쓴다. */
@@ -63,7 +70,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -146,6 +153,14 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
         e.stopPropagation();
         e.nativeEvent.stopImmediatePropagation();
         onSlash(at);
+      }
+    }
+    if (e.key === 'Tab' && !e.nativeEvent.isComposing && onTab) {
+      // `/` 목록이 열려 있으면 이 키는 그쪽 것이다 — 그쪽이 **캡처 단계**에서
+      // 가로채므로 여기까지 오지 않는다(SlashMenu의 키 핸들러).
+      if (onTab(e.shiftKey)) {
+        e.preventDefault();
+        return;
       }
     }
     if (e.key === 'Backspace' && !e.nativeEvent.isComposing) {

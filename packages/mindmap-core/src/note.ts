@@ -575,3 +575,100 @@ export function roundSizes(list: number[]): number[] {
   }
   return out;
 }
+
+/** 목록 항목이 들어갈 수 있는 **가장 깊은 단계**(0부터 센다). */
+export const NOTE_LIST_MAX_INDENT = 4;
+
+/** 이 항목의 단계 — 없거나 범위를 벗어난 값은 접어 준다. */
+function itemDepth(item: NoteListItem): number {
+  return Math.max(0, Math.min(NOTE_LIST_MAX_INDENT, Math.floor(item.indent ?? 0)));
+}
+
+/** 0단계는 문서에 적지 않는다(기본값은 남기지 않는다 — 저장본이 조용하게). */
+function withDepth(item: NoteListItem, depth: number): NoteListItem {
+  if (depth <= 0) {
+    if (item.indent === undefined) return item;
+    const next = { ...item };
+    delete next.indent;
+    return next;
+  }
+  return { ...item, indent: depth };
+}
+
+/**
+ * 항목 하나를 **들이거나 내민다**(Tab · Shift+Tab).
+ *
+ * 규칙 둘은 어느 문서 편집기나 같다:
+ * - **바로 앞 항목보다 한 단계까지만** 깊어진다(첫 항목은 기준이 없어 들일 수 없다).
+ *   이것이 없으면 두 번째 항목을 세 단계 들여 "부모 없는 손자"가 생긴다.
+ * - **딸린 항목도 함께 움직인다** — 바로 뒤에 이어지는 더 깊은 항목들이 그 자식이다.
+ *   부모만 옮기면 자식이 부모보다 깊거나 얕아져 목록이 뒤틀린다.
+ *
+ * 바뀔 것이 없으면 **같은 배열을 그대로** 돌려준다(호출부가 `next === items`로 안다).
+ */
+export function indentListItem(items: NoteListItem[], itemId: string, delta: 1 | -1): NoteListItem[] {
+  const i = items.findIndex((it) => it.id === itemId);
+  if (i < 0) return items;
+  const cur = itemDepth(items[i] as NoteListItem);
+  const ceiling = i === 0 ? cur : Math.min(NOTE_LIST_MAX_INDENT, itemDepth(items[i - 1] as NoteListItem) + 1);
+  const next = delta > 0 ? Math.min(cur + 1, ceiling) : Math.max(0, cur - 1);
+  if (next === cur) return items;
+  const shift = next - cur;
+  const out = items.slice();
+  for (let k = i; k < out.length; k += 1) {
+    const d = itemDepth(out[k] as NoteListItem);
+    if (k > i && d <= cur) break; // 형제를 만났다 — 여기까지가 딸린 것들
+    out[k] = withDepth(out[k] as NoteListItem, Math.max(0, Math.min(NOTE_LIST_MAX_INDENT, d + shift)));
+  }
+  return out;
+}
+
+/** `a` `b` … `z` `aa` — 번호 목록의 두 번째 단계. */
+function alphaMark(n: number): string {
+  let v = Math.max(1, n);
+  let out = '';
+  while (v > 0) {
+    const r = (v - 1) % 26;
+    out = String.fromCharCode(97 + r) + out;
+    v = Math.floor((v - 1) / 26);
+  }
+  return out;
+}
+
+/** `i` `ii` `iv` — 번호 목록의 세 번째 단계(작은 수만 쓰므로 표 하나면 넉넉하다). */
+function romanMark(n: number): string {
+  const table: [number, string][] = [
+    [1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'],
+    [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i'],
+  ];
+  let v = Math.max(1, n);
+  let out = '';
+  for (const [w, s] of table) {
+    while (v >= w) {
+      out += s;
+      v -= w;
+    }
+  }
+  return out;
+}
+
+/**
+ * 항목마다 **앞에 붙을 표식** — 글머리 기호는 단계별 점, 번호 매기기는 단계별 번호.
+ *
+ * 번호는 **단계마다 따로 센다**: 더 깊은 단계로 들어가면 1부터 다시 시작하고, 얕은
+ * 단계로 돌아오면 세던 수를 이어 간다(그 사이의 깊은 칸은 버린다 — 다음에 다시
+ * 들어가면 1부터다). 첫 단계만 `start`에서 시작한다(`3.`을 치고 시작한 목록).
+ */
+export function listMarkers(kind: 'ul' | 'ol', items: NoteListItem[], start = 1): string[] {
+  const bullets = ['•', '◦', '▪'];
+  const counters: number[] = [];
+  return items.map((it) => {
+    const d = itemDepth(it);
+    if (kind === 'ul') return bullets[d % bullets.length] as string;
+    counters.length = d + 1; // 더 깊은 칸은 버린다
+    counters[d] = (counters[d] ?? (d === 0 ? start - 1 : 0)) + 1;
+    const n = counters[d] as number;
+    const step = d % 3;
+    return `${step === 0 ? n : step === 1 ? alphaMark(n) : romanMark(n)}.`;
+  });
+}
