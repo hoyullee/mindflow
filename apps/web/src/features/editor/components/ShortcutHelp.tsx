@@ -99,8 +99,8 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
         </div>
 
         <div style={{ columns: isMobile ? 1 : 2, columnGap: 30 }}>
-          {/* 칸반은 캔버스가 없어 아래 구획들(선택·이동·리스트·서식)이 뜻을 갖지
-              않는다 — 카드에 대한 것만 보여 준다. */}
+          {/* 칸반·공책은 캔버스가 없어 아래 구획들(선택·이동·텍스트 편집·리스트·
+              서식)이 뜻을 갖지 않는다 — 각자의 구획만 보여 준다. */}
           {controller.isKanban &&
             section(
               '칸반',
@@ -129,20 +129,39 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
                 {row(['Del'], '선택한 획 지우기')}
               </>,
             )}
+          {/* 공책은 **문서 편집기**다 — 캔버스의 선택·이동·마퀴는 뜻이 없고(아래
+              구획들을 감춘 이유다), 대신 블록과 글자에 대한 단축키가 있다. */}
+          {controller.isNote &&
+            section(
+              '공책',
+              <>
+                {row([`${mod}+B`, `${mod}+I`], '굵게 · 기울임')}
+                {row([`${mod}+U`, `${mod}+Shift+S`], '밑줄 · 취소선')}
+                {row(['/'], '블록 넣기 (이어 치면 좁혀진다)')}
+                {row(['- ', '1. '], '줄 앞에 입력 = 글머리 기호 · 번호 매기기')}
+                {row(['Enter'], '아래에 새 블록 (문장 가운데면 거기서 나뉜다)')}
+                {row(['Backspace'], '줄 맨 앞에서 = 문단으로 · 빈 줄이면 삭제')}
+                {row(['방향키'], '위·아래 줄로 (구분선도 지나간다)')}
+                {row([del], '고른 구분선 지우기')}
+                {row(['우클릭'], '블록 메뉴 (종류 바꾸기 · 복제 · 삭제)')}
+              </>,
+            )}
           {section(
             '일반',
             <>
               {row([`${mod}+S`], '저장')}
-              {!controller.isKanban && row([`${mod}+F`], '맵에서 검색')}
+              {/* 찾기는 화면마다 **여는 자리가 다르다** — 맵은 검색 바, 공책은
+                  페이지 목록 위의 찾기 칸이다(칸반에는 아직 없다). */}
+              {!controller.isKanban && row([`${mod}+F`], controller.isNote ? '이 공책에서 찾기' : '맵에서 검색')}
               {/* 스레드 도구 — 화이트보드는 위 전용 구획에 적혀 있다(도구가 여럿이라
                   한 묶음으로 읽는 편이 낫다). 맵에는 그 구획이 없으므로 여기에. */}
-              {!controller.isBoard && !controller.isKanban && controller.canComment && row(['C'], '스레드 (누른 자리에 남긴다)')}
+              {!controller.isBoard && !controller.isKanban && !controller.isNote && controller.canComment && row(['C'], '스레드 (누른 자리에 남긴다)')}
               {row([`${mod}+Z`], '실행 취소')}
               {row([`${mod}+Y`, `${mod}+Shift+Z`], '다시 실행')}
               {row(['?'], '이 도움말')}
             </>,
           )}
-          {!controller.isKanban && section(
+          {!controller.isKanban && !controller.isNote && section(
             '선택·이동',
             <>
               {row(['클릭'], '선택')}
@@ -161,7 +180,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row(['우클릭', '길게 누르기'], '상황 메뉴')}
             </>,
           )}
-          {!controller.isKanban && section(
+          {!controller.isKanban && !controller.isNote && section(
             '텍스트 편집',
             <>
               {row(['더블클릭'], '편집 시작')}
@@ -171,7 +190,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row([`${mod}+B`, `${mod}+I`], '굵게 · 기울임')}
             </>,
           )}
-          {!controller.isKanban && section(
+          {!controller.isKanban && !controller.isNote && section(
             '리스트',
             <>
               {row(['- ', '1. '], '줄 앞에 입력 = 리스트 시작')}
@@ -180,7 +199,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row(['Backspace'], '마커 앞에서 = 내어쓰기/항목 삭제')}
             </>,
           )}
-          {!controller.isKanban && section(
+          {!controller.isKanban && !controller.isNote && section(
             '서식 입력',
             <>
               {row(['**굵게**'], '굵게')}

@@ -7572,6 +7572,31 @@ export function useEditorState(): EditorController {
         return;
       }
 
+      /**
+       * **공책은 거의 언제나 편집 중이다** — 아래 `inEditable` 가드에 막히면 되돌리기가
+       * 영영 닿지 않는다(제보: 공책에서도 단축키를 다 쓰게 해 달라).
+       *
+       * 캔버스에서는 그 가드가 옳다(주제 글을 고치는 중의 ⌘Z는 브라우저가 글자를
+       * 되돌리는 편이 자연스럽다). 공책은 **문서 전체가 편집 박스들**이라 그 논리가
+       * 성립하지 않는다 — 브라우저의 되돌리기는 DOM만 되돌리고 모델은 그대로 둬
+       * 화면과 문서가 갈라진다. 그래서 공책에서는 우리 스택이 받는다.
+       *
+       * 표의 칸도 이 분기로 함께 온다(숨은 `<input>`이라 `inEditable`이 참이다) —
+       * 그래서 표가 따로 두었던 ⌘Z 핸들러는 걷었다(두 번 되돌아갔다).
+       */
+      if (isNote && (e.metaKey || e.ctrlKey)) {
+        const zk = e.key.toLowerCase();
+        if ((zk === 'z' || e.code === 'KeyZ') && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if (zk === 'y' || e.code === 'KeyY' || ((zk === 'z' || e.code === 'KeyZ') && e.shiftKey)) {
+          e.preventDefault();
+          redo();
+          return;
+        }
+      }
       if (inEditable) return;
       // 켜 둔 댓글 도구는 Escape로 끈다 — 화이트보드에서는 도구 막대가 이 일을
       // 맡지만(BoardToolbar) 맵에는 막대가 없어서 여기서 받는다.

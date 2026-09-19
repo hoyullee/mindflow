@@ -529,6 +529,35 @@ export function NoteEditor({ controller }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [textSel, page, controller, readOnly]);
 
+  /**
+   * **⌘F = 이 공책 안에서 찾기**(요청: 공책에서도 단축키를 다 쓰게).
+   *
+   * 전역 핸들러(`useEditorState`)의 ⌘F는 **맵 검색 바**를 연다 — 공책 화면에는 그
+   * 바가 없으므로 아무 일도 일어나지 않았다. 공책의 같은 자리는 페이지 목록 위의
+   * 찾기 칸이라 거기로 초점을 보낸다. 전역보다 **먼저** 잡아야 하므로(window보다
+   * document가 앞이다) 여기서 전파를 끊는다.
+   *
+   * 집중 모드에서는 목록이 `inert`라 초점이 가지 않는다 — 먼저 펴 준다.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (e.key.toLowerCase() !== 'f' && e.code !== 'KeyF') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setFocus(false);
+      const go = () => {
+        const box = document.querySelector<HTMLInputElement>('[data-note-search]');
+        box?.focus();
+        box?.select?.();
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+      else go();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   /** 본문 단을 창 너비에 맞출지 — 공책 한 권의 읽기 설정(`cover.wide`). */
   const wide = controller.doc.cover?.wide === true;
 
@@ -2973,9 +3002,48 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   };
 
   if (shape === 'empty') {
+    /**
+     * **구분선도 고를 수 있다**(제보: 넣고 나면 지울 방법이 없다).
+     *
+     * 글이 없는 블록이라 캐럿이 갈 자리가 없고, 그래서 선택(글자 범위)에도 걸리지
+     * 않고 백스페이스도 닿지 않았다. 우클릭 메뉴는 있었지만 **선 한 줄(1px)**이라
+     * 겨냥하는 것 자체가 어려웠다.
+     *
+     * 그래서 선을 **초점을 받을 수 있는 칸**으로 감싼다 — 누르면(또는 위·아래
+     * 방향키로 넘어오면) 테두리가 켜지고, 그 상태에서 Backspace·Delete로 지운다.
+     * 위아래 여백(8px)은 겨냥할 면이기도 하다.
+     */
+    const onHrKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (moveNoteCaret(e.key === 'ArrowUp' ? -1 : 1)) e.preventDefault();
+        return;
+      }
+      if (readOnly) return;
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        e.stopPropagation();
+        controller.removeNoteBlock(block.id);
+        caretToPrevLine();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        setFreshId(controller.addNoteBlock('p', block.id));
+      }
+    };
     return (
       <div data-note-block={block.id} data-note-kind={block.kind} style={blockFlow(block)}>
-        <hr style={{ border: 'none', borderTop: '1px solid var(--mf-border)', margin: 0 }} />
+        <div
+          data-note-hr={block.id}
+          className="mf-note-hr"
+          role="button"
+          aria-label="구분선 — 지우려면 선택한 뒤 Backspace"
+          tabIndex={0}
+          onKeyDown={onHrKey}
+          style={{ padding: '8px 0', borderRadius: 6, outline: 'none', cursor: 'pointer' }}
+        >
+          <hr style={{ border: 'none', borderTop: '1px solid var(--mf-border)', margin: 0 }} />
+        </div>
       </div>
     );
   }
@@ -3699,17 +3767,9 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
   const focusCell = (r: number, c: number) => openEdit(r, c);
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (readOnly) return;
-    // ⌘Z/⌘Y — **키를 받는 자리가 `<input>`이 되면서 전역 단축키가 물러선다**:
-    // `useEditorState`의 전역 keydown은 대상이 INPUT이면 편집 중으로 보고 되돌리기를
-    // 건너뛴다. 지금까지는 포커스가 div라 살아 있던 것이라, 칸을 고른 채 ⌘Z가 조용히
-    // 죽는 것을 여기서 막는다. React는 루트 컨테이너에 리스너를 달아 이 핸들러가
-    // window 리스너보다 **먼저** 돌고, 전역 쪽은 그 가드로 물러나 이중 실행이 없다.
-    if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
-      e.preventDefault();
-      if (e.key === 'y' || e.key === 'Y' || e.shiftKey) controller.redo();
-      else controller.undo();
-      return;
-    }
+    // ⌘Z/⌘Y는 **전역이 받는다** — 공책에서는 `inEditable` 가드 앞에서 갈라지므로
+    // (`useEditorState`의 공책 분기) 표의 숨은 `<input>`에서도 닿는다. 여기서 또
+    // 받으면 한 번 눌러 두 번 되돌아간다.
     /**
      * **글을 고치는 중인가**는 이제 상태로 가른다(`edit`).
      *
@@ -5509,12 +5569,18 @@ function listShortcutOf(text: string): { kind: 'ul' | 'ol'; start?: number } | n
 function moveNoteCaret(dir: -1 | 1): boolean {
   if (typeof document === 'undefined') return false;
   const cur = document.activeElement as HTMLElement | null;
-  if (!cur?.hasAttribute?.('data-note-line')) return false;
-  const all = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-line]')];
+  if (!cur?.hasAttribute?.('data-note-line') && !cur?.hasAttribute?.('data-note-hr')) return false;
+  // 구분선도 **줄 하나로 센다** — 방향키로 그 위를 지나가야 고를 수 있고(고르면
+  // 지울 수 있다), 지나갈 수만 있고 설 수 없으면 "여기 뭔가 있다"가 보이지 않는다.
+  const all = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-line], [data-note-page] [data-note-hr]')];
   const i = all.indexOf(cur);
   if (i < 0) return false;
   for (let j = i + dir; j >= 0 && j < all.length; j += dir) {
     const el = all[j]!;
+    if (el.hasAttribute('data-note-hr')) {
+      el.focus({ preventScroll: false });
+      return true;
+    }
     if (el.getAttribute('contenteditable') !== 'true') continue;
     el.focus({ preventScroll: false });
     try {
