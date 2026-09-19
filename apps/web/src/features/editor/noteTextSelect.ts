@@ -137,9 +137,24 @@ export function buildSelection(
 
 /** 고른 글자를 칠한다 — DOM은 건드리지 않는다(`::highlight(mf-note-sel)`). */
 export function paint(sel: LineSel[]): void {
+  paintRanges(sel.map((s) => s.range));
+}
+
+/**
+ * 구간 그대로 칠한다 — **한 줄 안의 선택도 우리가 그린다**(제보).
+ *
+ * 브라우저의 `::selection`은 **줄 높이**를 통째로 덮고 `::highlight()`는 **글자
+ * 상자**만 덮는다(실측: 같은 문단에서 27px 대 17px). 그래서 한 줄을 고를 때와 여러
+ * 줄을 고를 때 같은 동작의 배경 크기가 달라 보였다. 두 경우 모두 이 함수로 칠하고
+ * 본문 줄의 `::selection`은 투명하게 두어 한 벌로 맞춘다.
+ */
+export function paintRanges(ranges: Range[]): void {
   if (!supportsHighlight()) return;
-  const hl = new Highlight(...sel.map((s) => s.range));
-  CSS.highlights.set(HIGHLIGHT_NAME, hl);
+  if (!ranges.length) {
+    CSS.highlights.delete(HIGHLIGHT_NAME);
+    return;
+  }
+  CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
 }
 
 export function clearPaint(): void {

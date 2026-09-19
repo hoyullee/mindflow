@@ -731,12 +731,25 @@ input[type='search']::-webkit-search-results-decoration {
   background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
   color: inherit;
 }
-/* 한 줄 안의 선택은 **브라우저가** 그린다(그쪽이 정확하다) — 색만 위와 같게 맞춘다.
-   그러지 않으면 한 줄은 OS 파랑, 여러 줄은 우리 주황으로 갈려 같은 동작이 다른 일로
-   보인다(제보). 글자색은 건드리지 않는다 — 굵기·강조가 살아 있어야 한다. */
+/* 선택 색은 어디서나 같다 — 한 줄은 OS 파랑, 여러 줄은 우리 주황으로 갈리면 같은
+   동작이 다른 일로 보인다(제보). 글자색은 건드리지 않는다(굵기·강조가 살아 있어야). */
 [data-note-editor] ::selection {
   background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
 }
 [data-note-editor] ::-moz-selection {
   background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
+}
+/* **본문 줄에서는 브라우저가 칠하지 않는다**(제보: 한 줄과 여러 줄의 배경 크기가
+   다르다). `::selection`은 **줄 높이**를 통째로 덮고 `::highlight()`는 **글자 상자**만
+   덮어, 같은 문단에서 27px 대 17px로 갈렸다(실측). 한 줄짜리 선택도 우리가 같은
+   하이라이트로 그리고(`NoteEditor`의 `selectionchange` 효과) 여기서는 브라우저 칠만
+   끈다. `data-note-hl`은 `CSS.highlights`를 아는 브라우저에서만 붙는다 — 모르는
+   브라우저에서 이 규칙이 걸리면 선택이 아예 보이지 않는다. */
+[data-note-editor][data-note-hl='1'] .mf-note-line::selection {
+  background: transparent;
+}
+/* 표의 칸은 그대로 브라우저가 칠한다(칸 안의 선택은 우리가 따라 그리지 않는다) —
+   순서상 뒤에 와야 위 규칙을 되돌린다. */
+[data-note-editor][data-note-hl='1'] .mf-note-table .mf-note-line::selection {
+  background: var(--mf-tsel-text);
 }

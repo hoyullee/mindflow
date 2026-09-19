@@ -2399,8 +2399,12 @@ describe('공책 22판 — 본문 6건(통계 띠·지우고 올라가는 커서
     // 굴러가는 단(`[data-note-page]`) **안**에 있으면 끝까지 내려야 보인다.
     expect(stats.closest('[data-note-page]')).toBeNull();
     expect(stats.style.flex).toBe('0 0 auto');
-    // 구분선도 함께 온다(요청: "바로 위의 구분선과 함께").
-    expect(stats.style.borderTop).toContain('1px solid');
+    // 구분선도 함께 온다(요청: "바로 위의 구분선과 함께"). **경계선이 아니라
+    // 본문의 구분선**이라 화면을 가로지르지 않고 본문 단의 폭만큼만 그어진다(제보).
+    const rule = stats.querySelector('[data-note-stats-rule]') as HTMLElement;
+    expect(stats.style.borderTop).toBe('');
+    expect(rule.style.background).toBe('var(--mf-border-soft)');
+    expect((rule.parentElement as HTMLElement).style.maxWidth).toBe('700px');
   });
 
   it('빈 줄에서 ⌫를 누르면 그 줄이 사라지고 **캐럿이 앞 줄 끝으로** 간다(제보)', async () => {
@@ -2600,6 +2604,121 @@ describe('공책 24판 — 고른 칸의 캐럿·잘라내기 가위·블록 이
     expect(panel.querySelector('[data-note-slash-item="ol"]')?.textContent).toContain('번호 매기기');
     expect(panel.textContent).not.toContain('글머리 목록');
     expect(panel.textContent).not.toContain('번호 목록');
+  });
+});
+
+describe('공책 25판 — 본문 4건(구분선·방향키·마크다운 단축·선택 배경)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 캐럿을 그 줄의 끝(또는 처음)에 놓는다 — 방향키가 줄을 넘는 조건이다. */
+  function caretTo(el: HTMLElement, end: boolean): void {
+    // **텍스트 노드**에 놓아야 한다 — `NoteLine`은 첫/마지막 텍스트 노드의 끝인지로
+    // "줄을 넘을 때인가"를 가른다(요소에 걸면 그 판정이 서지 않는다).
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node: Node | null = walker.nextNode();
+    let last = node;
+    while (node) {
+      last = node;
+      node = walker.nextNode();
+    }
+    const target = end ? last : (document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() ?? el);
+    // **포커스를 먼저** 준다 — jsdom은 `focus()`에서 선택을 그 요소의 처음으로
+    // 되돌려, 순서가 뒤집히면 캐럿이 늘 줄 머리에 앉는다.
+    el.focus();
+    const range = document.createRange();
+    if (target && target.nodeType === 3) range.setStart(target, end ? (target.nodeValue ?? '').length : 0);
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  it('통계 위의 선은 **본문의 구분선**이다 — 화면을 가로지르지 않는다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_o0', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=o0&title=x');
+    const stats = (await waitFor(() => container.querySelector('[data-note-stats]'))) as HTMLElement;
+    const rule = stats.querySelector('[data-note-stats-rule]') as HTMLElement;
+    const head = container.querySelector('[data-note-page-head]') as HTMLElement;
+
+    // 머리 아래의 그 선과 **같은 색**이고, 같은 폭의 단 안에 선다.
+    expect(rule.style.background).toBe('var(--mf-border-soft)');
+    expect((head.nextElementSibling as HTMLElement).style.background).toBe('var(--mf-border-soft)');
+    expect((rule.parentElement as HTMLElement).style.maxWidth).toBe('700px');
+    // 글이 아니라 장식이다 — 고를 수도 지울 수도 없다.
+    expect(rule.getAttribute('aria-hidden')).toBe('true');
+    expect(rule.getAttribute('contenteditable')).toBeNull();
+  });
+
+  it('↓는 다음 줄로, ↑는 이전 줄로 간다(제보: 방향키로 이동되지 않는다)', async () => {
+    localStorage.setItem('mindflow_doc_o1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=o1&title=x');
+    const b1 = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    caretTo(b1, true);
+    fireEvent.keyDown(b1, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2'));
+
+    const b2 = container.querySelector('[data-note-line="b2"]') as HTMLElement;
+    caretTo(b2, false);
+    fireEvent.keyDown(b2, { key: 'ArrowUp' });
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+  });
+
+  it('`- ` + 띄어쓰기는 **글머리 기호**가 된다(요청)', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_o2', JSON.stringify(empty));
+    const { container } = renderEditor('/editor?map=o2&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    type(line, '- ');
+    saveNow();
+    await waitFor(() => expect(saved('o2').pages[0].blocks[0].kind).toBe('ul'));
+    // 친 글자는 남지 않는다 — 마커가 그 자리를 대신한다.
+    expect(saved('o2').pages[0].blocks[0].items[0].runs.map((r: { t: string }) => r.t).join('')).toBe('');
+  });
+
+  it('`3. ` + 띄어쓰기는 **3번부터** 번호 매기기가 된다(요청)', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_o3', JSON.stringify(empty));
+    const { container } = renderEditor('/editor?map=o3&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    type(line, '3. ');
+    saveNow();
+    await waitFor(() => expect(saved('o3').pages[0].blocks[0].kind).toBe('ol'));
+    expect(saved('o3').pages[0].blocks[0].start).toBe(3);
+    // 화면의 마커도 3부터다.
+    await waitFor(() => expect(container.querySelector('[data-note-block="b1"]')?.textContent).toContain('3.'));
+  });
+
+  it('`1. `은 **기본값이라 문서에 적지 않는다**', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_o4', JSON.stringify(empty));
+    const { container } = renderEditor('/editor?map=o4&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    type(line, '1. ');
+    saveNow();
+    await waitFor(() => expect(saved('o4').pages[0].blocks[0].kind).toBe('ol'));
+    expect(saved('o4').pages[0].blocks[0].start).toBeUndefined();
+  });
+
+  it('**글 중간의 `- `는 그냥 글이다** — 문단 전체가 그 글자일 때만 건다', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_o5', JSON.stringify(empty));
+    const { container } = renderEditor('/editor?map=o5&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    type(line, '범위는 3 - 5 ');
+    saveNow();
+    await waitFor(() => expect(saved('o5').pages[0].blocks[0].runs[0].t).toBe('범위는 3 - 5 '));
+    expect(saved('o5').pages[0].blocks[0].kind).toBe('p');
   });
 });
 
