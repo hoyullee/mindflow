@@ -842,6 +842,8 @@ export interface EditorController {
    */
   sendNoteBlockToBoard: (blockId: string, targetDocId: string) => Promise<boolean>;
   retypeNoteBlock: (blockId: string, kind: NoteBlockKind) => void;
+  /** 문단을 목록으로 바꾸고 글을 비운다 — 본문의 `- ` · `3. ` 단축(요청). */
+  noteListShortcut: (blockId: string, kind: 'ul' | 'ol', start?: number) => void;
   moveNoteBlock: (blockId: string, index: number) => void;
   setNoteBlockRuns: (blockId: string, runs: RichRun[]) => void;
   setNoteItemRuns: (blockId: string, itemId: string, runs: RichRun[]) => void;
@@ -6894,6 +6896,29 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
+  /**
+   * 그 문단을 **목록으로 바꾸고 글을 비운다** — 본문의 `- ` · `3. ` 단축(요청).
+   *
+   * 한 번의 커밋으로 묶는 이유: 종류 바꾸기와 글 비우기를 따로 커밋하면 ⌘Z가 두 번
+   * 걸려 "한 번 되돌렸는데 `- `만 남는" 어정쩡한 상태가 보인다.
+   */
+  const noteListShortcut = useCallback(
+    (blockId: string, kind: 'ul' | 'ol', start?: number) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const next = retypeBlock({ ...b, runs: textRuns('') }, kind);
+          // 1번부터면 적지 않는다 — 기본값을 문서에 남기지 않는다.
+          return start && start !== 1 ? { ...next, start } : next;
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
   /** 블록 순서 바꾸기. */
   const moveNoteBlock = useCallback(
     (blockId: string, index: number) => {
@@ -7812,6 +7837,7 @@ export function useEditorState(): EditorController {
     duplicateNoteBlock,
     sendNoteBlockToBoard,
     retypeNoteBlock,
+    noteListShortcut,
     moveNoteBlock,
     setNoteBlockRuns,
     setNoteItemRuns,

@@ -32,7 +32,7 @@ import type { EditorController } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
-import { buildSelection, caretAt, clearPaint as clearSelectionPaint, paint as paintSelection, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildSelection, caretAt, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
@@ -435,11 +435,48 @@ export function NoteEditor({ controller }: Props) {
   /** 고른 줄들의 블록 id — 칠하기가 안 되는 브라우저에서 면으로 물러설 때 쓴다. */
   const selectedIds = useMemo(() => (textSel ?? []).map((l) => blockIdOf(l.key)), [textSel]);
 
-  /** 칠하기는 DOM 작업이라 그리고 난 뒤에 — 선택이 바뀔 때마다 다시 칠한다. */
+  /**
+   * 칠하기는 DOM 작업이라 그리고 난 뒤에 — 선택이 바뀔 때마다 다시 칠한다.
+   *
+   * **한 줄 안의 선택도 여기서 칠한다**(제보: 한 줄과 여러 줄의 배경 크기가 다르다).
+   * 브라우저의 `::selection`은 **줄 높이**를 통째로 덮고 `::highlight()`는 **글자
+   * 상자**만 덮는다(실측: 같은 문단에서 27px 대 17px). 그래서 같은 동작이 한 줄에서는
+   * 도톰하게, 여러 줄에서는 얄팍하게 보였다. 본문 줄의 `::selection`을 투명하게 두고
+   * (CSS) 브라우저가 만든 구간도 같은 하이라이트로 다시 그려 한 벌로 맞춘다.
+   *
+   * 표의 칸과 제목 입력칸은 손대지 않는다 — 거기서는 브라우저 칠이 그대로다.
+   */
   useEffect(() => {
-    if (textSel && textSel.length) paintSelection(textSel);
-    else clearSelectionPaint();
-    return () => clearSelectionPaint();
+    if (textSel && textSel.length) {
+      paintSelection(textSel);
+      return () => clearSelectionPaint();
+    }
+    const lineOf = (node: Node | null): HTMLElement | null => {
+      const el = node?.nodeType === 1 ? (node as HTMLElement) : (node?.parentElement ?? null);
+      return (el?.closest?.('[data-note-line]') as HTMLElement | null) ?? null;
+    };
+    const follow = (): void => {
+      const col = colRef.current;
+      const s = window.getSelection();
+      if (!col || !s || s.isCollapsed || s.rangeCount === 0) {
+        clearSelectionPaint();
+        return;
+      }
+      const range = s.getRangeAt(0);
+      const a = lineOf(range.startContainer);
+      // 한 줄 안에서, 본문 단 안에서, 표 밖일 때만 — 나머지는 브라우저에 맡긴다.
+      if (!a || a !== lineOf(range.endContainer) || !col.contains(a) || a.closest('.mf-note-table')) {
+        clearSelectionPaint();
+        return;
+      }
+      paintRanges([range.cloneRange()]);
+    };
+    follow();
+    document.addEventListener('selectionchange', follow);
+    return () => {
+      document.removeEventListener('selectionchange', follow);
+      clearSelectionPaint();
+    };
   }, [textSel]);
 
   /**
@@ -499,6 +536,9 @@ export function NoteEditor({ controller }: Props) {
   return (
     <div
       data-note-editor
+      // 우리가 선택을 칠할 수 있는 브라우저인가 — CSS가 이 표식을 보고 본문 줄의
+      // 브라우저 칠을 끈다(모르는 브라우저에서 끄면 선택이 아예 보이지 않는다).
+      data-note-hl={supportsHighlight() ? '1' : undefined}
       style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', background: 'var(--mf-note-body)', overflow: 'hidden' }}
     >
       <PageList controller={controller} collapsed={focus} />
@@ -1931,25 +1971,27 @@ function PageStats({ page, wide }: { page: NotePage; wide: boolean }) {
       style={{
         // **자리를 따로 잡는다**(요청) — 본문과 함께 구르지 않고 페이지 바닥에 붙는다.
         flex: '0 0 auto',
-        // 선은 화면을 가로지르고, 값은 본문 단에 맞춰 선다 — 글자와 세로줄이 맞는다.
-        borderTop: '1px solid var(--mf-border-soft)',
         background: 'var(--mf-note-body)',
-        padding: '9px 30px',
+        padding: '0 30px 9px',
         boxSizing: 'border-box',
       }}
     >
-    <div
-      style={{ ...(wide ? {} : { maxWidth: 700 }), margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10.5, color: 'var(--mf-faint)', flexWrap: 'wrap' }}
-    >
-      <span>{chars}자</span>
-      <span aria-hidden="true">·</span>
-      {/* `읽기 n분`은 뺐다(요청) — 디자인에는 있지만 한 장짜리 공책 페이지에서
-          500자/분 추정이 말해 주는 것이 거의 없다(대개 `1분`으로 고정된다). 길이는
-          자·단어 두 값이 이미 말한다. */}
-      <span>{words}단어</span>
-      <span style={{ flex: 1, minWidth: 0 }} />
-      {page.updatedAt && <span>{formatLastEdited(page.updatedAt)} 수정</span>}
-    </div>
+      <div style={{ ...(wide ? {} : { maxWidth: 700 }), margin: '0 auto' }}>
+        {/* 화면을 가로지르는 **경계선이 아니라 본문의 구분선**이다(제보) — 머리 아래의
+            그 선과 같은 색·같은 가로 길이라 한 문서의 선 둘이 세로로 맞아떨어진다.
+            글이 아니라 장식이므로 고를 수도 지울 수도 없다(`aria-hidden`인 빈 span). */}
+        <span aria-hidden="true" data-note-stats-rule style={{ display: 'block', height: 1, background: 'var(--mf-border-soft)', marginBottom: 9 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10.5, color: 'var(--mf-faint)', flexWrap: 'wrap' }}>
+          <span>{chars}자</span>
+          <span aria-hidden="true">·</span>
+          {/* `읽기 n분`은 뺐다(요청) — 디자인에는 있지만 한 장짜리 공책 페이지에서
+              500자/분 추정이 말해 주는 것이 거의 없다(대개 `1분`으로 고정된다). 길이는
+              자·단어 두 값이 이미 말한다. */}
+          <span>{words}단어</span>
+          <span style={{ flex: 1, minWidth: 0 }} />
+          {page.updatedAt && <span>{formatLastEdited(page.updatedAt)} 수정</span>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3020,6 +3062,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               runs={block.items?.[0]?.runs}
               readOnly={readOnly}
               placeholder="펼쳤을 때 보일 내용"
+              onArrowOut={moveNoteCaret}
               onChange={(runs) => {
                 const itemId = block.items?.[0]?.id;
                 if (itemId) controller.setNoteItemRuns(block.id, itemId, runs);
@@ -3077,7 +3120,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               </button>
             ) : (
               <span aria-hidden="true" style={{ flex: '0 0 auto', width: 18, marginTop: 3, textAlign: 'right', fontSize: 13, color: 'var(--mf-faint)', fontFamily: block.kind === 'ol' ? 'ui-monospace, monospace' : undefined }}>
-                {block.kind === 'ol' ? `${j + 1}.` : '•'}
+                {block.kind === 'ol' ? `${(block.start ?? 1) + j}.` : '•'}
               </span>
             )}
             <NoteLine
@@ -3087,6 +3130,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               readOnly={readOnly}
               placeholder={j === 0 ? '항목' : ''}
               autoFocus={freshId === item.id}
+              onArrowOut={moveNoteCaret}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
               onSlash={(at) => {
                 if (readOnly) return;
@@ -3149,9 +3193,25 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
       // 글자 끝으로 밀려 보였다.
       placeholder={index === 0 && pageIsEmpty ? '여기에 글을 쓰세요 — / 로 블록 넣기' : ''}
       autoFocus={freshId === block.id}
-      onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
+      onChange={(runs) => {
+        /**
+         * **마크다운 단축**(요청) — `- ` 는 글머리 기호, `3. ` 은 3번부터 번호 매기기.
+         *
+         * 문단이 **그 글자뿐일 때만** 건다: 글 중간의 `- `나 `1. `까지 잡으면 목록이
+         * 아니라 그냥 글을 쓰던 사람이 매번 되돌려야 한다. 되돌리기는 한 번이면 된다
+         * (종류 바꾸기와 글 비우기를 컨트롤러가 한 커밋으로 묶는다).
+         */
+        const md = block.kind === 'p' && !readOnly ? listShortcutOf(runsText(runs)) : null;
+        if (md) {
+          controller.noteListShortcut(block.id, md.kind, md.start);
+          setFreshId(block.id);
+          return;
+        }
+        controller.setNoteBlockRuns(block.id, runs);
+      }}
       onEnter={enterBlock}
       onBackspaceAtStart={backBlock}
+      onArrowOut={moveNoteCaret}
       onSlash={(at) => {
         if (readOnly) return;
         openSlash(block.id, at);
@@ -5348,6 +5408,60 @@ function commitLine(controller: EditorController, key: string, runs: RichRun[]):
     return;
   }
   controller.setNoteItemRuns(blockId, rest, runs);
+}
+
+/**
+ * 본문의 **마크다운 단축** — `- ` 면 글머리 기호, `<수>. ` 면 그 수부터 번호 매기기.
+ *
+ * 문단 전체가 그 글자일 때만 맞다고 본다(`^…$`) — 글 중간의 `- `까지 잡으면 목록이
+ * 아니라 그냥 글을 쓰던 사람이 매번 되돌려야 한다. 공백은 보통 칸과 `&nbsp;` 둘 다
+ * 받는다(브라우저가 줄 끝의 공백을 후자로 바꿔 넣는다 — 그러지 않으면 단축이
+ * "가끔만" 걸린다).
+ */
+function listShortcutOf(text: string): { kind: 'ul' | 'ol'; start?: number } | null {
+  const t = text.replace(/\u00a0/g, ' ');
+  if (/^[-*]\s$/.test(t)) return { kind: 'ul' };
+  const m = /^(\d{1,3})[.)]\s$/.exec(t);
+  if (m) return { kind: 'ol', start: Number(m[1]) };
+  return null;
+}
+
+/**
+ * 위·아래 방향키로 **줄 사이를 옮긴다**(제보: 방향키로 이동되지 않는다).
+ *
+ * `NoteLine`은 글의 맨 앞(위)·맨 끝(아래)에서만 이 고리를 부르므로, 여러 줄로 감긴
+ * 문단 안에서는 평소처럼 브라우저가 캐럿을 옮긴다. 여기서는 그 경계를 넘을 때만
+ * 다음/이전 **편집 가능한 줄**로 건너뛴다 — 표의 칸은 고르기 전에는 편집 가능이
+ * 아니므로 건너뛴다(캐럿이 설 자리가 없다).
+ *
+ * 캐럿은 위로 가면 글 **끝**, 아래로 가면 글 **처음**에 놓는다 — 열(column)을 재서
+ * 맞추는 것이 더 정확하지만, 그러려면 글자 좌표를 매번 재야 한다(지금 규칙으로도
+ * 이어 쓰는 자리가 자연스럽다).
+ */
+function moveNoteCaret(dir: -1 | 1): boolean {
+  if (typeof document === 'undefined') return false;
+  const cur = document.activeElement as HTMLElement | null;
+  if (!cur?.hasAttribute?.('data-note-line')) return false;
+  const all = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-line]')];
+  const i = all.indexOf(cur);
+  if (i < 0) return false;
+  for (let j = i + dir; j >= 0 && j < all.length; j += dir) {
+    const el = all[j]!;
+    if (el.getAttribute('contenteditable') !== 'true') continue;
+    el.focus({ preventScroll: false });
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(dir === 1); // 아래로 가면 처음, 위로 가면 끝
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } catch {
+      /* 캐럿을 못 놓아도 포커스는 갔다 */
+    }
+    return true;
+  }
+  return false;
 }
 
 /** 편집 박스 키에서 블록 id만. */
