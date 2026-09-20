@@ -9,6 +9,7 @@ import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
+import { NOTE_LIST_MAX_INDENT } from '@mindflow/mindmap-core';
 
 const NOTE = {
   v: 1,
@@ -3527,13 +3528,13 @@ describe('공책 33판 — 목록의 Enter·Tab·선택(제보 5건)', () => {
 
     two.focus();
     // 가장 깊은 단계까지 넣고, 그 뒤의 Tab도 막혀야 한다(기본 동작 = 초점 이동).
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < NOTE_LIST_MAX_INDENT + 2; i += 1) {
       const ev = createEvent.keyDown(two, { key: 'Tab' });
       fireEvent(two, ev);
       expect(ev.defaultPrevented).toBe(true);
     }
     saveNow();
-    await waitFor(() => expect(saved('w3').pages[0].blocks[0].items[1].indent).toBe(4));
+    await waitFor(() => expect(saved('w3').pages[0].blocks[0].items[1].indent).toBe(NOTE_LIST_MAX_INDENT));
   });
 
   it('빈 항목에는 **안내 글자가 없다**(제보 5)', async () => {
@@ -4217,5 +4218,84 @@ describe('공책 38판 — 표의 목록·여백·열 너비와 여러 줄 Tab',
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     saveNow();
     await waitFor(() => expect(saved('v6').pages[0].blocks[0].items.map((x: { indent?: number }) => x.indent ?? 0)).toEqual([0, 0]));
+  });
+});
+
+describe('공책 39판 — 표의 ⌘A · 가로 스크롤 · 칸 캐럿 · 칠하는 동안의 커서', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('고른 칸에서 ⌘A는 **표 전체**를 고른다(제보 1)', async () => {
+    localStorage.setItem('mindflow_doc_u1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=u1&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+    const td = cell.closest('td') as HTMLElement;
+
+    fireEvent.mouseDown(td);
+    fireEvent.mouseUp(td);
+    await waitFor(() => expect(picked(container)).toEqual(['0:0']));
+
+    fireEvent.keyDown(cell, { key: 'a', ctrlKey: true });
+    await waitFor(() => expect(picked(container)).toEqual(['0:0', '0:1', '1:0', '1:1']));
+  });
+
+  it('글을 고치는 중의 ⌘A는 **칸 안의 글자**다 — 표를 고르지 않는다(제보 1)', async () => {
+    localStorage.setItem('mindflow_doc_u2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=u2&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+    fireEvent.doubleClick(cell.closest('td') as HTMLElement);
+    await waitFor(() => expect(picked(container)).toEqual([]));
+
+    fireEvent.keyDown(cell, { key: 'a', ctrlKey: true });
+    // 표를 고르지 않는다 = 그 키는 칸 안의 글자에 남는다.
+    // (`defaultPrevented`로는 가를 수 없다 — jsdom은 `isContentEditable`을 모르는
+    //  탓에 전역 ⌘A 가드가 이 하네스에서만 지나간다.)
+    expect(picked(container)).toEqual([]);
+  });
+
+  it('본문 판은 **가로로 스크롤하지 않는다**(제보 2 — 막대가 깜빡이던 되먹임)', async () => {
+    localStorage.setItem('mindflow_doc_u3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=u3&title=x');
+    const pane = (await waitFor(() => container.querySelector('[data-note-page]'))) as HTMLElement;
+
+    // `overflow-y: auto`만 주면 `overflow-x`가 `auto`로 계산되어 세로↔가로가 서로를 부른다.
+    expect(pane.style.overflowX).toBe('hidden');
+    expect(pane.style.overflowY).toBe('auto');
+  });
+
+  it('칸에서 마커를 만들면 캐럿이 **글자 자리**에 남는다(제보 4)', async () => {
+    localStorage.setItem('mindflow_doc_u4', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=u4&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+    fireEvent.doubleClick(cell.closest('td') as HTMLElement);
+
+    type(cell, '- ');
+    await waitFor(() => expect(cell.querySelector('[data-list-marker]')).toBeTruthy());
+
+    // 요소 경계에 놓인 캐럿은 그려지지 않는다 — 텍스트 노드 안이라야 한다.
+    const sel = window.getSelection();
+    expect(sel?.focusNode?.nodeType).toBe(3);
+    expect(cell.contains(sel?.focusNode ?? null)).toBe(true);
+  });
+
+  it('여러 줄을 칠하는 동안 **브라우저 캐럿을 감춘다**(제보 5)', async () => {
+    localStorage.setItem('mindflow_doc_u5', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=u5&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    const two = container.querySelector('[data-note-line="b2"]') as HTMLElement;
+    const pane = container.querySelector('[data-note-page]') as HTMLElement;
+
+    expect(pane.getAttribute('data-note-painting')).toBe(null);
+    fireEvent.pointerDown(one, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(two, { clientX: 0, clientY: 0 });
+
+    // 초점·캐럿은 첫 줄에 **일부러** 남겨 둔다(한글 조합) — 색만 지운다.
+    await waitFor(() => expect(pane.getAttribute('data-note-painting')).toBe('1'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(pane.getAttribute('data-note-painting')).toBe(null));
   });
 });

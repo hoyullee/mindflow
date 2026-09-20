@@ -677,6 +677,14 @@ export function NoteEditor({ controller }: Props) {
     }
     const spot = pointAt(el, next);
     selFocus.current = { el, node: spot.node, offset: spot.offset };
+    /**
+     * **가로로 움직였으면 목표 칸도 그 자리다**(제보 7).
+     *
+     * 위·아래로 넘길 때 쓰는 `selX`는 "이 세로줄을 지킨다"는 값인데, 가로 이동 뒤에도
+     * 옛 값이 남아 있으면 다음 Shift+아래가 **처음 잡았던 칸**으로 뛴다 — 한 줄을
+     * 통째로 늘려 놓고 아래로 내려가도 한 글자만 골라지던 이유다.
+     */
+    selX.current = columnX(el, next);
     const built = buildSelection(col, selAnchor.current, selFocus.current);
     if (!built) {
       setTextSel(null);
@@ -1016,6 +1024,15 @@ export function NoteEditor({ controller }: Props) {
           className="lnb-scroll"
           data-note-page
           /**
+           * **칠하는 동안에는 브라우저 캐럿을 감춘다**(제보: 여러 줄을 골랐는데
+           * 커서가 첫 줄 앞에 그대로 보인다).
+           *
+           * 초점과 접힌 캐럿은 **일부러** 첫 줄에 남겨 둔다 — 한글 조합이 갈 곳을
+           * 잃지 않게 하려는 것이다(`paintAndHold`). 그 캐럿이 깜빡이면 "여기가
+           * 커서"로 읽히므로 색만 지운다(CSS `caret-color`).
+           */
+          data-note-painting={textSel ? '1' : undefined}
+          /**
            * **본문 단 바깥을 눌러도 글을 고른다**(제보 1·2) — 예전에는 누름·끌기를
            * 단(`colRef`)에만 걸어 두어, 줄과 줄 사이나 좌·우 여백에서 시작한 드래그는
            * 우리 손을 벗어나 브라우저가 화면의 아무 요소나 골랐다.
@@ -1120,7 +1137,19 @@ export function NoteEditor({ controller }: Props) {
             setTextSel(next);
             dragPainted.current = true;
           }}
-          style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}
+          /**
+           * **가로는 절대 스크롤하지 않는다**(제보: 표의 행 크기를 줄이면 가로
+           * 스크롤이 깜빡인다).
+           *
+           * `overflow-y: auto`만 주면 `overflow-x`도 `auto`로 계산된다(CSS 규칙 —
+           * 한쪽이 `visible`이 아니면 다른 쪽의 `visible`이 `auto`가 된다. 실측으로
+           * 이 판의 계산값이 그랬다). 그러면 세로 막대가 생겼다 사라질 때마다 폭이
+           * 6px씩 오가고, 그 폭에서 무엇 하나라도 넘치면 가로 막대가 따라 생겼다
+           * 사라진다 — 행을 끄는 동안에는 높이가 프레임마다 바뀌므로 그 되먹임이
+           * 눈에 보이는 깜빡임이 된다(표 안쪽 판에 이미 같은 처방을 했다).
+           * 본문 단은 폭에 맞춰 줄어드는 반응형이라 가로로 스크롤할 것이 없다.
+           */
+          style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}
         >
           {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 **9px**이다(요청: 너무 넓다) —
               19px이던 값의 절반. 제목만 위쪽에 숨을 더 둬서(아래 `headGap`) 문단은
@@ -4445,6 +4474,21 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     // Tab — 다음/이전 칸으로. 고른 칸에서도, 글을 고치는 중에도 돈다(표의 관례).
     // 자리는 셋에서 찾는다: 고치는 중인 칸 → 키가 난 칸 → 고른 칸.
     const atCell = /:r(\d+)c(\d+)$/.exec((e.target as HTMLElement).closest?.('[data-note-line]')?.getAttribute('data-note-line') ?? '');
+    /**
+     * **⌘A/Ctrl+A — 글을 고치는 중이 아니면 표 전체를 고른다**(요청).
+     *
+     * 고치는 중에는 브라우저의 것이다(그 칸의 글자 전체) — 표에서 ⌘A가 늘 표 전체를
+     * 먹으면 칸 안의 글을 한 번에 고를 길이 사라진다. 전파까지 끊는 이유는 전역
+     * ⌘A(캔버스 전체 선택)가 같은 키를 또 잡기 때문이다.
+     */
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A') && !editing && (sel || atCell)) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.getSelection()?.removeAllRanges();
+      pick({ mode: 'range', r0: 0, c0: 0, r1: rows.length - 1, c1: width - 1, r: 0, c: 0 });
+      focusKeys();
+      return;
+    }
     if (e.key === 'Tab' && (editing || atCell || sel)) {
       const r = editing ? edit.r : atCell ? Number(atCell[1]) : anchor.r;
       const c = editing ? edit.c : atCell ? Number(atCell[2]) : anchor.c;
@@ -6444,13 +6488,48 @@ function lineNear(root: HTMLElement, x: number, y: number): { el: HTMLElement; n
  * 올라갈 때는 그 줄의 **마지막 시각 줄**, 내려갈 때는 **첫 시각 줄**의 높이에서 찾는다
  * (감긴 문단으로 들어갈 때 엉뚱한 줄에 서지 않게). 좌표를 못 쓰면 처음·끝으로 물러선다.
  */
+/**
+ * 그 줄의 **문자 자리가 놓인 가로 좌표** — 위·아래로 넘길 때 지킬 세로줄이다.
+ *
+ * 접힌 범위의 사각형은 비어서 오는 일이 잦아(요소 경계) 믿을 수 없다. 대신 **옆 글자
+ * 한 칸**을 재고 그 변을 쓴다(`NoteLine`의 `caretRect`와 같은 처방).
+ */
+function columnX(el: HTMLElement, at: number): number | undefined {
+  try {
+    const len = (el.textContent ?? '').length;
+    if (!len) return el.getBoundingClientRect().left || undefined;
+    const i = Math.max(0, Math.min(at, len));
+    const a = i > 0 ? i - 1 : 0;
+    const s = pointAt(el, a);
+    const t = pointAt(el, Math.min(len, a + 1));
+    const span = document.createRange();
+    span.setStart(s.node, s.offset);
+    span.setEnd(t.node, t.offset);
+    const box = span.getBoundingClientRect();
+    if (!box.height) return undefined;
+    return i > 0 ? box.right : box.left;
+  } catch {
+    return undefined;
+  }
+}
+
 function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; offset: number } {
   if (typeof x === 'number') {
     const box = el.getBoundingClientRect();
     const lh = parseFloat(getComputedStyle(el).lineHeight) || box.height || 0;
     if (box.height > 0 && lh > 0) {
       const y = dir === 1 ? box.top + Math.min(lh, box.height) / 2 : box.bottom - Math.min(lh, box.height) / 2;
-      const at = caretAt(x, y);
+      /**
+       * 가로 자리를 **그 줄의 상자 안으로 접어 넣는다**(제보: 목록 줄로 넘어가면
+       * 문장 전체가 아니라 끝에 커서만 놓인다).
+       *
+       * 목록 항목의 편집 박스는 마커 열만큼 오른쪽에서 시작하므로, 문단에서 잰
+       * 가로 자리가 그 상자의 **왼쪽 밖**일 때가 많다. 그러면 좌표 조회가 빈손으로
+       * 돌아오고 아래의 폴백이 "줄 끝"을 고른다 — 위로 넘어갈수록 아무것도 골라지지
+       * 않는 것처럼 보였다. 접어 넣으면 그 줄의 **첫 글자**가 잡힌다.
+       */
+      const cx = Math.min(Math.max(x, box.left + 1), Math.max(box.left + 1, box.right - 1));
+      const at = caretAt(cx, y);
       if (at && el.contains(at.node)) return at;
     }
   }

@@ -186,7 +186,12 @@ export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign'
       `<span data-list-marker data-list-kind="${ln.list.kind}" style="white-space:pre;flex-shrink:0;user-select:none;-webkit-user-select:none">${escHtml(ln.list.display)}</span>` +
       // 내용 열은 항상 좌측(커밋 렌더 `ListTextBlock`과 같은 이유 — 감긴 줄이
       // 도형 정렬을 상속해 중앙으로 튀지 않게).
-      `<span style="flex:0 1 auto;min-width:0;text-align:left">${inner}</span>` +
+      //
+      // `min-width`가 0이 아니라 **1px**인 것은 캐럿 때문이다(제보: 표의 칸에서
+      // 마커를 만들면 커서가 사라진다): 내용이 비면 이 flex 항목의 폭이 0이 되어
+      // 그 안에 놓인 캐럿이 그려질 자리가 없다. 1px이면 상자가 생기고, 글이 길면
+      // 여전히 줄바꿈으로 줄어든다(0과 1px의 감싸기 차이는 없다).
+      `<span style="flex:0 1 auto;min-width:1px;text-align:left">${inner}</span>` +
       `</div>`
     );
   };

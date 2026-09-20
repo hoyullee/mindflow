@@ -47,6 +47,34 @@ function boxState(el: HTMLElement): { text: string; rich: RichRun[] | null; a: n
   return { text: v.text, rich: v.rich, a: v.clamp(Math.min(p0, p1)), b: v.clamp(Math.max(p0, p1)) };
 }
 
+/**
+ * 캐럿을 **텍스트 노드 안**으로 옮긴다(제보 4: 칸에서 마커를 만들면 커서가 사라진다).
+ *
+ * 다시 그린 줄의 내용이 비어 있으면 캐럿이 내용 스팬의 **요소 경계**에 놓인다 —
+ * 그 자리에는 글자 상자가 없어 브라우저가 커서를 그리지 않는다(초점은 그대로라
+ * 글자는 들어간다: "포커스가 풀린 것처럼 보이는데 글은 써진다"가 그 모습이다).
+ * 빈 텍스트 노드를 하나 끼우고 그 안에 캐럿을 둔다 — 값에는 아무것도 더하지 않는다
+ * (`domToRuns`는 빈 텍스트를 세지 않는다).
+ */
+function caretIntoText(el: HTMLElement): void {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+  const r = sel.getRangeAt(0);
+  if (r.startContainer.nodeType === 3 || !el.contains(r.startContainer)) return;
+  const host = r.startContainer as HTMLElement;
+  const text = document.createTextNode('');
+  try {
+    host.insertBefore(text, host.childNodes[r.startOffset] ?? null);
+    const put = document.createRange();
+    put.setStart(text, 0);
+    put.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(put);
+  } catch {
+    /* 못 옮겨도 초점은 그대로다 */
+  }
+}
+
 /** 그 자리의 줄(줄바꿈 사이). */
 function lineAt(text: string, at: number): { start: number; line: string } {
   const start = text.lastIndexOf('\n', at - 1) + 1;
@@ -88,6 +116,7 @@ function commitEdits(el: HTMLElement, st: { text: string; rich: RichRun[] | null
   const rich = isStyledRuns(runs) ? runs : null;
   const at = shiftOffset(caret, renum);
   renderListEdit(el, { text, rich }, undefined, at, at);
+  caretIntoText(el);
   onChange(rich ?? textRuns(text));
 }
 
@@ -112,6 +141,7 @@ export function cellListSync(el: HTMLElement): void {
   if (!drifted && listSignature(v) === listSigOf(el)) return;
   const st = boxState(el);
   renderListEdit(el, v, undefined, st.a, st.b);
+  if (st.a === st.b) caretIntoText(el);
 }
 
 /** Tab · Shift+Tab — 고른 줄들을 들이거나 내민다. 리스트 줄이 없으면 `false`. */
