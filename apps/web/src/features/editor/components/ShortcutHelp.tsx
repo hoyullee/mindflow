@@ -142,7 +142,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
                 {row(['Tab', 'Shift+Tab'], '목록 항목 들여쓰기 · 내어쓰기')}
                 {row(['Enter'], '아래에 새 블록 (문장 가운데면 거기서 나뉜다)')}
                 {row(['Backspace'], '줄 맨 앞에서 = 윗줄에 잇기 (목록은 한 단계 나오기)')}
-                {row(['방향키'], '위·아래 줄로 (구분선도 지나간다)')}
+                {row(['방향키'], '줄 사이 이동 — 끝에서 → · 앞에서 ← 도 넘어간다')}
                 {row([del], '고른 구분선 지우기')}
                 {row(['우클릭'], '블록 메뉴 (종류 바꾸기 · 복제 · 삭제)')}
               </>,

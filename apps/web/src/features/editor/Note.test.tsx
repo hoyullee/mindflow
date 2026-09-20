@@ -3278,29 +3278,146 @@ describe('공책 31판 — 목록 여러 줄 끌어 지우기 · 조합 중 방�
     expect(saved('u2').pages[0].blocks[1].items.map((i: { runs: { t: string }[] }) => i.runs.map((r) => r.t).join(''))).toEqual(['셋']);
   });
 
-  it('**조합 중이라 캐럿이 접혀 있지 않아도** ↑는 한 번에 윗줄로(제보 3회차)', async () => {
+  it('**조합 중이라 캐럿이 접혀 있지 않아도** 방향키는 한 번에 이웃 줄로(제보 3회차)', async () => {
     const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
       { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
       { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+      { id: 'b3', kind: 'p', runs: [{ t: '셋째 줄', b: false, c: null }] },
     ] }] };
     localStorage.setItem('mindflow_doc_u3', JSON.stringify(doc));
     const { container } = renderEditor('/editor?map=u3&title=x');
     const two = (await waitFor(() => container.querySelector('[data-note-line="b2"]'))) as HTMLElement;
 
-    // IME가 조합 글자를 **골라 둔** 모양 — `isCollapsed`가 거짓이다(실측한 그 상태).
+    /**
+     * IME가 조합 글자를 **골라 둔** 모양 — `isCollapsed`가 거짓이다(실측한 그 상태).
+     * 캐럿은 그 범위의 **끝**(focus)에 있으므로 조합 글자가 줄 끝에 있는 상태를
+     * 만든다: 마지막 글자를 골라 두고 ↓를 누른다. jsdom은 좌표를 못 재 가장자리
+     * 판정이 **글자 자리**로 물러서므로(감긴 줄을 구분하지 못한다) 끝에서 ↓가
+     * 그 길을 그대로 지난다 — 조합 중의 ↑는 실브라우저 프로브가 본다.
+     */
     two.focus();
     const text = document.createTreeWalker(two, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const len = (text.nodeValue ?? '').length;
     const range = document.createRange();
-    range.setStart(text, 0);
-    range.setEnd(text, 1);
+    range.setStart(text, len - 1);
+    range.setEnd(text, len);
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
     expect(sel?.isCollapsed).toBe(false);
 
-    fireEvent.keyDown(two, { key: 'ArrowUp', isComposing: true });
+    fireEvent.keyDown(two, { key: 'ArrowDown', isComposing: true });
 
-    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b3'));
+  });
+});
+
+describe('공책 32판 — 줄을 넘는 캐럿(←·→·Enter 뒤 자리)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const THREE = {
+    ...NOTE,
+    pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '안녕하세요', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '반갑습니다', b: false, c: null }] },
+    ] }],
+  };
+
+  /** 그 줄의 n번째 글자 앞에 캐럿을 둔다(포커스가 먼저다 — jsdom 함정). */
+  function caretAt(el: HTMLElement, at: number): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, Math.min(at, (text.nodeValue ?? '').length));
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+  /** 지금 캐럿의 (줄, 글자 자리). */
+  function where(): { line: string | null; off: number } {
+    const el = document.activeElement as HTMLElement | null;
+    const sel = window.getSelection();
+    let off = -1;
+    if (el && sel?.focusNode) {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let seen = 0;
+      let node = walk.nextNode();
+      while (node) {
+        if (node === sel.focusNode) {
+          off = seen + sel.focusOffset;
+          break;
+        }
+        seen += (node.nodeValue ?? '').length;
+        node = walk.nextNode();
+      }
+    }
+    return { line: el?.getAttribute?.('data-note-line') ?? null, off };
+  }
+
+  it('문장 **끝에서 →** 면 다음 줄 맨 앞으로(제보 1)', async () => {
+    localStorage.setItem('mindflow_doc_v0', JSON.stringify(THREE));
+    const { container } = renderEditor('/editor?map=v0&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    caretAt(one, 5); // `안녕하세요` 뒤
+    fireEvent.keyDown(one, { key: 'ArrowRight' });
+
+    await waitFor(() => expect(where()).toEqual({ line: 'b2', off: 0 }));
+  });
+
+  it('문장 **앞에서 ←** 면 앞 줄 맨 끝으로', async () => {
+    localStorage.setItem('mindflow_doc_v1', JSON.stringify(THREE));
+    const { container } = renderEditor('/editor?map=v1&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b2"]'))) as HTMLElement;
+
+    caretAt(two, 0);
+    fireEvent.keyDown(two, { key: 'ArrowLeft' });
+
+    await waitFor(() => expect(where()).toEqual({ line: 'b1', off: 5 }));
+  });
+
+  it('글 가운데에서는 ←·→가 **브라우저의 것**이다(줄을 넘지 않는다)', async () => {
+    localStorage.setItem('mindflow_doc_v2', JSON.stringify(THREE));
+    const { container } = renderEditor('/editor?map=v2&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    caretAt(one, 2);
+    fireEvent.keyDown(one, { key: 'ArrowRight' });
+
+    expect(where().line).toBe('b1');
+  });
+
+  it('수정 키가 붙은 방향키는 가로채지 않는다(Shift+↓ · ⌘→)', async () => {
+    localStorage.setItem('mindflow_doc_v3', JSON.stringify(THREE));
+    const { container } = renderEditor('/editor?map=v3&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    caretAt(one, 5);
+    fireEvent.keyDown(one, { key: 'ArrowDown', shiftKey: true });
+    expect(where().line).toBe('b1');
+    fireEvent.keyDown(one, { key: 'ArrowRight', metaKey: true });
+    expect(where().line).toBe('b1');
+  });
+
+  it('문장 가운데 Enter — 커서가 **내려간 글의 앞**에 선다(제보 3)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '안녕하세요', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_v4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=v4&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    caretAt(one, 2); // `안녕` 뒤
+    fireEvent.keyDown(one, { key: 'Enter' });
+
+    await waitFor(() => expect(document.activeElement?.textContent).toBe('하세요'));
+    // 캐럿은 **마운트 뒤** 다음 프레임에 앞으로 옮겨진다(새 줄의 `autoFocus`는 끝에 둔다).
+    await waitFor(() => expect(where().off).toBe(0));
   });
 });
 
