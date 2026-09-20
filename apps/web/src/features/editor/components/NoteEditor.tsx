@@ -4236,6 +4236,9 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
    */
   const sizing = useRef<{ axis: 'col' | 'row'; i: number; from: number; base: number[]; boxTop: number } | null>(null);
   const [live, setLive] = useState<{ axis: 'col' | 'row'; sizes: number[] } | null>(null);
+  /** 끄는 중의 마지막 크기 — 손을 뗄 때 **업데이터를 거치지 않고** 읽는다(`up` 머리말). */
+  const liveRef = useRef(live);
+  liveRef.current = live;
 
   const pick = useCallback((next: TableSel | null) => {
     pickedAt.current = Date.now();
@@ -4877,10 +4880,24 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
       window.setTimeout(() => {
         pin.current = null;
       }, 140);
-      setLive((cur) => {
-        if (g && cur) controller.setNoteTableSizes(block.id, g.axis, cur.sizes);
-        return null;
-      });
+      /**
+       * **커밋은 업데이터 **밖**에서 한다**(제보: 행 크기를 줄이면 화면이 깜빡인다).
+       *
+       * 예전에는 `setLive((cur) => { controller.setNoteTableSizes(...); return null; })`
+       * 였다 — `setLive`의 업데이터는 리액트가 **렌더 도중에** 부르는 함수라, 그 안에서
+       * 다른 컴포넌트(에디터)의 상태를 바꾸면 "렌더 중에 다른 컴포넌트를 갱신했다"가
+       * 되고 갱신이 꼬리를 물어 **`Maximum update depth exceeded`로 터진다**(실측:
+       * xvfb headed 크로뮴에서 행 그립을 끌 때마다 그 경고와 에러가 났다. 프로덕션
+       * 번들에서는 `Minified React error #185`). 터지기 전까지 트리가 몇 번이고 다시
+       * 그려지므로 화면이 깜빡인다.
+       *
+       * 지금 값은 `liveRef`에서 읽는다 — 마우스를 뗀 그 순간의 마지막 크기가 필요한데
+       * 클로저의 `live`는 마지막 `mousemove`의 렌더가 아직 흘러가지 않았으면 한 걸음
+       * 뒤처질 수 있다.
+       */
+      const last = liveRef.current;
+      if (g && last) controller.setNoteTableSizes(block.id, g.axis, last.sizes);
+      setLive(null);
     };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
