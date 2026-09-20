@@ -3394,15 +3394,15 @@ describe('공책 32판 — 줄을 넘는 캐럿(←·→·Enter 뒤 자리)', ()
     expect(where().line).toBe('b1');
   });
 
-  it('수정 키가 붙은 방향키는 가로채지 않는다(Shift+↓ · ⌘→)', async () => {
+  it('⌘·⌥가 붙은 방향키는 가로채지 않는다(줄·낱말 단위 이동은 브라우저의 것)', async () => {
     localStorage.setItem('mindflow_doc_v3', JSON.stringify(THREE));
     const { container } = renderEditor('/editor?map=v3&title=x');
     const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
 
     caretAt(one, 5);
-    fireEvent.keyDown(one, { key: 'ArrowDown', shiftKey: true });
-    expect(where().line).toBe('b1');
     fireEvent.keyDown(one, { key: 'ArrowRight', metaKey: true });
+    expect(where().line).toBe('b1');
+    fireEvent.keyDown(one, { key: 'ArrowDown', altKey: true });
     expect(where().line).toBe('b1');
   });
 
@@ -3418,6 +3418,166 @@ describe('공책 32판 — 줄을 넘는 캐럿(←·→·Enter 뒤 자리)', ()
     await waitFor(() => expect(document.activeElement?.textContent).toBe('하세요'));
     // 캐럿은 **마운트 뒤** 다음 프레임에 앞으로 옮겨진다(새 줄의 `autoFocus`는 끝에 둔다).
     await waitFor(() => expect(where().off).toBe(0));
+  });
+});
+
+describe('공책 33판 — 목록의 Enter·Tab·선택(제보 5건)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  function caretAt(el: HTMLElement, at: number): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, Math.min(at, (text.nodeValue ?? '').length));
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  const LIST = (kind: 'ul' | 'ol') => ({
+    ...NOTE,
+    pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind, items: [
+      { id: 'i1', runs: [{ t: '안녕하세요', b: false, c: null }] },
+      { id: 'i2', runs: [{ t: '반갑습니다', b: false, c: null }] },
+    ] }] }],
+  });
+
+  it('항목 가운데 Enter — **뒤쪽 글이 새 항목으로** 따라 내려간다(제보 1)', async () => {
+    localStorage.setItem('mindflow_doc_w0', JSON.stringify(LIST('ol')));
+    const { container } = renderEditor('/editor?map=w0&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1:i1"]'))) as HTMLElement;
+
+    caretAt(one, 2); // `안녕` 뒤
+    fireEvent.keyDown(one, { key: 'Enter' });
+    saveNow();
+
+    await waitFor(() => expect(saved('w0').pages[0].blocks[0].items).toHaveLength(3));
+    const texts = saved('w0').pages[0].blocks[0].items.map((i: { runs: { t: string }[] }) => i.runs.map((r) => r.t).join(''));
+    expect(texts).toEqual(['안녕', '하세요', '반갑습니다']);
+    // 커서는 내려간 글의 **앞**에 선다(문단과 같은 규칙).
+    await waitFor(() => expect(document.activeElement?.textContent).toBe('하세요'));
+  });
+
+  it('들여쓴 항목에서 Enter — 새 항목이 **그 단계를 물려받는다**(제보 2)', async () => {
+    localStorage.setItem('mindflow_doc_w1', JSON.stringify(LIST('ul')));
+    const { container } = renderEditor('/editor?map=w1&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b1:i2"]'))) as HTMLElement;
+
+    two.focus();
+    fireEvent.keyDown(two, { key: 'Tab' });
+    await waitFor(() => expect(saved('w1') && true).toBe(true));
+    caretAt(two, 5); // 글 끝
+    fireEvent.keyDown(two, { key: 'Enter' });
+    saveNow();
+
+    await waitFor(() => expect(saved('w1').pages[0].blocks[0].items).toHaveLength(3));
+    expect(saved('w1').pages[0].blocks[0].items[2].indent).toBe(1);
+  });
+
+  it('Tab을 **연달아 두 번** 눌러도 두 단계 들어간다(제보 3)', async () => {
+    localStorage.setItem('mindflow_doc_w2', JSON.stringify(LIST('ol')));
+    const { container } = renderEditor('/editor?map=w2&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b1:i2"]'))) as HTMLElement;
+
+    two.focus();
+    fireEvent.keyDown(two, { key: 'Tab' });
+    fireEvent.keyDown(two, { key: 'Tab' });
+    saveNow();
+
+    await waitFor(() => expect(saved('w2').pages[0].blocks[0].items[1].indent).toBe(2));
+    // 첫 항목도 들어간다 — 이웃을 따지지 않는다.
+    const one = container.querySelector('[data-note-line="b1:i1"]') as HTMLElement;
+    one.focus();
+    fireEvent.keyDown(one, { key: 'Tab' });
+    saveNow();
+    await waitFor(() => expect(saved('w2').pages[0].blocks[0].items[0].indent).toBe(1));
+  });
+
+  it('Tab은 **언제나 목록이 받는다** — 초점이 밖으로 새지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_w3', JSON.stringify(LIST('ul')));
+    const { container } = renderEditor('/editor?map=w3&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b1:i2"]'))) as HTMLElement;
+
+    two.focus();
+    // 가장 깊은 단계까지 넣고, 그 뒤의 Tab도 막혀야 한다(기본 동작 = 초점 이동).
+    for (let i = 0; i < 6; i += 1) {
+      const ev = createEvent.keyDown(two, { key: 'Tab' });
+      fireEvent(two, ev);
+      expect(ev.defaultPrevented).toBe(true);
+    }
+    saveNow();
+    await waitFor(() => expect(saved('w3').pages[0].blocks[0].items[1].indent).toBe(4));
+  });
+
+  it('빈 항목에는 **안내 글자가 없다**(제보 5)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'ul', items: [
+      { id: 'i1', runs: [{ t: '', b: false, c: null }] },
+      { id: 'i2', runs: [{ t: '', b: false, c: null }] },
+    ] }] }] };
+    localStorage.setItem('mindflow_doc_w4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=w4&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1:i1"]'))) as HTMLElement;
+
+    expect(one.getAttribute('data-placeholder')).toBe('');
+  });
+
+  it('빈 항목에서 Enter — **들여쓴 항목은 한 단계 나온다**(목록은 유지)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'ul', items: [
+      { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+      { id: 'i2', runs: [{ t: '', b: false, c: null }], indent: 1 },
+    ] }] }] };
+    localStorage.setItem('mindflow_doc_w5', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=w5&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b1:i2"]'))) as HTMLElement;
+
+    two.focus();
+    fireEvent.keyDown(two, { key: 'Enter' });
+    saveNow();
+
+    await waitFor(() => expect(saved('w5').pages[0].blocks[0].items[1].indent).toBeUndefined());
+    expect(saved('w5').pages[0].blocks).toHaveLength(1); // 목록은 그대로다
+  });
+
+  it('Shift+↓ 로 **줄을 넘어 고른다**(제보 4 — 문단도 목록도)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_w6', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=w6&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    caretAt(one, 99); // jsdom은 좌표를 못 재 **글 끝**이라야 가장자리로 본다
+    fireEvent.keyDown(one, { key: 'ArrowDown', shiftKey: true });
+
+    // 두 블록이 **고른 것**으로 표시된다(드래그 선택과 같은 그림).
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+  });
+
+  it('고른 상태에서 **수정 키 없는 방향키**는 선택을 접고 캐럿을 남긴다', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_w7', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=w7&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    caretAt(one, 99);
+    fireEvent.keyDown(one, { key: 'ArrowDown', shiftKey: true });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0));
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2'));
   });
 });
 

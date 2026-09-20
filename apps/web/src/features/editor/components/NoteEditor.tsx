@@ -357,6 +357,16 @@ export function NoteEditor({ controller }: Props) {
   /** 드래그가 시작된 자리 — 편집 박스와 그 안의 캐럿 지점. */
   const dragFrom = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
   const colRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * **Shift+방향키로 줄을 넘어 고르기** — 브라우저는 편집 박스 밖으로 선택을 늘리지
+   * 못하므로(블록마다 박스가 따로다) 우리가 이어 그린다(드래그 선택과 같은 그림).
+   *
+   * `selAnchor`는 선택이 시작된 자리(고정), `selFocus`는 지금 늘어난 끝이다. `selX`는
+   * 처음의 **가로 자리** — 줄을 오르내려도 그 칸을 지킨다(방향키와 같은 규칙).
+   */
+  const selAnchor = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
+  const selFocus = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
+  const selX = useRef<number | undefined>(undefined);
 
   // Escape로 닫는다 — 팝업이 열려 있는 동안 본문 타이핑은 그대로 이어진다.
   useEffect(() => {
@@ -483,6 +493,62 @@ export function NoteEditor({ controller }: Props) {
   }, [textSel]);
 
   /**
+   * 선택을 **한 줄 더** 늘린다(또는 줄인다) — Shift+위/아래.
+   *
+   * 앵커가 없으면 지금 캐럿이 앵커다. 늘린 결과가 **한 줄 안**으로 돌아오면 우리 그림을
+   * 걷고 브라우저의 선택으로 되돌린다(그 안에서는 브라우저가 더 잘한다).
+   */
+  const extendSelection = useCallback((dir: -1 | 1, x?: number): boolean => {
+    const col = colRef.current;
+    if (!col) return false;
+    const lines = [...col.querySelectorAll<HTMLElement>('[data-note-line]')].filter((el) => el.getAttribute('contenteditable') === 'true');
+    const sel = window.getSelection();
+    if (!selAnchor.current || !selFocus.current) {
+      const live = document.activeElement as HTMLElement | null;
+      if (!live?.hasAttribute?.('data-note-line') || !sel?.anchorNode) return false;
+      selAnchor.current = { el: live, node: sel.anchorNode, offset: sel.anchorOffset };
+      selFocus.current = { el: live, node: sel.focusNode ?? sel.anchorNode, offset: sel.focusOffset };
+      selX.current = x;
+    }
+    const cur = selFocus.current;
+    const i = lines.indexOf(cur.el);
+    if (i < 0) return false;
+    const next = lines[i + dir];
+    if (!next) return false;
+    const spot = pointInLine(next, dir, selX.current ?? x);
+    selFocus.current = { el: next, node: spot.node, offset: spot.offset };
+    const built = buildSelection(col, selAnchor.current, selFocus.current);
+    if (!built) {
+      // 앵커가 있던 줄로 돌아왔다 — 우리 칠을 걷고 그 줄 안의 선택으로 되돌린다.
+      setTextSel(null);
+      const a = selAnchor.current;
+      try {
+        a.el.focus({ preventScroll: true });
+        window.getSelection()?.setBaseAndExtent(a.node, a.offset, spot.node, spot.offset);
+      } catch {
+        /* 선택을 못 세워도 포커스는 갔다 */
+      }
+      return true;
+    }
+    // 우리가 칠하는 동안에는 브라우저의 선택과 캐럿을 비운다(드래그 선택과 같다) —
+    // 캐럿이 남으면 글쇠가 그 줄 안으로 들어가 "고른 것"과 "고치는 것"이 갈린다.
+    window.getSelection()?.removeAllRanges();
+    const live = document.activeElement as HTMLElement | null;
+    if (live?.hasAttribute('data-note-line')) live.blur();
+    setTextSel(built);
+    return true;
+  }, []);
+
+  // 선택이 걷히면 앵커도 잊는다 — 다음 Shift+방향키는 지금 캐럿에서 새로 시작한다.
+  useEffect(() => {
+    if (!textSel) {
+      selAnchor.current = null;
+      selFocus.current = null;
+      selX.current = undefined;
+    }
+  }, [textSel]);
+
+  /**
    * 글자 선택 위의 키보드 — 복사·잘라내기·지우기·Esc.
    *
    * `copy`/`cut` 이벤트에 얹지 않는 이유: 브라우저의 선택은 비워 둔 상태라(칠하기로
@@ -516,9 +582,40 @@ export function NoteEditor({ controller }: Props) {
       setTextSel(null);
     };
     const onKey = (e: KeyboardEvent) => {
+      /**
+       * **줄 부품이 이미 처리한 키는 건너뛴다.**
+       *
+       * 이 리스너는 선택이 생기는 **그 순간** 붙는다 — 리액트가 discrete 이벤트의
+       * 상태를 곧바로 반영하기 때문이다. 그런데 DOM은 전파 도중에 붙은 리스너도
+       * 부르므로, 선택을 시작한 바로 그 키가 여기로 **한 번 더** 들어와 한 줄을
+       * 더 먹었다(실측: 첫 Shift+↓에 두 줄이 골라졌다). 줄 부품이 처리했으면
+       * `preventDefault`가 찍혀 있으므로 그것으로 가른다.
+       */
+      if (e.defaultPrevented) return;
       if (e.key === 'Escape') {
         setTextSel(null);
         return;
+      }
+      /**
+       * **고르는 중의 방향키** — 우리가 칠하고 있는 동안에는 편집 박스에 포커스가 없어
+       * 줄 부품의 핸들러가 듣지 못한다. 그래서 여기서 이어받는다:
+       * Shift+위/아래는 **한 줄 더**, 수정 키 없는 방향키는 선택을 **접고** 그 끝에 캐럿.
+       */
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+        const back = e.key === 'ArrowUp' || e.key === 'ArrowLeft';
+        if (e.shiftKey && vertical && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          extendSelection(e.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
+        if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          const edge = back ? sel[0] : sel[sel.length - 1];
+          setTextSel(null);
+          if (edge) caretToLine(edge.key, back ? edge.from : edge.to);
+          return;
+        }
       }
       const mod = e.metaKey || e.ctrlKey;
       const text = () => selectionText(sel);
@@ -536,7 +633,7 @@ export function NoteEditor({ controller }: Props) {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [textSel, page, controller, readOnly]);
+  }, [textSel, page, controller, readOnly, extendSelection]);
 
   /**
    * **⌘F = 이 공책 안에서 찾기**(요청: 공책에서도 단축키를 다 쓰게).
@@ -682,6 +779,7 @@ export function NoteEditor({ controller }: Props) {
                   index={i}
                   freshId={freshId}
                   setFreshId={setFreshId}
+                  selectOut={extendSelection}
                   rememberBox={rememberBox}
                   focusBox={focusBox}
                   openSlash={(id, at) => openSlashAt(id, at)}
@@ -2809,6 +2907,8 @@ interface BlockProps {
   index: number;
   freshId: string | null;
   setFreshId: (id: string | null) => void;
+  /** Shift+방향키로 줄을 넘어 고르기 — 루트가 그림을 들고 있다. */
+  selectOut: (dir: -1 | 1, x?: number) => boolean;
   rememberBox: () => void;
   focusBox: (el: HTMLElement) => void;
   /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
@@ -2929,7 +3029,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, rememberBox, focusBox, openSlash }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, rememberBox, focusBox, openSlash }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -3208,6 +3308,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               placeholder="펼쳤을 때 보일 내용"
               onArrowOut={moveNoteCaret}
               onEdgeOut={(dir) => moveNoteCaret(dir)}
+      onSelectOut={selectOut}
               onChange={(runs) => {
                 const itemId = block.items?.[0]?.id;
                 if (itemId) controller.setNoteItemRuns(block.id, itemId, runs);
@@ -3279,23 +3380,47 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               lineKey={`${block.id}:${item.id}`}
               runs={item.runs}
               readOnly={readOnly}
-              placeholder={j === 0 ? '항목' : ''}
+              // 빈 항목의 안내 글자는 **두지 않는다**(요청) — 첫 줄에만 떠서
+              // "이 줄만 특별한가"로 읽혔고, 목록은 마커가 이미 자리를 말해 준다.
+              placeholder=""
               autoFocus={freshId === item.id}
               onArrowOut={moveNoteCaret}
               onEdgeOut={(dir) => moveNoteCaret(dir)}
+      onSelectOut={selectOut}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
               onSlash={(at) => {
                 if (readOnly) return;
                 openSlash(`${block.id}:${item.id}`, at);
               }}
-              onEnter={() => {
+              onEnter={(at) => {
                 if (readOnly) return false;
-                // 빈 항목에서 엔터 = 목록을 **끝낸다**(문단으로 빠져나온다) —
-                // 문서 편집기의 몸에 익은 동작이고, 없으면 빈 항목이 쌓인다.
-                if (runsText(item.runs) === '' && (block.items ?? []).length > 1) {
-                  controller.removeNoteItem(block.id, item.id);
-                  setFreshId(controller.addNoteBlock('p', block.id));
-                  return true;
+                const text = runsText(item.runs);
+                if (text === '') {
+                  // 빈 항목에서 Enter — **들여쓴 항목이면 한 단계 나온다**(어느 문서
+                  // 편집기나 같다). 0단계에서만 목록을 끝낸다(문단으로 빠져나온다) —
+                  // 그 길이 없으면 빈 항목이 끝없이 쌓인다.
+                  if ((item.indent ?? 0) > 0) return controller.setNoteItemIndent(block.id, item.id, -1);
+                  if ((block.items ?? []).length > 1) {
+                    controller.removeNoteItem(block.id, item.id);
+                    setFreshId(controller.addNoteBlock('p', block.id));
+                    return true;
+                  }
+                }
+                /**
+                 * **캐럿 뒤의 글이 따라 내려간다**(제보) — 문단과 같은 규칙이다.
+                 * 새 항목은 **같은 단계**를 물려받는다(요청 2).
+                 */
+                if (at < text.length) {
+                  const made = controller.splitNoteItem(block.id, item.id, at);
+                  if (made) {
+                    // 비제어 박스라 앞 항목의 DOM도 함께 자른다(안 그러면 포커스를
+                    // 잃는 순간 옛 글이 되덮는다).
+                    const el = document.querySelector<HTMLElement>(`[data-note-line="${block.id}:${item.id}"]`);
+                    if (el) el.innerHTML = runsToHtml({ text: runsText(made.head), rich: made.head });
+                    setFreshId(made.id);
+                    caretToLine(`${block.id}:${made.id}`, 0);
+                    return true;
+                  }
                 }
                 setFreshId(controller.addNoteItem(block.id, item.id));
                 return true;
@@ -3303,7 +3428,14 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               onTab={(back) => {
                 if (readOnly) return false;
                 // 캐럿은 그대로 둔다 — 이 줄은 다시 마운트되지 않고 **왼쪽 여백만** 바뀐다.
-                return controller.setNoteItemIndent(block.id, item.id, back ? -1 : 1);
+                controller.setNoteItemIndent(block.id, item.id, back ? -1 : 1);
+                /**
+                 * **목록 안의 Tab은 언제나 우리 것이다**(제보: 두 번째 Tab에서 초점이
+                 * 엉뚱한 곳으로 튄다). 더 들어갈 자리가 없어 문서가 그대로여도
+                 * `true`를 돌려줘 브라우저의 초점 이동을 막는다 — 목록에서 Tab이
+                 * 가끔만 듣는 것보다 늘 같은 뜻인 편이 낫다.
+                 */
+                return true;
               }}
               onBackspaceAtStart={() => {
                 if (readOnly) return false;
@@ -3391,6 +3523,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
       onBackspaceAtStart={backBlock}
       onArrowOut={moveNoteCaret}
       onEdgeOut={(dir) => moveNoteCaret(dir)}
+      onSelectOut={selectOut}
       onSlash={(at) => {
         if (readOnly) return;
         openSlash(block.id, at);
@@ -5762,46 +5895,46 @@ function moveNoteCaret(dir: -1 | 1, x?: number): boolean {
 }
 
 /**
- * 그 줄에 캐럿을 놓는다 — **가로 자리를 지켜서**.
+ * 그 줄에서 **가로 자리 `x`에 가장 가까운** 캐럿 지점.
  *
- * 두 가지를 조심한다:
- * - 목표 가로 자리(`x`)가 있으면 그 자리에서 캐럿 틈을 찾는다. 위로 올라갈 때는 그
- *   줄의 **마지막 시각 줄**, 아래로 내려갈 때는 **첫 시각 줄**의 높이에서 찾는다
- *   (감긴 문단으로 들어갈 때 엉뚱한 줄에 서지 않게).
- * - 못 찾으면 맨 끝·맨 앞으로 물러서되 **텍스트 노드 안에** 놓는다. 요소 경계
- *   (`선택 내용 전체 → collapse`)에 놓으면 캐럿 사각형을 잴 수 없어 **다음 방향키가
- *   가장자리 판정에 실패한다** — 제보 2(한 번은 넘어가고 다음 번은 제자리)의 원인이다.
+ * 올라갈 때는 그 줄의 **마지막 시각 줄**, 내려갈 때는 **첫 시각 줄**의 높이에서 찾는다
+ * (감긴 문단으로 들어갈 때 엉뚱한 줄에 서지 않게). 좌표를 못 쓰면 처음·끝으로 물러선다.
  */
-function placeCaretInLine(el: HTMLElement, dir: -1 | 1, x?: number): void {
-  el.focus({ preventScroll: false });
-  const sel = window.getSelection();
-  if (!sel) return;
-  const put = (node: Node, offset: number): void => {
-    try {
-      const range = document.createRange();
-      range.setStart(node, offset);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    } catch {
-      /* 캐럿을 못 놓아도 포커스는 갔다 */
-    }
-  };
+function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; offset: number } {
   if (typeof x === 'number') {
     const box = el.getBoundingClientRect();
     const lh = parseFloat(getComputedStyle(el).lineHeight) || box.height || 0;
     if (box.height > 0 && lh > 0) {
       const y = dir === 1 ? box.top + Math.min(lh, box.height) / 2 : box.bottom - Math.min(lh, box.height) / 2;
       const at = caretAt(x, y);
-      if (at && el.contains(at.node)) {
-        put(at.node, at.offset);
-        return;
-      }
+      if (at && el.contains(at.node)) return at;
     }
   }
   const text = (el.textContent ?? '').length;
-  const spot = pointAt(el, dir === 1 ? 0 : text);
-  put(spot.node, spot.offset);
+  return pointAt(el, dir === 1 ? 0 : text);
+}
+
+/**
+ * 그 줄에 캐럿을 놓는다 — **가로 자리를 지켜서**(`pointInLine`).
+ *
+ * 캐럿은 반드시 **텍스트 노드 안에** 놓는다. 요소 경계(`선택 내용 전체 → collapse`)에
+ * 놓으면 캐럿 사각형을 잴 수 없어 **다음 방향키가 가장자리 판정에 실패한다** — 제보
+ * (한 번은 넘어가고 다음 번은 제자리)의 원인이었다.
+ */
+function placeCaretInLine(el: HTMLElement, dir: -1 | 1, x?: number): void {
+  el.focus({ preventScroll: false });
+  const sel = window.getSelection();
+  if (!sel) return;
+  const spot = pointInLine(el, dir, x);
+  try {
+    const range = document.createRange();
+    range.setStart(spot.node, spot.offset);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch {
+    /* 캐럿을 못 놓아도 포커스는 갔다 */
+  }
 }
 
 /**
