@@ -4265,6 +4265,9 @@ describe('공책 39판 — 표의 ⌘A · 가로 스크롤 · 칸 캐럿 · 칠�
     // `overflow-y: auto`만 주면 `overflow-x`가 `auto`로 계산되어 세로↔가로가 서로를 부른다.
     expect(pane.style.overflowX).toBe('hidden');
     expect(pane.style.overflowY).toBe('auto');
+    // 세로 막대가 생겼다 사라져도 **폭이 변하지 않아야** 한다 — 변하면 표가 함께
+    // 좁아졌다 넓어지고, 표 자신의 가로 막대가 그 박자로 깜빡인다(제보 2회차).
+    expect(pane.style.scrollbarGutter).toBe('stable');
   });
 
   it('칸에서 마커를 만들면 캐럿이 **글자 자리**에 남는다(제보 4)', async () => {

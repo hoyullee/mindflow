@@ -1148,8 +1148,20 @@ export function NoteEditor({ controller }: Props) {
            * 사라진다 — 행을 끄는 동안에는 높이가 프레임마다 바뀌므로 그 되먹임이
            * 눈에 보이는 깜빡임이 된다(표 안쪽 판에 이미 같은 처방을 했다).
            * 본문 단은 폭에 맞춰 줄어드는 반응형이라 가로로 스크롤할 것이 없다.
+           *
+           * **그것만으로는 모자랐다**(제보: 그래도 깜빡인다). 남은 고리는 이렇다 —
+           * 행을 줄이면 문서 높이가 바뀌고, 그 높이가 화면 경계 근처면 **세로** 막대가
+           * 생겼다 사라진다 → 그때마다 판의 폭이 막대 너비만큼 오간다 → 표는
+           * `width: 100%`라 함께 좁아졌다 넓어진다 → **표 자신의 가로 막대**가 따라
+           * 깜빡인다(표 안쪽 판은 넓은 표를 위해 가로가 `auto`여야 하므로 그쪽을
+           * 막을 수는 없다). 게다가 그 가로 막대는 높이를 9px 먹어 다시 문서 높이를
+           * 바꾸므로, 고리가 스스로 돈다.
+           *
+           * `scrollbar-gutter: stable`이 그 고리를 끊는다 — 세로 막대가 **있든 없든**
+           * 자리를 늘 잡아 두어 판의 폭이 변하지 않는다. 대신 스크롤이 없는 짧은
+           * 페이지에서도 그 폭이 비어 있다(문서 편집기가 흔히 택하는 맞바꿈이다).
            */
-          style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}
+          style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}
         >
           {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 **9px**이다(요청: 너무 넓다) —
               19px이던 값의 절반. 제목만 위쪽에 숨을 더 둬서(아래 `headGap`) 문단은
