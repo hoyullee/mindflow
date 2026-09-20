@@ -34,7 +34,7 @@ import type { EditorController } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
-import { buildSelection, caretAt, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildSelection, caretAt, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
@@ -2962,6 +2962,14 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
         const el = document.querySelector<HTMLElement>(`[data-note-line="${block.id}"]`);
         if (el) el.innerHTML = runsToHtml({ text: runsText(made.head), rich: made.head });
         setFreshId(made.id);
+        /**
+         * 캐럿은 내려간 글의 **앞**이다(제보 3: 뒤에 가 있다).
+         *
+         * 새 줄의 `autoFocus`는 캐럿을 **끝**에 놓는다 — 빈 줄을 새로 만들 때는 그게
+         * 맞지만(이어 쓰려고 만든 줄이다) 가른 줄은 다르다: 방금 내려간 글의 앞에
+         * 서 있어야 이어서 고칠 수 있다. 마운트 **뒤**에 다시 놓는다.
+         */
+        caretToLine(made.id, 0);
         return true;
       }
     }
@@ -3059,8 +3067,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
      * 위아래 여백(8px)은 겨냥할 면이기도 하다.
      */
     const onHrKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        if (moveNoteCaret(e.key === 'ArrowUp' ? -1 : 1)) e.preventDefault();
+      // 고른 구분선에서도 네 방향키로 줄을 넘는다 — ←·→도 같은 걸음이다(여기에는
+      // 넘길 글자가 없으므로 위·아래와 다를 이유가 없다).
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        if (moveNoteCaret(e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
         return;
       }
       if (readOnly) return;
@@ -3197,6 +3207,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               readOnly={readOnly}
               placeholder="펼쳤을 때 보일 내용"
               onArrowOut={moveNoteCaret}
+              onEdgeOut={(dir) => moveNoteCaret(dir)}
               onChange={(runs) => {
                 const itemId = block.items?.[0]?.id;
                 if (itemId) controller.setNoteItemRuns(block.id, itemId, runs);
@@ -3271,6 +3282,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
               placeholder={j === 0 ? '항목' : ''}
               autoFocus={freshId === item.id}
               onArrowOut={moveNoteCaret}
+              onEdgeOut={(dir) => moveNoteCaret(dir)}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
               onSlash={(at) => {
                 if (readOnly) return;
@@ -3378,6 +3390,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
       onEnter={enterBlock}
       onBackspaceAtStart={backBlock}
       onArrowOut={moveNoteCaret}
+      onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSlash={(at) => {
         if (readOnly) return;
         openSlash(block.id, at);
@@ -5719,7 +5732,14 @@ function listShortcutOf(text: string): { kind: 'ul' | 'ol'; start?: number } | n
  * 맞추는 것이 더 정확하지만, 그러려면 글자 좌표를 매번 재야 한다(지금 규칙으로도
  * 이어 쓰는 자리가 자연스럽다).
  */
-function moveNoteCaret(dir: -1 | 1): boolean {
+/**
+ * 이웃 줄로 캐럿을 옮긴다 — 위/아래(`onArrowOut`)와 좌/우 넘기(`onEdgeOut`)가 함께 쓴다.
+ *
+ * `x`가 있으면 **가로 자리를 지킨다**(요청: 줄을 옮겨도 칸이 흔들리지 않게) — 이웃
+ * 줄에서 그 가로 자리에 가장 가까운 글자 틈에 캐럿을 놓는다. 없으면 아래로 갈 때는
+ * 맨 앞, 위로 갈 때는 맨 끝이다(←·→로 넘어올 때가 그렇다).
+ */
+function moveNoteCaret(dir: -1 | 1, x?: number): boolean {
   if (typeof document === 'undefined') return false;
   const cur = document.activeElement as HTMLElement | null;
   if (!cur?.hasAttribute?.('data-note-line') && !cur?.hasAttribute?.('data-note-hr')) return false;
@@ -5735,20 +5755,53 @@ function moveNoteCaret(dir: -1 | 1): boolean {
       return true;
     }
     if (el.getAttribute('contenteditable') !== 'true') continue;
-    el.focus({ preventScroll: false });
-    try {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(dir === 1); // 아래로 가면 처음, 위로 가면 끝
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-    } catch {
-      /* 캐럿을 못 놓아도 포커스는 갔다 */
-    }
+    placeCaretInLine(el, dir, x);
     return true;
   }
   return false;
+}
+
+/**
+ * 그 줄에 캐럿을 놓는다 — **가로 자리를 지켜서**.
+ *
+ * 두 가지를 조심한다:
+ * - 목표 가로 자리(`x`)가 있으면 그 자리에서 캐럿 틈을 찾는다. 위로 올라갈 때는 그
+ *   줄의 **마지막 시각 줄**, 아래로 내려갈 때는 **첫 시각 줄**의 높이에서 찾는다
+ *   (감긴 문단으로 들어갈 때 엉뚱한 줄에 서지 않게).
+ * - 못 찾으면 맨 끝·맨 앞으로 물러서되 **텍스트 노드 안에** 놓는다. 요소 경계
+ *   (`선택 내용 전체 → collapse`)에 놓으면 캐럿 사각형을 잴 수 없어 **다음 방향키가
+ *   가장자리 판정에 실패한다** — 제보 2(한 번은 넘어가고 다음 번은 제자리)의 원인이다.
+ */
+function placeCaretInLine(el: HTMLElement, dir: -1 | 1, x?: number): void {
+  el.focus({ preventScroll: false });
+  const sel = window.getSelection();
+  if (!sel) return;
+  const put = (node: Node, offset: number): void => {
+    try {
+      const range = document.createRange();
+      range.setStart(node, offset);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch {
+      /* 캐럿을 못 놓아도 포커스는 갔다 */
+    }
+  };
+  if (typeof x === 'number') {
+    const box = el.getBoundingClientRect();
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || box.height || 0;
+    if (box.height > 0 && lh > 0) {
+      const y = dir === 1 ? box.top + Math.min(lh, box.height) / 2 : box.bottom - Math.min(lh, box.height) / 2;
+      const at = caretAt(x, y);
+      if (at && el.contains(at.node)) {
+        put(at.node, at.offset);
+        return;
+      }
+    }
+  }
+  const text = (el.textContent ?? '').length;
+  const spot = pointAt(el, dir === 1 ? 0 : text);
+  put(spot.node, spot.offset);
 }
 
 /**
@@ -5763,29 +5816,14 @@ function caretToLine(key: string, at: number | 'end' = 'end'): void {
     const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
     if (!el) return;
     el.focus({ preventScroll: true });
+    // **텍스트 노드 안에** 놓는다 — 요소 경계에 놓으면 캐럿 사각형을 잴 수 없어
+    // 다음 방향키가 가장자리 판정에 실패한다(`placeCaretInLine`과 같은 이유).
+    const len = (el.textContent ?? '').length;
+    const spot = pointAt(el, at === 'end' ? len : Math.max(0, Math.min(at, len)));
     try {
       const range = document.createRange();
-      range.selectNodeContents(el);
-      if (at === 'end') range.collapse(false);
-      else {
-        // 글자 자리로 — 이어 붙인 자리(앞 글의 길이)에 캐럿을 둔다.
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        let seen = 0;
-        let node = walker.nextNode();
-        let done = false;
-        while (node) {
-          const len = (node.nodeValue || '').length;
-          if (seen + len >= at) {
-            range.setStart(node, at - seen);
-            range.collapse(true);
-            done = true;
-            break;
-          }
-          seen += len;
-          node = walker.nextNode();
-        }
-        if (!done) range.collapse(false);
-      }
+      range.setStart(spot.node, spot.offset);
+      range.collapse(true);
       const sel = window.getSelection();
       sel?.removeAllRanges();
       sel?.addRange(range);

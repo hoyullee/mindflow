@@ -18,7 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, runsToHtml } from '../richtextDom';
 import { applyNoteFormat, NOTE_EDIT_ATTR } from '../noteRichDom';
-import { charOffset } from '../noteTextSelect';
+import { charOffset, pointAt } from '../noteTextSelect';
 
 interface Props {
   runs: RichRun[] | undefined;
@@ -47,8 +47,21 @@ interface Props {
    * 적다 `https://`의 `/`마다 메뉴가 끼어든다.
    */
   onSlash?: (at: number) => void;
-  /** 위/아래 화살표로 블록 사이를 옮긴다(글의 끝·시작에서만). */
-  onArrowOut?: (dir: -1 | 1) => boolean;
+  /**
+   * 위/아래 화살표로 블록 사이를 옮긴다(글의 첫 줄·마지막 줄에서만).
+   *
+   * `x`는 캐럿의 **가로 자리**(화면 좌표)다 — 이웃 줄에서도 그 자리에 가장 가까운
+   * 글자 틈에 캐럿을 놓기 위한 값이다(요청: 줄을 옮겨도 칸이 흔들리지 않게).
+   */
+  onArrowOut?: (dir: -1 | 1, x?: number) => boolean;
+  /**
+   * **왼쪽/오른쪽 화살표로 줄을 넘는다** — 글의 맨 끝에서 →, 맨 앞에서 ←.
+   *
+   * 블록마다 편집 박스가 따로라 브라우저는 그 경계를 넘지 못한다(제보: 문장 끝에서
+   * 오른쪽 키를 눌러도 다음 줄로 가지 않는다). 넘어간 뒤의 캐럿은 →면 다음 줄의
+   * **맨 앞**, ←면 앞 줄의 **맨 끝**이다.
+   */
+  onEdgeOut?: (dir: -1 | 1) => boolean;
   /**
    * **Tab · Shift+Tab** — 목록에서 들여쓰기·내어쓰기. 처리했으면 `true`.
    *
@@ -70,7 +83,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -165,48 +178,55 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
     }
     if (e.key === 'Backspace' && !e.nativeEvent.isComposing) {
       const sel = window.getSelection();
-      const atStart = !!sel && sel.isCollapsed && sel.anchorOffset === 0 && caretAtFirstTextNode(el, sel);
+      // **글자 자리로** 가른다 — 캐럿이 텍스트 노드가 아니라 요소 경계에 놓이는
+      // 경우가 있어(우리가 옮겨 놓았을 때) 노드 비교만으로는 맨 앞을 놓친다.
+      const atStart = !!sel && sel.isCollapsed && caretOffset(el) === 0;
       if (atStart && onBackspaceAtStart?.()) {
         e.preventDefault();
         return;
       }
     }
-    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && onArrowOut) {
+    /**
+     * **방향키로 줄을 넘는다.**
+     *
+     * 수정 키가 붙은 방향키는 브라우저의 것이다(Shift는 선택, ⌘·⌥는 줄·낱말 단위
+     * 이동) — 우리가 가로채면 그 기능이 사라진다.
+     */
+    const plainArrow = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+    const composing = e.nativeEvent.isComposing;
+    if (plainArrow && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onArrowOut) {
       const sel = window.getSelection();
       /**
-       * **조합 중에는 캐럿이 접혀 있지 않다**(제보 3회차의 진짜 원인).
-       *
-       * 윈도 한글 IME는 조합 중인 글자를 **골라 둔 모양**으로 둔다 — 실측하니
-       * `isCollapsed`가 거짓이었다(`Input.imeSetComposition`의 `selectionStart 0 /
-       * selectionEnd 1`과 같은 상태다). 그래서 지난 두 판의 고침(좌표 판정·조합
-       * 뒤로 미루기)이 **이 가드에 막혀** 한 번도 닿지 못했다: 첫 번째 ↑는 브라우저가
-       * 조합을 끝내며 줄 처음으로 옮기고, 두 번째에야 우리 차례가 왔다.
-       *
-       * 조합 중이면 접힘을 따지지 않는다 — 캐럿은 그 범위의 끝에 있고, 가장자리
-       * 판정은 어차피 같은 줄을 본다.
+       * **조합 중에는 캐럿이 접혀 있지 않다** — 윈도 한글 IME는 조합 중인 글자를
+       * 골라 둔 모양으로 두므로 `isCollapsed`가 거짓이다(실측). 그것까지 받는다.
        */
-      const composing = e.nativeEvent.isComposing;
       if (sel && (sel.isCollapsed || composing)) {
         const dir = e.key === 'ArrowUp' ? -1 : 1;
         if (caretOnEdgeLine(el, sel, dir)) {
-          /**
-           * **한글을 치던 중에도 넘어간다**(제보: 방향키를 두 번 눌러야 윗줄로 간다).
-           *
-           * 한글은 마지막 글자가 **조합 중**인 채로 남아 있고, 그 상태에서 누른
-           * 방향키의 `keydown`은 `isComposing`이 참이다. 예전에는 그때 손을 뗐으므로
-           * 브라우저가 조합을 끝내며 캐럿을 **줄 안에서** 옮겼고(그래서 첫 번째
-           * 누름이 "문장 처음으로"가 됐다), 두 번째 눌러야 우리 차례가 왔다.
-           *
-           * 조합 중에는 **막지 않는다** — `preventDefault`로 가로채면 조합이 끊긴 채
-           * 글자가 어정쩡하게 남는다. 대신 캐럿이 가장자리 줄에 있다는 것을 지금
-           * 재 두고, 브라우저가 조합을 끝낸 **다음**에 이웃 줄로 건너뛴다(브라우저가
-           * 줄 안에서 옮긴 캐럿은 그 순간 덮어쓰이므로 눈에는 한 번의 이동이다).
-           */
+          const x = caretRect(el, sel)?.left;
+          // 조합 중에는 **막지 않는다**(가로채면 조합이 끊긴 채 글자가 남는다) —
+          // 브라우저가 조합을 끝낸 다음 차례에 건너뛴다.
           if (composing) {
-            setTimeout(() => onArrowOut(dir), 0);
+            setTimeout(() => onArrowOut(dir, x), 0);
             return;
           }
-          if (onArrowOut(dir)) e.preventDefault();
+          if (onArrowOut(dir, x)) e.preventDefault();
+        }
+      }
+    }
+    if (plainArrow && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && onEdgeOut) {
+      const sel = window.getSelection();
+      if (sel && (sel.isCollapsed || composing)) {
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        const len = (el.textContent ?? '').length;
+        const at = caretOffset(el);
+        // 줄의 **맨 끝**에서 → · **맨 앞**에서 ←일 때만 넘어간다.
+        if (dir === 1 ? at >= len : at <= 0) {
+          if (composing) {
+            setTimeout(() => onEdgeOut(dir), 0);
+            return;
+          }
+          if (onEdgeOut(dir)) e.preventDefault();
         }
       }
     }
@@ -238,11 +258,52 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
   );
 }
 
-/** 캐럿이 놓인 **글자 자리** — 알 수 없으면 글의 끝으로 본다(테스트 하네스 등). */
+/**
+ * 캐럿이 놓인 **글자 자리** — 알 수 없으면 글의 끝으로 본다(테스트 하네스 등).
+ *
+ * `anchor`가 아니라 **`focus`**를 본다: 조합 중이거나 범위를 고른 상태에서 캐럿은
+ * 그 범위의 **끝**에 있다(한글 IME가 조합 글자를 골라 둘 때가 그렇다 — 실측).
+ */
 function caretOffset(el: HTMLElement): number {
   const sel = window.getSelection();
-  if (sel && sel.isCollapsed && sel.anchorNode && el.contains(sel.anchorNode)) return charOffset(el, sel.anchorNode, sel.anchorOffset);
+  if (sel && sel.focusNode && el.contains(sel.focusNode)) return charOffset(el, sel.focusNode, sel.focusOffset);
   return (el.textContent ?? '').length;
+}
+
+/**
+ * 캐럿의 **화면 사각형** — 가장자리 판정과 「가로 자리 지키기」가 함께 쓴다.
+ *
+ * 접힌 범위의 사각형이 **비어서 오는 경우**가 있다(캐럿이 텍스트 노드가 아니라
+ * 요소 경계에 놓였을 때 크롬이 그렇다). 그러면 **옆 글자 한 칸**을 재서 그 줄의
+ * 높이와 가로 자리를 대신 얻는다 — 이 폴백이 없으면 "방향키를 눌렀는데 그 줄 안에서만
+ * 움직인다"가 된다(제보 2: 한 번은 넘어가고 다음 번은 제자리).
+ */
+function caretRect(el: HTMLElement, sel: Selection): DOMRect | null {
+  try {
+    const node = sel.focusNode && el.contains(sel.focusNode) ? sel.focusNode : el;
+    const offset = node === sel.focusNode ? sel.focusOffset : 0;
+    const probe = document.createRange();
+    probe.setStart(node, offset);
+    probe.collapse(true);
+    const box = probe.getBoundingClientRect();
+    if (box.height > 0) return box;
+    const len = (el.textContent ?? '').length;
+    if (!len) return null;
+    const at = Math.max(0, Math.min(charOffset(el, node, offset), len));
+    // 캐럿 **앞 글자**(맨 앞이면 뒤 글자) 한 칸을 재고, 그 변을 캐럿 자리로 본다.
+    const a = at > 0 ? at - 1 : 0;
+    const s = pointAt(el, a);
+    const t = pointAt(el, Math.min(len, a + 1));
+    const span = document.createRange();
+    span.setStart(s.node, s.offset);
+    span.setEnd(t.node, t.offset);
+    const r = span.getBoundingClientRect();
+    if (!r.height) return null;
+    const x = at > 0 ? r.right : r.left;
+    return new DOMRect(x, r.top, 0, r.height);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -258,38 +319,13 @@ function caretOffset(el: HTMLElement): number {
  * 환경(jsdom)에서는 예전의 글자 기준으로 물러선다.
  */
 function caretOnEdgeLine(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean {
-  try {
-    const range = sel.getRangeAt(0).cloneRange();
-    range.collapse(true);
-    const c = range.getBoundingClientRect();
-    const b = el.getBoundingClientRect();
-    if (c.height > 0 && b.height > 0) {
-      const lh = parseFloat(getComputedStyle(el).lineHeight) || c.height;
-      return dir === -1 ? c.top - b.top < lh * 0.6 : b.bottom - c.bottom < lh * 0.6;
-    }
-  } catch {
-    /* 좌표를 못 잰다 — 아래 글자 기준으로 */
+  const c = caretRect(el, sel);
+  const b = el.getBoundingClientRect();
+  if (c && b.height > 0) {
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || c.height;
+    return dir === -1 ? c.top - b.top < lh * 0.6 : b.bottom - c.bottom < lh * 0.6;
   }
-  return dir === -1 ? caretAtFirstTextNode(el, sel) && sel.anchorOffset === 0 : caretAtLastTextNode(el, sel);
-}
-
-/** 캐럿이 이 박스의 **첫 텍스트 노드**에 있는가(백스페이스·위 화살표 판정). */
-function caretAtFirstTextNode(el: HTMLElement, sel: Selection): boolean {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  const first = walker.nextNode();
-  // 빈 박스는 텍스트 노드가 없다 — 그때도 "맨 앞"이다.
-  return !first || first === sel.anchorNode;
-}
-
-/** 캐럿이 **마지막 텍스트 노드의 끝**에 있는가(아래 화살표 판정). */
-function caretAtLastTextNode(el: HTMLElement, sel: Selection): boolean {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let last: Node | null = null;
-  let node = walker.nextNode();
-  while (node) {
-    last = node;
-    node = walker.nextNode();
-  }
-  if (!last) return true;
-  return last === sel.anchorNode && sel.anchorOffset === (last.nodeValue || '').length;
+  // 좌표를 못 재는 환경(jsdom) — **글자 자리**로 가른다(감긴 줄은 구분하지 못한다).
+  const at = caretOffset(el);
+  return dir === -1 ? at <= 0 : at >= (el.textContent ?? '').length;
 }

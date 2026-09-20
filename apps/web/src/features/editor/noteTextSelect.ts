@@ -79,7 +79,7 @@ export function charOffset(el: HTMLElement, node: Node, offset: number): number 
 }
 
 /** 그 줄에서 **문자 인덱스**가 가리키는 (노드, 오프셋). */
-function pointAt(el: HTMLElement, index: number): { node: Node; offset: number } {
+export function pointAt(el: HTMLElement, index: number): { node: Node; offset: number } {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let n = 0;
   let cur = walker.nextNode();
