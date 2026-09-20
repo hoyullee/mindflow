@@ -852,6 +852,8 @@ export interface EditorController {
   toggleNoteCheck: (blockId: string, itemId: string) => void;
   addNoteItem: (blockId: string, after?: string) => string | null;
   removeNoteItem: (blockId: string, itemId: string) => void;
+  /** 목록의 첫 항목을 문단으로 — 새 문단 블록의 id를 돌려준다. */
+  unlistNoteItem: (blockId: string, itemId: string) => string | null;
   /** 목록 항목을 캐럿 자리에서 가른다 — 앞쪽 글과 새 항목 id를 돌려준다. */
   splitNoteItem: (blockId: string, itemId: string, at: number) => { id: string; head: RichRun[] } | null;
   /** 목록 항목 들여쓰기·내어쓰기 — 바뀌었으면 `true`. */
@@ -6851,6 +6853,47 @@ export function useEditorState(): EditorController {
   );
 
   /**
+   * **목록의 첫 항목을 문단으로 풀어낸다** — 마커만 걷고 글은 그 자리에 남는다.
+   *
+   * 제보: 위에 일반 줄이 있는 목록의 **첫 항목 맨 앞**에서 Backspace를 치면 그 글이
+   * 윗줄로 올라가 붙었다. 문서 편집기의 규칙은 **한 걸음 먼저**다 — 첫 Backspace는
+   * 목록을 풀고(그 줄은 제자리에 남는다), 윗줄과 잇는 것은 **그다음 Backspace**다.
+   *
+   * 나머지 항목은 그 아래 목록으로 그대로 남는다(번호는 코어가 다시 센다).
+   * 새로 생긴 문단의 id를 돌려준다 — 부르는 쪽이 캐럿을 그 앞에 놓는다.
+   */
+  const unlistNoteItem = useCallback(
+    (blockId: string, itemId: string): string | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const block = notePage.blocks.find((b) => b.id === blockId);
+      const items = block?.items ?? [];
+      const k = items.findIndex((it) => it.id === itemId);
+      if (k < 0) return null;
+      const runs = (items[k] as NoteListItem).runs ?? textRuns('');
+      // 항목이 하나뿐이면 **그 블록을 그대로 문단으로** 쓴다(id가 바뀌지 않는다 —
+      // 댓글·링크가 블록 id를 잡고 있다). 뒤에 항목이 남으면 새 문단을 앞에 세운다.
+      const only = items.length === 1;
+      const made: NoteBlock = only
+        ? { id: blockId, kind: 'p', runs, ...(block?.align ? { align: block.align } : {}), ...(block?.indent ? { indent: block.indent } : {}) }
+        : { ...emptyBlock('p'), runs };
+      commitPage(
+        notePage.id,
+        (pg) => {
+          const i = pg.blocks.findIndex((b) => b.id === blockId);
+          if (i < 0) return pg;
+          const b = pg.blocks[i] as NoteBlock;
+          const rest = (b.items ?? []).filter((it) => it.id !== itemId);
+          const tail = rest.length ? [{ ...b, items: rest }] : [];
+          return { ...pg, blocks: [...pg.blocks.slice(0, i), made, ...tail, ...pg.blocks.slice(i + 1)] };
+        },
+        false,
+      );
+      return made.id;
+    },
+    [commitPage, notePage],
+  );
+
+  /**
    * **목록 항목을 캐럿 자리에서 가른다**(제보: 항목 가운데서 Enter를 쳐도 뒤쪽 글이
    * 따라 내려가지 않고 빈 항목만 하나 생겼다).
    *
@@ -8163,6 +8206,7 @@ export function useEditorState(): EditorController {
     addNoteItem,
     removeNoteItem,
     splitNoteItem,
+    unlistNoteItem,
     setNoteItemIndent,
     mergeNoteBlockBack,
     deleteNoteTextRange,
