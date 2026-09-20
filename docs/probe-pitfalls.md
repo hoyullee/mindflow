@@ -248,6 +248,21 @@ Playwright의 `permissions: ['notifications']`를 줘도, `--headless=new`로 �
 `auto`로 되돌려 길 때/짧을 때 폭을 견주기)을 함께 찍어 두면 "이 환경에서는 애초에
 갈리지 않는다"는 사실까지 기록에 남습니다.
 
+<a id="e9"></a>
+### E9. 스크롤바가 걸린 증상은 **xvfb headed**로 내려가라 — 이 컨테이너에 있다
+
+§E1이 "xvfb headed로 재검증"이라고 적어 두었는데도 헤드리스로만 세 번 헛돌았습니다.
+`xvfb-run -a --server-args="-screen 0 1400x1000x24" node probe.mjs` + `headless: false`면
+**폭을 먹는 15px 클래식 막대**가 나옵니다(실측: 헤드리스 0px → xvfb headed 15px).
+Chromium 플래그(`--disable-features=OverlayScrollbar` 등)로는 **바뀌지 않습니다** — 세 벌을
+시도했고 전부 0px이었습니다.
+
+그리고 xvfb로 내려가면 **콘솔이 말을 해 줍니다**: 그 판에서야 행 그립을 끌 때마다
+리액트가 `Maximum update depth exceeded`(프로덕션 번들에서는 `Minified React error #185`)를
+던지는 것이 보였습니다 — 헤드리스에서 재현하지 못한 "깜빡임"의 유력한 정체였고,
+잡는 데 든 비용의 대부분은 **있는 도구를 안 쓴 값**이었습니다. 프로브를 붙일 때
+`page.on('pageerror')`와 `page.on('console')`를 **언제나** 걸어 두세요.
+
 <a id="e5"></a>
 ### E5. 앱의 규칙을 모르면 프로브가 틀린다
 
