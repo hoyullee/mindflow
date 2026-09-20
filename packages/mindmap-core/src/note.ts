@@ -598,9 +598,10 @@ function withDepth(item: NoteListItem, depth: number): NoteListItem {
 /**
  * 항목 하나를 **들이거나 내민다**(Tab · Shift+Tab).
  *
- * 규칙 둘은 어느 문서 편집기나 같다:
- * - **바로 앞 항목보다 한 단계까지만** 깊어진다(첫 항목은 기준이 없어 들일 수 없다).
- *   이것이 없으면 두 번째 항목을 세 단계 들여 "부모 없는 손자"가 생긴다.
+ * - **이웃을 따지지 않는다**(요청). 처음에는 "앞 항목보다 한 단계까지만"이라는 흔한
+ *   규칙을 두었는데, 그러면 두 번째 줄에서 Tab을 두 번 누를 수 없고(막힌 두 번째
+ *   Tab은 브라우저로 새어 나가 **초점이 다른 곳으로 튄다**) 사용자는 "들여쓰기가
+ *   안 된다"고 느낀다. 이제 0..`NOTE_LIST_MAX_INDENT` 안에서 자유롭다.
  * - **딸린 항목도 함께 움직인다** — 바로 뒤에 이어지는 더 깊은 항목들이 그 자식이다.
  *   부모만 옮기면 자식이 부모보다 깊거나 얕아져 목록이 뒤틀린다.
  *
@@ -610,8 +611,7 @@ export function indentListItem(items: NoteListItem[], itemId: string, delta: 1 |
   const i = items.findIndex((it) => it.id === itemId);
   if (i < 0) return items;
   const cur = itemDepth(items[i] as NoteListItem);
-  const ceiling = i === 0 ? cur : Math.min(NOTE_LIST_MAX_INDENT, itemDepth(items[i - 1] as NoteListItem) + 1);
-  const next = delta > 0 ? Math.min(cur + 1, ceiling) : Math.max(0, cur - 1);
+  const next = delta > 0 ? Math.min(cur + 1, NOTE_LIST_MAX_INDENT) : Math.max(0, cur - 1);
   if (next === cur) return items;
   const shift = next - cur;
   const out = items.slice();

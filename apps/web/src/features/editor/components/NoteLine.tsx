@@ -55,6 +55,11 @@ interface Props {
    */
   onArrowOut?: (dir: -1 | 1, x?: number) => boolean;
   /**
+   * **Shift+위/아래로 줄을 넘어 고른다** — 브라우저는 편집 박스 **밖으로** 선택을
+   * 늘리지 못하므로(블록마다 박스가 따로다) 우리가 이어 그린다. 처리했으면 `true`.
+   */
+  onSelectOut?: (dir: -1 | 1, x?: number) => boolean;
+  /**
    * **왼쪽/오른쪽 화살표로 줄을 넘는다** — 글의 맨 끝에서 →, 맨 앞에서 ←.
    *
    * 블록마다 편집 박스가 따로라 브라우저는 그 경계를 넘지 못한다(제보: 문장 끝에서
@@ -83,7 +88,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -194,6 +199,22 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
      */
     const plainArrow = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
     const composing = e.nativeEvent.isComposing;
+    /**
+     * **Shift+위/아래 = 줄을 넘는 선택**(제보: 여러 줄이 골라지지 않는다).
+     *
+     * 한 박스 **안**에서는 브라우저가 알아서 늘린다 — 우리는 그 박스의 가장자리 줄에
+     * 닿았을 때만 넘겨받아 이웃 줄까지 이어 그린다(드래그 선택과 같은 길).
+     */
+    if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onSelectOut) {
+      const sel = window.getSelection();
+      if (sel) {
+        const dir = e.key === 'ArrowUp' ? -1 : 1;
+        if (caretOnEdgeLine(el, sel, dir) && onSelectOut(dir, caretRect(el, sel)?.left)) {
+          e.preventDefault();
+          return;
+        }
+      }
+    }
     if (plainArrow && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onArrowOut) {
       const sel = window.getSelection();
       /**

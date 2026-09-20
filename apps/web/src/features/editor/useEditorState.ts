@@ -852,6 +852,8 @@ export interface EditorController {
   toggleNoteCheck: (blockId: string, itemId: string) => void;
   addNoteItem: (blockId: string, after?: string) => string | null;
   removeNoteItem: (blockId: string, itemId: string) => void;
+  /** 목록 항목을 캐럿 자리에서 가른다 — 앞쪽 글과 새 항목 id를 돌려준다. */
+  splitNoteItem: (blockId: string, itemId: string, at: number) => { id: string; head: RichRun[] } | null;
   /** 목록 항목 들여쓰기·내어쓰기 — 바뀌었으면 `true`. */
   setNoteItemIndent: (blockId: string, itemId: string, delta: 1 | -1) => boolean;
   /** 글이 있는 줄의 맨 앞 Backspace — 앞 줄에 잇는다. 이은 자리를 돌려준다. */
@@ -6849,6 +6851,48 @@ export function useEditorState(): EditorController {
   );
 
   /**
+   * **목록 항목을 캐럿 자리에서 가른다**(제보: 항목 가운데서 Enter를 쳐도 뒤쪽 글이
+   * 따라 내려가지 않고 빈 항목만 하나 생겼다).
+   *
+   * 문단의 `splitNoteBlock`과 같은 길이다 — 앞쪽 글은 그 항목에 남고 뒤쪽 글이 **새
+   * 항목**으로 내려간다. **들여쓴 단계도 물려받는다**(요청). 돌려주는 `head`는 부르는
+   * 쪽이 비제어 편집 박스를 다시 그리는 데 쓴다(그러지 않으면 포커스를 잃는 순간
+   * 옛 글이 통째로 되덮는다 — 문단에서 겪은 그 함정이다).
+   */
+  const splitNoteItem = useCallback(
+    (blockId: string, itemId: string, at: number): { id: string; head: RichRun[] } | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const block = notePage.blocks.find((b) => b.id === blockId);
+      const items = block?.items ?? [];
+      const k = items.findIndex((it) => it.id === itemId);
+      if (k < 0) return null;
+      const src = items[k] as NoteListItem;
+      const chars = runsToChars({ text: runsText(src.runs ?? []), rich: src.runs ?? null });
+      const cut = Math.max(0, Math.min(at, chars.length));
+      const head = charsToRuns(chars.slice(0, cut));
+      const made: NoteListItem = {
+        ...emptyItem(),
+        runs: charsToRuns(chars.slice(cut)),
+        ...(block?.kind === 'ck' ? { done: false } : {}),
+        ...(src.indent ? { indent: src.indent } : {}),
+      };
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const list = b.items ?? [];
+          const j = list.findIndex((it) => it.id === itemId);
+          if (j < 0) return b;
+          return { ...b, items: [...list.slice(0, j), { ...(list[j] as NoteListItem), runs: head }, made, ...list.slice(j + 1)] };
+        },
+        false,
+      );
+      return { id: made.id, head };
+    },
+    [commitBlock, notePage],
+  );
+
+  /**
    * **앞 줄에 잇는다** — 글이 있는 줄의 맨 앞에서 Backspace를 쳤을 때(제보: 윗줄로
    * 올라가지 않는다). `itemId`를 주면 그 목록 항목의 줄이다.
    *
@@ -7211,7 +7255,9 @@ export function useEditorState(): EditorController {
           const at = after ? items.findIndex((it) => it.id === after) : -1;
           const to = at < 0 ? items.length : at + 1;
           // 체크리스트의 새 항목은 **꺼진 채로** 시작한다(켜진 채면 한 번 더 눌러야 한다).
-          const fresh = b.kind === 'ck' ? { ...item, done: false } : item;
+          // 들여쓴 자리에서 Enter를 쳤으면 **그 단계를 물려받는다**(제보: 기본으로 돌아간다).
+          const depth = at >= 0 ? (items[at]?.indent ?? 0) : 0;
+          const fresh = { ...item, ...(b.kind === 'ck' ? { done: false } : {}), ...(depth ? { indent: depth } : {}) };
           return { ...b, items: [...items.slice(0, to), fresh, ...items.slice(to)] };
         },
         false,
@@ -8115,6 +8161,7 @@ export function useEditorState(): EditorController {
     toggleNoteCheck,
     addNoteItem,
     removeNoteItem,
+    splitNoteItem,
     setNoteItemIndent,
     mergeNoteBlockBack,
     deleteNoteTextRange,

@@ -30,11 +30,12 @@ import {
   retypeBlock,
   indentListItem,
   listMarkers,
+  NOTE_LIST_MAX_INDENT,
   roundSizes,
   runsText,
   textRuns,
 } from './note';
-import type { NoteBlock } from './model';
+import type { NoteBlock, NoteListItem } from './model';
 
 describe('블록이 어느 칸을 쓰는가', () => {
   it('종류마다 한 답만 준다 — 렌더·검색·내보내기가 같은 자리를 본다', () => {
@@ -372,26 +373,27 @@ describe('roundSizes — 잰 치수를 정수로(합을 지킨다)', () => {
 });
 
 describe('목록 항목 들여쓰기(Tab)와 단계별 표식', () => {
-  const it3 = () => [
+  // **타입을 붙여 둔다** — 붙이지 않으면 `indent` 없는 모양으로 좁혀져
+  // `indentListItem`에 넘길 수 없다(루트 typecheck에서 걸렸다).
+  const it3 = (): NoteListItem[] => [
     { id: 'a', runs: [{ t: '가', b: false, c: null }] },
     { id: 'b', runs: [{ t: '나', b: false, c: null }] },
     { id: 'c', runs: [{ t: '다', b: false, c: null }] },
   ];
 
-  it('첫 항목은 들일 수 없다 — 기준이 될 앞 항목이 없다', () => {
-    const items = it3();
-    expect(indentListItem(items, 'a', 1)).toBe(items); // 같은 배열 = 바뀐 것 없음
+  it('**이웃을 따지지 않는다**(요청) — 첫 항목도, 연달아 두 번도 들어간다', () => {
+    let items = indentListItem(it3(), 'a', 1); // 첫 항목도 들어간다
+    expect(items[0]?.indent).toBe(1);
+    items = indentListItem(it3(), 'b', 1);
+    items = indentListItem(items, 'b', 1); // 앞이 0단계여도 두 번째 Tab이 듣는다
+    expect(items[1]?.indent).toBe(2);
   });
 
-  it('앞 항목보다 **한 단계까지만** 깊어진다', () => {
-    let items = indentListItem(it3(), 'b', 1);
-    expect(items[1]?.indent).toBe(1);
-    items = indentListItem(items, 'b', 1); // 앞(0단계)보다 두 단계는 안 된다
-    expect(items[1]?.indent).toBe(1);
-    items = indentListItem(items, 'c', 1);
-    expect(items[2]?.indent).toBe(1);
-    items = indentListItem(items, 'c', 1); // 이제 앞이 1단계라 2단계까지 된다
-    expect(items[2]?.indent).toBe(2);
+  it('가장 깊은 단계에서 멈춘다 — 그 이상은 같은 배열', () => {
+    let items = it3();
+    for (let i = 0; i < NOTE_LIST_MAX_INDENT; i += 1) items = indentListItem(items, 'b', 1);
+    expect(items[1]?.indent).toBe(NOTE_LIST_MAX_INDENT);
+    expect(indentListItem(items, 'b', 1)).toBe(items);
   });
 
   it('딸린 항목도 함께 움직이고, 0단계로 돌아오면 칸이 사라진다', () => {
