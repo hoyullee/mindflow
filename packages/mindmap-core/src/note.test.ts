@@ -35,7 +35,7 @@ import {
   runsText,
   textRuns,
 } from './note';
-import type { NoteBlock } from './model';
+import type { NoteBlock, NoteListItem } from './model';
 
 describe('블록이 어느 칸을 쓰는가', () => {
   it('종류마다 한 답만 준다 — 렌더·검색·내보내기가 같은 자리를 본다', () => {
@@ -373,7 +373,9 @@ describe('roundSizes — 잰 치수를 정수로(합을 지킨다)', () => {
 });
 
 describe('목록 항목 들여쓰기(Tab)와 단계별 표식', () => {
-  const it3 = () => [
+  // **타입을 붙여 둔다** — 붙이지 않으면 `indent` 없는 모양으로 좁혀져
+  // `indentListItem`에 넘길 수 없다(루트 typecheck에서 걸렸다).
+  const it3 = (): NoteListItem[] => [
     { id: 'a', runs: [{ t: '가', b: false, c: null }] },
     { id: 'b', runs: [{ t: '나', b: false, c: null }] },
     { id: 'c', runs: [{ t: '다', b: false, c: null }] },
