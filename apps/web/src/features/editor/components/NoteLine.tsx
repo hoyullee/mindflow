@@ -55,6 +55,11 @@ interface Props {
    */
   onArrowOut?: (dir: -1 | 1, x?: number) => boolean;
   /**
+   * **⌘A를 한 번 더** — 줄 하나를 다 고른 상태에서 다시 누르면 본문 전체.
+   * 처리했으면 `true`(브라우저의 "이 박스 전체 고르기"를 막는다).
+   */
+  onSelectAll?: () => boolean;
+  /**
    * **Shift+위/아래로 줄을 넘어 고른다** — 브라우저는 편집 박스 **밖으로** 선택을
    * 늘리지 못하므로(블록마다 박스가 따로다) 우리가 이어 그린다. 처리했으면 `true`.
    */
@@ -88,7 +93,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -134,6 +139,19 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
      * 고른 글이 없으면 `applyNoteFormat`이 `null`을 돌려준다 — 그때는 아무 일도
      * 하지 않는다(캐럿 뒤로 이어 칠 서식을 예약해 두는 것은 다른 일이다).
      */
+    /**
+     * **⌘A** — 브라우저는 이 편집 박스(한 줄) 안만 고른다. 이미 그 줄이 통째로
+     * 골라져 있으면 두 번째 ⌘A는 **본문 전체**여야 한다(제보).
+     */
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A' || e.code === 'KeyA') && onSelectAll) {
+      const sel = window.getSelection();
+      const len = (el.textContent ?? '').length;
+      const whole = !len || (!!sel && !sel.isCollapsed && (sel.toString() ?? '').length >= len);
+      if (whole && onSelectAll()) {
+        e.preventDefault();
+        return;
+      }
+    }
     if ((e.metaKey || e.ctrlKey) && !e.altKey && !readOnly && !e.nativeEvent.isComposing) {
       const k = e.key.toLowerCase();
       const mark: 'b' | 'i' | 'u' | 's' | null = !e.shiftKey && (k === 'b' || e.code === 'KeyB')

@@ -56,9 +56,29 @@ function renderEditor(entry: string) {
 
 const saved = (id: string) => JSON.parse(localStorage.getItem(`mindflow_doc_${id}`) || 'null');
 
-/** 편집 박스에 글을 넣는다 — `contentEditable`이라 `input` 이벤트로 알린다. */
+/**
+ * 편집 박스에 글을 넣는다 — `contentEditable`이라 `input` 이벤트로 알린다.
+ *
+ * **캐럿도 글 끝에 둔다**: 마크다운 단축(`- `)은 "표식 **바로 뒤**에 캐럿이 있는가"로
+ * 가르므로(줄 앞에 글이 남아 있어도 걸리게 하려고) 캐럿 없이 글만 넣으면 실제로
+ * 치는 것과 달라진다.
+ */
 function type(el: Element, html: string): void {
-  (el as HTMLElement).innerHTML = html;
+  const box = el as HTMLElement;
+  box.innerHTML = html;
+  box.focus();
+  try {
+    const text = document.createTreeWalker(box, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, (text.nodeValue ?? '').length);
+    else range.setStart(box, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  } catch {
+    /* 캐럿을 못 놓는 환경 — 글만 넣는다 */
+  }
   fireEvent.input(el);
 }
 
@@ -3578,6 +3598,123 @@ describe('공책 33판 — 목록의 Enter·Tab·선택(제보 5건)', () => {
 
     await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0));
     await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2'));
+  });
+});
+
+describe('공책 34판 — 줄 밖 클릭·드래그 · ⌘A 두 번 · 앞에서 만드는 목록', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  function caretAt(el: HTMLElement, at: number): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, Math.min(at, (text.nodeValue ?? '').length));
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  const TWO = {
+    ...NOTE,
+    pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '안녕하세요', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '반갑습니다', b: false, c: null }] },
+    ] }],
+  };
+
+  it('줄 **밖**(줄 사이·좌우 여백)을 눌러도 캐럿이 가장 가까운 줄에 선다(제보 1·2)', async () => {
+    localStorage.setItem('mindflow_doc_x0', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=x0&title=x');
+    const page = (await waitFor(() => container.querySelector('[data-note-page]'))) as HTMLElement;
+
+    // 줄이 아닌 자리(본문 판)를 누른다 — jsdom은 좌표가 모두 0이라 첫 줄이 가장 가깝다.
+    fireEvent.pointerDown(page, { clientX: 5, clientY: 5 });
+
+    expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1');
+  });
+
+  it('줄 밖의 **누름은 기본 동작을 막는다** — 브라우저가 캐럿을 거두지 않게', async () => {
+    localStorage.setItem('mindflow_doc_x1', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=x1&title=x');
+    const page = (await waitFor(() => container.querySelector('[data-note-page]'))) as HTMLElement;
+
+    const outside = createEvent.mouseDown(page, { bubbles: true, cancelable: true });
+    fireEvent(page, outside);
+    expect(outside.defaultPrevented).toBe(true);
+
+    // 줄 위에서는 그대로 둔다(글자 선택은 브라우저의 일이다).
+    const line = container.querySelector('[data-note-line="b1"]') as HTMLElement;
+    const inside = createEvent.mouseDown(line, { bubbles: true, cancelable: true });
+    fireEvent(line, inside);
+    expect(inside.defaultPrevented).toBe(false);
+  });
+
+  it('⌘A를 **한 번 더** 누르면 본문 전체가 골라진다(제보 3)', async () => {
+    localStorage.setItem('mindflow_doc_x2', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=x2&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 그 줄이 통째로 골라진 상태(브라우저의 첫 ⌘A가 만든 모습)를 만든다.
+    one.focus();
+    const range = document.createRange();
+    range.selectNodeContents(one);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    fireEvent.keyDown(one, { key: 'a', metaKey: true });
+
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+  });
+
+  it('글이 있는 줄의 **맨 앞**에서 `- `를 쳐도 글머리 기호가 된다(제보 4)', async () => {
+    localStorage.setItem('mindflow_doc_x3', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=x3&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // `안녕하세요` 앞에 `- `를 친 모습 — 캐럿은 표식 바로 뒤(2)다.
+    one.innerHTML = '- 안녕하세요';
+    caretAt(one, 2);
+    fireEvent.input(one);
+    saveNow();
+
+    await waitFor(() => expect(saved('x3').pages[0].blocks[0].kind).toBe('ul'));
+    expect(saved('x3').pages[0].blocks[0].items[0].runs.map((r: { t: string }) => r.t).join('')).toBe('안녕하세요');
+  });
+
+  it('`3. ` + 글도 3번부터 매겨지고, 표식만 걷힌다', async () => {
+    localStorage.setItem('mindflow_doc_x4', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=x4&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    one.innerHTML = '3. 안녕하세요';
+    caretAt(one, 3);
+    fireEvent.input(one);
+    saveNow();
+
+    await waitFor(() => expect(saved('x4').pages[0].blocks[0].kind).toBe('ol'));
+    expect(saved('x4').pages[0].blocks[0].start).toBe(3);
+    expect(saved('x4').pages[0].blocks[0].items[0].runs.map((r: { t: string }) => r.t).join('')).toBe('안녕하세요');
+  });
+
+  it('캐럿이 표식 뒤가 **아니면** 목록으로 바꾸지 않는다(그냥 쓴 `- `)', async () => {
+    localStorage.setItem('mindflow_doc_x5', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=x5&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    one.innerHTML = '- 안녕하세요';
+    caretAt(one, 7); // 글 끝에서 계속 쓰던 중
+    fireEvent.input(one);
+    saveNow();
+
+    await waitFor(() => expect(saved('x5').pages[0].blocks[0].kind).toBe('p'));
   });
 });
 

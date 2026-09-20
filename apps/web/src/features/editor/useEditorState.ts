@@ -845,7 +845,7 @@ export interface EditorController {
   /** 문단을 캐럿 자리에서 둘로 가른다 — 새 블록의 id를 돌려준다(요청). */
   splitNoteBlock: (blockId: string, at: number) => { id: string; head: RichRun[] } | null;
   /** 문단을 목록으로 바꾸고 글을 비운다 — 본문의 `- ` · `3. ` 단축(요청). */
-  noteListShortcut: (blockId: string, kind: 'ul' | 'ol', start?: number) => string | null;
+  noteListShortcut: (blockId: string, kind: 'ul' | 'ol', start?: number, rest?: RichRun[]) => string | null;
   moveNoteBlock: (blockId: string, index: number) => void;
   setNoteBlockRuns: (blockId: string, runs: RichRun[]) => void;
   setNoteItemRuns: (blockId: string, itemId: string, runs: RichRun[]) => void;
@@ -7165,7 +7165,7 @@ export function useEditorState(): EditorController {
    * 걸려 "한 번 되돌렸는데 `- `만 남는" 어정쩡한 상태가 보인다.
    */
   const noteListShortcut = useCallback(
-    (blockId: string, kind: 'ul' | 'ol', start?: number): string | null => {
+    (blockId: string, kind: 'ul' | 'ol', start?: number, rest?: RichRun[]): string | null => {
       if (!notePage) return null;
       /**
        * **새 항목의 id를 돌려준다**(제보: 목록으로 바뀌면 커서가 풀린다) — 블록 id로는
@@ -7180,7 +7180,8 @@ export function useEditorState(): EditorController {
         blockId,
         (b) => {
           const next = retypeBlock({ ...b, runs: textRuns('') }, kind);
-          next.items = [{ ...item, runs: textRuns('') }];
+          // 표식 뒤에 남은 글이 있으면 그것이 첫 항목의 내용이다(제보 4).
+          next.items = [{ ...item, runs: rest && runsText(rest) ? normalizeRuns(rest) : textRuns('') }];
           // 1번부터면 적지 않는다 — 기본값을 문서에 남기지 않는다.
           return start && start !== 1 ? { ...next, start } : next;
         },
