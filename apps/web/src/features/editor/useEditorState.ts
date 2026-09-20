@@ -856,6 +856,8 @@ export interface EditorController {
   setNoteItemIndent: (blockId: string, itemId: string, delta: 1 | -1) => boolean;
   /** 글이 있는 줄의 맨 앞 Backspace — 앞 줄에 잇는다. 이은 자리를 돌려준다. */
   mergeNoteBlockBack: (blockId: string, itemId?: string) => { key: string; at: number; runs: RichRun[] } | null;
+  /** 여러 줄에 걸친 글자 선택을 지운다(목록 항목도 줄로 센다). 이은 자리를 돌려준다. */
+  deleteNoteTextRange: (first: { key: string; at: number }, last: { key: string; at: number }) => { key: string; at: number; runs: RichRun[] } | null;
   setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
   /** 표에 행을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 아래. */
   addNoteTableRow: (blockId: string, at?: number) => void;
@@ -6926,6 +6928,100 @@ export function useEditorState(): EditorController {
   );
 
   /**
+   * **여러 줄에 걸친 글자 선택을 지운다** — 드래그로 고른 뒤 Backspace·잘라내기.
+   *
+   * 예전에는 부르는 쪽이 "가운데 **블록**들을 지우고 첫 줄에 앞뒤를 이어 붙인다"로
+   * 처리했는데, 목록은 여러 줄이 **한 블록 안의 항목**이라 지울 블록이 하나도 없었다
+   * (제보: 번호 매기기 여러 줄을 끌어 지우면 첫 줄의 글자만 지워진다).
+   *
+   * 그래서 줄의 단위를 **블록과 항목 둘 다**로 보고 한 커밋에서 정리한다:
+   * 첫 줄의 앞부분 + 마지막 줄의 뒷부분을 이어 첫 줄에 남기고, 그 사이의 항목·블록을
+   * 모두 뺀다. 서식은 글자 단위로 잘라 옮기므로 굵게·링크가 살아남는다.
+   *
+   * 표의 칸은 다루지 않는다(`null`) — 칸의 선택은 표 자신의 길이 따로 있다.
+   */
+  const deleteNoteTextRange = useCallback(
+    (first: { key: string; at: number }, last: { key: string; at: number }): { key: string; at: number; runs: RichRun[] } | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const parse = (key: string): { blockId: string; itemId: string | null } | null => {
+        const [blockId, rest] = key.split(':');
+        if (!blockId) return null;
+        if (rest && /^r\d+c\d+$/.test(rest)) return null; // 표의 칸
+        return { blockId, itemId: rest ?? null };
+      };
+      const a = parse(first.key);
+      const b = parse(last.key);
+      if (!a || !b) return null;
+      const blocks = notePage.blocks;
+      const x1 = blocks.findIndex((bk) => bk.id === a.blockId);
+      const x2 = blocks.findIndex((bk) => bk.id === b.blockId);
+      if (x1 < 0 || x2 < 0 || x2 < x1) return null;
+
+      /** 그 줄의 런 — 블록의 본문이거나 항목 하나. */
+      const lineRuns = (blockId: string, itemId: string | null): RichRun[] => {
+        const bk = blocks.find((x) => x.id === blockId);
+        if (!bk) return [];
+        if (!itemId) return bk.runs ?? [];
+        return (bk.items ?? []).find((it) => it.id === itemId)?.runs ?? [];
+      };
+      const cut = (runs: RichRun[], from: number, to: number): RichRun[] => {
+        const chars = runsToChars({ text: runsText(runs), rich: runs });
+        return charsToRuns(chars.slice(Math.max(0, from), Math.min(to, chars.length)));
+      };
+      const headRuns = lineRuns(a.blockId, a.itemId);
+      const tailRuns = lineRuns(b.blockId, b.itemId);
+      const head = cut(headRuns, 0, first.at);
+      const tail = cut(tailRuns, last.at, Number.MAX_SAFE_INTEGER);
+      const merged = normalizeRuns([...head, ...tail]);
+
+      commitPage(
+        notePage.id,
+        (pg) => {
+          const i1 = pg.blocks.findIndex((bk) => bk.id === a.blockId);
+          const i2 = pg.blocks.findIndex((bk) => bk.id === b.blockId);
+          if (i1 < 0 || i2 < 0 || i2 < i1) return pg;
+          const out: NoteBlock[] = pg.blocks.slice(0, i1);
+          const one = pg.blocks[i1] as NoteBlock;
+          if (i1 === i2) {
+            // 한 블록 안 — 문단이면 그 줄, 목록이면 **두 항목 사이**를 들어낸다.
+            if (!a.itemId || !b.itemId) out.push({ ...one, runs: merged });
+            else {
+              const items = one.items ?? [];
+              const j1 = items.findIndex((it) => it.id === a.itemId);
+              const j2 = items.findIndex((it) => it.id === b.itemId);
+              out.push({
+                ...one,
+                items: [...items.slice(0, j1), { ...(items[j1] as NoteListItem), runs: merged }, ...items.slice(j2 + 1)],
+              });
+            }
+          } else {
+            // 첫 블록: 이은 글을 남기고 그 **뒤쪽 항목**은 버린다.
+            if (!a.itemId) out.push({ ...one, runs: merged });
+            else {
+              const items = one.items ?? [];
+              const j1 = items.findIndex((it) => it.id === a.itemId);
+              out.push({ ...one, items: [...items.slice(0, j1), { ...(items[j1] as NoteListItem), runs: merged }] });
+            }
+            // 마지막 블록: 그 줄까지 버리고 **남은 항목이 있으면** 블록을 살린다.
+            const end = pg.blocks[i2] as NoteBlock;
+            if (b.itemId) {
+              const items = end.items ?? [];
+              const j2 = items.findIndex((it) => it.id === b.itemId);
+              const restItems = items.slice(j2 + 1);
+              if (restItems.length) out.push({ ...end, items: restItems });
+            }
+          }
+          out.push(...pg.blocks.slice(i2 + 1));
+          return { ...pg, blocks: out.length ? out : [emptyBlock('p')] };
+        },
+        false,
+      );
+      return { key: first.key, at: runsText(head).length, runs: merged };
+    },
+    [commitPage, notePage],
+  );
+
+  /**
    * 블록을 지운다 — **마지막 블록은 비우기만 한다.**
    *
    * 블록이 하나도 없는 페이지는 캐럿을 놓을 자리가 없어 글을 시작할 수 없다
@@ -8021,6 +8117,7 @@ export function useEditorState(): EditorController {
     removeNoteItem,
     setNoteItemIndent,
     mergeNoteBlockBack,
+    deleteNoteTextRange,
     setNoteCell,
     addNoteTableRow,
     addNoteTableCol,

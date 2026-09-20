@@ -173,7 +173,20 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
     }
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && onArrowOut) {
       const sel = window.getSelection();
-      if (sel?.isCollapsed) {
+      /**
+       * **조합 중에는 캐럿이 접혀 있지 않다**(제보 3회차의 진짜 원인).
+       *
+       * 윈도 한글 IME는 조합 중인 글자를 **골라 둔 모양**으로 둔다 — 실측하니
+       * `isCollapsed`가 거짓이었다(`Input.imeSetComposition`의 `selectionStart 0 /
+       * selectionEnd 1`과 같은 상태다). 그래서 지난 두 판의 고침(좌표 판정·조합
+       * 뒤로 미루기)이 **이 가드에 막혀** 한 번도 닿지 못했다: 첫 번째 ↑는 브라우저가
+       * 조합을 끝내며 줄 처음으로 옮기고, 두 번째에야 우리 차례가 왔다.
+       *
+       * 조합 중이면 접힘을 따지지 않는다 — 캐럿은 그 범위의 끝에 있고, 가장자리
+       * 판정은 어차피 같은 줄을 본다.
+       */
+      const composing = e.nativeEvent.isComposing;
+      if (sel && (sel.isCollapsed || composing)) {
         const dir = e.key === 'ArrowUp' ? -1 : 1;
         if (caretOnEdgeLine(el, sel, dir)) {
           /**
@@ -189,7 +202,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
            * 재 두고, 브라우저가 조합을 끝낸 **다음**에 이웃 줄로 건너뛴다(브라우저가
            * 줄 안에서 옮긴 캐럿은 그 순간 덮어쓰이므로 눈에는 한 번의 이동이다).
            */
-          if (e.nativeEvent.isComposing) {
+          if (composing) {
             setTimeout(() => onArrowOut(dir), 0);
             return;
           }
