@@ -456,6 +456,16 @@ input[type='search']::-webkit-search-results-decoration {
   pointer-events: none;
   white-space: nowrap;
 }
+/* **칠해 둔 선택 위에서는 캐럿을 감춘다**(제보).
+ *
+ * 여러 줄을 고르는 동안에도 초점과 접힌 캐럿은 첫 줄에 **일부러** 남겨 둔다(한글
+ * 조합이 갈 곳을 잃지 않게 — `paintAndHold`). 그 캐럿이 깜빡이면 "커서가 여기"로
+ * 읽혀 고른 범위와 어긋나 보이므로 색만 지운다. 글을 치는 순간 선택이 풀리고
+ * 이 표식도 사라져 캐럿이 돌아온다. */
+[data-note-painting] .mf-note-line {
+  caret-color: transparent;
+}
+
 /* 표 칸 안의 목록 마커 — **본문 목록과 같은 옷**(요청).
  *
  * 칸은 블록을 담지 못하므로 목록이 글자로 들어 있고(코어 `list.ts` — 마커가 곧
