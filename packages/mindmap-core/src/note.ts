@@ -11,7 +11,7 @@
 // 않는 복잡함을 문서마다 저장하게 된다.
 
 import type { NoteBlock, NoteBlockKind, NoteCover, NoteListItem, NotePage, RichRun } from './model';
-import { isStyledRuns } from './richtext';
+import { charsToRuns, isStyledRuns, runsToChars } from './richtext';
 
 /** 블록이 **어느 칸을 쓰는가** — 종류별 분기를 여기 한곳에 모은다. */
 export type NoteBlockShape = 'runs' | 'items' | 'table' | 'link' | 'img' | 'empty';
@@ -671,4 +671,234 @@ export function listMarkers(kind: 'ul' | 'ol', items: NoteListItem[], start = 1)
     const step = d % 3;
     return `${step === 0 ? n : step === 1 ? alphaMark(n) : romanMark(n)}.`;
   });
+}
+
+/** 붙여넣은 글의 **한 줄** — 목록 표식을 읽어 낸 결과. */
+export interface NoteTextLine {
+  /** 목록이면 그 종류, 평범한 줄이면 `null`. */
+  kind: 'ul' | 'ol' | 'ck' | null;
+  /** 표식 앞의 공백에서 읽은 단계(공백 둘 = 한 단계, 탭 하나도 한 단계). */
+  indent: number;
+  /** 체크리스트일 때 켜짐 여부. */
+  done?: boolean;
+  /** 번호 목록의 첫 수(`3.`으로 시작한 목록). */
+  start?: number;
+  /** **표식을 걷어 낸** 글. */
+  text: string;
+  /** 표식까지 **그대로**인 글 — 표식을 살릴 수 없는 자리에 붙일 때 쓴다. */
+  raw: string;
+}
+
+/**
+ * 붙여넣은 평문을 줄마다 읽는다 — `- ` · `1. ` · `- [x] `를 목록으로 본다.
+ *
+ * 왜 필요한가(제보): 목록을 복사해 붙여넣으면 표식이 사라지고 글만 들어갔다.
+ * 클립보드에 가는 것은 **평문**이라(`selectionText`) 받는 쪽에서 다시 읽어야 한다.
+ * 우리가 쓰는 표식(`•`·`◦`·`▪`)과 마크다운의 표식(`-`·`*`·`+`)을 모두 받는다 —
+ * 다른 앱에서 가져온 목록도 같은 길로 들어온다.
+ *
+ * **알파벳·로마자 표식(`a.`·`ii.`)은 들여쓴 줄에서만** 읽는다. 우리가 그것을 쓰는
+ * 자리가 1단계 아래이고, 평범한 문장의 `a. 그리고`까지 목록으로 바꾸면 붙여넣기가
+ * 글을 망치기 때문이다.
+ */
+export function parseNoteText(text: string): NoteTextLine[] {
+  const body = text.replace(/\r\n?/g, '\n').replace(/\n$/, '');
+  return body.split('\n').map((line0) => {
+    const line = line0.replace(/\u00a0/g, ' ');
+    const lead = /^[ \t]*/.exec(line)?.[0] ?? '';
+    const cols = [...lead].reduce((n, c) => n + (c === '\t' ? 2 : 1), 0);
+    const indent = Math.min(NOTE_LIST_MAX_INDENT, cols >> 1);
+    const rest = line.slice(lead.length);
+    const plain = { kind: null, indent: 0, text: line, raw: line } as NoteTextLine;
+    const ck = /^(?:[-*+•◦▪]\s+)?\[([ xX])\]\s+/.exec(rest);
+    if (ck) return { kind: 'ck', indent, done: ck[1] !== ' ', text: rest.slice(ck[0].length), raw: line };
+    const ul = /^[-*+•◦▪]\s+/.exec(rest);
+    if (ul) return { kind: 'ul', indent, text: rest.slice(ul[0].length), raw: line };
+    const num = /^(\d{1,3})[.)]\s+/.exec(rest);
+    if (num) return { kind: 'ol', indent, start: Number(num[1]), text: rest.slice(num[0].length), raw: line };
+    if (indent > 0) {
+      const alt = /^(?:[a-z]{1,2}|[ivxlcdm]{1,6})[.)]\s+/i.exec(rest);
+      if (alt) return { kind: 'ol', indent, text: rest.slice(alt[0].length), raw: line };
+    }
+    return plain;
+  });
+}
+
+/** `pasteNoteBlocks`가 만든 결과 — 새 블록 목록과 캐럿이 갈 자리. */
+export interface NotePaste {
+  blocks: NoteBlock[];
+  /** 캐럿이 갈 줄의 키(`<블록id>` 또는 `<블록id>:<항목id>`)와 글자 자리. */
+  key: string;
+  at: number;
+  /** 붙여넣기가 **고쳐 놓은 원래 줄** — 비제어 편집 박스를 다시 그리는 데 쓴다. */
+  source: { key: string; runs: RichRun[] };
+}
+
+/**
+ * **평문을 본문에 붙여넣는다** — 목록 표식을 살려서(제보).
+ *
+ * 들어오는 자리는 한 줄의 `[from, to)` 구간이다(고른 글이 있으면 그것을 덮어쓴다).
+ * 나오는 것은 **페이지의 새 블록 목록**이라, 부르는 쪽은 그것을 그대로 커밋한다.
+ *
+ * 규칙 셋:
+ * - **표식은 줄의 맨 앞에 붙여 넣을 때만 산다**(`from`이 0). 문장 가운데라면 그 줄의
+ *   종류를 지키고 표식까지 **글자 그대로** 넣는다 — 글을 쓰다 `- `를 붙여 넣었는데
+ *   문단이 목록으로 바뀌면 되돌릴 길이 없다.
+ * - 이어지는 **같은 종류의 줄은 한 목록**으로 묶는다(블록 하나에 항목 여럿).
+ * - 원래 줄의 **뒷부분**(`to` 뒤)은 마지막으로 붙인 줄의 끝에 따라붙는다.
+ */
+export function pasteNoteBlocks(
+  blocks: NoteBlock[],
+  spot: { blockId: string; itemId?: string; from: number; to: number },
+  text: string,
+): NotePaste | null {
+  const i = blocks.findIndex((b) => b.id === spot.blockId);
+  if (i < 0) return null;
+  const src = blocks[i] as NoteBlock;
+  const shape = noteBlockShape(src.kind);
+  // 글을 담지 않는 블록(표·이미지·구분선·문서 링크)은 이 길이 아니다.
+  if (shape !== 'runs' && shape !== 'items') return null;
+  const items = src.items ?? [];
+  const j = spot.itemId ? items.findIndex((it) => it.id === spot.itemId) : -1;
+  if (spot.itemId && j < 0) return null;
+  const listed = j >= 0 && (src.kind === 'ul' || src.kind === 'ol' || src.kind === 'ck');
+  // 토글의 본문 줄(`items[0]`)은 목록이 아니다 — 블록을 쪼갤 수 없으므로 맡지 않는다.
+  if (j >= 0 && !listed) return null;
+
+  const cur = (j >= 0 ? (items[j] as NoteListItem).runs : src.runs) ?? [];
+  const chars = runsToChars({ text: runsText(cur), rich: cur });
+  const from = Math.max(0, Math.min(spot.from, chars.length));
+  const to = Math.max(from, Math.min(spot.to, chars.length));
+  const head = chars.slice(0, from);
+  const tail = chars.slice(to);
+  const lines = parseNoteText(text);
+  const first = lines[0];
+  if (!first) return null;
+  const plainChars = (s: string) => runsToChars({ text: s, rich: null });
+
+  // 첫 줄의 표식을 살릴 수 있는가 — 줄의 맨 앞이고, 목록 안이면 같은 종류일 때만.
+  const adopt = !head.length && first.kind !== null && (!listed || first.kind === src.kind);
+  interface Out { kind: 'ul' | 'ol' | 'ck' | null; indent: number; done?: boolean; start?: number; chars: ReturnType<typeof plainChars> }
+  const out: Out[] = lines.map((ln, k) => {
+    if (k === 0) {
+      const keep = adopt ? ln.text : ln.raw;
+      return {
+        kind: adopt ? ln.kind : listed ? src.kind : null,
+        indent: adopt ? ln.indent : j >= 0 ? itemDepth(items[j] as NoteListItem) : 0,
+        ...(adopt ? { done: ln.done, start: ln.start } : { done: (items[j] as NoteListItem | undefined)?.done }),
+        chars: [...head, ...plainChars(keep)],
+      } as Out;
+    }
+    return { kind: ln.kind, indent: ln.indent, done: ln.done, start: ln.start, chars: plainChars(ln.text) };
+  });
+  const lastOut = out[out.length - 1] as Out;
+  // 캐럿은 **붙인 글의 끝**이다 — 뒤에 따라붙는 꼬리 앞.
+  const at = lastOut.chars.length;
+  lastOut.chars = [...lastOut.chars, ...tail];
+
+  const mkItem = (o: Out, base?: NoteListItem): NoteListItem => ({
+    id: base?.id ?? noteId('it'),
+    runs: normalizeRuns(charsToRuns(o.chars)),
+    ...(o.kind === 'ck' ? { done: !!o.done } : {}),
+    ...(o.indent ? { indent: Math.min(NOTE_LIST_MAX_INDENT, o.indent) } : {}),
+  });
+
+  const made: NoteBlock[] = [];
+  let open: NoteBlock | null = null; // 지금 이어 담고 있는 목록 블록
+  const keys: string[] = [];
+  const push = (o: Out): void => {
+    if (o.kind) {
+      const item = mkItem(o);
+      if (open && open.kind === o.kind) open.items = [...(open.items ?? []), item];
+      else {
+        const b: NoteBlock = { ...emptyBlock(o.kind), items: [item], ...(o.kind === 'ol' && o.start && o.start !== 1 ? { start: o.start } : {}) };
+        made.push(b);
+        open = b;
+      }
+      keys.push(`${(open as NoteBlock).id}:${item.id}`);
+      return;
+    }
+    open = null;
+    const b: NoteBlock = { ...emptyBlock('p'), runs: normalizeRuns(charsToRuns(o.chars)) };
+    made.push(b);
+    keys.push(b.id);
+  };
+
+  const zero = out[0] as Out;
+  if (j >= 0) {
+    // 목록 항목 — 그 항목의 id를 지킨다(댓글·링크가 잡고 있을 수 있다).
+    const item = mkItem(zero, items[j] as NoteListItem);
+    const block: NoteBlock = { ...src, items: [...items.slice(0, j), item] };
+    made.push(block);
+    open = block;
+    keys.push(`${block.id}:${item.id}`);
+  } else if (adopt && zero.kind) {
+    const item = mkItem(zero);
+    const block: NoteBlock = { ...retypeBlock({ ...src, runs: textRuns('') }, zero.kind), items: [item], ...(zero.kind === 'ol' && zero.start && zero.start !== 1 ? { start: zero.start } : {}) };
+    made.push(block);
+    open = block;
+    keys.push(`${block.id}:${item.id}`);
+  } else {
+    const block: NoteBlock = { ...src, runs: normalizeRuns(charsToRuns(zero.chars)) };
+    made.push(block);
+    open = null;
+    keys.push(block.id);
+  }
+  out.slice(1).forEach(push);
+
+  // 원래 목록의 **남은 항목들** — 같은 종류의 목록이 열려 있으면 거기에 잇는다.
+  const rest = j >= 0 ? items.slice(j + 1) : [];
+  if (rest.length) {
+    if (open && (open as NoteBlock).kind === src.kind) (open as NoteBlock).items = [...((open as NoteBlock).items ?? []), ...rest];
+    else made.push({ ...emptyBlock(src.kind), items: rest });
+  }
+
+  return {
+    blocks: [...blocks.slice(0, i), ...made, ...blocks.slice(i + 1)],
+    key: keys[keys.length - 1] as string,
+    at,
+    source: { key: spot.itemId ? `${src.id}:${spot.itemId}` : src.id, runs: normalizeRuns(charsToRuns(zero.chars)) },
+  };
+}
+
+/**
+ * **표의 칸 안에서 치는 목록 표식**(요청) — `- `는 `• `로, 줄을 바꾸면 이어 간다.
+ *
+ * 칸은 블록을 담지 못한다(모델이 `RichRun[]` 하나다). 그래서 진짜 목록 블록을 만들
+ * 수 없고, 대신 **글자로** 목록을 만든다 — 보이는 것과 내보내는 것이 같아지고
+ * 표 밖으로 복사해 붙이면 그 표식이 그대로 목록으로 읽힌다(`parseNoteText`).
+ *
+ * 하는 일 셋(전부 **줄의 맨 앞**에서만):
+ * - `- ` · `* ` → `• `
+ * - 표식이 있는 줄에서 줄을 바꾸면(Shift+Enter) 다음 줄에 **같은 표식**을 놓는다.
+ *   번호는 하나 올린다.
+ * - 표식뿐인 빈 줄에서 다시 줄을 바꾸면 그 표식을 **걷는다**(목록이 끝난다).
+ *
+ * 돌려주는 것은 "`at`에서 `remove` 글자를 지우고 `insert`를 넣어라"다 — 칸의 서식을
+ * 지키려고 글자 단위로 고치기 때문이다. 고칠 것이 없으면 `null`.
+ */
+export function noteCellListInput(text: string, caret: number): { at: number; remove: number; insert: string; caret: number } | null {
+  const t = text.replace(/\u00a0/g, ' ');
+  const at = Math.max(0, Math.min(caret, t.length));
+  const bol = t.lastIndexOf('\n', at - 1) + 1;
+  const line = t.slice(bol, at);
+  // ① `- ` → `• ` (줄의 맨 앞, 캐럿이 그 뒤).
+  if (/^[-*]\s$/.test(line)) return { at: bol, remove: 2, insert: '• ', caret: bol + 2 };
+  // ② 막 줄을 바꿨다 — 앞 줄의 표식을 잇는다.
+  if (at > 0 && t[at - 1] === '\n') {
+    const prevStart = t.lastIndexOf('\n', at - 2) + 1;
+    const prev = t.slice(prevStart, at - 1);
+    const bullet = /^([•◦▪])\s(.*)$/.exec(prev);
+    if (bullet) {
+      if (!bullet[2]) return { at: prevStart, remove: at - prevStart, insert: '', caret: prevStart };
+      return { at, remove: 0, insert: `${bullet[1] as string} `, caret: at + 2 };
+    }
+    const num = /^(\d{1,3})([.)])\s(.*)$/.exec(prev);
+    if (num) {
+      if (!num[3]) return { at: prevStart, remove: at - prevStart, insert: '', caret: prevStart };
+      const mark = `${Number(num[1]) + 1}${num[2] as string} `;
+      return { at, remove: 0, insert: mark, caret: at + mark.length };
+    }
+  }
+  return null;
 }

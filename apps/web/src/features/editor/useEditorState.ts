@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, noteBlockShape, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, NotePaste, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, noteBlockShape, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -862,6 +862,11 @@ export interface EditorController {
   mergeNoteBlockBack: (blockId: string, itemId?: string) => { key: string; at: number; runs: RichRun[] } | null;
   /** 여러 줄에 걸친 글자 선택을 지운다(목록 항목도 줄로 센다). 이은 자리를 돌려준다. */
   deleteNoteTextRange: (first: { key: string; at: number }, last: { key: string; at: number }) => { key: string; at: number; runs: RichRun[] } | null;
+  /**
+   * 평문을 그 줄의 `[from, to)` 자리에 **붙여넣는다** — 목록 표식을 살려서.
+   * 캐럿이 갈 자리와, 다시 그려야 할 원래 줄을 돌려준다(비제어 편집 박스).
+   */
+  pasteNoteText: (key: string, from: number, to: number, text: string) => NotePaste | null;
   setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
   /** 표에 행을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 아래. */
   addNoteTableRow: (blockId: string, at?: number) => void;
@@ -4380,6 +4385,18 @@ export function useEditorState(): EditorController {
       return !!el?.closest?.('input, textarea, [contenteditable="true"], [contenteditable=""]');
     };
     const onPaste = (e: ClipboardEvent) => {
+      /**
+       * **공책에는 캔버스가 없다** — 붙여넣기는 본문이 맡는다(`NoteEditor`).
+       *
+       * 여기서 `preventDefault`까지 해 버리면 공책의 리스너는 `defaultPrevented`를
+       * 보고 물러선다(실측: 칠해 둔 줄 위의 붙여넣기가 아무 일도 하지 않았다).
+       * 편집 박스 안의 붙여넣기는 아래 `isTextEntry`가 이미 놓아 주지만, 여러 줄을
+       * 칠한 동안에는 초점이 박스 밖이라 그 그물에 걸리지 않는다.
+       */
+      if (docRef.current?.kind === 'note') {
+        cancelPasteFallback();
+        return;
+      }
       if (isTextEntry(e.target)) return;
       cancelPasteFallback(); // 이벤트가 왔으니 keydown 폴백은 취소
       const file = firstImageFile(e.clipboardData);
@@ -7126,6 +7143,31 @@ export function useEditorState(): EditorController {
   );
 
   /**
+   * **평문 붙여넣기** — 목록 표식을 살려서(제보: 복사한 번호 매기기가 글만 들어간다).
+   *
+   * 판단은 전부 코어가 한다(`pasteNoteBlocks`) — 여기서는 줄 키를 풀고, 나온 블록
+   * 목록을 그대로 커밋한다. 표의 칸과 토글 본문은 맡지 않는다(`null`을 돌려주면
+   * 부르는 쪽이 브라우저의 기본 붙여넣기로 물러선다).
+   *
+   * 새 블록·항목의 id는 **커밋 바깥에서** 만든다(코어가 이미 만들어 준다) — 커밋
+   * 함수는 리액트가 두 번 부를 수 있어, 그 안에서 만들면 돌려준 키가 어긋난다
+   * (`noteListShortcut` 머리말과 같은 함정이다).
+   */
+  const pasteNoteText = useCallback(
+    (key: string, from: number, to: number, text: string): NotePaste | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const [blockId, rest] = key.split(':');
+      if (!blockId) return null;
+      if (rest && (rest === 'body' || /^r\d+c\d+$/.test(rest))) return null;
+      const done = pasteNoteBlocks(notePage.blocks, { blockId, ...(rest ? { itemId: rest } : {}), from, to }, text);
+      if (!done) return null;
+      commitPage(notePage.id, (pg) => (pg.blocks.some((b) => b.id === blockId) ? { ...pg, blocks: done.blocks } : pg), false);
+      return done;
+    },
+    [commitPage, notePage],
+  );
+
+  /**
    * 블록을 지운다 — **마지막 블록은 비우기만 한다.**
    *
    * 블록이 하나도 없는 페이지는 캐럿을 놓을 자리가 없어 글을 시작할 수 없다
@@ -8242,6 +8284,7 @@ export function useEditorState(): EditorController {
     setNoteItemIndent,
     mergeNoteBlockBack,
     deleteNoteTextRange,
+    pasteNoteText,
     setNoteCell,
     addNoteTableRow,
     addNoteTableCol,

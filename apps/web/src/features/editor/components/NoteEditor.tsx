@@ -25,6 +25,8 @@ import {
   pageText,
   charsToRuns,
   listMarkers,
+  noteCellListInput,
+  parseNoteText,
   roundSizes,
   runsToChars,
   runsText,
@@ -38,7 +40,7 @@ import type { Theme } from '../theme';
 import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
 import { buildSelection, caretAt, charOffset, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
-import { runsToHtml } from '../richtextDom';
+import { linearize, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
@@ -625,6 +627,32 @@ export function NoteEditor({ controller }: Props) {
   }, []);
 
   /**
+   * **평문 붙여넣기** — 목록 표식을 살려 블록으로 세운다(제보: 복사한 번호 매기기를
+   * 붙이면 글만 들어간다). 처리했으면 `true`(브라우저의 기본 붙여넣기를 막는다).
+   *
+   * 표식도 줄바꿈도 없는 **한 줄**은 맡지 않는다 — 브라우저가 넣는 편이 되돌리기도
+   * 조합도 자연스럽다. 표의 칸·토글 본문도 컨트롤러가 `null`로 물러선다.
+   */
+  const pasteText = useCallback(
+    (key: string, text: string, from: number, to: number): boolean => {
+      if (readOnly) return false;
+      const lines = parseNoteText(text);
+      if (lines.length <= 1 && !lines[0]?.kind) return false;
+      const done = controller.pasteNoteText(key, from, to, text);
+      if (!done) return false;
+      // 비제어 박스라 손댄 원래 줄의 DOM도 함께 고친다(`splitNoteBlock`과 같은 이유).
+      const el = document.querySelector<HTMLElement>(`[data-note-line="${done.source.key}"]`);
+      if (el) el.innerHTML = runsToHtml({ text: runsText(done.source.runs), rich: done.source.runs });
+      caretToLine(done.key, done.at);
+      return true;
+    },
+    [controller, readOnly],
+  );
+  /** 다음 프레임에 쓸 최신 붙여넣기 — 칠해 둔 선택을 먼저 지우고 이어 붙일 때다. */
+  const pasteRef = useRef(pasteText);
+  pasteRef.current = pasteText;
+
+  /**
    * 선택의 **끝을 글자 단위로** 옮긴다 — Shift+왼쪽/오른쪽 · Shift+Home/End.
    *
    * `to`가 `'char'`면 한 글자, `'edge'`면 그 줄의 처음·끝까지다. 줄의 경계를 넘으면
@@ -709,6 +737,46 @@ export function NoteEditor({ controller }: Props) {
       return { key: done.key, at: done.at };
     };
     /**
+     * **고른 것을 「브라우저가 지울 선택」으로 바꿔 둔다** — 글자를 칠 때 쓴다.
+     *
+     * 왜 우리가 직접 지우고 다시 그리지 않나: 그러면 **한글의 자모가 갈린다**(제보:
+     * `안녕`이 `ㅇㅏㄴ녕`으로). IME는 키를 누른 그 순간 **고칠 텍스트 노드와 자리**를
+     * 붙잡는데, 우리가 그 사이에 `innerHTML`을 갈아 끼우면 그 자리가 사라져 조합이
+     * 풀리고 자모가 낱낱이 들어간다.
+     *
+     * 그래서 DOM은 **덧붙이기만** 한다:
+     * ① 모델에서는 고른 범위를 지우고(가운데 블록·마지막 줄이 사라진다)
+     * ② 첫 줄의 DOM 끝에 **남을 꼬리**(마지막 줄의 뒷부분)를 덧붙이고
+     * ③ 지워질 구간(첫 줄의 고른 부분)을 **브라우저의 선택**으로 잡아 둔다.
+     * 그러면 이어지는 글자·조합이 그 선택을 통째로 갈아 끼운다 — 우리가 손대지 않은
+     * 텍스트 노드 위에서 일어나므로 조합이 끊기지 않는다.
+     */
+    const replaceWithTyping = (): void => {
+      const first = sel[0];
+      const last = sel[sel.length - 1];
+      if (!first || !last) return;
+      const gone = (first.el.textContent ?? '').length - first.from; // 첫 줄에서 지워질 길이
+      const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
+      if (!done) {
+        setTextSel(null);
+        return;
+      }
+      const el = document.querySelector<HTMLElement>(`[data-note-line="${done.key}"]`) ?? first.el;
+      const chars = runsToChars({ text: runsText(done.runs), rich: done.runs });
+      const tail = charsToRuns(chars.slice(done.at));
+      if (runsText(tail)) el.insertAdjacentHTML('beforeend', runsToHtml({ text: runsText(tail), rich: tail }));
+      try {
+        if (document.activeElement !== el) el.focus({ preventScroll: true });
+        const a = pointAt(el, first.from);
+        const b = pointAt(el, first.from + gone);
+        window.getSelection()?.setBaseAndExtent(a.node, a.offset, b.node, b.offset);
+      } catch {
+        /* 선택을 못 세우면 글자가 캐럿 자리에 들어간다(고른 것은 이미 지워졌다) */
+      }
+      setTextSel(null);
+    };
+
+    /**
      * 캐럿을 **지금 곧바로** 그 자리에 놓는다(다음 프레임이 아니라).
      *
      * 글자를 이어 치는 길에서 쓴다 — 브라우저는 이 `keydown`이 끝난 **직후** 지금
@@ -788,9 +856,8 @@ export function NoteEditor({ controller }: Props) {
        * `Process`·`Unidentified`는 IME가 첫 자모를 삼킬 때 오는 키 이름이다.
        */
       if (!mod && !e.altKey && !readOnly && (e.key.length === 1 || e.key === 'Process' || e.key === 'Unidentified')) {
-        const spot = remove();
-        if (spot) putCaretNow(spot.key, spot.at);
-        return; // preventDefault 하지 않는다 — 그 글자는 방금 옮긴 캐럿 자리에 들어간다
+        replaceWithTyping();
+        return; // preventDefault 하지 않는다 — 브라우저가 그 선택을 친 글자로 바꾼다
       }
       // 이미 여러 줄을 고른 상태의 ⌘A — 본문 전체로 넓힌다.
       if (mod && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
@@ -814,8 +881,36 @@ export function NoteEditor({ controller }: Props) {
         if (spot) putCaretNow(spot.key, spot.at);
       }
     };
+    /**
+     * **칠해 둔 여러 줄 위에 붙여넣기** — 먼저 지우고, 이어진 자리에 붙인다.
+     *
+     * 두 걸음을 **한 프레임 건너** 나눈다: 지우기는 컨트롤러의 커밋이라 이 차례에는
+     * 아직 옛 페이지가 보인다 — 같은 차례에 붙여넣으면 방금 지운 글 위에 얹는다.
+     * 다음 프레임의 `pasteRef`는 새 페이지를 보는 함수다.
+     */
+    const onPaste = (e: ClipboardEvent) => {
+      if (readOnly || e.defaultPrevented) return;
+      const t = e.clipboardData?.getData('text/plain') ?? '';
+      if (!t) return;
+      e.preventDefault();
+      const spot = remove();
+      if (!spot) return;
+      putCaretNow(spot.key, spot.at);
+      const go = () => {
+        if (!pasteRef.current(spot.key, t, spot.at, spot.at)) {
+          // 표식도 줄바꿈도 없는 한 줄 — 기본 붙여넣기를 이미 막았으니 우리가 넣는다.
+          document.execCommand?.('insertText', false, t);
+        }
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+      else setTimeout(go, 0);
+    };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('paste', onPaste);
+    };
   }, [textSel, page, controller, readOnly, extendSelection, extendSide, selectAllBody]);
 
   /** 이 공책을 가리키는 키 — 캐럿 기억이 **다른 문서로 새지 않게** 한다. */
@@ -1069,6 +1164,7 @@ export function NoteEditor({ controller }: Props) {
                   setFreshId={setFreshId}
                   selectOut={extendSelection}
                   selectAll={selectAllBody}
+                  pasteText={pasteText}
                   selecting={!!textSel}
                   rememberBox={rememberBox}
                   focusBox={focusBox}
@@ -3201,6 +3297,8 @@ interface BlockProps {
   selectOut: (dir: -1 | 1, x?: number) => boolean;
   /** ⌘A 두 번째 — 본문 전체 고르기. */
   selectAll: () => boolean;
+  /** 평문 붙여넣기 — 목록 표식을 살려 블록으로 세운다. 처리했으면 `true`. */
+  pasteText: (key: string, text: string, from: number, to: number) => boolean;
   /** 여러 줄이 칠해져 있는가 — 그동안 줄 부품은 키를 놓아 준다. */
   selecting: boolean;
   rememberBox: () => void;
@@ -3323,7 +3421,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, pasteText, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -3629,10 +3727,23 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
      */
     const items = block.items ?? [];
     const marks = block.kind === 'ck' ? [] : listMarkers(block.kind === 'ol' ? 'ol' : 'ul', items, block.start ?? 1);
+    /**
+     * **클립보드로 나갈 표식**(제보: 복사해 붙이면 마커가 사라진다) — 화면의 `•`가
+     * 아니라 마크다운 모양으로 적는다. 다른 앱에 붙여도 목록으로 읽히고, 우리
+     * 본문으로 돌아올 때는 `parseNoteText`가 그대로 다시 목록으로 세운다.
+     * 들여쓴 단계는 **공백 둘**씩이다(그쪽이 읽는 규칙).
+     */
+    const mdMark = (k: number): string => {
+      const it = items[k];
+      const pad = '  '.repeat(it?.indent ?? 0);
+      if (block.kind === 'ck') return `${pad}- [${it?.done ? 'x' : ' '}] `;
+      if (block.kind === 'ol') return `${pad}${marks[k] ?? '1.'} `;
+      return `${pad}- `;
+    };
     return (
       <div data-note-block={block.id} data-note-kind={block.kind} style={{ ...blockFlow(block), display: 'flex', flexDirection: 'column', gap: 8 }}>
         {items.map((item, j) => (
-          <div key={item.id} data-note-item-depth={item.indent ? String(item.indent) : undefined} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingLeft: (item.indent ?? 0) * 22 }}>
+          <div key={item.id} data-note-item-depth={item.indent ? String(item.indent) : undefined} data-note-mark={mdMark(j)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingLeft: (item.indent ?? 0) * 22 }}>
             {block.kind === 'ck' ? (
               <button
                 type="button"
@@ -3686,6 +3797,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSelectAll={selectAll}
       selecting={selecting}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
+              onPasteText={(t, from, to) => pasteText(`${block.id}:${item.id}`, t, from, to)}
               onSlash={(at) => {
                 if (readOnly) return;
                 openSlash(`${block.id}:${item.id}`, at);
@@ -3840,6 +3952,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
       onSelectAll={selectAll}
+      onPasteText={(t, from, to) => pasteText(block.id, t, from, to)}
       selecting={selecting}
       onSlash={(at) => {
         if (readOnly) return;
@@ -4734,7 +4847,12 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         setHoverAt(null);
         setRailZone(null);
       }}
-      style={{ ...blockFlow(block), position: 'relative' }}
+      /**
+       * 위아래로 **숨을 조금 둔다**(요청) — 열 레일은 표 위 18px, 행 추가 띠는 표 아래에
+       * 떠 있어(흐름 밖이다) 바로 붙은 줄과 겹쳐 보였다. 8px이면 레일이 앞뒤 줄의
+       * 글자를 건드리지 않으면서 문단 사이 간격(9px)과도 어긋나지 않는다.
+       */
+      style={{ ...blockFlow(block), position: 'relative', margin: '8px 0' }}
     >
       {/**
         * 표가 **페이지에서 차지하는 자리는 상자 하나뿐**이다(요청).
@@ -5010,6 +5128,30 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                             if (armed && runsText(runs) !== runsText(cell)) {
                               setSel(null);
                               setEdit({ r: ri, c: ci });
+                            }
+                            /**
+                             * **칸 안에서도 목록을 친다**(요청) — `- `는 `• `가 되고,
+                             * 줄을 바꾸면(Shift+Enter) 표식이 이어진다. 칸은 블록을
+                             * 담지 못하므로(모델이 `RichRun[]` 하나다) 진짜 목록
+                             * 블록이 아니라 **글자로** 만든다 — 규칙은 코어가 안다.
+                             */
+                            const key = `${block.id}:r${ri}c${ci}`;
+                            const box = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+                            /**
+                             * 값은 **박스에서 곧바로** 읽는다(`liveEditValue`) — 줄을
+                             * 막 바꾼 칸의 끝 줄바꿈이 커밋된 값에서는 접혀 있어,
+                             * 그것으로 재면 "막 줄을 바꿨다"를 영영 보지 못한다.
+                             */
+                            const live = box ? liveEditValue(box) : null;
+                            const fix = readOnly || !box || !live ? null : noteCellListInput(live.text, live.clamp(cellCaret(box)));
+                            if (fix && box && live) {
+                              const chars = runsToChars({ text: live.text, rich: live.rich });
+                              const next = charsToRuns([...chars.slice(0, fix.at), ...runsToChars({ text: fix.insert, rich: null }), ...chars.slice(fix.at + fix.remove)]);
+                              controller.setNoteCell(block.id, ri, ci, next);
+                              // 비제어 박스 — 우리가 고쳤으면 우리가 다시 그린다.
+                              box.innerHTML = runsToHtml({ text: runsText(next), rich: next });
+                              setLinearSelection(box, fix.caret, fix.caret);
+                              return;
                             }
                             controller.setNoteCell(block.id, ri, ci, runs);
                           }}
@@ -6174,6 +6316,19 @@ function listShortcutOf(text: string, caret: number): { kind: 'ul' | 'ol'; start
 }
 
 /** 지금 글을 치고 있는 줄에서 캐럿의 **글자 자리**(없으면 -1). */
+/**
+ * 표 칸의 캐럿 자리 — **`<br>`를 줄바꿈 한 글자로 센다**(`linearize`).
+ *
+ * `charOffset`은 텍스트 노드만 걸어서 줄바꿈을 세지 않는다 — 여러 줄짜리 칸에서는
+ * 그만큼 자리가 밀려, 목록 표식을 엉뚱한 곳에 넣는다. 값 쪽(`domToRuns`)과 같은
+ * 규칙으로 세는 것은 이쪽이다.
+ */
+function cellCaret(el: HTMLElement): number {
+  const sel = window.getSelection();
+  if (!sel?.focusNode || !el.contains(sel.focusNode)) return -1;
+  return linearize(el, [{ container: sel.focusNode, offset: sel.focusOffset }]).pos[0] ?? -1;
+}
+
 function caretInActiveLine(): number {
   if (typeof document === 'undefined') return -1;
   const el = document.activeElement as HTMLElement | null;

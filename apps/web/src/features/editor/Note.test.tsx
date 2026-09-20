@@ -4,7 +4,7 @@
 // 이 파일이 지키는 것: 캔버스 UI가 **하나도** 뜨지 않는다 · 글이 문서에 저장된다 ·
 // 블록 종류를 바꿔도 글을 잃지 않는다 · **열 것이 없어지지 않는다**(마지막 페이지).
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
@@ -3940,3 +3940,172 @@ describe('공책 36판 — 빈 저장 막기 · 되돌리기 · 선택 유지', 
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');
 }
+
+describe('공책 37판 — 목록 복사·붙여넣기와 칸 안의 목록', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const LIST = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'b0', kind: 'p', runs: [{ t: '', b: false, c: null }] },
+          {
+            id: 'b1',
+            kind: 'ul',
+            items: [
+              { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+              { id: 'i2', runs: [{ t: '둘', b: false, c: null }], indent: 1 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  /** jsdom엔 실 클립보드가 없다 — `paste` 이벤트에 `clipboardData`만 심어 던진다. */
+  function pasteInto(el: HTMLElement, text: string): void {
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(e, 'clipboardData', { value: { getData: () => text }, configurable: true });
+    el.dispatchEvent(e);
+  }
+  function caretAt(el: HTMLElement, at: number): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, Math.min(at, (text.nodeValue ?? '').length));
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  it('목록을 고르면 클립보드에 **표식도 함께** 간다(제보 2)', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    localStorage.setItem('mindflow_doc_w1', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=w1&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1:i1"]'))) as HTMLElement;
+    const two = container.querySelector('[data-note-line="b1:i2"]') as HTMLElement;
+
+    fireEvent.pointerDown(one, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(two, { clientX: 0, clientY: 0 });
+    // 칠해진 것이 화면에 보이면 문서 리스너도 붙어 있다.
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(1));
+    fireEvent.keyDown(document, { key: 'c', metaKey: true });
+
+    // 들여쓴 단계는 공백 둘 — `parseNoteText`가 다시 읽는 그 모양이다.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('- 하나\n  - 둘'));
+  });
+
+  it('붙여넣은 `- `·`1. `이 **목록 블록**으로 선다(제보 2)', async () => {
+    localStorage.setItem('mindflow_doc_w2', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=w2&title=x');
+    const zero = (await waitFor(() => container.querySelector('[data-note-line="b0"]'))) as HTMLElement;
+
+    caretAt(zero, 0);
+    pasteInto(zero, '- 가\n- 나\n  - 다');
+    saveNow();
+
+    await waitFor(() => expect(saved('w2').pages[0].blocks[0].kind).toBe('ul'));
+    const made = saved('w2').pages[0].blocks[0];
+    expect(made.items.map((x: { runs: { t: string }[] }) => runsOf(x))).toEqual(['가', '나', '다']);
+    expect(made.items.map((x: { indent?: number }) => x.indent ?? 0)).toEqual([0, 0, 1]);
+    // 원래 있던 목록은 그대로 뒤에 남는다.
+    expect(saved('w2').pages[0].blocks[1].id).toBe('b1');
+  });
+
+  it('목록 항목 안에 같은 종류를 붙이면 **그 목록에 이어진다**', async () => {
+    localStorage.setItem('mindflow_doc_w3', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=w3&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1:i1"]'))) as HTMLElement;
+
+    caretAt(one, 2); // '하나' 끝
+    pasteInto(one, '- 가\n- 나');
+    saveNow();
+
+    await waitFor(() => expect(saved('w3').pages[0].blocks[1].items).toHaveLength(3));
+    expect(saved('w3').pages[0].blocks[1].items.map((x: { runs: { t: string }[] }) => runsOf(x))).toEqual(['하나- 가', '나', '둘']);
+  });
+
+  it('칠해 둔 여러 줄 위에 붙여넣으면 **먼저 지우고** 그 자리에 선다', async () => {
+    localStorage.setItem('mindflow_doc_w8', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=w8&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1:i1"]'))) as HTMLElement;
+    const two = container.querySelector('[data-note-line="b1:i2"]') as HTMLElement;
+
+    fireEvent.pointerDown(one, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(two, { clientX: 0, clientY: 0 });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(1));
+    pasteInto(document.body, '- 가\n- 나');
+
+    // 지우기와 붙이기는 **한 프레임 건너** 일어난다 — 화면이 먼저 말해 준다.
+    await waitFor(() =>
+      expect([...container.querySelectorAll('[data-note-block="b1"] [data-note-line]')].map((e) => e.textContent)).toEqual(['가', '나']),
+    );
+    saveNow();
+    await waitFor(() => expect(saved('w8').pages[0].blocks[1].items.map((x: { runs: { t: string }[] }) => runsOf(x))).toEqual(['가', '나']));
+  });
+
+  it('표식도 줄바꿈도 없는 한 줄은 **브라우저에 맡긴다**', async () => {
+    localStorage.setItem('mindflow_doc_w4', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=w4&title=x');
+    const zero = (await waitFor(() => container.querySelector('[data-note-line="b0"]'))) as HTMLElement;
+
+    caretAt(zero, 0);
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(e, 'clipboardData', { value: { getData: () => '그냥 글' }, configurable: true });
+    zero.dispatchEvent(e);
+    // 막지 않았다 = 브라우저의 기본 붙여넣기가 그대로 듣는다.
+    expect(e.defaultPrevented).toBe(false);
+  });
+
+  it('표의 칸에서도 `- `가 글머리 기호가 된다(요청 3)', async () => {
+    localStorage.setItem('mindflow_doc_w5', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=w5&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+
+    type(cell, '- ');
+    await waitFor(() => expect(cell.textContent).toBe('• '));
+    saveNow();
+    await waitFor(() => expect(saved('w5').pages[0].blocks[3].rows[0][0][0].t).toBe('• '));
+  });
+
+  it('칸에서 줄을 바꾸면 표식이 이어진다 — 번호는 하나 올린다(요청 3)', async () => {
+    localStorage.setItem('mindflow_doc_w6', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=w6&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+
+    // Shift+Enter 뒤의 모습 — 줄바꿈 하나에 **빈 줄을 보이게 하는 placeholder `<br>`**가
+    // 하나 더 붙는다(편집 박스의 버릇 — `liveEditValue` 머리말). 캐럿은 그 사이다.
+    cell.innerHTML = '1. 하나<br><br>';
+    cell.focus();
+    const range = document.createRange();
+    range.setStart(cell, 2); // 첫 `<br>` 뒤
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.input(cell);
+
+    await waitFor(() => expect(cell.textContent).toBe('1. 하나2. '));
+  });
+
+  it('표 위아래에 레일 몫의 숨이 있다(요청 4)', async () => {
+    localStorage.setItem('mindflow_doc_w7', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=w7&title=x');
+    const table = (await waitFor(() => container.querySelector('[data-note-kind="table"]'))) as HTMLElement;
+
+    // 열 레일은 표 위 18px, 행 추가 띠는 표 아래 — 둘 다 흐름 밖이라 여백이 필요하다.
+    expect(table.style.marginTop).toBe('8px');
+    expect(table.style.marginBottom).toBe('8px');
+  });
+});

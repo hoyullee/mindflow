@@ -123,8 +123,11 @@ export {
   NOTE_TAGS,
   NOTE_COVERS,
   NOTE_HIGHLIGHTS,
+  parseNoteText,
+  pasteNoteBlocks,
+  noteCellListInput,
 } from './note';
-export type { NoteBlockShape, TableFillTarget } from './note';
+export type { NoteBlockShape, NotePaste, NoteTextLine, TableFillTarget } from './note';
 
 /** 공책 내보내기 — 페이지의 블록을 마크다운·글자·중간 표현으로(순수 함수). */
 export { noteMarkdown, notePlainText, noteLines, notePagesFor } from './noteExport';

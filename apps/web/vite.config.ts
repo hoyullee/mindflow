@@ -136,6 +136,16 @@ export default defineConfig({
         // never touched by the service worker (not cached, not stale — just
         // not intercepted at all). Nothing extra to configure for that case.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,ico}'],
+        /**
+         * **앱 껍데기 한 덩이의 상한**(기본 2 MiB). 우리 번들이 그 선을 넘었다
+         * (실측 2,100,116 B — 2,964 B 초과). 상한을 넘기면 Workbox가 그 파일을
+         * 프리캐시에서 **빼고 빌드를 실패시킨다** — 통과시키더라도 오프라인에서
+         * 앱이 아예 열리지 않게 된다(껍데기가 없다).
+         *
+         * 그래서 상한을 올린다. 진짜 답은 번들을 쪼개는 것이고(운영 백로그의
+         * 가상화·청크 항목), 그때 이 값은 다시 내린다.
+         */
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // 웹 푸시(0040)를 받는 조각을 생성된 SW **안으로** 끌어들인다 — 그래야
         // 프리캐시·업데이트 전략(generateSW)을 그대로 두고 push 처리만 얹는다
         // (`injectManifest`로 갈아타면 SW 전체를 우리가 떠안게 된다).
