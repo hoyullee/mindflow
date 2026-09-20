@@ -294,3 +294,48 @@ describe('캔버스 문서는 이 경로를 타지 않는다', () => {
     expect(load.mock.calls.length).toBe(before);
   });
 });
+
+describe('공책 — 서버 판을 채택해도 **커서는 남는다**', () => {
+  /**
+   * 제보: 본문에 처음 커서를 놓으면 잠깐 켜졌다 꺼지고, 다시 눌러야 켜진다.
+   *
+   * 원인은 채택이다 — 저장소에서 문서를 뒤늦게 받아 갈아 끼우면 본문이 **통째로 다시
+   * 마운트된다**(`docEpoch`: 비제어 편집 박스가 새 글을 그려야 한다). 그 사이에 놓아
+   * 둔 캐럿은 함께 사라졌다(두 번째 클릭은 채택이 끝난 뒤라 멀쩡했다).
+   */
+  it('채택으로 본문이 다시 그려져도 캐럿이 그 줄에 돌아온다', async () => {
+    const docId = `note-caret-${Math.random()}`;
+    // 이 기기에는 옛 판이 있고(바로 그려진다), 서버에는 **다른 판**이 있다 → 채택이 일어난다.
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(noteDoc('로컬 판입니다')));
+    const { backend, load } = makeBackend(noteDoc('로컬 판입니다'));
+    // 읽기를 **늦춘다** — 실제로도 서버는 한 박자 뒤에 오고, 사용자는 그 사이에
+    // 캐럿을 놓는다(그 틈이 바로 이 제보의 자리다).
+    load.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+      return { doc: noteDoc('서버 판입니다'), version: 2, title: '회의록' };
+    });
+    const { container } = renderEditor(backend, docId);
+
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    expect(line.textContent).toBe('로컬 판입니다'); // 아직 채택 전이다
+    // 사용자가 채택 **전에** 캐럿을 놓는다.
+    line.focus();
+    const text = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, 3);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    expect(document.activeElement).toBe(line);
+
+    // 채택이 끝나 본문이 다시 그려진다.
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')?.textContent).toBe('서버 판입니다'), { timeout: 6000 });
+
+    // 캐럿이 **그 줄로 돌아온다**(그 자리까지).
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+    const now = window.getSelection();
+    expect(now?.focusNode && container.contains(now.focusNode)).toBe(true);
+    expect(now?.focusOffset).toBe(3);
+  });
+});
