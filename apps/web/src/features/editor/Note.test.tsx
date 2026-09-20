@@ -4079,25 +4079,6 @@ describe('공책 37판 — 목록 복사·붙여넣기와 칸 안의 목록', ()
     await waitFor(() => expect(saved('w5').pages[0].blocks[3].rows[0][0][0].t).toBe('• '));
   });
 
-  it('칸에서 줄을 바꾸면 표식이 이어진다 — 번호는 하나 올린다(요청 3)', async () => {
-    localStorage.setItem('mindflow_doc_w6', JSON.stringify(NOTE));
-    const { container } = renderEditor('/editor?map=w6&title=x');
-    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
-
-    // Shift+Enter 뒤의 모습 — 줄바꿈 하나에 **빈 줄을 보이게 하는 placeholder `<br>`**가
-    // 하나 더 붙는다(편집 박스의 버릇 — `liveEditValue` 머리말). 캐럿은 그 사이다.
-    cell.innerHTML = '1. 하나<br><br>';
-    cell.focus();
-    const range = document.createRange();
-    range.setStart(cell, 2); // 첫 `<br>` 뒤
-    range.collapse(true);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    fireEvent.input(cell);
-
-    await waitFor(() => expect(cell.textContent).toBe('1. 하나2. '));
-  });
 
   it('표 위아래에 레일 몫의 숨이 있다(요청 4)', async () => {
     localStorage.setItem('mindflow_doc_w7', JSON.stringify(NOTE));
@@ -4105,7 +4086,136 @@ describe('공책 37판 — 목록 복사·붙여넣기와 칸 안의 목록', ()
     const table = (await waitFor(() => container.querySelector('[data-note-kind="table"]'))) as HTMLElement;
 
     // 열 레일은 표 위 18px, 행 추가 띠는 표 아래 — 둘 다 흐름 밖이라 여백이 필요하다.
-    expect(table.style.marginTop).toBe('8px');
-    expect(table.style.marginBottom).toBe('8px');
+    expect(table.style.marginTop).toBe('16px');
+    expect(table.style.marginBottom).toBe('16px');
+  });
+});
+
+describe('공책 38판 — 표의 목록·여백·열 너비와 여러 줄 Tab', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const FLAT = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          {
+            id: 'b1',
+            kind: 'ul',
+            items: [
+              { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+              { id: 'i2', runs: [{ t: '둘', b: false, c: null }] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  /** 그 칸을 **글 고치는 자리**로 연다(두 번 누르기와 같은 길). */
+  async function openCell(container: HTMLElement, key: string): Promise<HTMLElement> {
+    const cell = (await waitFor(() => container.querySelector(`[data-note-line="${key}"]`))) as HTMLElement;
+    fireEvent.doubleClick(cell.closest('td') as HTMLElement);
+    return cell;
+  }
+
+  it('표는 **언제나 고정 레이아웃**이다 — 칸 끝에서 줄이 바뀐다(제보 5)', async () => {
+    localStorage.setItem('mindflow_doc_v1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=v1&title=x');
+    const table = (await waitFor(() => container.querySelector('[data-note-kind="table"] table'))) as HTMLElement;
+
+    // 자동 레이아웃은 글의 최대 폭으로 열을 나눠, 칸 끝까지 쓰지 않았는데도 열이 넓어진다.
+    expect(table.style.tableLayout).toBe('fixed');
+    expect(table.style.width).toBe('100%');
+    // 열이 너무 좁아지지 않게 바닥을 둔다(열 수 × 84px) — 넘치면 가로로 스크롤한다.
+    expect(table.style.minWidth).toBe('168px');
+  });
+
+  it('고른 칸에서 Enter는 **편집을 연다**(제보 3)', async () => {
+    localStorage.setItem('mindflow_doc_v2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=v2&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+    const td = cell.closest('td') as HTMLElement;
+
+    fireEvent.mouseDown(td);
+    fireEvent.mouseUp(td);
+    await waitFor(() => expect(td.getAttribute('data-armed')).toBe('1'));
+
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    // 편집으로 넘어가면 `armed`가 풀린다(둘은 배타적이다).
+    await waitFor(() => expect(td.getAttribute('data-armed')).toBe(null));
+    expect(td.style.cursor).toBe('text');
+  });
+
+  it('칸의 목록 마커는 **본문과 같은 스팬**으로 그려진다(제보 2)', async () => {
+    localStorage.setItem('mindflow_doc_v3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=v3&title=x');
+    const cell = await openCell(container, 'b4:r0c0');
+
+    type(cell, '- 사과');
+
+    // 글자로 남는 것이 아니라 마커 스팬이다 — 색·글꼴은 `editor.css`가 본문과 맞춘다.
+    const mark = await waitFor(() => cell.querySelector('[data-list-marker]'));
+    expect(mark?.textContent).toBe('• ');
+    expect(mark?.getAttribute('data-list-kind')).toBe('ul');
+    expect(cell.textContent).toBe('• 사과');
+  });
+
+  it('칸에서 Shift+Enter는 표식을 잇고, Tab은 **들여쓴다**(제보 4)', async () => {
+    localStorage.setItem('mindflow_doc_v4', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=v4&title=x');
+    const cell = await openCell(container, 'b4:r0c0');
+
+    type(cell, '1. 하나');
+    await waitFor(() => expect(cell.querySelector('[data-list-marker]')).toBeTruthy());
+
+    fireEvent.keyDown(cell, { key: 'Enter', shiftKey: true });
+    // 번호는 하나 올라간다.
+    await waitFor(() => expect([...cell.querySelectorAll('[data-list-marker]')].map((e) => e.textContent)).toEqual(['1. ', '2. ']));
+
+    fireEvent.keyDown(cell, { key: 'Tab' });
+    // 한 단계 들어가면 표기도 그 단계의 것으로 바뀐다(`1.` → `a.`).
+    await waitFor(() => expect([...cell.querySelectorAll('[data-list-marker]')].map((e) => e.textContent?.trimStart())).toEqual(['1. ', 'a. ']));
+
+    fireEvent.keyDown(cell, { key: 'Tab', shiftKey: true });
+    await waitFor(() => expect([...cell.querySelectorAll('[data-list-marker]')].map((e) => e.textContent)).toEqual(['1. ', '2. ']));
+    // 들여쓰기는 **칸 이동이 아니다** — 초점이 그 칸에 남는다.
+    expect(document.activeElement?.getAttribute('data-note-line')).toBe('b4:r0c0');
+  });
+
+  it('목록이 아닌 칸에서 Tab은 그대로 **다음 칸**으로 간다', async () => {
+    localStorage.setItem('mindflow_doc_v5', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=v5&title=x');
+    const cell = await openCell(container, 'b4:r0c0');
+
+    fireEvent.keyDown(cell, { key: 'Tab' });
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b4:r0c1'));
+  });
+
+  it('본문에서 **여러 줄을 골라 Tab**하면 함께 들여쓰인다(제보 6)', async () => {
+    localStorage.setItem('mindflow_doc_v6', JSON.stringify(FLAT));
+    const { container } = renderEditor('/editor?map=v6&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1:i1"]'))) as HTMLElement;
+    const two = container.querySelector('[data-note-line="b1:i2"]') as HTMLElement;
+
+    fireEvent.pointerDown(one, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(two, { clientX: 0, clientY: 0 });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(1));
+
+    fireEvent.keyDown(document, { key: 'Tab' });
+    saveNow();
+    // 둘 다 0단계였으므로 **나란히** 한 단계씩(한쪽이 다른 쪽의 딸림이 아니다).
+    await waitFor(() => expect(saved('v6').pages[0].blocks[0].items.map((x: { indent?: number }) => x.indent ?? 0)).toEqual([1, 1]));
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    saveNow();
+    await waitFor(() => expect(saved('v6').pages[0].blocks[0].items.map((x: { indent?: number }) => x.indent ?? 0)).toEqual([0, 0]));
   });
 });

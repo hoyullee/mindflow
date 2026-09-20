@@ -19,6 +19,9 @@ import { runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, runsToHtml } from '../richtextDom';
 import { applyNoteFormat, NOTE_EDIT_ATTR } from '../noteRichDom';
 import { charOffset, pointAt } from '../noteTextSelect';
+import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
+import { listSignature } from '../listLines';
+import { snapCaretOffListMarker } from '../richtextDom';
 
 interface Props {
   runs: RichRun[] | undefined;
@@ -100,6 +103,22 @@ interface Props {
    * 줄바꿈도 없는 평범한 한 줄은 그쪽이 낫다(되돌리기가 자연스럽다).
    */
   onPasteText?: (text: string, from: number, to: number) => boolean;
+  /**
+   * **이 박스 안에서 목록을 글자로 다룬다**(표의 칸 — `noteCellList` 머리말).
+   *
+   * 본문의 목록은 블록이라 이 모드가 아니다: 마커를 항목 옆에 따로 그리고
+   * Tab·Enter를 컨트롤러가 받는다. 칸은 모델이 `RichRun[]` 하나뿐이라 마커가 곧
+   * 글자이고, 그래서 이 박스가 직접 들여쓰기·이어쓰기·다시 그리기를 맡는다.
+   */
+  listBox?: boolean;
+  /**
+   * **이 박스가 목록 글쇠를 받는가** — Tab·Shift+Enter·마커 Backspace.
+   *
+   * 그리는 것(`listBox`)과 나누는 이유: 표의 칸은 **고른 상태**와 **고치는 상태**가
+   * 다르다. 고르기만 한 칸에서 Tab은 다음 칸이고 ⌫는 그 행을 지우는 일이라, 글을
+   * 고치는 중일 때만 이 글쇠들이 목록의 것이다.
+   */
+  listKeys?: boolean;
   /** 이 줄을 가리키는 표식 — 테스트와 캐럿 이동이 쓴다. */
   lineKey?: string;
   /**
@@ -112,13 +131,21 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, onPasteText, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
+  /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
+  const composing = useRef(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.innerHTML = runsToHtml({ text: runsText(runs), rich: runs ?? null });
+    const value = { text: runsText(runs), rich: runs ?? null };
+    if (listBox) {
+      el.innerHTML = cellListHtml(value);
+      el.dataset.listSig = listSignature(value);
+    } else {
+      el.innerHTML = runsToHtml(value);
+    }
     if (autoFocus) {
       el.focus();
       // 캐럿을 **끝**에 둔다 — 새 줄은 대개 이어서 쓰려고 만든다.
@@ -141,6 +168,9 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
   const commit = (): void => {
     const el = ref.current;
     if (!el) return;
+    // 마커가 생기거나 사라졌으면 **읽기 전에** 다시 그린다 — 그래야 화면과 값이
+    // 같은 것을 말한다(`- `를 친 그 순간 `• `가 되는 자리).
+    if (listBox && !composing.current) cellListSync(el);
     const { text, rich } = domToRuns(el);
     onChange(rich ?? textRuns(text));
   };
@@ -150,6 +180,30 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     if (!el) return;
     // 여러 줄이 칠해져 있으면 **문서 리스너가 맡는다**(`selecting` 머리말).
     if (selecting) return;
+    /**
+     * **칸 안의 목록**(`listBox`) — Tab·Shift+Enter·마커 Backspace를 여기서 받는다.
+     *
+     * 전파까지 끊는 이유: 표는 루트에서 Tab을 "다음 칸"으로 쓰고 있어, 막기만
+     * 하면 들여쓰기와 칸 이동이 **둘 다** 일어난다.
+     */
+    if (listBox && listKeys && !readOnly && !e.nativeEvent.isComposing) {
+      const mod = e.metaKey || e.ctrlKey || e.altKey;
+      if (e.key === 'Tab' && !mod && cellListTab(el, e.shiftKey, onChange)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === 'Enter' && e.shiftKey && !mod && cellListBreak(el, onChange)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === 'Backspace' && !mod && cellListBackspace(el, onChange)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
     /**
      * **서식 단축키** — ⌘B·⌘I·⌘U·⌘⇧S(요청: 공책에서도 단축키를 다 쓰게).
      *
@@ -308,6 +362,19 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       data-placeholder={placeholder ?? ''}
       onInput={commit}
       onBlur={commit}
+      onCompositionStart={() => {
+        composing.current = true;
+      }}
+      onCompositionEnd={() => {
+        composing.current = false;
+        commit();
+      }}
+      onKeyUp={() => {
+        // 캐럿이 마커 **안**에 떨어지면 내용 쪽으로 물린다 — 그 스팬에 친 글자는
+        // 줄바꿈되지 않아 칸을 뚫고 나간다(맵과 같은 계약).
+        const el = ref.current;
+        if (listBox && el && !composing.current) snapCaretOffListMarker(el);
+      }}
       onPaste={(e) => {
         // 여러 줄이 칠해져 있으면 **문서 리스너가 맡는다**(`selecting` 머리말).
         if (readOnly || selecting || !onPasteText) return;

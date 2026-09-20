@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, NotePaste, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, noteBlockShape, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, indentListItems, noteBlockShape, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -858,6 +858,11 @@ export interface EditorController {
   splitNoteItem: (blockId: string, itemId: string, at: number) => { id: string; head: RichRun[] } | null;
   /** 목록 항목 들여쓰기·내어쓰기 — 바뀌었으면 `true`. */
   setNoteItemIndent: (blockId: string, itemId: string, delta: 1 | -1) => boolean;
+  /**
+   * **고른 여러 줄**을 한꺼번에 들이거나 내민다(줄 키로 받는다 — 목록 항목이
+   * 아닌 줄은 조용히 건너뛴다). 한 커밋이라 되돌리기도 한 걸음이다.
+   */
+  indentNoteItems: (keys: readonly string[], delta: 1 | -1) => boolean;
   /** 글이 있는 줄의 맨 앞 Backspace — 앞 줄에 잇는다. 이은 자리를 돌려준다. */
   mergeNoteBlockBack: (blockId: string, itemId?: string) => { key: string; at: number; runs: RichRun[] } | null;
   /** 여러 줄에 걸친 글자 선택을 지운다(목록 항목도 줄로 센다). 이은 자리를 돌려준다. */
@@ -7418,6 +7423,48 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
+  /**
+   * **여러 줄을 한꺼번에** 들이고 내민다(요청: 목록 여러 줄을 골라 Tab).
+   *
+   * 줄 키(`<블록id>:<항목id>`)로 받는 이유: 부르는 쪽(칠해 둔 선택)이 가진 것이
+   * 그것뿐이고, 한 선택이 **여러 블록**에 걸칠 수 있기 때문이다. 블록별로 모아
+   * 코어에 한 번씩 묻고(`indentListItems` — 딸린 항목이 두 번 밀리지 않는다)
+   * 페이지를 **한 커밋**으로 고친다.
+   */
+  const indentNoteItems = useCallback(
+    (keys: readonly string[], delta: 1 | -1): boolean => {
+      if (readOnlyRef.current || !notePage) return false;
+      const byBlock = new Map<string, string[]>();
+      keys.forEach((key) => {
+        const [blockId, rest] = key.split(':');
+        if (!blockId || !rest || rest === 'body' || /^r\d+c\d+$/.test(rest)) return;
+        const block = notePage.blocks.find((b) => b.id === blockId);
+        if (!block || (block.kind !== 'ul' && block.kind !== 'ol' && block.kind !== 'ck')) return;
+        byBlock.set(blockId, [...(byBlock.get(blockId) ?? []), rest]);
+      });
+      if (!byBlock.size) return false;
+      // 바뀔 것이 없으면 커밋하지 않는다(Tab을 더 눌러도 되돌리기가 불어나지 않게).
+      const changed = [...byBlock].some(([id, ids]) => {
+        const items = notePage.blocks.find((b) => b.id === id)?.items ?? [];
+        return indentListItems(items, ids, delta) !== items;
+      });
+      if (!changed) return false;
+      commitPage(
+        notePage.id,
+        (pg) => ({
+          ...pg,
+          blocks: pg.blocks.map((b) => {
+            const ids = byBlock.get(b.id);
+            return ids ? { ...b, items: indentListItems(b.items ?? [], ids, delta) } : b;
+          }),
+        }),
+        false,
+      );
+      return true;
+    },
+    [commitPage, notePage],
+  );
+
   /** 표의 한 칸. */
   const setNoteCell = useCallback(
     (blockId: string, row: number, col: number, runs: RichRun[]) => {
@@ -8282,6 +8329,7 @@ export function useEditorState(): EditorController {
     splitNoteItem,
     unlistNoteItem,
     setNoteItemIndent,
+    indentNoteItems,
     mergeNoteBlockBack,
     deleteNoteTextRange,
     pasteNoteText,

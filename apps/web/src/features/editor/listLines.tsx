@@ -183,7 +183,7 @@ export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign'
       //   하이라이트에 포함되면 "내가 지울 수 있는 글자"로 읽힌다(제보: 전체 선택
       //   시 리스트 마커까지 선택돼 보임). 값(텍스트)에는 그대로 있으므로 오프셋
       //   계산·domToRuns·커밋은 무변경 — 복사만 onCopy가 값에서 잘라 마커를 보존한다.
-      `<span data-list-marker style="white-space:pre;flex-shrink:0;user-select:none;-webkit-user-select:none">${escHtml(ln.list.display)}</span>` +
+      `<span data-list-marker data-list-kind="${ln.list.kind}" style="white-space:pre;flex-shrink:0;user-select:none;-webkit-user-select:none">${escHtml(ln.list.display)}</span>` +
       // 내용 열은 항상 좌측(커밋 렌더 `ListTextBlock`과 같은 이유 — 감긴 줄이
       // 도형 정렬을 상속해 중앙으로 튀지 않게).
       `<span style="flex:0 1 auto;min-width:0;text-align:left">${inner}</span>` +
