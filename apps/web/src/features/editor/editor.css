@@ -456,6 +456,19 @@ input[type='search']::-webkit-search-results-decoration {
   pointer-events: none;
   white-space: nowrap;
 }
+/* 표 칸 안의 목록 마커 — **본문 목록과 같은 옷**(요청).
+ *
+ * 칸은 블록을 담지 못하므로 목록이 글자로 들어 있고(코어 `list.ts` — 마커가 곧
+ * 데이터), 그 마커를 `listEditHtml`이 `[data-list-marker]` 스팬으로 그린다.
+ * 본문의 목록 마커는 흐린 색이고 번호는 고정폭 글꼴이다(`listMarkers`를 그리는
+ * 자리) — 여기서 같은 값을 준다. 위치·행잉 인덴트는 그 스팬의 flex 배치가 맡는다. */
+.mf-note-line [data-list-marker] {
+  color: var(--mf-faint);
+}
+.mf-note-line [data-list-marker][data-list-kind='ol'] {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
 /* 인라인 코드·형광펜 — 본문에서 그려지는 모양(런의 `k`/`hl`). 편집 박스 안이라
  * 실제 요소로 들어 있다(`runsToHtml`). */
 .mf-note-line code {

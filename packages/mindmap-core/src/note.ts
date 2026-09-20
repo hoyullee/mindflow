@@ -653,6 +653,31 @@ function romanMark(n: number): string {
 }
 
 /**
+ * **고른 여러 항목을 한꺼번에** 들이거나 내민다(요청: 여러 줄을 골라 Tab).
+ *
+ * 한 항목짜리 `indentListItem`을 줄마다 되풀이할 수 없다 — 그쪽은 **딸린 항목도
+ * 함께** 움직이므로, 부모와 자식이 둘 다 골라져 있으면 자식이 두 번 밀린다.
+ * 그래서 움직일 집합을 먼저 모으고(고른 항목 + 고르지 않았어도 딸린 항목) 한 번에
+ * 같은 폭으로 옮긴다. 이웃보다 깊어지는 것은 막지 않는다 — 한 항목짜리 쪽과 같은
+ * 규칙이다(0..`NOTE_LIST_MAX_INDENT` 안에서 자유롭다).
+ *
+ * 바뀔 것이 없으면 **받은 배열을 그대로** 돌려준다(되돌리기 목록이 불어나지 않게).
+ */
+export function indentListItems(items: NoteListItem[], ids: readonly string[], delta: 1 | -1): NoteListItem[] {
+  const picked = new Set(ids);
+  const move = new Set<string>();
+  items.forEach((it, i) => {
+    if (!picked.has(it.id)) return;
+    move.add(it.id);
+    const d = itemDepth(it);
+    for (let k = i + 1; k < items.length && itemDepth(items[k] as NoteListItem) > d; k += 1) move.add((items[k] as NoteListItem).id);
+  });
+  if (!move.size) return items;
+  const out = items.map((it) => (move.has(it.id) ? withDepth(it, Math.max(0, Math.min(NOTE_LIST_MAX_INDENT, itemDepth(it) + delta))) : it));
+  return out.some((it, i) => itemDepth(it) !== itemDepth(items[i] as NoteListItem)) ? out : items;
+}
+
+/**
  * 항목마다 **앞에 붙을 표식** — 글머리 기호는 단계별 점, 번호 매기기는 단계별 번호.
  *
  * 번호는 **단계마다 따로 센다**: 더 깊은 단계로 들어가면 1부터 다시 시작하고, 얕은
@@ -861,44 +886,3 @@ export function pasteNoteBlocks(
   };
 }
 
-/**
- * **표의 칸 안에서 치는 목록 표식**(요청) — `- `는 `• `로, 줄을 바꾸면 이어 간다.
- *
- * 칸은 블록을 담지 못한다(모델이 `RichRun[]` 하나다). 그래서 진짜 목록 블록을 만들
- * 수 없고, 대신 **글자로** 목록을 만든다 — 보이는 것과 내보내는 것이 같아지고
- * 표 밖으로 복사해 붙이면 그 표식이 그대로 목록으로 읽힌다(`parseNoteText`).
- *
- * 하는 일 셋(전부 **줄의 맨 앞**에서만):
- * - `- ` · `* ` → `• `
- * - 표식이 있는 줄에서 줄을 바꾸면(Shift+Enter) 다음 줄에 **같은 표식**을 놓는다.
- *   번호는 하나 올린다.
- * - 표식뿐인 빈 줄에서 다시 줄을 바꾸면 그 표식을 **걷는다**(목록이 끝난다).
- *
- * 돌려주는 것은 "`at`에서 `remove` 글자를 지우고 `insert`를 넣어라"다 — 칸의 서식을
- * 지키려고 글자 단위로 고치기 때문이다. 고칠 것이 없으면 `null`.
- */
-export function noteCellListInput(text: string, caret: number): { at: number; remove: number; insert: string; caret: number } | null {
-  const t = text.replace(/\u00a0/g, ' ');
-  const at = Math.max(0, Math.min(caret, t.length));
-  const bol = t.lastIndexOf('\n', at - 1) + 1;
-  const line = t.slice(bol, at);
-  // ① `- ` → `• ` (줄의 맨 앞, 캐럿이 그 뒤).
-  if (/^[-*]\s$/.test(line)) return { at: bol, remove: 2, insert: '• ', caret: bol + 2 };
-  // ② 막 줄을 바꿨다 — 앞 줄의 표식을 잇는다.
-  if (at > 0 && t[at - 1] === '\n') {
-    const prevStart = t.lastIndexOf('\n', at - 2) + 1;
-    const prev = t.slice(prevStart, at - 1);
-    const bullet = /^([•◦▪])\s(.*)$/.exec(prev);
-    if (bullet) {
-      if (!bullet[2]) return { at: prevStart, remove: at - prevStart, insert: '', caret: prevStart };
-      return { at, remove: 0, insert: `${bullet[1] as string} `, caret: at + 2 };
-    }
-    const num = /^(\d{1,3})([.)])\s(.*)$/.exec(prev);
-    if (num) {
-      if (!num[3]) return { at: prevStart, remove: at - prevStart, insert: '', caret: prevStart };
-      const mark = `${Number(num[1]) + 1}${num[2] as string} `;
-      return { at, remove: 0, insert: mark, caret: at + mark.length };
-    }
-  }
-  return null;
-}

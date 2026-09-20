@@ -29,8 +29,8 @@ import {
   removePage,
   retypeBlock,
   indentListItem,
+  indentListItems,
   listMarkers,
-  noteCellListInput,
   parseNoteText,
   pasteNoteBlocks,
   NOTE_LIST_MAX_INDENT,
@@ -546,24 +546,40 @@ describe('평문을 본문에 붙여넣는다 — 표식을 살려서', () => {
   });
 });
 
-describe('표 칸 안의 목록 표식', () => {
-  it('줄 맨 앞의 `- `는 `• `가 된다', () => {
-    expect(noteCellListInput('- ', 2)).toEqual({ at: 0, remove: 2, insert: '• ', caret: 2 });
-    // 캐럿이 그 뒤가 아니면 걸지 않는다(글을 쓰다 만든 `- `).
-    expect(noteCellListInput('- 글', 3)).toBeNull();
+
+describe('고른 여러 항목을 한꺼번에 들이고 내민다', () => {
+  const four = (): NoteListItem[] => [
+    { id: 'a', runs: [] },
+    { id: 'b', runs: [] },
+    { id: 'c', runs: [], indent: 1 },
+    { id: 'd', runs: [] },
+  ];
+
+  it('고른 것이 한 단계씩 들어간다 — 고르지 않은 줄은 그대로', () => {
+    // c는 b의 딸림이라 함께 움직인다(아래 항목 참고). d는 고르지 않았으니 제자리.
+    const out = indentListItems(four(), ['a', 'b'], 1);
+    expect(out.map((x) => x.indent ?? 0)).toEqual([1, 1, 2, 0]);
   });
 
-  it('줄을 바꾸면 표식이 이어진다 — 번호는 하나 올린다', () => {
-    expect(noteCellListInput('• 하나\n', 5)).toEqual({ at: 5, remove: 0, insert: '• ', caret: 7 });
-    expect(noteCellListInput('1. 하나\n', 6)).toEqual({ at: 6, remove: 0, insert: '2. ', caret: 9 });
+  it('딸린 항목은 고르지 않아도 따라온다 — **두 번 밀리지는 않는다**', () => {
+    // b(0)의 딸림인 c(1)도 함께 움직인다. c까지 골라도 결과는 같아야 한다.
+    expect(indentListItems(four(), ['b'], 1).map((x) => x.indent ?? 0)).toEqual([0, 1, 2, 0]);
+    expect(indentListItems(four(), ['b', 'c'], 1).map((x) => x.indent ?? 0)).toEqual([0, 1, 2, 0]);
   });
 
-  it('표식뿐인 빈 줄에서 다시 줄을 바꾸면 그 표식을 걷는다', () => {
-    expect(noteCellListInput('• 하나\n• \n', 8)).toEqual({ at: 5, remove: 3, insert: '', caret: 5 });
+  it('0단계에서 더 내밀 것이 없으면 **받은 배열 그대로**', () => {
+    const items = four();
+    expect(indentListItems(items, ['a', 'd'], -1)).toBe(items);
   });
 
-  it('표식이 없는 줄에서는 아무 일도 하지 않는다', () => {
-    expect(noteCellListInput('그냥 글\n', 5)).toBeNull();
-    expect(noteCellListInput('', 0)).toBeNull();
+  it('가장 깊은 단계에서 멈춘다', () => {
+    let items: NoteListItem[] = [{ id: 'a', runs: [] }];
+    for (let i = 0; i < NOTE_LIST_MAX_INDENT + 2; i += 1) items = indentListItems(items, ['a'], 1);
+    expect(items[0]?.indent).toBe(NOTE_LIST_MAX_INDENT);
+  });
+
+  it('고른 것이 없으면 그대로', () => {
+    const items = four();
+    expect(indentListItems(items, [], 1)).toBe(items);
   });
 });

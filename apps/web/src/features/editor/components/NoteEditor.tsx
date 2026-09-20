@@ -25,7 +25,6 @@ import {
   pageText,
   charsToRuns,
   listMarkers,
-  noteCellListInput,
   parseNoteText,
   roundSizes,
   runsToChars,
@@ -40,7 +39,7 @@ import type { Theme } from '../theme';
 import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
 import { buildSelection, caretAt, charOffset, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
-import { linearize, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
+import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
@@ -843,6 +842,18 @@ export function NoteEditor({ controller }: Props) {
           if (edge) caretToLine(edge.key, back ? edge.from : edge.to);
           return;
         }
+      }
+      /**
+       * **고른 여러 줄을 Tab으로 들이고 내민다**(요청) — 목록 항목만 움직인다.
+       *
+       * 칠해진 동안에는 편집 박스에 초점이 없어 줄 부품의 `onTab`이 오지 않는다.
+       * 여기서 받고, 키는 언제나 먹는다 — 놓아 주면 초점이 본문 밖으로 새고
+       * 칠해 둔 선택이 통째로 사라진다.
+       */
+      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        if (!readOnly) controller.indentNoteItems(sel.map((s) => s.key), e.shiftKey ? -1 : 1);
+        return;
       }
       const mod = e.metaKey || e.ctrlKey;
       /**
@@ -4848,11 +4859,11 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
         setRailZone(null);
       }}
       /**
-       * 위아래로 **숨을 조금 둔다**(요청) — 열 레일은 표 위 18px, 행 추가 띠는 표 아래에
-       * 떠 있어(흐름 밖이다) 바로 붙은 줄과 겹쳐 보였다. 8px이면 레일이 앞뒤 줄의
-       * 글자를 건드리지 않으면서 문단 사이 간격(9px)과도 어긋나지 않는다.
+       * 위아래로 **숨을 둔다**(요청 · 한 번 더 늘렸다) — 열 레일은 표 위 18px, 행 추가
+       * 띠는 표 아래에 떠 있어(흐름 밖이다) 바로 붙은 줄과 겹쳐 보였다. 8px로는
+       * 레일이 앞뒤 줄에 여전히 닿아서, 레일 높이(18px)의 대부분을 덮는 16px로 둔다.
        */
-      style={{ ...blockFlow(block), position: 'relative', margin: '8px 0' }}
+      style={{ ...blockFlow(block), position: 'relative', margin: '16px 0' }}
     >
       {/**
         * 표가 **페이지에서 차지하는 자리는 상자 하나뿐**이다(요청).
@@ -4958,16 +4969,25 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
           <table
             ref={tableRef}
             style={{
-              width: '100%',
               borderCollapse: 'collapse',
               fontSize: 13,
-              // 너비를 손으로 정한 순간부터 **고정 레이아웃**이다 — 그러지 않으면
-              // 브라우저가 글 길이에 맞춰 다시 나눠 끈 값이 무시된다.
-              //
-              // 폭도 **합으로 못박는다**: `width: 100%`로 두면 합이 상자보다 작을 때
-              // 남는 폭이 열들에 다시 뿌려져(CSS 2.1 §17.5.2.1) 마지막 열을 줄여도
-              // 손을 떼는 순간 되돌아온다("잡히는데 안 줄어든다").
-              ...(colW ? { tableLayout: 'fixed' as const, width: colW.reduce((a, b) => a + b, 0) } : {}),
+              /**
+               * **언제나 고정 레이아웃**이다(제보: 칸 끝까지 쓰지도 않았는데 열이 넓어진다).
+               *
+               * 자동 레이아웃은 열 너비를 **글의 최대 폭**으로 나눈다 — 그래서 한 칸에
+               * 글을 칠수록 그 열이 이웃의 폭을 빼앗아 가고, 열이 더 넓어질 수 없을
+               * 때에야 줄이 바뀐다. 고정 레이아웃은 열을 먼저 정하고 글을 그 안에서
+               * 감싸므로 "칸 끝에서 줄바꿈"이 된다.
+               *
+               * 손으로 정한 너비가 있으면 폭도 **합으로 못박는다**: `width: 100%`로
+               * 두면 합이 상자보다 작을 때 남는 폭이 열들에 다시 뿌려져(CSS 2.1
+               * §17.5.2.1) 마지막 열을 줄여도 손을 떼는 순간 되돌아온다.
+               *
+               * 너비를 정한 적이 없으면 열을 고르게 나누되, **열이 너무 좁아지지 않게**
+               * 바닥을 둔다(열 수 × 84px) — 넘치면 상자가 가로로 스크롤된다.
+               */
+              tableLayout: 'fixed' as const,
+              ...(colW ? { width: colW.reduce((a, b) => a + b, 0) } : { width: '100%', minWidth: width * 84 }),
             }}
           >
             {colW && (
@@ -5102,11 +5122,23 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                           runs={cell}
                           readOnly={readOnly || !(editing || armed)}
                           placeholder=""
-                          // Enter는 **편집을 닫는다**(요청) — 표의 칸은 문단이 아니라
-                          // 값이라 "다 썼다"의 신호가 필요하다. 줄을 바꾸려면
-                          // Shift+Enter(`NoteLine`이 그때는 이 고리를 부르지 않아
-                          // 브라우저의 줄바꿈이 그대로 들어간다).
+                          listBox
+                          listKeys={editing}
+                          /**
+                           * Enter가 **편집을 연다**(요청) — 고른 칸에서 한 번 누르면
+                           * 글을 고치는 자리가 되고, 고치는 중에 누르면 닫힌다
+                           * (표의 칸은 문단이 아니라 값이라 "다 썼다"의 신호가 필요하다).
+                           * 줄을 바꾸려면 Shift+Enter — 그때는 이 고리를 부르지 않고
+                           * 목록이면 마커가 이어진다(`cellListBreak`).
+                           */
                           onEnter={() => {
+                            if (!editing) {
+                              setSel(null);
+                              setEdit({ r: ri, c: ci });
+                              // 캐럿은 글 끝 — 이어 쓰려고 여는 것이 보통이다.
+                              caretToLine(`${block.id}:r${ri}c${ci}`);
+                              return true;
+                            }
                             setEdit(null);
                             pick({ mode: 'cell', r: ri, c: ci });
                             return true;
@@ -5129,30 +5161,8 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
                               setSel(null);
                               setEdit({ r: ri, c: ci });
                             }
-                            /**
-                             * **칸 안에서도 목록을 친다**(요청) — `- `는 `• `가 되고,
-                             * 줄을 바꾸면(Shift+Enter) 표식이 이어진다. 칸은 블록을
-                             * 담지 못하므로(모델이 `RichRun[]` 하나다) 진짜 목록
-                             * 블록이 아니라 **글자로** 만든다 — 규칙은 코어가 안다.
-                             */
-                            const key = `${block.id}:r${ri}c${ci}`;
-                            const box = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
-                            /**
-                             * 값은 **박스에서 곧바로** 읽는다(`liveEditValue`) — 줄을
-                             * 막 바꾼 칸의 끝 줄바꿈이 커밋된 값에서는 접혀 있어,
-                             * 그것으로 재면 "막 줄을 바꿨다"를 영영 보지 못한다.
-                             */
-                            const live = box ? liveEditValue(box) : null;
-                            const fix = readOnly || !box || !live ? null : noteCellListInput(live.text, live.clamp(cellCaret(box)));
-                            if (fix && box && live) {
-                              const chars = runsToChars({ text: live.text, rich: live.rich });
-                              const next = charsToRuns([...chars.slice(0, fix.at), ...runsToChars({ text: fix.insert, rich: null }), ...chars.slice(fix.at + fix.remove)]);
-                              controller.setNoteCell(block.id, ri, ci, next);
-                              // 비제어 박스 — 우리가 고쳤으면 우리가 다시 그린다.
-                              box.innerHTML = runsToHtml({ text: runsText(next), rich: next });
-                              setLinearSelection(box, fix.caret, fix.caret);
-                              return;
-                            }
+                            // 목록은 `listBox`가 맡는다(`noteCellList`) — 여기까지 온
+                            // 값에는 마커가 이미 글자로 들어 있다.
                             controller.setNoteCell(block.id, ri, ci, runs);
                           }}
                           /**
@@ -6316,18 +6326,6 @@ function listShortcutOf(text: string, caret: number): { kind: 'ul' | 'ol'; start
 }
 
 /** 지금 글을 치고 있는 줄에서 캐럿의 **글자 자리**(없으면 -1). */
-/**
- * 표 칸의 캐럿 자리 — **`<br>`를 줄바꿈 한 글자로 센다**(`linearize`).
- *
- * `charOffset`은 텍스트 노드만 걸어서 줄바꿈을 세지 않는다 — 여러 줄짜리 칸에서는
- * 그만큼 자리가 밀려, 목록 표식을 엉뚱한 곳에 넣는다. 값 쪽(`domToRuns`)과 같은
- * 규칙으로 세는 것은 이쪽이다.
- */
-function cellCaret(el: HTMLElement): number {
-  const sel = window.getSelection();
-  if (!sel?.focusNode || !el.contains(sel.focusNode)) return -1;
-  return linearize(el, [{ container: sel.focusNode, offset: sel.focusOffset }]).pos[0] ?? -1;
-}
 
 function caretInActiveLine(): number {
   if (typeof document === 'undefined') return -1;

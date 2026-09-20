@@ -112,6 +112,7 @@ export {
   applyFill,
   shiftFills,
   indentListItem,
+  indentListItems,
   listMarkers,
   NOTE_LIST_MAX_INDENT,
   roundSizes,
@@ -125,7 +126,6 @@ export {
   NOTE_HIGHLIGHTS,
   parseNoteText,
   pasteNoteBlocks,
-  noteCellListInput,
 } from './note';
 export type { NoteBlockShape, NotePaste, NoteTextLine, TableFillTarget } from './note';
 
