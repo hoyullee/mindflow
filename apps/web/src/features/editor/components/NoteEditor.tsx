@@ -359,6 +359,9 @@ export function NoteEditor({ controller }: Props) {
   /** 드래그가 시작된 자리 — 편집 박스와 그 안의 캐럿 지점. */
   const dragFrom = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
   const colRef = useRef<HTMLDivElement | null>(null);
+  /** 문서에 건 리스너가 **지금** 선택을 볼 수 있게(상태는 클로저에 갇힌다). */
+  const textSelRef = useRef<LineSel[] | null>(null);
+  textSelRef.current = textSel;
   /**
    * **Shift+방향키로 줄을 넘어 고르기** — 브라우저는 편집 박스 밖으로 선택을 늘리지
    * 못하므로(블록마다 박스가 따로다) 우리가 이어 그린다(드래그 선택과 같은 그림).
@@ -384,9 +387,41 @@ export function NoteEditor({ controller }: Props) {
    * 드래그의 끝 — **문서에** 건다. 본문 밖에서 손을 떼는 일이 흔하고(스크롤바·
    * 사이드바), 그때 기준 블록이 남아 있으면 다음 마우스 이동만으로 선택이 생긴다.
    */
+  const dragPainted = useRef(false);
+  /**
+   * **두 번 눌러 고른 낱말**(제보) — 그대로 끌면 그 낱말이 통째로 유지되어야 한다.
+   *
+   * 브라우저는 두 번째 누름에서 낱말을 고르는데, 그 뒤의 드래그를 우리가 이어받으면서
+   * 앵커를 **누른 지점**으로 잡으면 낱말이 반으로 갈린다(아래로 끌면 앞쪽이, 위로
+   * 끌면 뒤쪽이 떨어져 나간다). 그래서 낱말의 두 끝을 적어 두고 **끄는 방향의 반대쪽
+   * 끝**을 앵커로 쓴다.
+   */
+  const wordSel = useRef<{ el: HTMLElement; from: number; to: number } | null>(null);
   useEffect(() => {
     const done = () => {
       dragFrom.current = null;
+      /**
+       * 끌어서 고른 뒤에는 **캐럿을 첫 줄의 시작점에 돌려 놓는다**(`paintAndHold`와
+       * 같은 이유: 한글로 덮어쓸 때 첫 자모가 갈 곳이 있어야 한다). 끄는 동안에는
+       * 브라우저가 제 선택을 늘리므로 그때는 비워 두고, 손을 뗀 지금 놓는다.
+       */
+      if (!dragPainted.current) return;
+      dragPainted.current = false;
+      const head = textSelRef.current?.[0];
+      if (!head) return;
+      try {
+        head.el.focus({ preventScroll: true });
+        const len = (head.el.textContent ?? '').length;
+        const spot = pointAt(head.el, Math.max(0, Math.min(head.from, len)));
+        const range = document.createRange();
+        range.setStart(spot.node, spot.offset);
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      } catch {
+        /* 캐럿을 못 놓아도 그림은 남는다 */
+      }
     };
     document.addEventListener('pointerup', done);
     document.addEventListener('pointercancel', done);
@@ -495,6 +530,37 @@ export function NoteEditor({ controller }: Props) {
   }, [textSel]);
 
   /**
+   * 고른 것을 **우리 그림으로 칠하고**, 캐럿은 **첫 줄의 시작점에 접어 둔다**.
+   *
+   * 예전에는 캐럿을 통째로 비우고 초점까지 걷었다(고른 것과 고치는 것을 가르려고).
+   * 그랬더니 **한글로 덮어쓸 때 첫 글자가 사라졌다**(제보) — IME는 키를 누르는 순간
+   * 이미 조합을 시작하는데, 그때 초점이 없으면 그 첫 자모가 갈 곳이 없다. 우리가
+   * 뒤늦게 초점을 옮겨도 이미 늦는다.
+   *
+   * 그래서 초점은 **지우게 될 자리(첫 줄의 고른 시작점)**에 그대로 둔다 — 글쇠가 와도
+   * 그 자리에 들어가고, 우리는 그 글자가 들어가기 **직전에** 고른 것을 지운다.
+   * 줄 부품은 칠해진 동안 자기 키 처리를 멈춘다(`selecting`).
+   */
+  const paintAndHold = useCallback((built: LineSel[]): void => {
+    setTextSel(built);
+    const head = built[0];
+    if (!head) return;
+    try {
+      head.el.focus({ preventScroll: true });
+      const len = (head.el.textContent ?? '').length;
+      const spot = pointAt(head.el, Math.max(0, Math.min(head.from, len)));
+      const range = document.createRange();
+      range.setStart(spot.node, spot.offset);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } catch {
+      /* 캐럿을 못 놓아도 그림은 남는다 */
+    }
+  }, []);
+
+  /**
    * 선택을 **한 줄 더** 늘린다(또는 줄인다) — Shift+위/아래.
    *
    * 앵커가 없으면 지금 캐럿이 앵커다. 늘린 결과가 **한 줄 안**으로 돌아오면 우리 그림을
@@ -532,12 +598,7 @@ export function NoteEditor({ controller }: Props) {
       }
       return true;
     }
-    // 우리가 칠하는 동안에는 브라우저의 선택과 캐럿을 비운다(드래그 선택과 같다) —
-    // 캐럿이 남으면 글쇠가 그 줄 안으로 들어가 "고른 것"과 "고치는 것"이 갈린다.
-    window.getSelection()?.removeAllRanges();
-    const live = document.activeElement as HTMLElement | null;
-    if (live?.hasAttribute('data-note-line')) live.blur();
-    setTextSel(built);
+    paintAndHold(built);
     return true;
   }, []);
 
@@ -559,12 +620,51 @@ export function NoteEditor({ controller }: Props) {
     selAnchor.current = { el: first, node: a.node, offset: a.offset };
     selFocus.current = { el: last, node: b.node, offset: b.offset };
     selX.current = undefined;
-    window.getSelection()?.removeAllRanges();
-    const live = document.activeElement as HTMLElement | null;
-    if (live?.hasAttribute('data-note-line')) live.blur();
-    setTextSel(built);
+    paintAndHold(built);
     return true;
   }, []);
+
+  /**
+   * 선택의 **끝을 글자 단위로** 옮긴다 — Shift+왼쪽/오른쪽 · Shift+Home/End.
+   *
+   * `to`가 `'char'`면 한 글자, `'edge'`면 그 줄의 처음·끝까지다. 줄의 경계를 넘으면
+   * 이웃 줄로 건너간다(위·아래와 같은 규칙). 앵커가 있던 줄로 되돌아오면 우리 그림을
+   * 걷고 브라우저의 선택으로 돌려준다.
+   */
+  const extendSide = useCallback((dir: -1 | 1, to: 'char' | 'edge'): boolean => {
+    const col = colRef.current;
+    if (!col || !selAnchor.current || !selFocus.current) return false;
+    const lines = [...col.querySelectorAll<HTMLElement>('[data-note-line]')].filter((el) => el.getAttribute('contenteditable') === 'true');
+    const cur = selFocus.current;
+    const len = (cur.el.textContent ?? '').length;
+    const at = charOffset(cur.el, cur.node, cur.offset);
+    let next = to === 'edge' ? (dir === 1 ? len : 0) : at + dir;
+    let el = cur.el;
+    if (next < 0 || next > len) {
+      // 줄을 넘는다 — 이웃 줄의 끝(왼쪽) · 처음(오른쪽)으로.
+      const i = lines.indexOf(cur.el);
+      const neighbour = lines[i + dir];
+      if (!neighbour) return true; // 문서의 끝 — 더 갈 곳이 없어도 키는 우리가 먹는다
+      el = neighbour;
+      next = dir === 1 ? 0 : (neighbour.textContent ?? '').length;
+    }
+    const spot = pointAt(el, next);
+    selFocus.current = { el, node: spot.node, offset: spot.offset };
+    const built = buildSelection(col, selAnchor.current, selFocus.current);
+    if (!built) {
+      setTextSel(null);
+      const a = selAnchor.current;
+      try {
+        a.el.focus({ preventScroll: true });
+        window.getSelection()?.setBaseAndExtent(a.node, a.offset, spot.node, spot.offset);
+      } catch {
+        /* 선택을 못 세워도 포커스는 갔다 */
+      }
+      return true;
+    }
+    paintAndHold(built);
+    return true;
+  }, [paintAndHold]);
 
   // 선택이 걷히면 앵커도 잊는다 — 다음 Shift+방향키는 지금 캐럿에서 새로 시작한다.
   useEffect(() => {
@@ -618,7 +718,9 @@ export function NoteEditor({ controller }: Props) {
     const putCaretNow = (key: string, at: number): void => {
       const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
       if (!el) return;
-      el.focus({ preventScroll: true });
+      // **이미 초점이 있으면 다시 주지 않는다** — 조합 중에 `focus()`를 부르면 그
+      // 조합이 끊긴다(한글의 첫 자모가 사라지는 길 가운데 하나다).
+      if (document.activeElement !== el) el.focus({ preventScroll: true });
       const len = (el.textContent ?? '').length;
       const spot = pointAt(el, Math.max(0, Math.min(at, len)));
       try {
@@ -652,12 +754,18 @@ export function NoteEditor({ controller }: Props) {
        * 줄 부품의 핸들러가 듣지 못한다. 그래서 여기서 이어받는다:
        * Shift+위/아래는 **한 줄 더**, 수정 키 없는 방향키는 선택을 **접고** 그 끝에 캐럿.
        */
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
         const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
-        const back = e.key === 'ArrowUp' || e.key === 'ArrowLeft';
+        const back = e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'Home';
         if (e.shiftKey && vertical && !e.metaKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
           extendSelection(e.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
+        // **가로로도 범위를 조절한다**(제보) — 한 글자씩(←·→) · 줄 끝까지(Home·End).
+        if (e.shiftKey && !vertical && !e.altKey) {
+          e.preventDefault();
+          extendSide(back ? -1 : 1, e.key === 'Home' || e.key === 'End' || e.metaKey ? 'edge' : 'char');
           return;
         }
         if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -708,7 +816,7 @@ export function NoteEditor({ controller }: Props) {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [textSel, page, controller, readOnly, extendSelection, selectAllBody]);
+  }, [textSel, page, controller, readOnly, extendSelection, extendSide, selectAllBody]);
 
   /** 이 공책을 가리키는 키 — 캐럿 기억이 **다른 문서로 새지 않게** 한다. */
   const docKey = controller.mapId ?? '';
@@ -813,6 +921,16 @@ export function NoteEditor({ controller }: Props) {
           onMouseDown={(e) => {
             const t = e.target as HTMLElement | null;
             if (!t) return;
+            /**
+             * **두 번 눌러 고른 낱말을 붙잡아 둔다**(제보 — `wordSel` 머리말).
+             * 클릭 횟수(`detail`)는 마우스 이벤트에만 실려 온다 — 포인터 이벤트의
+             * 그 값은 언제나 0이다(실측으로 그랬다).
+             */
+            const line = t.closest?.('[data-note-line]') as HTMLElement | null;
+            if (line && e.detail >= 2) {
+              const at = caretAt(e.clientX, e.clientY);
+              if (at && line.contains(at.node)) wordSel.current = wordAround(line, charOffset(line, at.node, at.offset));
+            }
             if (t.closest('button, input, textarea, a, select, [role="button"], [data-note-line], [data-note-hr], [data-note-table-cell], [data-note-table-grip], [data-note-block][data-note-kind="img"]')) return;
             e.preventDefault();
           }}
@@ -827,6 +945,9 @@ export function NoteEditor({ controller }: Props) {
             if (line) {
               const at = caretAt(e.clientX, e.clientY) ?? { node: line, offset: 0 };
               dragFrom.current = { el: line, node: at.node, offset: at.offset };
+              // 두 번 누른 것인지는 **`mousedown`이 안다** — 포인터 이벤트의 `detail`은
+              // 언제나 0이다(실측). 여기서는 비우고, 바로 뒤에 오는 그쪽에서 채운다.
+              wordSel.current = null;
               return;
             }
             // 줄 밖 — **가장 가까운 줄**에 캐럿을 놓고 거기서 드래그를 시작한다.
@@ -870,12 +991,28 @@ export function NoteEditor({ controller }: Props) {
             const at = overLine
               ? (caretAt(e.clientX, e.clientY) ?? { node: line, offset: (line.textContent ?? '').length })
               : { node: near!.node, offset: near!.offset };
-            const next = buildSelection(col, from, { el: line, node: at.node, offset: at.offset });
+            /**
+             * 두 번 눌러 고른 낱말이 있으면 **그 낱말이 통째로 남도록** 앵커를 고른다 —
+             * 아래로 끌면 낱말의 **앞**, 위로 끌면 **뒤**가 앵커다.
+             */
+            let anchor = from;
+            const word = wordSel.current;
+            if (word && word.el === from.el) {
+              const lines = [...col.querySelectorAll<HTMLElement>('[data-note-line]')];
+              const down = lines.indexOf(line) > lines.indexOf(word.el);
+              const spot = pointAt(word.el, down ? word.from : word.to);
+              anchor = { el: word.el, node: spot.node, offset: spot.offset };
+            }
+            const next = buildSelection(col, anchor, { el: line, node: at.node, offset: at.offset });
             if (!next) return;
+            // **끄는 동안에는** 브라우저의 선택을 비운다 — 그러지 않으면 브라우저가
+            // 제 나름대로 늘린 선택과 우리 그림이 겹쳐 두 겹으로 보인다. 손을 떼면
+            // 아래 `pointerup`이 캐럿을 제자리(첫 줄의 시작점)에 돌려놓는다.
             window.getSelection()?.removeAllRanges();
             const live = document.activeElement as HTMLElement | null;
             if (live?.hasAttribute('data-note-line')) live.blur();
             setTextSel(next);
+            dragPainted.current = true;
           }}
           style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}
         >
@@ -932,6 +1069,7 @@ export function NoteEditor({ controller }: Props) {
                   setFreshId={setFreshId}
                   selectOut={extendSelection}
                   selectAll={selectAllBody}
+                  selecting={!!textSel}
                   rememberBox={rememberBox}
                   focusBox={focusBox}
                   openSlash={(id, at) => openSlashAt(id, at)}
@@ -3063,6 +3201,8 @@ interface BlockProps {
   selectOut: (dir: -1 | 1, x?: number) => boolean;
   /** ⌘A 두 번째 — 본문 전체 고르기. */
   selectAll: () => boolean;
+  /** 여러 줄이 칠해져 있는가 — 그동안 줄 부품은 키를 놓아 준다. */
+  selecting: boolean;
   rememberBox: () => void;
   focusBox: (el: HTMLElement) => void;
   /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
@@ -3183,7 +3323,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, rememberBox, focusBox, openSlash }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -3464,6 +3604,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
       onSelectAll={selectAll}
+      selecting={selecting}
               onChange={(runs) => {
                 const itemId = block.items?.[0]?.id;
                 if (itemId) controller.setNoteItemRuns(block.id, itemId, runs);
@@ -3543,6 +3684,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
       onSelectAll={selectAll}
+      selecting={selecting}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
               onSlash={(at) => {
                 if (readOnly) return;
@@ -3698,6 +3840,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
       onSelectAll={selectAll}
+      selecting={selecting}
       onSlash={(at) => {
         if (readOnly) return;
         openSlash(block.id, at);
@@ -6093,6 +6236,22 @@ function moveNoteCaret(dir: -1 | 1, x?: number): boolean {
  * **1.5초 안**일 때 · 그 키의 줄이 **실제로 있을** 때.
  */
 let caretMemo: { doc: string; key: string; at: number; when: number } | null = null;
+
+/**
+ * 그 자리를 품은 **낱말의 두 끝**(글자 자리) — 두 번 눌러 고른 범위를 흉내 낸다.
+ *
+ * 공백으로 가른다. 브라우저의 낱말 판정(ICU)과 똑같지는 않지만 한글·영문 모두에서
+ * "눈에 보이는 한 덩이"와 어긋나지 않고, 규칙이 단순해 예측할 수 있다.
+ */
+function wordAround(el: HTMLElement, at: number): { el: HTMLElement; from: number; to: number } {
+  const text = el.textContent ?? '';
+  const space = (i: number): boolean => /\s/.test(text[i] ?? ' ');
+  let from = Math.max(0, Math.min(at, text.length));
+  let to = from;
+  while (from > 0 && !space(from - 1)) from -= 1;
+  while (to < text.length && !space(to)) to += 1;
+  return { el, from, to };
+}
 
 /**
  * 그 좌표에 **가장 가까운 편집 줄**과 그 안의 캐럿 지점.

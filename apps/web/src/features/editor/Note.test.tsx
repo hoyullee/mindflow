@@ -3832,6 +3832,110 @@ describe('공책 35판 — 목록 풀기와 고른 줄 위에 덮어쓰기', () 
   });
 });
 
+describe('공책 36판 — 빈 저장 막기 · 되돌리기 · 선택 유지', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const TWO = {
+    ...NOTE,
+    pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄입니다', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄입니다', b: false, c: null }] },
+    ], updatedAt: '2026-01-01T00:00:00.000Z' }],
+  };
+
+  it('**커서만 옮기면 문서가 바뀌지 않는다**(제보 3: 저장이 걸린다)', async () => {
+    localStorage.setItem('mindflow_doc_z0', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=z0&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    const two = container.querySelector('[data-note-line="b2"]') as HTMLElement;
+
+    // 줄을 오가며 포커스를 옮긴다 — 편집 박스는 떠날 때마다 커밋한다(`onBlur`).
+    one.focus();
+    fireEvent.blur(one);
+    two.focus();
+    fireEvent.blur(two);
+    saveNow();
+
+    // 글이 그대로면 페이지의 수정 시각도 그대로다(= 저장할 것이 없다).
+    await waitFor(() => expect(saved('z0')).toBeTruthy());
+    expect(saved('z0').pages[0].updatedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('글을 **한 글자라도 고치면** 그때는 바뀐 것으로 본다(무회귀)', async () => {
+    localStorage.setItem('mindflow_doc_z1', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=z1&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    type(one, '고친 글');
+    saveNow();
+
+    await waitFor(() => expect(runsOf(saved('z1').pages[0].blocks[0])).toBe('고친 글'));
+    expect(saved('z1').pages[0].updatedAt).not.toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('⌘Z가 **화면의 글자까지** 되돌린다(제보 5: 모델만 돌아가고 화면은 그대로였다)', async () => {
+    localStorage.setItem('mindflow_doc_z2', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=z2&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    type(one, '고친 글');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')?.textContent).toBe('고친 글'));
+
+    fireEvent.keyDown(window, { key: 'z', metaKey: true });
+
+    // 본문이 다시 그려지며 옛 글이 화면에 돌아온다(`docEpoch`).
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')?.textContent).toBe('첫째 줄입니다'));
+  });
+
+  it('여러 줄을 고르는 동안 **초점은 첫 줄에 남는다**(한글 조합의 목적지)', async () => {
+    localStorage.setItem('mindflow_doc_z3', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=z3&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 글 끝에 캐럿을 두고 Shift+↓ — jsdom은 좌표를 못 재 **글 끝**이라야 가장자리다.
+    one.focus();
+    const text = document.createTreeWalker(one, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, (text.nodeValue ?? '').length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.keyDown(one, { key: 'ArrowDown', shiftKey: true });
+
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+    // 초점이 남아 있어야 IME가 첫 자모를 흘리지 않는다.
+    expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1');
+  });
+
+  it('고르는 동안 줄 부품은 **키를 놓아 준다** — 문서 리스너가 맡는다', async () => {
+    localStorage.setItem('mindflow_doc_z4', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=z4&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    one.focus();
+    const text = document.createTreeWalker(one, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, (text.nodeValue ?? '').length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.keyDown(one, { key: 'ArrowDown', shiftKey: true });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+
+    // 줄 부품이 받았다면 Enter가 블록을 하나 더 만든다 — 칠해진 동안에는 아니다.
+    const ev = createEvent.keyDown(one, { key: 'Enter' });
+    fireEvent(one, ev);
+    expect(container.querySelectorAll('[data-note-blockwrap]')).toHaveLength(2);
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');

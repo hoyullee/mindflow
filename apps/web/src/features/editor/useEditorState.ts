@@ -1085,6 +1085,11 @@ function historyBaseOf(d: Doc): Snapshot {
   };
 }
 
+/** 두 런 배열이 같은가 — **바뀐 것이 없으면 커밋하지 않는다**(빈 저장을 막는다). */
+function sameRuns(a: RichRun[] | undefined, b: RichRun[] | undefined): boolean {
+  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+}
+
 export function useEditorState(): EditorController {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -1936,6 +1941,18 @@ export function useEditorState(): EditorController {
     setEditingTitle(false);
     setTextCtx(null);
     setHistoryTick((t) => t + 1);
+    /**
+     * **공책은 본문을 다시 그린다**(제보: 되돌리기가 먹지 않는다).
+     *
+     * 공책의 편집 박스는 비제어라(마운트할 때 한 번만 그린다) 모델만 되돌리면
+     * 화면의 글자는 **그대로 남는다** — 그리고 포커스를 잃는 순간 그 옛 글이 다시
+     * 커밋되어 되돌린 것이 통째로 되살아난다(실측: ⌘Z 뒤 모델은 돌아갔는데 화면은
+     * 그대로였고, ⌘Y가 아무 일도 하지 않는 것처럼 보였다).
+     *
+     * `docEpoch`를 올려 본문을 다시 마운트한다 — 캐럿은 `NoteEditor`가 기억해 두었다
+     * 되돌려 놓는다(`caretMemo`).
+     */
+    if (docRef.current.kind === 'note') setDocEpoch((n) => n + 1);
   }
 
   const undo = useCallback(() => {
@@ -7255,7 +7272,16 @@ export function useEditorState(): EditorController {
   const setNoteBlockRuns = useCallback(
     (blockId: string, runs: RichRun[]) => {
       if (!notePage) return;
-      commitBlock(notePage.id, blockId, (b) => ({ ...b, runs: normalizeRuns(runs) }));
+      /**
+       * **글이 그대로면 아무 일도 하지 않는다**(제보: 커서만 옮겨도 저장이 걸린다).
+       *
+       * 편집 박스는 포커스를 잃을 때도 커밋한다(`onBlur`) — 한 글자도 고치지 않고
+       * 줄만 옮겨 다녀도 그때마다 페이지의 `updatedAt`이 새로 찍혀 문서가 "바뀐 것"이
+       * 되고 자동저장이 돌았다(실측: 방향키 여섯 번에 저장 두 번).
+       */
+      const next = normalizeRuns(runs);
+      if (sameRuns(notePage.blocks.find((b) => b.id === blockId)?.runs, next)) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, runs: next }));
     },
     [commitBlock, notePage],
   );
@@ -7264,9 +7290,13 @@ export function useEditorState(): EditorController {
   const setNoteItemRuns = useCallback(
     (blockId: string, itemId: string, runs: RichRun[]) => {
       if (!notePage) return;
+      // 문단과 같은 규칙 — 바뀐 것이 없으면 커밋하지 않는다(`setNoteBlockRuns` 머리말).
+      const next = normalizeRuns(runs);
+      const cur = notePage.blocks.find((b) => b.id === blockId)?.items?.find((it) => it.id === itemId)?.runs;
+      if (sameRuns(cur, next)) return;
       commitBlock(notePage.id, blockId, (b) => ({
         ...b,
-        items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, runs: normalizeRuns(runs) } : it)),
+        items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, runs: next } : it)),
       }));
     },
     [commitBlock, notePage],
@@ -7350,6 +7380,8 @@ export function useEditorState(): EditorController {
   const setNoteCell = useCallback(
     (blockId: string, row: number, col: number, runs: RichRun[]) => {
       if (!notePage) return;
+      // 바뀐 것이 없으면 커밋하지 않는다(`setNoteBlockRuns` 머리말).
+      if (sameRuns(notePage.blocks.find((b) => b.id === blockId)?.rows?.[row]?.[col], normalizeRuns(runs))) return;
       commitBlock(notePage.id, blockId, (b) => {
         const rows = (b.rows ?? []).map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? normalizeRuns(runs) : c)) : r));
         return { ...b, rows };

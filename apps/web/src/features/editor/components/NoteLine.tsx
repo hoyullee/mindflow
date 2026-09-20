@@ -55,6 +55,14 @@ interface Props {
    */
   onArrowOut?: (dir: -1 | 1, x?: number) => boolean;
   /**
+   * **여러 줄이 칠해져 있는 동안**은 이 줄의 키 처리를 멈춘다.
+   *
+   * 그때 캐럿은 첫 줄의 시작점에 접혀 있고(한글 조합의 목적지를 남겨 두려고) 키는
+   * **문서 리스너**가 통째로 맡는다 — 둘 다 움직이면 방향키가 두 번 먹고 Backspace가
+   * 글자와 선택을 함께 지운다.
+   */
+  selecting?: boolean;
+  /**
    * **⌘A를 한 번 더** — 줄 하나를 다 고른 상태에서 다시 누르면 본문 전체.
    * 처리했으면 `true`(브라우저의 "이 박스 전체 고르기"를 막는다).
    */
@@ -93,7 +101,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -129,6 +137,8 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, onEnter
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     const el = ref.current;
     if (!el) return;
+    // 여러 줄이 칠해져 있으면 **문서 리스너가 맡는다**(`selecting` 머리말).
+    if (selecting) return;
     /**
      * **서식 단축키** — ⌘B·⌘I·⌘U·⌘⇧S(요청: 공책에서도 단축키를 다 쓰게).
      *
