@@ -89,6 +89,17 @@ interface Props {
   onTab?: (back: boolean) => boolean;
   /** 마운트 직후 캐럿을 놓는다(새로 만든 블록). */
   autoFocus?: boolean;
+  /**
+   * **평문 붙여넣기** — `[from, to)`를 그 글로 바꾼다. 처리했으면 `true`.
+   *
+   * 왜 가로채나(제보): 목록을 복사해 붙이면 표식이 사라졌다. 클립보드에 가는 것은
+   * 평문이라 받는 쪽에서 `- `·`1. `을 다시 목록으로 세워야 하는데, 브라우저의 기본
+   * 붙여넣기는 이 **한 줄짜리 편집 박스 안에** 줄바꿈째로 밀어 넣는다.
+   *
+   * 고리를 주지 않았거나 `false`를 돌려주면 브라우저의 기본 붙여넣기다 — 표식도
+   * 줄바꿈도 없는 평범한 한 줄은 그쪽이 낫다(되돌리기가 자연스럽다).
+   */
+  onPasteText?: (text: string, from: number, to: number) => boolean;
   /** 이 줄을 가리키는 표식 — 테스트와 캐럿 이동이 쓴다. */
   lineKey?: string;
   /**
@@ -101,7 +112,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, onPasteText, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -297,6 +308,15 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       data-placeholder={placeholder ?? ''}
       onInput={commit}
       onBlur={commit}
+      onPaste={(e) => {
+        // 여러 줄이 칠해져 있으면 **문서 리스너가 맡는다**(`selecting` 머리말).
+        if (readOnly || selecting || !onPasteText) return;
+        const el = ref.current;
+        const text = e.clipboardData?.getData('text/plain') ?? '';
+        if (!el || !text) return;
+        const span = selectedRange(el);
+        if (onPasteText(text, span.from, span.to)) e.preventDefault();
+      }}
       onFocus={() => {
         const el = ref.current;
         if (el) onFocusLine?.(el);
@@ -305,6 +325,20 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       style={{ outline: 'none', minHeight: '1.6em', whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...style }}
     />
   );
+}
+
+/**
+ * 이 줄에서 **고른 구간**(없으면 캐럿 자리의 빈 구간) — 붙여넣기가 덮어쓸 자리다.
+ *
+ * `anchor`가 뒤일 수도 있으므로(아래에서 위로 끌었을 때) 늘 작은 쪽을 앞에 둔다.
+ */
+function selectedRange(el: HTMLElement): { from: number; to: number } {
+  const sel = window.getSelection();
+  const end = (el.textContent ?? '').length;
+  if (!sel || !sel.focusNode || !el.contains(sel.focusNode)) return { from: end, to: end };
+  const b = charOffset(el, sel.focusNode, sel.focusOffset);
+  const a = sel.anchorNode && el.contains(sel.anchorNode) ? charOffset(el, sel.anchorNode, sel.anchorOffset) : b;
+  return { from: Math.min(a, b), to: Math.max(a, b) };
 }
 
 /**

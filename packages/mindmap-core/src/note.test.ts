@@ -30,6 +30,9 @@ import {
   retypeBlock,
   indentListItem,
   listMarkers,
+  noteCellListInput,
+  parseNoteText,
+  pasteNoteBlocks,
   NOTE_LIST_MAX_INDENT,
   roundSizes,
   runsText,
@@ -427,5 +430,140 @@ describe('목록 항목 들여쓰기(Tab)와 단계별 표식', () => {
       { id: '4', runs: [], indent: 1 },
     ];
     expect(listMarkers('ol', items)).toEqual(['1.', 'a.', '2.', 'a.']);
+  });
+});
+
+describe('붙여넣은 평문의 목록 표식을 읽는다', () => {
+  it('마크다운·우리 표식·체크 상자를 모두 받는다', () => {
+    const out = parseNoteText('- 하나\n* 둘\n• 셋\n1. 넷\n2) 다섯\n- [x] 여섯\n[ ] 일곱\n그냥 글');
+    expect(out.map((l) => l.kind)).toEqual(['ul', 'ul', 'ul', 'ol', 'ol', 'ck', 'ck', null]);
+    expect(out.map((l) => l.text)).toEqual(['하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '그냥 글']);
+    expect(out[5]?.done).toBe(true);
+    expect(out[6]?.done).toBe(false);
+    expect(out[3]?.start).toBe(1);
+    expect(out[4]?.start).toBe(2);
+  });
+
+  it('앞 공백 둘이 한 단계 — 탭도 한 단계', () => {
+    const out = parseNoteText('- 하나\n  - 둘\n\t- 셋\n    - 넷');
+    expect(out.map((l) => l.indent)).toEqual([0, 1, 1, 2]);
+  });
+
+  it('알파벳·로마자 표식은 **들여쓴 줄에서만** 읽는다', () => {
+    // 평범한 문장의 `a. `까지 목록으로 바꾸면 붙여넣기가 글을 망친다.
+    expect(parseNoteText('a. 그리고')[0]?.kind).toBe(null);
+    expect(parseNoteText('  a. 그리고')[0]).toMatchObject({ kind: 'ol', indent: 1, text: '그리고' });
+  });
+
+  it('표식을 못 살리는 자리를 위해 **원문**도 들고 있다', () => {
+    expect(parseNoteText('- 하나')[0]?.raw).toBe('- 하나');
+  });
+
+  it('줄 끝의 줄바꿈 하나는 빈 줄로 세지 않는다', () => {
+    expect(parseNoteText('- 하나\n').length).toBe(1);
+    expect(parseNoteText('- 하나\n\n').length).toBe(2);
+  });
+});
+
+describe('평문을 본문에 붙여넣는다 — 표식을 살려서', () => {
+  const page = (): NoteBlock[] => [
+    { id: 'b1', kind: 'p', runs: textRuns('') },
+    { id: 'b2', kind: 'p', runs: textRuns('뒤') },
+  ];
+
+  it('빈 문단에 목록을 붙이면 **목록 블록 하나**가 된다', () => {
+    const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '- 하나\n- 둘\n- 셋');
+    expect(out).not.toBeNull();
+    expect(out?.blocks.length).toBe(2); // 목록 하나 + 원래 뒤 문단
+    const list = out?.blocks[0] as NoteBlock;
+    expect(list.kind).toBe('ul');
+    expect(list.items?.map((x) => runsText(x.runs))).toEqual(['하나', '둘', '셋']);
+    // 캐럿은 **마지막으로 붙인 글의 끝**이다.
+    expect(out?.key).toBe(`${list.id}:${list.items?.[2]?.id}`);
+    expect(out?.at).toBe(1); // '셋' 한 글자 뒤
+  });
+
+  it('종류가 다른 줄에서 목록이 끊긴다 — 블록이 갈린다', () => {
+    const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '- 하나\n사이\n1. 둘');
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ul', 'p', 'ol', 'p']);
+  });
+
+  it('번호가 `3.`에서 시작하면 그 수를 적는다', () => {
+    const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '3. 셋\n4. 넷');
+    expect(out?.blocks[0]?.start).toBe(3);
+    expect(out?.blocks[0]?.items?.length).toBe(2);
+  });
+
+  it('글 가운데에 붙이면 표식을 **글자 그대로** 넣는다(문단은 그대로)', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'p', runs: textRuns('앞뒤') }];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', from: 1, to: 1 }, '- 하나');
+    expect(out?.blocks.length).toBe(1);
+    expect(runsText(out?.blocks[0]?.runs)).toBe('앞- 하나뒤');
+    expect(out?.at).toBe(5); // '앞' + '- 하나'
+  });
+
+  it('고른 구간은 덮어쓰고, 줄의 **뒷부분은 마지막 줄에 따라붙는다**', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'p', runs: textRuns('앞XX뒤') }];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', from: 1, to: 3 }, '한\n두');
+    expect(out?.blocks.map((b) => runsText(b.runs))).toEqual(['앞한', '두뒤']);
+    expect(out?.at).toBe(1); // 꼬리 앞
+  });
+
+  it('목록 항목 안에 같은 종류를 붙이면 **그 목록에 이어진다**', () => {
+    const blocks: NoteBlock[] = [
+      { id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('') }, { id: 'i2', runs: textRuns('끝') }] },
+    ];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 0, to: 0 }, '- 하나\n- 둘');
+    expect(out?.blocks.length).toBe(1);
+    expect(out?.blocks[0]?.items?.map((x) => runsText(x.runs))).toEqual(['하나', '둘', '끝']);
+    // 원래 항목의 id는 지킨다(댓글·링크가 잡고 있을 수 있다).
+    expect(out?.blocks[0]?.items?.[0]?.id).toBe('i1');
+  });
+
+  it('목록 항목 안에 평범한 글을 붙이면 목록이 **갈린다**', () => {
+    const blocks: NoteBlock[] = [
+      { id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('') }, { id: 'i2', runs: textRuns('끝') }] },
+    ];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 0, to: 0 }, '하나\n둘');
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ul', 'p', 'ul']);
+    expect(out?.blocks[2]?.items?.map((x) => x.id)).toEqual(['i2']);
+  });
+
+  it('들여쓴 단계도 따라온다', () => {
+    const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '- 하나\n  - 둘');
+    expect(out?.blocks[0]?.items?.map((x) => x.indent ?? 0)).toEqual([0, 1]);
+  });
+
+  it('체크 상자의 켜짐도 따라온다', () => {
+    const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '- [x] 했다\n- [ ] 아직');
+    expect(out?.blocks[0]?.kind).toBe('ck');
+    expect(out?.blocks[0]?.items?.map((x) => !!x.done)).toEqual([true, false]);
+  });
+
+  it('표·이미지처럼 글을 담지 않는 블록은 맡지 않는다', () => {
+    const blocks: NoteBlock[] = [emptyBlock('table')];
+    expect(pasteNoteBlocks(blocks, { blockId: blocks[0]!.id, from: 0, to: 0 }, '- 하나')).toBeNull();
+  });
+});
+
+describe('표 칸 안의 목록 표식', () => {
+  it('줄 맨 앞의 `- `는 `• `가 된다', () => {
+    expect(noteCellListInput('- ', 2)).toEqual({ at: 0, remove: 2, insert: '• ', caret: 2 });
+    // 캐럿이 그 뒤가 아니면 걸지 않는다(글을 쓰다 만든 `- `).
+    expect(noteCellListInput('- 글', 3)).toBeNull();
+  });
+
+  it('줄을 바꾸면 표식이 이어진다 — 번호는 하나 올린다', () => {
+    expect(noteCellListInput('• 하나\n', 5)).toEqual({ at: 5, remove: 0, insert: '• ', caret: 7 });
+    expect(noteCellListInput('1. 하나\n', 6)).toEqual({ at: 6, remove: 0, insert: '2. ', caret: 9 });
+  });
+
+  it('표식뿐인 빈 줄에서 다시 줄을 바꾸면 그 표식을 걷는다', () => {
+    expect(noteCellListInput('• 하나\n• \n', 8)).toEqual({ at: 5, remove: 3, insert: '', caret: 5 });
+  });
+
+  it('표식이 없는 줄에서는 아무 일도 하지 않는다', () => {
+    expect(noteCellListInput('그냥 글\n', 5)).toBeNull();
+    expect(noteCellListInput('', 0)).toBeNull();
   });
 });

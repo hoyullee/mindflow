@@ -162,7 +162,23 @@ export function clearPaint(): void {
   CSS.highlights.delete(HIGHLIGHT_NAME);
 }
 
-/** 고른 글자 — 줄바꿈으로 잇는다(클립보드에 그대로 간다). */
+/**
+ * 고른 글자 — 줄바꿈으로 잇는다(클립보드에 그대로 간다).
+ *
+ * **목록의 표식도 함께 간다**(제보: 번호 매기기를 복사해 붙이면 마커가 사라진다).
+ * 표식은 그린 쪽이 줄에 적어 둔 값이다(`data-note-mark` — `- ` · `3. ` · `- [x] `,
+ * 들여쓴 단계는 공백 둘씩). 마크다운 모양이라 다른 앱에 붙여도 목록으로 읽히고,
+ * 우리 본문으로 되돌아올 때는 `parseNoteText`가 그대로 다시 목록으로 세운다.
+ *
+ * **줄의 처음부터 골랐을 때만** 붙인다 — 문장 가운데부터 끌었다면 그것은 글의 일부지
+ * 항목 하나가 아니다.
+ */
 export function selectionText(sel: LineSel[]): string {
-  return sel.map((s) => (s.el.textContent ?? '').slice(s.from, s.to)).join('\n');
+  return sel
+    .map((s) => {
+      const body = (s.el.textContent ?? '').slice(s.from, s.to);
+      const mark = s.from === 0 ? (s.el.closest('[data-note-mark]')?.getAttribute('data-note-mark') ?? '') : '';
+      return mark + body;
+    })
+    .join('\n');
 }
