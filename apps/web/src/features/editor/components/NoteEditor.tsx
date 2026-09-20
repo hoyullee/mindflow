@@ -498,14 +498,21 @@ export function NoteEditor({ controller }: Props) {
     const remove = () => {
       const first = sel[0]!;
       const last = sel[sel.length - 1]!;
-      const head = (first.el.textContent ?? '').slice(0, first.from);
-      const tail = (last.el.textContent ?? '').slice(last.to);
-      // 가운데(와 마지막) 줄이 든 블록을 먼저 뺀다 — 뒤에서부터 지워야 자리가 안 밀린다.
-      const drop = [...new Set(sel.slice(1).map((l) => blockIdOf(l.key)))].filter((id) => id !== blockIdOf(first.key));
-      for (const id of drop.reverse()) controller.removeNoteBlock(id);
-      commitLine(controller, first.key, textRuns(head + tail));
+      /**
+       * **줄의 단위는 블록만이 아니다**(제보: 목록 여러 줄을 끌어 지우면 첫 줄의
+       * 글자만 지워진다). 예전에는 여기서 "가운데 **블록**들을 지운다"만 했는데,
+       * 목록의 여러 줄은 한 블록 안의 **항목**이라 지울 블록이 하나도 없었다.
+       * 이제 컨트롤러가 항목까지 보고 한 커밋으로 들어낸다.
+       */
+      const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
+      if (!done) {
+        setTextSel(null);
+        return;
+      }
       // 비제어 박스라 DOM도 함께 고쳐 준다(모델만 바꾸면 화면에 옛 글자가 남는다).
-      first.el.textContent = head + tail;
+      const el = document.querySelector<HTMLElement>(`[data-note-line="${done.key}"]`) ?? first.el;
+      el.innerHTML = runsToHtml({ text: runsText(done.runs), rich: done.runs });
+      caretToLine(done.key, done.at);
       setTextSel(null);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -3599,7 +3606,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
    * 끄는 동안은 화면에만 반영하고(`live`), 손을 뗄 때 한 번 문서에 적는다 — 픽셀마다
    * 커밋하면 실행 취소가 한 칸씩 수십 개로 쌓인다(맵의 드래그와 같은 처방).
    */
-  const sizing = useRef<{ axis: 'col' | 'row'; i: number; from: number; base: number[] } | null>(null);
+  const sizing = useRef<{ axis: 'col' | 'row'; i: number; from: number; base: number[]; boxTop: number } | null>(null);
   const [live, setLive] = useState<{ axis: 'col' | 'row'; sizes: number[] } | null>(null);
 
   const pick = useCallback((next: TableSel | null) => {
@@ -4155,7 +4162,10 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
             over -= cut;
           }
         }
-        sizing.current = { axis, i, from: axis === 'col' ? e.clientX : e.clientY, base: base.slice() };
+        sizing.current = { axis, i, from: axis === 'col' ? e.clientX : e.clientY, base: base.slice(), boxTop: boxRef.current?.getBoundingClientRect().top ?? 0 };
+        // 표 **윗변의 화면 자리**를 못박는다 — 끄는 동안 여기서 벗어나면 되돌린다.
+        pin.current = { top: boxRef.current?.getBoundingClientRect().top ?? 0 };
+        if (typeof requestAnimationFrame === 'function') pinRaf.current = requestAnimationFrame(keepTop);
         setLive({ axis, sizes: base.slice() });
       }}
       // 열 그립이 행 그립 **위**에 온다. 둘은 경계가 만나는 자리에서 6×6으로 겹치는데,
@@ -4165,9 +4175,49 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     />
   );
 
+  /**
+   * **끄는 동안 표의 윗변을 화면에 못박는다**(제보: 행을 늘리면 아래가 아니라 위로
+   * 자란다 — 윗 행이 밀려 올라가고 아랫 행은 제자리였다).
+   *
+   * 행이 커지면 표는 **아래로** 자라야 한다. 그런데 스크롤 판이 그 변화를 따라
+   * 스스로 굴러 보정하면(브라우저의 스크롤 앵커링이 하는 일이다) 화면에서는 아랫부분이
+   * 고정된 채 표가 위로 밀려 올라간 것처럼 보인다 — 자란 만큼 판이 함께 굴러서다.
+   * 원인이 무엇이든(앵커링·확대 배율·레이아웃) 결과는 하나다: **윗변이 움직인다.**
+   *
+   * 그래서 잡은 순간의 윗변 자리를 적어 두고, 움직였으면 그만큼 스크롤을 되돌린다.
+   * 제대로 자라는 경우에는 윗변이 애초에 움직이지 않으므로 아무 일도 하지 않는다
+   * (실측: 우리 환경의 드리프트는 0이다). 프레임마다 도는 이유는 보정이 **레이아웃
+   * 뒤에** 일어나기 때문이다 — 한 번만 재면 늘 한 프레임씩 늦는다. 손을 뗀 뒤에도
+   * 잠깐(≈8프레임) 더 돌아 마지막 보정까지 따라잡는다.
+   */
+  const pin = useRef<{ top: number } | null>(null);
+  const pinRaf = useRef(0);
+  const keepTop = useCallback(() => {
+    const box = boxRef.current;
+    const want = pin.current?.top;
+    const sc = box?.closest('[data-note-page]') as HTMLElement | null;
+    if (box && sc && typeof want === 'number') {
+      const drift = box.getBoundingClientRect().top - want;
+      if (Math.abs(drift) > 0.5) sc.scrollTop += drift;
+    }
+    if (pin.current && typeof requestAnimationFrame === 'function') pinRaf.current = requestAnimationFrame(keepTop);
+  }, []);
+  useEffect(() => () => {
+    pin.current = null;
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(pinRaf.current);
+  }, []);
+
   /* 끄는 동안은 화면만, 손을 떼면 문서에 한 번. */
   useEffect(() => {
     if (!live) return;
+    /**
+     * 끄는 동안에는 **스크롤 앵커링을 끈다** — 크기가 바뀌는 그 순간 판이 스스로
+     * 굴러 보정하면 표가 제자리에 있는데도 화면이 흔들린다(위 효과가 고치는 그
+     * 증상의 표준 처방이다). 끝나면 원래대로 돌려준다.
+     */
+    const sc = boxRef.current?.closest('[data-note-page]') as HTMLElement | null;
+    const hadAnchor = sc?.style.overflowAnchor ?? '';
+    if (sc) sc.style.overflowAnchor = 'none';
     const move = (e: MouseEvent) => {
       const g = sizing.current;
       if (!g) return;
@@ -4180,6 +4230,10 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     const up = () => {
       const g = sizing.current;
       sizing.current = null;
+      // 마지막 보정까지 따라잡고 놓아 준다(보정은 레이아웃 **뒤에** 온다).
+      window.setTimeout(() => {
+        pin.current = null;
+      }, 140);
       setLive((cur) => {
         if (g && cur) controller.setNoteTableSizes(block.id, g.axis, cur.sizes);
         return null;
@@ -4190,6 +4244,7 @@ function TableBlock({ controller, block, focusBox, openSlash }: { controller: Ed
     return () => {
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
+      if (sc) sc.style.overflowAnchor = hadAnchor;
     };
   }, [live, block.id, controller]);
 

@@ -3192,6 +3192,118 @@ describe('공책 30판 — 목록 Tab · 앞 줄에 잇기 · 지운 뒤 커서'
   });
 });
 
+describe('공책 31판 — 목록 여러 줄 끌어 지우기 · 조합 중 방향키(3회차)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /**
+   * 두 줄에 걸쳐 끈다 — jsdom에는 좌표→캐럿이 없어 **줄 통째로**가 걸린다
+   * (`buildSelection`의 폴백: 시작 줄은 머리부터, 끝 줄은 끝까지).
+   */
+  function dragOver(container: HTMLElement, fromKey: string, toKey: string): void {
+    const col = container.querySelector('[data-note-page] > div') as HTMLElement;
+    const a = container.querySelector(`[data-note-line="${fromKey}"]`) as HTMLElement;
+    const b = container.querySelector(`[data-note-line="${toKey}"]`) as HTMLElement;
+    fireEvent.pointerDown(a, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(b, { clientX: 0, clientY: 0 });
+    expect(col).toBeTruthy();
+  }
+
+  it('번호 매기기 여러 줄을 끌어 지우면 **그 줄들이 사라진다**(제보: 첫 줄 글자만 지워졌다)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'ol', items: [
+      { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+      { id: 'i2', runs: [{ t: '둘', b: false, c: null }] },
+      { id: 'i3', runs: [{ t: '셋', b: false, c: null }] },
+    ] }] }] };
+    localStorage.setItem('mindflow_doc_u0', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=u0&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1:i3"]')).toBeTruthy());
+
+    dragOver(container, 'b1:i1', 'b1:i3');
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    // 저장은 **화면이 바뀐 뒤에** — `saveNow`는 지금 문서를 그대로 적는데, 커밋은
+    // 리액트가 다음 차례에 반영한다(먼저 저장하면 옛 문서가 남는다).
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1:i3"]')).toBeNull());
+    saveNow();
+
+    await waitFor(() => expect(saved('u0').pages[0].blocks[0].items).toHaveLength(1));
+    expect(runsOf({ runs: saved('u0').pages[0].blocks[0].items[0].runs })).toBe('');
+    // 목록 자체는 남는다 — 지운 것은 줄이지 블록의 종류가 아니다.
+    expect(saved('u0').pages[0].blocks[0].kind).toBe('ol');
+  });
+
+  it('가운데 줄들만 끌면 **뒤의 항목은 남는다**', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'ul', items: [
+      { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+      { id: 'i2', runs: [{ t: '둘', b: false, c: null }] },
+      { id: 'i3', runs: [{ t: '셋', b: false, c: null }] },
+    ] }] }] };
+    localStorage.setItem('mindflow_doc_u1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=u1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1:i2"]')).toBeTruthy());
+
+    dragOver(container, 'b1:i1', 'b1:i2');
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1:i2"]')).toBeNull());
+    saveNow();
+
+    await waitFor(() => expect(saved('u1').pages[0].blocks[0].items).toHaveLength(2));
+    expect(saved('u1').pages[0].blocks[0].items.map((i: { runs: { t: string }[] }) => i.runs.map((r) => r.t).join(''))).toEqual(['', '셋']);
+  });
+
+  it('문단에서 목록 가운데까지 끌면 **블록을 넘어서도** 지워진다', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b0', kind: 'p', runs: [{ t: '문단', b: false, c: null }] },
+      { id: 'b1', kind: 'ul', items: [
+        { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+        { id: 'i2', runs: [{ t: '둘', b: false, c: null }] },
+        { id: 'i3', runs: [{ t: '셋', b: false, c: null }] },
+      ] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_u2', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=u2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1:i2"]')).toBeTruthy());
+
+    dragOver(container, 'b0', 'b1:i2');
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1:i2"]')).toBeNull());
+    saveNow();
+
+    await waitFor(() => expect(runsOf(saved('u2').pages[0].blocks[0])).toBe(''));
+    expect(runsOf(saved('u2').pages[0].blocks[0])).toBe('');
+    expect(saved('u2').pages[0].blocks[1].items.map((i: { runs: { t: string }[] }) => i.runs.map((r) => r.t).join(''))).toEqual(['셋']);
+  });
+
+  it('**조합 중이라 캐럿이 접혀 있지 않아도** ↑는 한 번에 윗줄로(제보 3회차)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_u3', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=u3&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b2"]'))) as HTMLElement;
+
+    // IME가 조합 글자를 **골라 둔** 모양 — `isCollapsed`가 거짓이다(실측한 그 상태).
+    two.focus();
+    const text = document.createTreeWalker(two, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 1);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    expect(sel?.isCollapsed).toBe(false);
+
+    fireEvent.keyDown(two, { key: 'ArrowUp', isComposing: true });
+
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+  });
+});
+
 /** 저장본 블록의 글자 — 런이 없으면 빈 문자열. */
 function runsOf(block: { runs?: { t: string }[] }): string {
   return (block.runs ?? []).map((r) => r.t).join('');
