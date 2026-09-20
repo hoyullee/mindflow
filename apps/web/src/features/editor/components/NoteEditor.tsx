@@ -600,13 +600,37 @@ export function NoteEditor({ controller }: Props) {
       const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
       if (!done) {
         setTextSel(null);
-        return;
+        return null;
       }
       // 비제어 박스라 DOM도 함께 고쳐 준다(모델만 바꾸면 화면에 옛 글자가 남는다).
       const el = document.querySelector<HTMLElement>(`[data-note-line="${done.key}"]`) ?? first.el;
       el.innerHTML = runsToHtml({ text: runsText(done.runs), rich: done.runs });
-      caretToLine(done.key, done.at);
       setTextSel(null);
+      return { key: done.key, at: done.at };
+    };
+    /**
+     * 캐럿을 **지금 곧바로** 그 자리에 놓는다(다음 프레임이 아니라).
+     *
+     * 글자를 이어 치는 길에서 쓴다 — 브라우저는 이 `keydown`이 끝난 **직후** 지금
+     * 초점·캐럿이 있는 자리에 글자를 넣으므로, 한 프레임이라도 늦으면 그 글자가
+     * 갈 곳을 잃는다.
+     */
+    const putCaretNow = (key: string, at: number): void => {
+      const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      const len = (el.textContent ?? '').length;
+      const spot = pointAt(el, Math.max(0, Math.min(at, len)));
+      try {
+        const range = document.createRange();
+        range.setStart(spot.node, spot.offset);
+        range.collapse(true);
+        const sel2 = window.getSelection();
+        sel2?.removeAllRanges();
+        sel2?.addRange(range);
+      } catch {
+        /* 캐럿을 못 놓아도 포커스는 갔다 */
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       /**
@@ -645,6 +669,21 @@ export function NoteEditor({ controller }: Props) {
         }
       }
       const mod = e.metaKey || e.ctrlKey;
+      /**
+       * **골라 둔 여러 줄 위에 글자를 치면 덮어쓴다**(제보: 아무 일도 일어나지 않는다).
+       *
+       * 우리가 칠하는 동안에는 편집 박스에 초점이 없어(캐럿을 비운다) 글쇠가 갈 곳이
+       * 없었다. 이제 **먼저 지우고** 이은 자리로 초점·캐럿을 곧바로 옮긴다 — 글자는
+       * 막지 않고 **브라우저가 넣는다**. 그래야 한글 조합도 그대로 이어진다
+       * (우리가 글자를 직접 넣으면 조합이 끊긴다).
+       *
+       * `Process`·`Unidentified`는 IME가 첫 자모를 삼킬 때 오는 키 이름이다.
+       */
+      if (!mod && !e.altKey && !readOnly && (e.key.length === 1 || e.key === 'Process' || e.key === 'Unidentified')) {
+        const spot = remove();
+        if (spot) putCaretNow(spot.key, spot.at);
+        return; // preventDefault 하지 않는다 — 그 글자는 방금 옮긴 캐럿 자리에 들어간다
+      }
       // 이미 여러 줄을 고른 상태의 ⌘A — 본문 전체로 넓힌다.
       if (mod && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
@@ -654,14 +693,17 @@ export function NoteEditor({ controller }: Props) {
       const text = () => selectionText(sel);
       if (mod && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
-        void navigator.clipboard.writeText(text()).catch(() => undefined);
+        // 클립보드가 없는 환경(안전하지 않은 출처·옛 브라우저·하네스)에서도 지우기는 듣는다.
+        void navigator.clipboard?.writeText(text()).catch(() => undefined);
       } else if (mod && (e.key === 'x' || e.key === 'X')) {
         e.preventDefault();
-        void navigator.clipboard.writeText(text()).catch(() => undefined);
+        // 클립보드가 없는 환경(안전하지 않은 출처·옛 브라우저·하네스)에서도 지우기는 듣는다.
+        void navigator.clipboard?.writeText(text()).catch(() => undefined);
         if (!readOnly) remove();
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && !readOnly) {
         e.preventDefault();
-        remove();
+        const spot = remove();
+        if (spot) putCaretNow(spot.key, spot.at);
       }
     };
     document.addEventListener('keydown', onKey);
@@ -3557,9 +3599,22 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 // 문서 편집기의 몸에 익은 순서다(지우기 전에 한 단계 나온다).
                 if ((item.indent ?? 0) > 0) return controller.setNoteItemIndent(block.id, item.id, -1);
                 /**
-                 * **앞 줄에 잇는다** — 앞 항목이 있으면 그 항목에, 첫 항목이면 앞
-                 * 블록의 마지막 줄에(그때 목록의 나머지 항목은 그대로 남는다).
-                 * 빈 항목도 같은 길을 지난다(이어 붙일 글이 없을 뿐이다).
+                 * **첫 항목이면 목록을 푼다**(제보) — 마커만 걷히고 글은 그 자리에
+                 * 남는다. 윗줄과 잇는 것은 **그다음 Backspace**의 일이다(그때는
+                 * 문단이 되어 있으므로 문단의 규칙을 그대로 탄다).
+                 */
+                if (j === 0) {
+                  const made = controller.unlistNoteItem(block.id, item.id);
+                  if (made) {
+                    setFreshId(made);
+                    caretToLine(made, 0);
+                    return true;
+                  }
+                }
+                /**
+                 * **앞 항목에 잇는다** — 가운데 항목의 맨 앞 Backspace는 위 항목과
+                 * 이어 붙는 것이 문서 편집기의 규칙이다. 빈 항목도 같은 길을 지난다
+                 * (이어 붙일 글이 없을 뿐이다).
                  */
                 const joined = controller.mergeNoteBlockBack(block.id, item.id);
                 if (joined) {
