@@ -465,16 +465,18 @@ export function linearize(el: HTMLElement, marks: DomMark[]): { text: string; po
   return { text, pos: res };
 }
 
-/** Port of `Component#setLinearSelection` (MindFlow.dc.html:2677-2698): the inverse of
- * `linearize` — re-applies a `[s0, s1)` plain-text offset range as the live DOM Selection,
- * used after `applyPartial` rewrites the editor's innerHTML (which otherwise drops the
- * user's selection) to restore it so a follow-up style click still targets the same run. */
-export function setLinearSelection(el: HTMLElement, s0: number, s1: number): void {
+/**
+ * `linearize`의 **역**: 값 좌표 몇 개를 그 자리의 (노드, 오프셋)으로 되돌린다.
+ *
+ * `setLinearSelection`에서 갈라 낸 것이다 — 값 좌표를 DOM 자리로 푸는 곳이 둘이
+ * 되면(선택 복원과 칠하기) 규칙이 언젠가 갈라지고, 그 어긋남이 곧 "고른 자리와
+ * 서식이 걸린 자리가 다르다"는 제보가 된다. `<br>`을 한 글자로 세는 것도,
+ * 블록이 만드는 암묵적 줄바꿈도, 마커 스팬의 끝 경계를 내용 쪽에 양보하는 것도
+ * 전부 `linearize`·`domToRuns`와 같은 규칙이라야 한다.
+ */
+export function linearPoints(el: HTMLElement, positions: number[]): { node: Node; offset: number }[] {
+  const out = new Array<{ node: Node; offset: number } | null>(positions.length).fill(null);
   let acc = 0;
-  let sC: Node | null = null;
-  let sO = 0;
-  let eC: Node | null = null;
-  let eO = 0;
   // 마지막으로 지나온 위치 — 어떤 이유로든 오프셋을 못 찾았을 때의 폴백.
   // 예전엔 못 찾으면 `el` 전체를 선택했는데, 그러면 다음 타이핑이 본문을 통째로
   // 갈아엎는다(제보: 빈 줄에서 Backspace 후 글자를 치면 전부 사라짐).
@@ -487,8 +489,9 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
   // 마커 **안**에 떨어져 다음 글자가 마커를 부쉈다). 시작은 `true` — 맨 앞 블록은
   // 줄바꿈을 만들지 않는다.
   let lastNl = true;
+  const done = (): boolean => out.every((x) => x !== null);
   const walk = (node: Node): void => {
-    if (sC && eC) return;
+    if (done()) return;
     if (node.nodeType === 3) {
       const len = (node.nodeValue || '').length;
       // 리스트 마커 스팬의 **끝 경계**는 내용 쪽에 양보한다. 마커 스팬은
@@ -497,14 +500,9 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
       // 오므로, 여기서 양보하지 않으면 이어지는 타이핑이 전부 마커 안에 쌓인다.
       const inMarker = !!(node.parentElement && node.parentElement.hasAttribute('data-list-marker'));
       const claim = (pos: number): boolean => pos < acc + len || (pos === acc + len && !inMarker);
-      if (!sC && claim(s0)) {
-        sC = node;
-        sO = Math.max(0, s0 - acc);
-      }
-      if (!eC && claim(s1)) {
-        eC = node;
-        eO = Math.max(0, s1 - acc);
-      }
+      positions.forEach((pos, i) => {
+        if (!out[i] && claim(pos)) out[i] = { node, offset: Math.max(0, pos - acc) };
+      });
       acc += len;
       if (len) lastNl = (node.nodeValue || '').slice(-1) === '\n';
       lastC = node;
@@ -517,14 +515,9 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
       // (부모 + 자식 인덱스). 이게 없으면 빈 줄로 가는 오프셋이 영영 안 풀린다.
       const parent = node.parentNode;
       const idx = parent ? Array.prototype.indexOf.call(parent.childNodes, node) : 0;
-      if (!sC && s0 <= acc) {
-        sC = parent;
-        sO = idx;
-      }
-      if (!eC && s1 <= acc) {
-        eC = parent;
-        eO = idx;
-      }
+      positions.forEach((pos, i) => {
+        if (!out[i] && pos <= acc && parent) out[i] = { node: parent, offset: idx };
+      });
       acc += 1;
       lastNl = true;
       if (parent) {
@@ -540,18 +533,25 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
     }
     for (let i = 0; i < node.childNodes.length; i++) {
       walk(node.childNodes[i]!);
-      if (sC && eC) return;
+      if (done()) return;
     }
   };
   walk(el);
+  return out.map((x) => x ?? (lastC ? { node: lastC, offset: lastO } : { node: el, offset: 0 }));
+}
+
+/** Port of `Component#setLinearSelection` (MindFlow.dc.html:2677-2698): the inverse of
+ * `linearize` — re-applies a `[s0, s1)` plain-text offset range as the live DOM Selection,
+ * used after `applyPartial` rewrites the editor's innerHTML (which otherwise drops the
+ * user's selection) to restore it so a follow-up style click still targets the same run. */
+export function setLinearSelection(el: HTMLElement, s0: number, s1: number): void {
+  const [a, b] = linearPoints(el, [s0, s1]);
   try {
     const ws = window.getSelection();
-    if (!ws) return;
+    if (!ws || !a || !b) return;
     const r = document.createRange();
-    // 못 찾은 오프셋은 **마지막으로 지나온 자리**로 모은다(내용이 아예 없을 때만
-    // `el` 전체 — 그때는 선택할 것도 없다).
-    r.setStart(sC || lastC || el, sC ? sO : lastC ? lastO : 0);
-    r.setEnd(eC || lastC || el, eC ? eO : lastC ? lastO : el.childNodes.length);
+    r.setStart(a.node, a.offset);
+    r.setEnd(b.node, b.offset);
     ws.removeAllRanges();
     ws.addRange(r);
     el.focus();

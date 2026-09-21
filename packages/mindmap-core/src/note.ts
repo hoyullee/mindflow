@@ -223,6 +223,34 @@ export function retypeNoteLine(
   return { blocks: out, id: mid.id };
 }
 
+/**
+ * **붙어 있는 번호 목록은 한 줄기다** — 이 블록이 실제로 시작할 번호(요청 7).
+ *
+ * 왜 계산하나: 사용자가 `1. 2. 3.` 목록 **위**에 새 줄을 만들어 `2. `로 시작하면,
+ * 아래의 목록은 `3. 4. 5.`로 이어져야 한다("위에 새로 입력되는 숫자에 따라 아래
+ * 연결되는 번호가 같이 변경되게"). 블록마다 `start`를 적어 두고 그때그때 고치는
+ * 길도 있지만, 그러면 줄을 넣고 지울 때마다 아래 블록 전부를 다시 써야 하고(문서가
+ * 통째로 바뀐 것이 되어 저장이 돈다) 협업에서 서로 다른 값을 쓰기 쉽다.
+ * **그릴 때 세면** 모델은 손대지 않는다 — 위에 붙은 `ol`들을 타고 올라가 줄기의
+ * 머리에서부터 항목 수를 더한다.
+ *
+ * 사이에 다른 블록(문단·구분선…)이 하나라도 있으면 **다른 줄기**다 — 그래서
+ * `retypeNoteLine`이 목록 가운데를 문단으로 가른 자리는 그 블록의 `start`가 그대로
+ * 쓰인다(1,2,문단,4,5가 유지된다).
+ *
+ * **단계 0 항목만** 센다 — 들여쓴 항목은 제 단계에서 따로 번호가 매겨지므로
+ * 바깥 번호를 먹지 않는다(`listMarkers`와 같은 규칙).
+ */
+export function olStartAt(blocks: NoteBlock[], index: number): number {
+  const self = blocks[index];
+  if (!self || self.kind !== 'ol') return 1;
+  let head = index;
+  while (head > 0 && blocks[head - 1]?.kind === 'ol') head -= 1;
+  let n = blocks[head]?.start ?? 1;
+  for (let i = head; i < index; i += 1) n += (blocks[i]?.items ?? []).filter((it) => !(it.indent ?? 0)).length;
+  return n;
+}
+
 /** 블록 한 덩이의 평문 — 검색과 목록 요약이 쓴다. 줄 구분은 개행이다. */
 export function blockText(block: NoteBlock): string {
   switch (noteBlockShape(block.kind)) {

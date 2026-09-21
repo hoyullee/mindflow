@@ -18,6 +18,8 @@
 //
 // 복사·지우기는 이 `Range`들이 말해 주는 **글자**로 한다 — 블록을 통째로 다루지 않는다.
 
+import { linearize, linearPoints } from './richtextDom';
+
 /** 이 선택에 걸린 한 줄 — 어느 편집 박스의 몇 번째 글자부터 몇 번째까지인가. */
 export interface LineSel {
   /** `data-note-line` 키(블록·항목·표 칸을 모두 가리킨다). */
@@ -59,37 +61,32 @@ export function caretAt(x: number, y: number): { node: Node; offset: number } | 
   return null;
 }
 
-/** 편집 박스 안에서 (노드, 오프셋)이 **몇 번째 글자**인가. */
+/**
+ * 편집 박스 안에서 (노드, 오프셋)이 **몇 번째 글자**인가 — **값과 같은 좌표계**로.
+ *
+ * 한때 여기서 텍스트 노드만 훑어 세었다. 그러면 `<br>`(부드러운 줄바꿈)이 든 줄에서
+ * **값보다 작은 수**가 나온다 — 값(`domToRuns`)은 `<br>`을 `\n` 한 글자로 세기
+ * 때문이다. 그 수를 그대로 `applyNoteFormatRange`에 넘기면 **서식이 고른 자리보다
+ * 앞에 걸린다**(제보: `2222`를 골랐는데 `222`가 굵어진다 — `<br>` 하나만큼 밀렸다).
+ * 지우기·붙여넣기도 같은 좌표를 쓰므로 한 곳에서 맞춘다: `linearize`가 값의 좌표계다.
+ */
 export function charOffset(el: HTMLElement, node: Node, offset: number): number {
-  if (node === el) {
-    // 요소 자체를 가리키면 그 앞까지의 글자 수를 센다(빈 줄·경계에서 온다).
-    let n = 0;
-    for (let i = 0; i < offset && i < el.childNodes.length; i += 1) n += (el.childNodes[i]?.textContent ?? '').length;
-    return n;
-  }
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let n = 0;
-  let cur = walker.nextNode();
-  while (cur) {
-    if (cur === node) return n + offset;
-    n += (cur.nodeValue ?? '').length;
-    cur = walker.nextNode();
-  }
-  return n;
+  return linearize(el, [{ container: node, offset }]).pos[0] ?? 0;
 }
 
-/** 그 줄에서 **문자 인덱스**가 가리키는 (노드, 오프셋). */
+/** 그 줄에서 **문자 인덱스**가 가리키는 (노드, 오프셋) — `charOffset`의 역이다. */
 export function pointAt(el: HTMLElement, index: number): { node: Node; offset: number } {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let n = 0;
-  let cur = walker.nextNode();
-  while (cur) {
-    const len = (cur.nodeValue ?? '').length;
-    if (index <= n + len) return { node: cur, offset: index - n };
-    n += len;
-    cur = walker.nextNode();
-  }
-  return { node: el, offset: el.childNodes.length };
+  return linearPoints(el, [index])[0] ?? { node: el, offset: el.childNodes.length };
+}
+
+/** 그 줄의 **값 기준** 글자 수 — `el.textContent.length`는 `<br>`을 세지 않아 어긋난다. */
+export function lineLength(el: HTMLElement): number {
+  return linearize(el, []).text.length;
+}
+
+/** 그 줄의 **값 기준** 글자들 — 자르는 자리가 `charOffset`과 같은 좌표라야 한다. */
+export function lineText(el: HTMLElement): string {
+  return linearize(el, []).text;
 }
 
 /** 본문의 편집 박스들 — 화면에 놓인 순서(= 문서 순서). */
@@ -118,7 +115,7 @@ export function buildSelection(
   for (let i = fi; i <= li; i += 1) {
     const el = lines[i]!;
     const key = el.getAttribute('data-note-line') ?? '';
-    const length = (el.textContent ?? '').length;
+    const length = lineLength(el);
     const from = i === fi ? charOffset(el, first.node, first.offset) : 0;
     const to = i === li ? charOffset(el, last.node, last.offset) : length;
     const range = document.createRange();
@@ -145,7 +142,7 @@ export function buildSelection(
  */
 export function buildLineSelection(el: HTMLElement, a: { node: Node; offset: number }, b: { node: Node; offset: number }): LineSel[] | null {
   const key = el.getAttribute('data-note-line') ?? '';
-  const length = (el.textContent ?? '').length;
+  const length = lineLength(el);
   const p = charOffset(el, a.node, a.offset);
   const q = charOffset(el, b.node, b.offset);
   const from = Math.min(p, q);
@@ -174,7 +171,7 @@ export function selectWholeLines(els: HTMLElement[]): LineSel[] | null {
   const out: LineSel[] = [];
   for (const el of els) {
     const key = el.getAttribute('data-note-line') ?? '';
-    const length = (el.textContent ?? '').length;
+    const length = lineLength(el);
     const range = document.createRange();
     try {
       const s = pointAt(el, 0);
@@ -230,7 +227,7 @@ export function clearPaint(): void {
 export function selectionText(sel: LineSel[]): string {
   return sel
     .map((s) => {
-      const body = (s.el.textContent ?? '').slice(s.from, s.to);
+      const body = lineText(s.el).slice(s.from, s.to);
       const mark = s.from === 0 ? (s.el.closest('[data-note-mark]')?.getAttribute('data-note-mark') ?? '') : '';
       return mark + body;
     })

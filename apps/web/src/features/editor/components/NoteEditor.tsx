@@ -15,6 +15,8 @@ import {
   NOTE_TAG_COLORS,
   NOTE_TAGS,
   noteBlockShape,
+  normalizeUrl,
+  olStartAt,
   noteMarkdown,
   notePlainText,
   parseDoc,
@@ -37,7 +39,7 @@ import type { EditorController } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { applyNoteFormat, applyNoteFormatRange, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, type NoteFormatKind } from '../noteRichDom';
-import { buildLineSelection, buildSelection, caretAt, charOffset, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectWholeLines, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectWholeLines, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
@@ -390,7 +392,62 @@ export function NoteEditor({ controller }: Props) {
     }
     const onScroll = (): void => rememberScroll(key, el.scrollTop);
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    /**
+     * **앱으로 돌아온 직후의 튐을 붙든다**(제보 3).
+     *
+     * 뒤에 둔 창을 휠로 굴려 캐럿이 살짝 화면 밖으로 나간 상태에서 창을 활성화하면
+     * 스크롤이 튄다 — 창이 초점을 되찾을 때 브라우저(설치형 앱에서는 셸)가 **아까
+     * 초점을 갖고 있던 편집 박스**를 다시 부르고, 그 `focus()`가 캐럿을 화면 안으로
+     * 끌어오기 때문이다. 우리가 부르는 `focus()`는 전부 `preventScroll`이지만 이건
+     * 우리 호출이 아니라 막을 손잡이가 없다.
+     *
+     * 그래서 **결과를 되돌린다**: 활성화된 순간의 자리를 적어 두고 다음 몇 프레임
+     * 동안 그 자리를 지킨다(약 200ms). 사용자가 스스로 굴리거나 글쇠를 누르면 그
+     * 즉시 손을 뗀다 — 지키는 것이 사용자의 조작을 이기면 그게 더 나쁜 버그다.
+     */
+    let release: (() => void) | null = null;
+    const hold = (): void => {
+      release?.();
+      const box = pageRef.current;
+      if (!box) return;
+      const want = box.scrollTop;
+      let frames = 0;
+      let stop = false;
+      const cancel = (): void => {
+        stop = true;
+      };
+      window.addEventListener('wheel', cancel, { passive: true });
+      window.addEventListener('keydown', cancel);
+      release = () => {
+        stop = true;
+        window.removeEventListener('wheel', cancel);
+        window.removeEventListener('keydown', cancel);
+        release = null;
+      };
+      const tick = (): void => {
+        const cur = pageRef.current;
+        if (stop || !cur) {
+          release?.();
+          return;
+        }
+        if (Math.abs(cur.scrollTop - want) > 1) cur.scrollTop = want;
+        frames += 1;
+        if (frames < 12) requestAnimationFrame(tick);
+        else release?.();
+      };
+      requestAnimationFrame(tick);
+    };
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') hold();
+    };
+    window.addEventListener('focus', hold);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('focus', hold);
+      document.removeEventListener('visibilitychange', onVisible);
+      release?.();
+    };
   }, [controller.docId, pageId]);
   /** 문서에 건 리스너가 **지금** 선택을 볼 수 있게(상태는 클로저에 갇힌다). */
   const textSelRef = useRef<LineSel[] | null>(null);
@@ -444,7 +501,7 @@ export function NoteEditor({ controller }: Props) {
       if (!head) return;
       try {
         head.el.focus({ preventScroll: true });
-        const len = (head.el.textContent ?? '').length;
+        const len = lineLength(head.el);
         const spot = pointAt(head.el, Math.max(0, Math.min(head.from, len)));
         const range = document.createRange();
         range.setStart(spot.node, spot.offset);
@@ -681,7 +738,7 @@ export function NoteEditor({ controller }: Props) {
     if (!head) return;
     try {
       head.el.focus({ preventScroll: true });
-      const len = (head.el.textContent ?? '').length;
+      const len = lineLength(head.el);
       const spot = pointAt(head.el, Math.max(0, Math.min(head.from, len)));
       const range = document.createRange();
       range.setStart(spot.node, spot.offset);
@@ -748,7 +805,7 @@ export function NoteEditor({ controller }: Props) {
     const last = lines[lines.length - 1];
     if (!first || !last || first === last) return false;
     const a = pointAt(first, 0);
-    const b = pointAt(last, (last.textContent ?? '').length);
+    const b = pointAt(last, lineLength(last));
     const built = buildSelection(col, { el: first, node: a.node, offset: a.offset }, { el: last, node: b.node, offset: b.offset });
     if (!built) return false;
     selAnchor.current = { el: first, node: a.node, offset: a.offset };
@@ -812,7 +869,7 @@ export function NoteEditor({ controller }: Props) {
       selX.current = undefined;
     }
     const cur = selFocus.current;
-    const len = (cur.el.textContent ?? '').length;
+    const len = lineLength(cur.el);
     const at = charOffset(cur.el, cur.node, cur.offset);
     let next = to === 'edge' ? (dir === 1 ? len : 0) : at + dir;
     let el = cur.el;
@@ -822,7 +879,7 @@ export function NoteEditor({ controller }: Props) {
       const neighbour = lines[i + dir];
       if (!neighbour) return true; // 문서의 끝 — 더 갈 곳이 없어도 키는 우리가 먹는다
       el = neighbour;
-      next = dir === 1 ? 0 : (neighbour.textContent ?? '').length;
+      next = dir === 1 ? 0 : lineLength(neighbour);
     }
     const spot = pointAt(el, next);
     selFocus.current = { el, node: spot.node, offset: spot.offset };
@@ -911,7 +968,7 @@ export function NoteEditor({ controller }: Props) {
       const first = sel[0];
       const last = sel[sel.length - 1];
       if (!first || !last) return;
-      const gone = (first.el.textContent ?? '').length - first.from; // 첫 줄에서 지워질 길이
+      const gone = lineLength(first.el) - first.from; // 첫 줄에서 지워질 길이
       const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
       if (!done) {
         setTextSel(null);
@@ -945,7 +1002,7 @@ export function NoteEditor({ controller }: Props) {
       // **이미 초점이 있으면 다시 주지 않는다** — 조합 중에 `focus()`를 부르면 그
       // 조합이 끊긴다(한글의 첫 자모가 사라지는 길 가운데 하나다).
       if (document.activeElement !== el) el.focus({ preventScroll: true });
-      const len = (el.textContent ?? '').length;
+      const len = lineLength(el);
       const spot = pointAt(el, Math.max(0, Math.min(at, len)));
       try {
         const range = document.createRange();
@@ -1258,7 +1315,14 @@ export function NoteEditor({ controller }: Props) {
             const target = (e.target as HTMLElement | null) ?? null;
             const line = target?.closest?.('[data-note-line]') as HTMLElement | null;
             if (line) {
-              const at = caretAt(e.clientX, e.clientY) ?? { node: line, offset: 0 };
+              /**
+               * 누른 자리는 **그 줄 안의 답만** 받는다 — 좌표 조회가 바깥 요소를
+               * 돌려주면 `charOffset`이 그것을 "글자 수 전체"로 답해 앵커가 줄
+               * 끝으로 튀고, 드래그가 통째로 어긋난다. 못 풀면 줄의 처음이다
+               * (누른 자리를 모를 때의 오래된 기본값 — 끌면 곧 제자리를 찾는다).
+               */
+              const hit = caretAt(e.clientX, e.clientY);
+              const at = hit && line.contains(hit.node) ? hit : { node: line, offset: 0 };
               dragFrom.current = { el: line, node: at.node, offset: at.offset };
               // 두 번 누른 것인지는 **`mousedown`이 안다** — 포인터 이벤트의 `detail`은
               // 언제나 0이다(실측). 여기서는 비우고, 바로 뒤에 오는 그쪽에서 채운다.
@@ -1303,9 +1367,7 @@ export function NoteEditor({ controller }: Props) {
             const near = overLine ? null : lineNear(col, e.clientX, e.clientY);
             const line = overLine ?? near?.el ?? null;
             if (!line) return;
-            const at = overLine
-              ? (caretAt(e.clientX, e.clientY) ?? { node: line, offset: (line.textContent ?? '').length })
-              : { node: near!.node, offset: near!.offset };
+            const at = overLine ? caretInLine(line, e.clientX, e.clientY) : { node: near!.node, offset: near!.offset };
             /**
              * **시작한 줄로 되돌아왔다**(제보 10) — 아직 한 줄 안이면 브라우저에 맡기고,
              * 이미 칠하고 있었으면 **그 줄 안에서** 이어 칠한다. 예전에는 여기서 그냥
@@ -3309,7 +3371,16 @@ function FormatToolbar({
   };
   const applyLink = () => {
     const el = boxRef.current;
-    const url = linkUrl.trim();
+    /**
+     * **주소는 넣을 때 다듬는다**(요청 8의 뿌리) — 읽을 때가 아니라.
+     *
+     * `domToRuns`는 DOM에서 주소를 읽으며 `normalizeUrl`에 태운다. 그래서 다듬지
+     * 않은 주소를 넣어 두면 그 줄을 **지나가기만 해도**(초점을 잃으며 읽는다)
+     * `https://a.b` → `https://a.b/`로 바뀌어 "고쳤다"가 되고 저장이 돈다.
+     * 넣는 자리에서 한 번 다듬으면 그 왕복이 언제나 제자리다(맵의 툴바와 같은 규칙).
+     * 허용하지 않는 스킴(`javascript:` 등)은 `null`이 되어 걸리지 않는다.
+     */
+    const url = normalizeUrl(linkUrl) ?? '';
     if (!url) return;
     // 칠해 둔 여러 줄이 있으면 그쪽이 먼저다(툴바의 다른 서식과 같은 규칙).
     if (formatSelection('link', url)) {
@@ -3488,7 +3559,7 @@ function FormatToolbar({
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
             <button type="button" className="btn" onClick={() => setLinkOpen(false)} style={{ ...GHOST_BTN, height: 26 }}>취소</button>
-            <button type="button" data-note-link-apply className="btn" disabled={!linkUrl.trim()} onClick={applyLink} style={{ ...GHOST_BTN, height: 26, background: 'var(--mf-accent)', borderColor: 'transparent', color: '#fff', opacity: linkUrl.trim() ? 1 : 0.5 }}>
+            <button type="button" data-note-link-apply className="btn" disabled={!normalizeUrl(linkUrl)} onClick={applyLink} style={{ ...GHOST_BTN, height: 26, background: 'var(--mf-accent)', borderColor: 'transparent', color: '#fff', opacity: normalizeUrl(linkUrl) ? 1 : 0.5 }}>
               걸기
             </button>
           </div>
@@ -4221,7 +4292,12 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
      * 번호가 단계별로 따로 매겨지기 때문이다(`1. a. i.` · `• ◦ ▪`).
      */
     const items = block.items ?? [];
-    const marks = block.kind === 'ck' ? [] : listMarkers(block.kind === 'ol' ? 'ol' : 'ul', items, block.start ?? 1);
+    /**
+     * 번호의 시작은 **문서에서** 센다(요청 7) — 바로 위에 붙은 번호 목록이 있으면
+     * 그 줄기를 이어받는다(`olStartAt`). 목록 위에 `2. `로 새 줄을 만들면 아래가
+     * 3·4·5로 따라 오는 자리다.
+     */
+    const marks = block.kind === 'ck' ? [] : listMarkers(block.kind === 'ol' ? 'ol' : 'ul', items, olStartAt(controller.notePage?.blocks ?? [], index));
     /**
      * **클립보드로 나갈 표식**(제보: 복사해 붙이면 마커가 사라진다) — 화면의 `•`가
      * 아니라 마크다운 모양으로 적는다. 다른 앱에 붙여도 목록으로 읽히고, 우리
@@ -6096,12 +6172,14 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
         icon={<><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></>}
         onClick={done(() => {
           const el = at.box;
-          const url = typeof window === 'undefined' ? null : window.prompt('링크 주소');
-          if (!url || !url.trim()) return;
+          const raw = typeof window === 'undefined' ? null : window.prompt('링크 주소');
+          // 주소는 **넣을 때** 다듬는다(툴바의 `applyLink` 머리말).
+          const url = raw ? normalizeUrl(raw) : null;
+          if (!url) return;
           // 여러 줄이 칠해져 있으면 그 줄들 전부에(위 `format`과 같은 규칙).
-          if (formatSelection('link', url.trim(), el)) return;
+          if (formatSelection('link', url, el)) return;
           if (!el) return;
-          const runs = applyNoteFormat(el, 'link', url.trim());
+          const runs = applyNoteFormat(el, 'link', url);
           if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
         })}
       />
@@ -7150,7 +7228,7 @@ function recallScroll(key: string): number {
  * "눈에 보이는 한 덩이"와 어긋나지 않고, 규칙이 단순해 예측할 수 있다.
  */
 function wordAround(el: HTMLElement, at: number): { el: HTMLElement; from: number; to: number } {
-  const text = el.textContent ?? '';
+  const text = lineText(el);
   const space = (i: number): boolean => /\s/.test(text[i] ?? ' ');
   let from = Math.max(0, Math.min(at, text.length));
   let to = from;
@@ -7183,11 +7261,7 @@ function lineNear(root: HTMLElement, x: number, y: number): { el: HTMLElement; n
   if (!best) return null;
   const box = best.getBoundingClientRect();
   // 가로는 줄 안으로 당기고, 세로는 그 줄의 **가장 가까운 시각 줄**로 당긴다.
-  const px = Math.min(Math.max(x, box.left + 1), box.right - 1);
-  const py = Math.min(Math.max(y, box.top + 1), box.bottom - 1);
-  const at = caretAt(px, py);
-  if (at && best.contains(at.node)) return { el: best, node: at.node, offset: at.offset };
-  const spot = pointInLine(best, y < box.top ? 1 : -1, px);
+  const spot = caretInLine(best, Math.min(Math.max(x, box.left + 1), Math.max(box.left + 1, box.right - 1)), y);
   return { el: best, node: spot.node, offset: spot.offset };
 }
 
@@ -7198,6 +7272,28 @@ function lineNear(root: HTMLElement, x: number, y: number): { el: HTMLElement; n
  * (감긴 문단으로 들어갈 때 엉뚱한 줄에 서지 않게). 좌표를 못 쓰면 처음·끝으로 물러선다.
  */
 /**
+ * 그 줄 안에서 **이 좌표가 가리키는 캐럿 자리** — 줄 밖의 답은 받지 않는다.
+ *
+ * 왜 따로 두나(제보 1): 예전에는 `caretAt`이 빈손이거나 **그 줄 밖의 노드**를
+ * 돌려주면 「줄 끝」으로 물러섰다. 그런데 `charOffset`도 못 찾은 노드를 **글자 수
+ * 전체**로 답하므로, 두 폴백이 겹쳐 "커서는 줄 가운데인데 그 줄이 통째로 골라지는"
+ * 그림이 된다 — 왼쪽 여백·마커·블록 사이 틈처럼 `caretRangeFromPoint`가 바깥
+ * 요소를 돌려주는 자리에서 실제로 그렇게 된다. 이제 좌표를 **줄 상자 안으로 접어**
+ * 한 번 더 묻고, 그래도 안 되면 `pointInLine`이 **가로 자리에 가장 가까운 글자**를
+ * 고른다. 어느 길로 가도 "줄 전체"라는 답은 나오지 않는다.
+ */
+function caretInLine(el: HTMLElement, x: number, y: number): { node: Node; offset: number } {
+  const first = caretAt(x, y);
+  if (first && el.contains(first.node)) return first;
+  const box = el.getBoundingClientRect();
+  const px = Math.min(Math.max(x, box.left + 1), Math.max(box.left + 1, box.right - 1));
+  const py = Math.min(Math.max(y, box.top + 1), Math.max(box.top + 1, box.bottom - 1));
+  const again = caretAt(px, py);
+  if (again && el.contains(again.node)) return again;
+  return pointInLine(el, y < box.top ? 1 : -1, px);
+}
+
+/**
  * 그 줄의 **문자 자리가 놓인 가로 좌표** — 위·아래로 넘길 때 지킬 세로줄이다.
  *
  * 접힌 범위의 사각형은 비어서 오는 일이 잦아(요소 경계) 믿을 수 없다. 대신 **옆 글자
@@ -7205,7 +7301,7 @@ function lineNear(root: HTMLElement, x: number, y: number): { el: HTMLElement; n
  */
 function columnX(el: HTMLElement, at: number): number | undefined {
   try {
-    const len = (el.textContent ?? '').length;
+    const len = lineLength(el);
     if (!len) return el.getBoundingClientRect().left || undefined;
     const i = Math.max(0, Math.min(at, len));
     const a = i > 0 ? i - 1 : 0;
@@ -7242,7 +7338,7 @@ function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; of
       if (at && el.contains(at.node)) return at;
     }
   }
-  const text = (el.textContent ?? '').length;
+  const text = lineLength(el);
   return pointAt(el, dir === 1 ? 0 : text);
 }
 
@@ -7283,7 +7379,7 @@ function caretToLine(key: string, at: number | 'end' = 'end'): void {
     el.focus({ preventScroll: true });
     // **텍스트 노드 안에** 놓는다 — 요소 경계에 놓으면 캐럿 사각형을 잴 수 없어
     // 다음 방향키가 가장자리 판정에 실패한다(`placeCaretInLine`과 같은 이유).
-    const len = (el.textContent ?? '').length;
+    const len = lineLength(el);
     const spot = pointAt(el, at === 'end' ? len : Math.max(0, Math.min(at, len)));
     try {
       const range = document.createRange();
