@@ -18,7 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, runsToHtml } from '../richtextDom';
 import { NOTE_EDIT_ATTR } from '../noteRichDom';
-import { charOffset, pointAt } from '../noteTextSelect';
+import { charOffset, lineLength, lineText, pointAt } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
@@ -173,6 +173,18 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     // 튄다(비제어 박스라는 결정의 핵심이다).
   }, []);
 
+  /**
+   * **글을 고친 적이 있는가** — 초점을 잃을 때 커밋할지 가르는 표식이다(요청 8).
+   *
+   * 왜 필요한가: 비제어 박스는 떠날 때 DOM을 읽어 커밋한다(`onBlur`). 그런데
+   * **DOM을 읽는 일 자체가 값을 아주 조금 바꿀 때가 있다** — 링크가 그렇다.
+   * `domToRuns`는 주소를 `normalizeUrl`에 태우므로 `https://a.b`가 `https://a.b/`로
+   * 돌아온다. 그러면 글자 하나 건드리지 않고 줄을 지나가기만 해도 "바뀌었다"가 되어
+   * 페이지의 `updatedAt`이 새로 찍히고 자동저장이 돈다(실측으로 그 한 줄이었다).
+   * 고치지 않았으면 읽지도 않는다 — 어떤 왕복 차이가 새로 생겨도 같은 길로 막힌다.
+   */
+  const dirty = useRef(false);
+
   const commit = (): void => {
     const el = ref.current;
     if (!el) return;
@@ -180,6 +192,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     // 같은 것을 말한다(`- `를 친 그 순간 `• `가 되는 자리).
     if (listBox && !composing.current) cellListSync(el);
     const { text, rich } = domToRuns(el);
+    dirty.current = false;
     onChange(rich ?? textRuns(text));
   };
 
@@ -233,7 +246,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      */
     if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A' || e.code === 'KeyA') && onSelectAll) {
       const sel = window.getSelection();
-      const len = (el.textContent ?? '').length;
+      const len = lineLength(el);
       const whole = !len || (!!sel && !sel.isCollapsed && (sel.toString() ?? '').length >= len);
       if (whole && onSelectAll()) {
         e.preventDefault();
@@ -253,7 +266,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     }
     if (e.key === '/' && !e.nativeEvent.isComposing && onSlash) {
       // 글자는 막지 않는다 — 브라우저가 `/`를 넣고, 우리는 그 **자리**만 기억한다.
-      const text = el.textContent ?? '';
+      const text = lineText(el);
       const at = caretOffset(el);
       const before = text.slice(0, at);
       // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`에서 열리지 않게.
@@ -340,7 +353,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       const sel = window.getSelection();
       if (sel) {
         const dir = e.key === 'ArrowRight' ? 1 : -1;
-        const len = (el.textContent ?? '').length;
+        const len = lineLength(el);
         const at = caretOffset(el);
         if ((dir === 1 ? at >= len : at <= 0) && onSelectSide(dir)) {
           e.preventDefault();
@@ -352,7 +365,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       const sel = window.getSelection();
       if (sel && (sel.isCollapsed || composing)) {
         const dir = e.key === 'ArrowRight' ? 1 : -1;
-        const len = (el.textContent ?? '').length;
+        const len = lineLength(el);
         const at = caretOffset(el);
         // 줄의 **맨 끝**에서 → · **맨 앞**에서 ←일 때만 넘어간다.
         if (dir === 1 ? at >= len : at <= 0) {
@@ -382,13 +395,20 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       // ("완료/이동"류를 고르면 그 키가 키보드를 내려 편집이 끝난다).
       enterKeyHint="enter"
       data-placeholder={placeholder ?? ''}
-      onInput={commit}
-      onBlur={commit}
+      onInput={() => {
+        dirty.current = true;
+        commit();
+      }}
+      // 고친 적이 없으면 읽지 않는다(`dirty` 머리말) — 커서만 지나가도 저장되던 자리.
+      onBlur={() => {
+        if (dirty.current) commit();
+      }}
       onCompositionStart={() => {
         composing.current = true;
       }}
       onCompositionEnd={() => {
         composing.current = false;
+        dirty.current = true;
         commit();
       }}
       onKeyUp={() => {
@@ -441,7 +461,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
  */
 function selectedRange(el: HTMLElement): { from: number; to: number } {
   const sel = window.getSelection();
-  const end = (el.textContent ?? '').length;
+  const end = lineLength(el);
   if (!sel || !sel.focusNode || !el.contains(sel.focusNode)) return { from: end, to: end };
   const b = charOffset(el, sel.focusNode, sel.focusOffset);
   const a = sel.anchorNode && el.contains(sel.anchorNode) ? charOffset(el, sel.anchorNode, sel.anchorOffset) : b;
@@ -457,7 +477,7 @@ function selectedRange(el: HTMLElement): { from: number; to: number } {
 function caretOffset(el: HTMLElement): number {
   const sel = window.getSelection();
   if (sel && sel.focusNode && el.contains(sel.focusNode)) return charOffset(el, sel.focusNode, sel.focusOffset);
-  return (el.textContent ?? '').length;
+  return lineLength(el);
 }
 
 /**
@@ -477,7 +497,7 @@ function caretRect(el: HTMLElement, sel: Selection): DOMRect | null {
     probe.collapse(true);
     const box = probe.getBoundingClientRect();
     if (box.height > 0) return box;
-    const len = (el.textContent ?? '').length;
+    const len = lineLength(el);
     if (!len) return null;
     const at = Math.max(0, Math.min(charOffset(el, node, offset), len));
     // 캐럿 **앞 글자**(맨 앞이면 뒤 글자) 한 칸을 재고, 그 변을 캐럿 자리로 본다.
@@ -515,7 +535,7 @@ function stillOnEdge(el: HTMLElement, dir: -1 | 1, unit: 'char' | 'line'): boole
   if (!sel || !sel.focusNode || !el.contains(sel.focusNode)) return false;
   if (unit === 'line') return caretOnEdgeLine(el, sel, dir);
   const at = caretOffset(el);
-  return dir === 1 ? at >= (el.textContent ?? '').length : at <= 0;
+  return dir === 1 ? at >= lineLength(el) : at <= 0;
 }
 
 /**
@@ -551,7 +571,7 @@ function caretOnEdgeLine(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean 
       probe.call(sel, 'move', dir === -1 ? 'backward' : 'forward', 'lineboundary');
       const at = sel.focusNode && el.contains(sel.focusNode) ? charOffset(el, sel.focusNode, sel.focusOffset) : -1;
       sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
-      if (at >= 0) return dir === -1 ? at <= 0 : at >= (el.textContent ?? '').length;
+      if (at >= 0) return dir === -1 ? at <= 0 : at >= lineLength(el);
     } catch {
       try {
         sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
@@ -568,5 +588,5 @@ function caretOnEdgeLine(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean 
   }
   // 좌표를 못 재는 환경(jsdom) — **글자 자리**로 가른다(감긴 줄은 구분하지 못한다).
   const at = caretOffset(el);
-  return dir === -1 ? at <= 0 : at >= (el.textContent ?? '').length;
+  return dir === -1 ? at <= 0 : at >= lineLength(el);
 }

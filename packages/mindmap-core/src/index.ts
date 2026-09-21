@@ -97,6 +97,7 @@ export {
   movePage,
   moveBlock,
   retypeBlock,
+  olStartAt,
   retypeNoteLine,
   blockText,
   pageText,

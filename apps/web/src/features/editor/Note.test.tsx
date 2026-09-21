@@ -5061,3 +5061,92 @@ describe('공책 46판 — 서식의 길을 하나로 · 목록 Enter·Backspace
     expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2');
   });
 });
+
+describe('공책 47판 — 좌표계 한 벌 · 커서만 옮기면 저장 없음 · 번호 이어세기', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('링크가 든 줄을 **지나가기만** 하면 저장하지 않는다(요청 8)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', updatedAt: '2026-09-16T00:00:00.000Z', blocks: [
+      { id: 'lk', kind: 'p', runs: [{ t: '링크', b: false, c: null, href: 'https://example.com' }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '뒤', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_k1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=k1&title=x');
+    const lk = (await waitFor(() => container.querySelector('[data-note-line="lk"]'))) as HTMLElement;
+    const two = container.querySelector('[data-note-line="b2"]') as HTMLElement;
+
+    /**
+     * 예전에는 여기서 저장이 돌았다: 떠날 때 DOM을 읽는데 `domToRuns`가 주소를
+     * `normalizeUrl`에 태워 `https://example.com` → `…/`로 한 글자 늘렸다.
+     */
+    lk.focus();
+    fireEvent.blur(lk);
+    two.focus();
+    fireEvent.blur(two);
+    saveNow();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(saved('k1').pages[0].updatedAt).toBe('2026-09-16T00:00:00.000Z');
+    expect(saved('k1').pages[0].blocks[0].runs[0].href).toBe('https://example.com');
+  });
+
+  it('글을 고치면 그때는 저장한다(위 가드가 저장을 막아 버리지 않는다)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', updatedAt: '2026-09-16T00:00:00.000Z', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '가', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_k2', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=k2&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    one.focus();
+    one.textContent = '가나';
+    fireEvent.input(one);
+    fireEvent.blur(one);
+    saveNow();
+
+    await waitFor(() => expect(saved('k2').pages[0].blocks[0].runs[0].t).toBe('가나'));
+  });
+
+  it('목록 위에 `2. `로 새 줄을 만들면 아래가 **3·4·5**가 된다(요청 7)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'top', kind: 'p', runs: [{ t: '', b: false, c: null }] },
+      { id: 'L', kind: 'ol', items: [
+        { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+        { id: 'i2', runs: [{ t: '둘', b: false, c: null }] },
+        { id: 'i3', runs: [{ t: '셋', b: false, c: null }] },
+      ] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_k3', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=k3&title=x');
+    const top = (await waitFor(() => container.querySelector('[data-note-line="top"]'))) as HTMLElement;
+    // 툴바 단추도 `data-note-mark`를 쓴다(b·i·s…) — 본문 블록 안쪽만 센다.
+    const marks = () => [...container.querySelectorAll('[data-note-block] [data-note-mark]')].map((e) => (e.getAttribute('data-note-mark') || '').trim());
+    expect(marks()).toEqual(['1.', '2.', '3.']);
+
+    // 마크다운 단축 — `2. `를 치면 그 줄이 2번부터인 목록이 된다(캐럿은 표식 바로 뒤).
+    top.innerHTML = '2. ';
+    top.focus();
+    const range = document.createRange();
+    range.setStart(top.firstChild as Text, 3);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.input(top);
+
+    await waitFor(() => expect(marks()).toEqual(['2.', '3.', '4.', '5.']));
+    // 아래 목록의 저장된 `start`는 그대로다 — 세는 것은 그릴 때다(모델을 건드리지 않는다).
+    saveNow();
+    await waitFor(() => {
+      const blocks = saved('k3').pages[0].blocks as { kind: string; start?: number }[];
+      expect(blocks.map((b) => b.kind)).toEqual(['ol', 'ol']);
+      expect(blocks[0]?.start).toBe(2);
+      expect(blocks[1]?.start).toBeUndefined();
+    });
+  });
+});

@@ -28,6 +28,7 @@ import {
   pageText,
   removePage,
   retypeBlock,
+  olStartAt,
   retypeNoteLine,
   indentListItem,
   indentListItems,
@@ -644,5 +645,48 @@ describe('목록의 한 줄만 종류 바꾸기 — 나머지 줄은 제자리�
     const items = four();
     const { blocks } = retypeNoteLine(items, 'b', 'ul');
     expect(blocks).toEqual([items]);
+  });
+});
+
+describe('olStartAt — 붙어 있는 번호 목록은 한 줄기(요청 7)', () => {
+  const ol = (id: string, n: number, start?: number): NoteBlock => ({
+    id,
+    kind: 'ol',
+    ...(start === undefined ? {} : { start }),
+    items: Array.from({ length: n }, (_, i) => ({ id: `${id}i${i}`, runs: textRuns(`${id}${i}`) })),
+  });
+  const para = (id: string): NoteBlock => ({ id, kind: 'p', runs: textRuns('사이') });
+
+  it('바로 위에 번호 목록이 있으면 **이어서** 센다', () => {
+    const blocks = [ol('a', 1, 2), ol('b', 3)];
+    expect(olStartAt(blocks, 0)).toBe(2);
+    expect(olStartAt(blocks, 1)).toBe(3); // 2 + 항목 하나
+  });
+
+  it('셋이 붙어 있어도 한 줄기다', () => {
+    const blocks = [ol('a', 2, 5), ol('b', 1), ol('c', 2)];
+    expect(olStartAt(blocks, 1)).toBe(7);
+    expect(olStartAt(blocks, 2)).toBe(8);
+  });
+
+  it('사이에 다른 블록이 있으면 **다른 줄기** — 제 `start`를 쓴다', () => {
+    const blocks = [ol('a', 2, 1), para('p'), ol('b', 2, 4)];
+    expect(olStartAt(blocks, 2)).toBe(4);
+  });
+
+  it('들여쓴 항목은 바깥 번호를 먹지 않는다', () => {
+    const a = ol('a', 3);
+    a.items = [
+      { id: 'x', runs: textRuns('1') },
+      { id: 'y', runs: textRuns('안'), indent: 1 },
+      { id: 'z', runs: textRuns('2') },
+    ];
+    const blocks = [a, ol('b', 1)];
+    expect(olStartAt(blocks, 1)).toBe(3); // 1 + 단계 0 항목 둘
+  });
+
+  it('번호 목록이 아니면 1이다(호출부가 안전하게 부를 수 있게)', () => {
+    expect(olStartAt([para('p')], 0)).toBe(1);
+    expect(olStartAt([], 0)).toBe(1);
   });
 });
