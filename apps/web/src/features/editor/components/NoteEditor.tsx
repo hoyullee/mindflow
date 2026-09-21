@@ -529,14 +529,42 @@ export function NoteEditor({ controller }: Props) {
    * 걸고 나면 박스의 `innerHTML`이 갈려 들고 있던 `Range`가 죽는다 — 같은 글자 자리로
    * **다시 만들어** 칠한 자리를 지킨다(서식을 연달아 걸 수 있어야 한다).
    */
-  const formatSelection = (kind: NoteFormatKind, val?: string | null): boolean => {
-    const sel = textSelRef.current;
-    if (!sel || !sel.length || readOnly) return false;
+  const formatSelection = (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null): boolean => {
+    if (readOnly) return false;
+    /**
+     * **한 줄뿐이어도 같은 길로 간다**(제보 1·2).
+     *
+     * 예전에는 여러 줄만 여기로 오고 한 줄은 브라우저 선택 위에서 따로 걸었다. 그
+     * 갈래가 만든 것이 겹친 배경과 한 글자 더 칠해진 선택이다 — 그 길에서는 그림이
+     * 둘이었기 때문이다: 브라우저의 `::selection`(고른 글이 **스팬 안**에 들어가는
+     * 순간, 서식을 걸어 `<b>`가 생기는 바로 그 순간부터 우리 투명 규칙을 비켜 간다)과
+     * 우리 `::highlight`. 이제 걸고 난 자리는 **언제나 우리 선택**이고 브라우저 선택은
+     * 비운다 — 칠은 한 겹이고, 칠한 자리는 방금 서식을 건 그 자리 그대로다.
+     */
+    /**
+     * **지금 박스에 살아 있는 선택이 먼저다.** 칠해 둔 그림(`textSel`)은 그 다음이다 —
+     * 순서를 뒤집으면 한 번 칠한 뒤에는 다른 줄을 골라도 **먼저 칠한 줄**에 걸린다.
+     *
+     * 표의 칸은 브라우저 선택 그대로 둔다(우리 칠하기로 바꾸면 칸 안의 방향키·입력이
+     * 전부 문서 리스너로 넘어간다) — 그쪽은 호출부의 예전 길로 물러선다.
+     */
+    const inBox = ((): LineSel[] | null => {
+      const live = window.getSelection();
+      if (!box || isCellKey(box.getAttribute('data-note-line') || '')) return null;
+      if (!live || live.isCollapsed || !live.rangeCount) return null;
+      const r = live.getRangeAt(0);
+      if (!box.contains(r.startContainer) || !box.contains(r.endContainer)) return null;
+      return buildLineSelection(box, { node: r.startContainer, offset: r.startOffset }, { node: r.endContainer, offset: r.endOffset });
+    })();
+    const sel = inBox ?? (textSelRef.current?.length ? textSelRef.current : null);
+    if (!sel || !sel.length) return false;
     for (const ln of sel) {
       const runs = applyNoteFormatRange(ln.el, ln.from, ln.to, kind, val);
       if (runs) commitLine(controller, ln.key, runs);
     }
     window.getSelection()?.removeAllRanges();
+    const live = document.activeElement as HTMLElement | null;
+    if (live?.hasAttribute?.('data-note-line')) live.blur();
     const again = sel
       .map((ln) => {
         const el = document.querySelector<HTMLElement>(`[data-note-line="${ln.key}"]`) ?? ln.el;
@@ -554,6 +582,12 @@ export function NoteEditor({ controller }: Props) {
     setTextSel(again);
     return true;
   };
+  /**
+   * 같은 함수를 **문서 리스너와 우클릭 메뉴**도 쓴다(제보 3) — 참조로 들고 다닌다.
+   * 매 렌더 새로 만들어지는 함수라 의존 목록에 넣으면 리스너가 매번 다시 붙는다.
+   */
+  const formatSelRef = useRef(formatSelection);
+  formatSelRef.current = formatSelection;
 
   /**
    * **Esc = 이 블록을 통째로 고른다**(요청 7 — 글자 선택만 있고 블록 선택이 없었다).
@@ -1080,6 +1114,46 @@ export function NoteEditor({ controller }: Props) {
   }, [docKey]);
 
   /**
+   * **⌘B·⌘I·⌘U·⌘⇧S는 에디터가 받는다**(제보 3: 감긴 줄은 되는데 Enter로 내린
+   * 줄과 함께 고르면 서식이 안 걸린다).
+   *
+   * 예전에는 줄 부품(`NoteLine`)이 제 박스 안에서만 처리했다. 그런데 여러 줄을
+   * 칠하는 동안에는 **어느 박스에도 초점이 없다**(칠하기가 캐럿을 거둔다) — 그래서
+   * 그 손이 닿지 않았고, 같은 동작이 "줄을 어떻게 내렸느냐"로 갈렸다(한 블록 안에서
+   * 감긴 줄은 초점이 그대로라 걸렸다). 이제 툴바·우클릭 메뉴와 **같은 한 함수**로
+   * 모은다 — 표의 칸만 예전 길로 물러선다(`formatSelection` 머리말).
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (readOnly || e.defaultPrevented || e.isComposing) return;
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const mark: NoteFormatKind | null = !e.shiftKey && (k === 'b' || e.code === 'KeyB')
+        ? 'b'
+        : !e.shiftKey && (k === 'i' || e.code === 'KeyI')
+          ? 'i'
+          : !e.shiftKey && (k === 'u' || e.code === 'KeyU')
+            ? 'u'
+            : e.shiftKey && (k === 's' || e.code === 'KeyS')
+              ? 's'
+              : null;
+      if (!mark) return;
+      const col = colRef.current;
+      const live = document.activeElement as HTMLElement | null;
+      const box = live?.hasAttribute?.('data-note-line') && col?.contains(live) ? live : null;
+      if (!box && !textSelRef.current?.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (formatSelRef.current(mark, undefined, box)) return;
+      if (!box) return;
+      const runs = applyNoteFormat(box, mark);
+      if (runs) commitLine(controller, box.getAttribute('data-note-line') || '', runs);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [controller, readOnly]);
+
+  /**
    * **⌘F = 이 공책 안에서 찾기**(요청: 공책에서도 단축키를 다 쓰게).
    *
    * 전역 핸들러(`useEditorState`)의 ⌘F는 **맵 검색 바**를 연다 — 공책 화면에는 그
@@ -1365,7 +1439,7 @@ export function NoteEditor({ controller }: Props) {
                 />
               </div>
             ))}
-            {ctxAt && !readOnly && <BlockMenu controller={controller} at={ctxAt} onClose={() => setCtxAt(null)} />}
+            {ctxAt && !readOnly && <BlockMenu controller={controller} at={ctxAt} formatSelection={formatSelection} onClose={() => setCtxAt(null)} />}
             {linkPick && !readOnly && (
               <DocPickPopup
                 controller={controller}
@@ -3092,7 +3166,7 @@ function FormatToolbar({
    * (그림은 `CSS.highlights`가 그린다) 한 박스에 대고 도는 `applyNoteFormat`은 걸 자리를
    * 찾지 못했다 — 제보: "한 줄은 되는데 여러 줄은 굵게가 안 먹는다".
    */
-  formatSelection: (kind: NoteFormatKind, val?: string | null) => boolean;
+  formatSelection: (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null) => boolean;
   /** 새로 만든 블록·항목으로 캐럿을 보낸다(루트의 `freshId`). */
   onInserted: (id: string | null) => void;
   /** `/` 단추 — 지금 줄에서 블록 목록을 연다. `from`을 주면 그 요소를 기준으로 뜬다. */
@@ -3199,11 +3273,12 @@ function FormatToolbar({
    * 툴바가 블록 구조를 다시 알아내지 않아도 되고, 목록 항목·표 칸도 같은 길을 쓴다.
    */
   const apply = (kind: NoteFormatKind, val?: string | null) => {
-    // 여러 줄이 칠해져 있으면 **그 줄들 전부**에 건다(제보 3).
-    if (formatSelection(kind, val)) {
+    // 칠해 둔 줄들에, 없으면 지금 박스에서 고른 글에 — 한 길이다(제보 1·2·3).
+    if (formatSelection(kind, val, boxRef.current)) {
       setOpen(null);
       return;
     }
+    // 표의 칸처럼 우리 선택을 세우지 않는 자리는 예전 길로(브라우저 선택 위에서).
     const el = boxRef.current;
     if (!el) return;
     const runs = applyNoteFormat(el, kind, val);
@@ -3235,7 +3310,13 @@ function FormatToolbar({
   const applyLink = () => {
     const el = boxRef.current;
     const url = linkUrl.trim();
-    if (!el || !url) return;
+    if (!url) return;
+    // 칠해 둔 여러 줄이 있으면 그쪽이 먼저다(툴바의 다른 서식과 같은 규칙).
+    if (formatSelection('link', url)) {
+      setLinkOpen(false);
+      return;
+    }
+    if (!el) return;
     const span = linkSpan ?? { a: 0, b: 0 };
     const runs = span.a !== span.b ? applyNoteFormatRange(el, span.a, span.b, 'link', url) : insertNoteLink(el, span, linkText.trim() || url, url);
     if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
@@ -4225,9 +4306,20 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                   // 편집기나 같다). 0단계에서만 목록을 끝낸다(문단으로 빠져나온다) —
                   // 그 길이 없으면 빈 항목이 끝없이 쌓인다.
                   if ((item.indent ?? 0) > 0) return controller.setNoteItemIndent(block.id, item.id, -1);
-                  if ((block.items ?? []).length > 1) {
-                    controller.removeNoteItem(block.id, item.id);
-                    setFreshId(controller.addNoteBlock('p', block.id));
+                  /**
+                   * **그 줄이 문단이 된다 — 없어지는 것이 아니다**(제보 4).
+                   *
+                   * 예전에는 항목을 지우고(`removeNoteItem`) 문단을 하나 더 만들었는데
+                   * (`addNoteBlock('p', block.id)`), 그 함수는 **블록 뒤**에 넣는다 —
+                   * 목록은 블록 하나에 항목 여럿이라 "뒤"는 목록 **전체의 뒤**다.
+                   * 그래서 1·2·3 가운데 2에서 Enter를 치면 2가 사라지고 캐럿이 3
+                   * 아래로 떨어졌다. `retypeNoteLine`은 그 자리에서 목록을
+                   * `[앞 / 문단 / 뒤]`로 가르므로 줄도 차례도 그대로다.
+                   */
+                  const out = controller.retypeNoteLine(`${block.id}:${item.id}`, 'p');
+                  if (out) {
+                    setFreshId(out);
+                    caretToLine(out, 0);
                     return true;
                   }
                 }
@@ -4268,42 +4360,25 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 // 문서 편집기의 몸에 익은 순서다(지우기 전에 한 단계 나온다).
                 if ((item.indent ?? 0) > 0) return controller.setNoteItemIndent(block.id, item.id, -1);
                 /**
-                 * **첫 항목이면 목록을 푼다**(제보) — 마커만 걷히고 글은 그 자리에
-                 * 남는다. 윗줄과 잇는 것은 **그다음 Backspace**의 일이다(그때는
-                 * 문단이 되어 있으므로 문단의 규칙을 그대로 탄다).
+                 * **어느 항목이든 먼저 목록을 푼다**(요청 6) — 마커만 걷히고 글은 그
+                 * 자리에 남는다. 윗줄과 잇는 것은 **그다음 Backspace**의 일이다
+                 * (그때는 문단이 되어 있으므로 문단의 규칙을 그대로 탄다).
+                 *
+                 * 예전에는 **첫 항목만** 그랬고(`unlistNoteItem`) 가운데 항목은 곧바로
+                 * 윗 항목에 이어 붙였다(`mergeNoteBlockBack`) — 노션의 규칙이지만,
+                 * 1~5번 목록의 3번에서 뒤로가기를 하면 그 줄이 2번에 흡수돼 **줄이
+                 * 하나 사라진다**. 사용자가 바란 것은 "그 줄의 번호만 지우기"이므로
+                 * 자리에 상관없이 같은 한 가지 규칙으로 맞춘다(두 번 누르면 예전처럼
+                 * 윗줄과 이어진다 — 문단이 된 뒤의 Backspace가 그 일을 한다).
                  */
-                if (j === 0) {
-                  const made = controller.unlistNoteItem(block.id, item.id);
-                  if (made) {
-                    setFreshId(made);
-                    caretToLine(made, 0);
-                    return true;
-                  }
-                }
-                /**
-                 * **앞 항목에 잇는다** — 가운데 항목의 맨 앞 Backspace는 위 항목과
-                 * 이어 붙는 것이 문서 편집기의 규칙이다. 빈 항목도 같은 길을 지난다
-                 * (이어 붙일 글이 없을 뿐이다).
-                 */
-                const joined = controller.mergeNoteBlockBack(block.id, item.id);
-                if (joined) {
-                  const el = document.querySelector<HTMLElement>(`[data-note-line="${joined.key}"]`);
-                  if (el) el.innerHTML = runsToHtml({ text: runsText(joined.runs), rich: joined.runs });
-                  caretToLine(joined.key, joined.at);
+                const made = controller.retypeNoteLine(`${block.id}:${item.id}`, 'p');
+                if (made) {
+                  setFreshId(made);
+                  caretToLine(made, 0);
                   return true;
                 }
-                // 이을 앞 줄이 없다(페이지의 첫 블록) — 빈 항목만 정리한다.
-                if (runsText(item.runs) !== '') return false;
-                if ((block.items ?? []).length > 1) {
-                  const prev = (block.items ?? [])[j - 1];
-                  controller.removeNoteItem(block.id, item.id);
-                  caretToLine(prev ? `${block.id}:${prev.id}` : block.id);
-                  return true;
-                }
-                controller.retypeNoteBlock(block.id, 'p');
-                // 목록이 문단으로 돌아간 자리 — 그 문단에 캐럿을 남긴다(제보).
-                caretToLine(block.id);
-                return true;
+                // 풀 것이 없으면(보기 전용·사라진 블록) 키를 놓아 준다.
+                return false;
               }}
               style={{
                 flex: 1,
@@ -5920,7 +5995,7 @@ const CTX_FONTS: { kind: 'b' | 'i' | 'u' | 's' | 'hl' | 'c' | 'clear'; name: str
  * 서식은 **오른쪽 클릭이 난 편집 박스**에 건다(`box`) — 메뉴를 여는 동안 브라우저는
  * 선택을 지우지 않으므로, 고른 글이 있으면 그 글에, 없으면 캐럿 자리에 걸린다.
  */
-function BlockMenu({ controller, at, onClose }: { controller: EditorController; at: BlockMenuAt; onClose: () => void }) {
+function BlockMenu({ controller, at, formatSelection, onClose }: { controller: EditorController; at: BlockMenuAt; formatSelection: (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null) => boolean; onClose: () => void }) {
   const [wing, setWing] = useState<'style' | 'font' | 'todo' | null>(null);
   useAnchored(true, onClose);
   const blocks = controller.notePage?.blocks ?? [];
@@ -5933,11 +6008,16 @@ function BlockMenu({ controller, at, onClose }: { controller: EditorController; 
     onClose();
   };
 
-  /** 서식 — 툴바와 같은 길(`applyNoteFormat` → `commitLine`). 박스가 없으면 아무 일도 없다. */
+  /**
+   * 서식 — 툴바와 **같은 길**이다(제보 3): 여러 줄이 칠해져 있으면 그 줄들 전부에,
+   * 아니면 오른쪽 클릭이 난 박스의 고른 글에. 예전에는 뒷길만 있어서, 여러 줄을
+   * 고르고 우클릭하면 브라우저 선택이 비어 있어(칠하기가 거둔다) 아무 일도 없었다.
+   */
   const format = (kind: (typeof CTX_FONTS)[number]['kind']) => {
+    const val = kind === 'hl' ? 'yellow' : kind === 'c' ? '#E0632F' : undefined;
+    if (formatSelection(kind, val, at.box)) return;
     const el = at.box;
     if (!el) return;
-    const val = kind === 'hl' ? 'yellow' : kind === 'c' ? '#E0632F' : undefined;
     const runs = applyNoteFormat(el, kind, val);
     if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
   };
@@ -6016,9 +6096,11 @@ function BlockMenu({ controller, at, onClose }: { controller: EditorController; 
         icon={<><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></>}
         onClick={done(() => {
           const el = at.box;
-          if (!el) return;
           const url = typeof window === 'undefined' ? null : window.prompt('링크 주소');
           if (!url || !url.trim()) return;
+          // 여러 줄이 칠해져 있으면 그 줄들 전부에(위 `format`과 같은 규칙).
+          if (formatSelection('link', url.trim(), el)) return;
+          if (!el) return;
           const runs = applyNoteFormat(el, 'link', url.trim());
           if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
         })}

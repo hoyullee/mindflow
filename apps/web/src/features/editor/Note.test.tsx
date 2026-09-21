@@ -3152,7 +3152,7 @@ describe('공책 30판 — 목록 Tab · 앞 줄에 잇기 · 지운 뒤 커서'
     expect(saved('t1').pages[0].blocks[0].items).toHaveLength(2);
   });
 
-  it('빈 항목을 지우면 **앞 항목 끝**으로 커서가 간다(제보: 포커스가 풀린다)', async () => {
+  it('빈 항목에서 Backspace는 **그 줄의 표식만** 걷고, 한 번 더 누르면 앞 항목에 잇는다(요청 6)', async () => {
     const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'ul', items: [
       { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
       { id: 'i2', runs: [{ t: '', b: false, c: null }] },
@@ -3164,6 +3164,19 @@ describe('공책 30판 — 목록 Tab · 앞 줄에 잇기 · 지운 뒤 커서'
     caretAtHead(second);
     fireEvent.keyDown(second, { key: 'Backspace' });
 
+    // 줄은 남고 목록만 풀린다 — 항목 하나짜리 목록 + 빈 문단.
+    const para = (await waitFor(() => {
+      const el = [...container.querySelectorAll('[data-note-block]')].find((b) => b.getAttribute('data-note-kind') === 'p');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    })) as HTMLElement;
+    expect(container.querySelector('[data-note-line="b1:i1"]')).toBeTruthy();
+    expect(container.querySelector('[data-note-line="b1:i2"]')).toBeFalsy();
+
+    // 그다음 Backspace가 앞 항목과 잇는다(문단의 규칙을 그대로 탄다).
+    const line = para.querySelector('[data-note-line]') as HTMLElement;
+    caretAtHead(line);
+    fireEvent.keyDown(line, { key: 'Backspace' });
     await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1:i1'));
   });
 
@@ -4904,5 +4917,147 @@ describe('공책 45판 — 이미지 크기·확대 · 여러 줄 서식 · 칸�
     s2?.addRange(r);
     fireEvent.keyDown(line, { key: '/' });
     await waitFor(() => expect(container.querySelector('[data-note-slash-panel]')).toBeTruthy());
+  });
+});
+
+describe('공책 46판 — 서식의 길을 하나로 · 목록 Enter·Backspace · 조합 중 방향키', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  function caretAt(el: HTMLElement, at: number): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, Math.min(at, (text.nodeValue ?? '').length));
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+  function selectAll(el: HTMLElement): void {
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  const TWO = {
+    ...NOTE,
+    pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+      { id: 'b3', kind: 'p', runs: [{ t: '셋째 줄', b: false, c: null }] },
+    ] }],
+  };
+
+  it('⌘B는 **칠해 둔 여러 줄 전부**에 걸린다(제보 3: 감긴 줄만 되고 Enter로 내린 줄은 안 됐다)', async () => {
+    localStorage.setItem('mindflow_doc_h1', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=h1&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    const two = container.querySelector('[data-note-line="b2"]') as HTMLElement;
+    fireEvent.pointerDown(one, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(two, { clientX: 0, clientY: 0 });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+
+    fireEvent.keyDown(document, { key: 'b', code: 'KeyB', metaKey: true });
+    saveNow();
+
+    await waitFor(() => {
+      const blocks = saved('h1').pages[0].blocks as { id: string; runs?: { b?: boolean }[] }[];
+      expect(blocks.find((x) => x.id === 'b2')?.runs?.some((r) => r.b)).toBe(true);
+    });
+  });
+
+  it('서식을 걸고 나면 **우리 칠만 남는다** — 브라우저 선택은 비운다(제보 1·2)', async () => {
+    localStorage.setItem('mindflow_doc_h2', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=h2&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    selectAll(one);
+    const bold = container.querySelector('[data-note-mark="b"]') as HTMLElement;
+    fireEvent.mouseDown(bold);
+    fireEvent.click(bold);
+
+    // 그 줄만 고른 것으로 남고(그림은 우리 것), 브라우저 선택은 비어 있다.
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(1));
+    expect(window.getSelection()?.rangeCount ?? 0).toBe(0);
+    saveNow();
+    await waitFor(() => expect((saved('h2').pages[0].blocks[0].runs as { b?: boolean }[]).every((r) => r.b)).toBe(true));
+  });
+
+  it('빈 목록 줄에서 Enter는 **그 줄을 문단으로** — 줄이 사라지지 않는다(제보 4)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'ol', items: [
+      { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+      { id: 'i2', runs: [{ t: '', b: false, c: null }] },
+      { id: 'i3', runs: [{ t: '셋', b: false, c: null }] },
+    ] }] }] };
+    localStorage.setItem('mindflow_doc_h3', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=h3&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b1:i2"]'))) as HTMLElement;
+
+    caretAt(two, 0);
+    fireEvent.keyDown(two, { key: 'Enter' });
+    saveNow();
+
+    await waitFor(() => {
+      const blocks = saved('h3').pages[0].blocks as { kind: string; start?: number; items?: { id: string }[] }[];
+      // [앞 목록(하나) / 빈 문단 / 뒤 목록(셋, 3번부터)]
+      expect(blocks.map((b) => b.kind)).toEqual(['ol', 'p', 'ol']);
+      expect(blocks[0]?.items?.map((i) => i.id)).toEqual(['i1']);
+      expect(blocks[2]?.items?.map((i) => i.id)).toEqual(['i3']);
+      expect(blocks[2]?.start).toBe(3);
+    });
+    // 셋째 줄은 그대로 있다(예전에는 사라지고 커서가 그 아래로 떨어졌다) —
+    // 뒤 덩이는 새 블록이므로 줄 키의 **항목 쪽**으로 찾는다.
+    expect(container.querySelector('[data-note-line$=":i3"]')).toBeTruthy();
+  });
+
+  it('가운데 항목의 Backspace는 **그 줄의 표식만** 걷는다(요청 6)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'ol', items: [
+      { id: 'i1', runs: [{ t: '하나', b: false, c: null }] },
+      { id: 'i2', runs: [{ t: '둘', b: false, c: null }] },
+      { id: 'i3', runs: [{ t: '셋', b: false, c: null }] },
+    ] }] }] };
+    localStorage.setItem('mindflow_doc_h4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=h4&title=x');
+    const three = (await waitFor(() => container.querySelector('[data-note-line="b1:i3"]'))) as HTMLElement;
+
+    caretAt(three, 0);
+    fireEvent.keyDown(three, { key: 'Backspace' });
+    saveNow();
+
+    await waitFor(() => {
+      const blocks = saved('h4').pages[0].blocks as { kind: string; runs?: { t: string }[]; items?: { id: string }[] }[];
+      expect(blocks.map((b) => b.kind)).toEqual(['ol', 'p']);
+      expect(blocks[0]?.items?.map((i) => i.id)).toEqual(['i1', 'i2']);
+      expect(blocks[1]?.runs?.map((r) => r.t).join('')).toBe('셋'); // 글은 그대로 남는다
+    });
+  });
+
+  it('조합 중 방향키는 **한 칸만** 옮긴다(제보 5: 두 칸 건너뛴다)', async () => {
+    localStorage.setItem('mindflow_doc_h5', JSON.stringify(TWO));
+    const { container } = renderEditor('/editor?map=h5&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    /**
+     * 크롬은 조합 중의 방향키로 **조합을 끝내고**, 이어서 `isComposing`이 꺼진
+     * keydown을 한 번 더 보낸다 — 그 둘이 각각 한 칸씩 옮겨 두 칸이 됐다.
+     */
+    caretAt(one, 99);
+    fireEvent.keyDown(one, { key: 'ArrowDown', isComposing: true });
+    fireEvent.keyDown(one, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2'));
+
+    // 미뤄 둔 일이 뒤늦게 한 칸 더 옮기지 않는다.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2');
   });
 });

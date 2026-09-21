@@ -10,14 +10,14 @@
 // 값이 바뀔 때마다 다시 심으면 타이핑 중에 캐럿이 맨 앞으로 튄다(리액트 제어
 // 컴포넌트로 만들 수 없는 이유). 그래서 이 박스는 **비제어**다: 처음 한 번 그리고,
 // 그 뒤로는 사용자의 입력이 DOM의 진실이고 우리가 그것을 읽어 문서에 커밋한다.
-// 서식 버튼처럼 **우리가** 내용을 갈아야 할 때는 `applyNoteFormat`이 직접 그린다.
+// 서식 버튼처럼 **우리가** 내용을 갈아야 할 때는 에디터가 `applyNoteFormat`으로 직접 그린다.
 
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { RichRun } from '@mindflow/mindmap-core';
 import { runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, runsToHtml } from '../richtextDom';
-import { applyNoteFormat, NOTE_EDIT_ATTR } from '../noteRichDom';
+import { NOTE_EDIT_ATTR } from '../noteRichDom';
 import { charOffset, pointAt } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
@@ -228,16 +228,6 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       }
     }
     /**
-     * **서식 단축키** — ⌘B·⌘I·⌘U·⌘⇧S(요청: 공책에서도 단축키를 다 쓰게).
-     *
-     * 툴바 단추와 **같은 길**을 쓴다(`applyNoteFormat` → 이 줄의 `onChange`) — 그래서
-     * 문단이든 목록 항목이든 표의 칸이든 여기 달린 줄이면 모두 같은 서식이 걸린다.
-     * 브라우저의 기본 동작(`<b>`를 직접 끼워 넣거나 ⌘U로 소스 보기)은 막는다.
-     *
-     * 고른 글이 없으면 `applyNoteFormat`이 `null`을 돌려준다 — 그때는 아무 일도
-     * 하지 않는다(캐럿 뒤로 이어 칠 서식을 예약해 두는 것은 다른 일이다).
-     */
-    /**
      * **⌘A** — 브라우저는 이 편집 박스(한 줄) 안만 고른다. 이미 그 줄이 통째로
      * 골라져 있으면 두 번째 ⌘A는 **본문 전체**여야 한다(제보).
      */
@@ -250,25 +240,11 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         return;
       }
     }
-    if ((e.metaKey || e.ctrlKey) && !e.altKey && !readOnly && !e.nativeEvent.isComposing) {
-      const k = e.key.toLowerCase();
-      const mark: 'b' | 'i' | 'u' | 's' | null = !e.shiftKey && (k === 'b' || e.code === 'KeyB')
-        ? 'b'
-        : !e.shiftKey && (k === 'i' || e.code === 'KeyI')
-          ? 'i'
-          : !e.shiftKey && (k === 'u' || e.code === 'KeyU')
-            ? 'u'
-            : e.shiftKey && (k === 's' || e.code === 'KeyS')
-              ? 's'
-              : null;
-      if (mark) {
-        e.preventDefault();
-        e.stopPropagation();
-        const runs = applyNoteFormat(el, mark);
-        if (runs) onChange(runs);
-        return;
-      }
-    }
+    /**
+     * ⌘B·⌘I·⌘U·⌘⇧S는 **여기서 받지 않는다** — 에디터가 문서에서 받는다(제보 3).
+     * 여러 줄을 칠하는 동안에는 어느 박스에도 초점이 없어 이 손이 닿지 않았고,
+     * 그래서 같은 단축키가 한 줄에서만 들었다(`NoteEditor`의 같은 이름 효과).
+     */
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       if (onEnter?.(caretOffset(el))) {
         e.preventDefault();
@@ -342,9 +318,12 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         if (caretOnEdgeLine(el, sel, dir)) {
           const x = caretRect(el, sel)?.left;
           // 조합 중에는 **막지 않는다**(가로채면 조합이 끊긴 채 글자가 남는다) —
-          // 브라우저가 조합을 끝낸 다음 차례에 건너뛴다.
+          // 브라우저가 조합을 끝낸 다음 차례에 건너뛴다. **다만 그때 가장자리에
+          // 그대로 있는지 다시 본다**(제보 5) — 아래 `stillEdge` 머리말.
           if (composing) {
-            setTimeout(() => onArrowOut(dir, x), 0);
+            setTimeout(() => {
+              if (stillOnEdge(el, dir, 'line')) onArrowOut(dir, x);
+            }, 0);
             return;
           }
           if (onArrowOut(dir, x)) e.preventDefault();
@@ -378,7 +357,9 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         // 줄의 **맨 끝**에서 → · **맨 앞**에서 ←일 때만 넘어간다.
         if (dir === 1 ? at >= len : at <= 0) {
           if (composing) {
-            setTimeout(() => onEdgeOut(dir), 0);
+            setTimeout(() => {
+              if (stillOnEdge(el, dir, 'char')) onEdgeOut(dir);
+            }, 0);
             return;
           }
           if (onEdgeOut(dir)) e.preventDefault();
@@ -513,6 +494,28 @@ function caretRect(el: HTMLElement, sel: Selection): DOMRect | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 조합이 끝난 **다음 차례에** 캐럿이 아직 가장자리에 있는가 — 넘어가도 되는가.
+ *
+ * 왜 다시 보나(제보 5): 조합 중(`안녕`의 `녕` 밑에 줄이 그어진 상태)에 방향키를
+ * 누르면 **두 칸**이 움직였다. IME는 그 키로 조합을 끝내는데, 크롬은 그 뒤에
+ * `isComposing`이 꺼진 **두 번째 keydown**을 한 번 더 보낸다 — 그것이 정상 길을
+ * 타 한 칸 넘어가고, 조합 때 걸어 둔 `setTimeout`이 한 칸 더 넘겼다.
+ *
+ * 그래서 미뤄 둔 그 일은 **조건이 아직 참일 때만** 한다: 초점이 이 박스에 그대로
+ * 있고(이미 넘어갔으면 다른 박스다), 캐럿이 접혀 있고, 여전히 그 가장자리다.
+ * 막지 않고 미루는 까닭은 그대로다 — 가로채면 조합이 끊긴 채 글자가 남는다.
+ */
+function stillOnEdge(el: HTMLElement, dir: -1 | 1, unit: 'char' | 'line'): boolean {
+  if (!el.isConnected || typeof document === 'undefined' || document.activeElement !== el) return false;
+  const sel = window.getSelection();
+  // 접혀 있는지는 보지 않는다 — 윈도 IME는 조합 글자를 **골라 둔** 모양으로 둔다.
+  if (!sel || !sel.focusNode || !el.contains(sel.focusNode)) return false;
+  if (unit === 'line') return caretOnEdgeLine(el, sel, dir);
+  const at = caretOffset(el);
+  return dir === 1 ? at >= (el.textContent ?? '').length : at <= 0;
 }
 
 /**

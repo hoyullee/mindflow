@@ -786,12 +786,20 @@ input[type='search']::-webkit-search-results-decoration {
    하이라이트로 그리고(`NoteEditor`의 `selectionchange` 효과) 여기서는 브라우저 칠만
    끈다. `data-note-hl`은 `CSS.highlights`를 아는 브라우저에서만 붙는다 — 모르는
    브라우저에서 이 규칙이 걸리면 선택이 아예 보이지 않는다. */
-[data-note-editor][data-note-hl='1'] .mf-note-line::selection {
+/* **줄 안의 스팬까지** 꺼야 한다(제보: 서식을 걸면 선택 배경이 2중으로 겹친다).
+   `.mf-note-line::selection`은 그 요소가 **직접 담은 글자**에만 걸린다 — 굵게·색·
+   링크를 걸면 그 글자는 `<b>`·`<span>` 안으로 들어가므로 이 규칙을 비켜 가고,
+   브라우저 칠(줄 높이)과 우리 칠(글자 상자)이 겹쳐 두 겹으로 짙어졌다(실측: 한 겹
+   #F6DACF, 두 겹 #F1BFAF). 서식이 걸린 글을 고르는 순간 늘 그랬다 — 서식을 방금
+   건 자리에서 눈에 띄었을 뿐이다. */
+[data-note-editor][data-note-hl='1'] .mf-note-line::selection,
+[data-note-editor][data-note-hl='1'] .mf-note-line *::selection {
   background: transparent;
 }
 /* 표의 칸은 그대로 브라우저가 칠한다(칸 안의 선택은 우리가 따라 그리지 않는다) —
    순서상 뒤에 와야 위 규칙을 되돌린다. */
-[data-note-editor][data-note-hl='1'] .mf-note-table .mf-note-line::selection {
+[data-note-editor][data-note-hl='1'] .mf-note-table .mf-note-line::selection,
+[data-note-editor][data-note-hl='1'] .mf-note-table .mf-note-line *::selection {
   background: var(--mf-tsel-text);
 }
 /* **고른 칸만은 예외다**(제보: 셀을 고르면 글자 뒤에 배경이 생긴다).
