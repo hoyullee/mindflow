@@ -97,6 +97,36 @@ import type {
 /** 이미지 제목(캡션) 글자 수 상한 — 한 줄 말줄임 자리라 길게 적어도 안 보인다(요청). */
 export const FLOAT_CAPTION_MAX = 20;
 
+/**
+ * **파일 고르개에서 막 돌아왔는가** — 우리가 띄운 대화상자가 만든 `focus`를 가려낸다.
+ *
+ * 공책 본문은 창이 초점을 되찾을 때 스크롤을 잠깐 붙드는데(제보 3), 이미지를 고르고
+ * 돌아온 직후는 **그림이 들어와 판 높이가 바뀌는 순간**이라 붙들면 방금 넣은 이미지를
+ * 화면 밖으로 밀어낸다. 그 하나를 예외로 둔다.
+ *
+ * 값은 **한 번 쓰면 사라진다**(`consumePickingFile`) — 거를 것은 대화상자가 돌려준
+ * 그 초점 하나뿐이고, 남겨 두면 그 뒤의 진짜 복귀까지 방어가 꺼진다. 대화상자를
+ * 닫는 신호(`change`·`cancel`)를 쏘지 않는 브라우저가 있어 **시간 상한**도 함께 둔다.
+ */
+let pickingAt = 0;
+
+/** 고르개 표식을 **읽고 지운다** — 소비처는 `NoteEditor`의 스크롤 붙들기 하나다. */
+export function consumePickingFile(): boolean {
+  const on = pickingAt > 0 && Date.now() - pickingAt < 20_000;
+  pickingAt = 0;
+  return on;
+}
+
+/** 파일 고르개를 띄우기 직전에 표식을 남긴다(닫는 신호가 오면 먼저 지운다). */
+function markPickingFile(input: HTMLInputElement): void {
+  pickingAt = Date.now();
+  const done = (): void => {
+    pickingAt = 0;
+  };
+  input.addEventListener('change', done, { once: true });
+  input.addEventListener('cancel', done, { once: true });
+}
+
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.4;
 const FIT_PADDING = 90;
@@ -882,9 +912,9 @@ export interface EditorController {
   /** 표에 열을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 오른쪽. */
   addNoteTableCol: (blockId: string, at?: number) => void;
   /** 행 지우기 — 마지막 한 줄은 지우지 않는다(표가 사라져 버린다). */
-  removeNoteTableRow: (blockId: string, at: number) => void;
+  removeNoteTableRow: (blockId: string, at: number, to?: number) => void;
   /** 열 지우기 — 마지막 한 칸은 지우지 않는다. */
-  removeNoteTableCol: (blockId: string, at: number) => void;
+  removeNoteTableCol: (blockId: string, at: number, to?: number) => void;
   /** 행을 위(`-1`)·아래(`+1`)로 한 칸. */
   moveNoteTableRow: (blockId: string, at: number, delta: number) => void;
   /** 열의 가로 정렬 — 왼쪽이면 칸을 비운다(기본값은 적지 않는다). */
@@ -894,7 +924,7 @@ export interface EditorController {
    * 고른 칸들에 **색을 붓는다**(`null`이면 지운다) — 표 선택 칩의 `색 채우기`.
    * 좌표는 `[행, 열]` 짝이고, 칠하지 않은 표에는 그 칸 자체가 생기지 않는다.
    */
-  setNoteTableFill: (blockId: string, target: TableFillTarget, color: string | null) => void;
+  setNoteTableFill: (blockId: string, target: TableFillTarget | TableFillTarget[], color: string | null) => void;
   /** 손으로 끈 열 너비·행 높이(px). `null`이면 그 축의 값을 걷어 글에 맡긴다. */
   setNoteTableSizes: (blockId: string, axis: 'col' | 'row', sizes: number[] | null) => void;
   /** 표의 한 행을 바로 아래에 복제한다(글과 색을 함께). */
@@ -4346,6 +4376,7 @@ export function useEditorState(): EditorController {
         const f = input.files?.[0];
         if (f) void addImageFloatFromFile(f, at);
       };
+      markPickingFile(input);
       input.click();
     },
     [addImageFloatFromFile],
@@ -4372,6 +4403,7 @@ export function useEditorState(): EditorController {
         const f = input.files?.[0];
         if (f) void attachNodeImageFromFile(id, f);
       };
+      markPickingFile(input);
       input.click();
     },
     [attachNodeImageFromFile],
@@ -7616,15 +7648,23 @@ export function useEditorState(): EditorController {
    * 되돌릴 손잡이조차 없어지기 때문이다(지우려면 블록을 지운다).
    */
   const removeNoteTableRow = useCallback(
-    (blockId: string, at: number) => {
+    (blockId: string, at: number, to?: number) => {
       if (!notePage) return;
       commitBlock(
         notePage.id,
         blockId,
         (b) => {
-          const rows = b.rows ?? [];
-          if (rows.length <= 1 || at < 0 || at >= rows.length) return b;
-          return { ...b, rows: rows.filter((_, i) => i !== at), fills: shiftFills(b.fills, 'row', 'remove', at), rowH: shiftSizes(b.rowH, 'remove', at) };
+          // 여러 행을 한 번에 지울 때는 **큰 번호부터** — 앞에서 지우면 뒤 번호가
+          // 당겨져 엉뚱한 행이 사라진다. 커밋은 한 번이라 ⌘Z 한 번에 다 돌아온다.
+          const first = Math.max(0, Math.min(at, to ?? at));
+          const last = Math.max(at, to ?? at);
+          let next = b;
+          for (let i = Math.min(last, (b.rows ?? []).length - 1); i >= first; i -= 1) {
+            const rows = next.rows ?? [];
+            if (rows.length <= 1 || i < 0 || i >= rows.length) continue;
+            next = { ...next, rows: rows.filter((_, k) => k !== i), fills: shiftFills(next.fills, 'row', 'remove', i), rowH: shiftSizes(next.rowH, 'remove', i) };
+          }
+          return next;
         },
         false,
       );
@@ -7633,16 +7673,23 @@ export function useEditorState(): EditorController {
   );
 
   const removeNoteTableCol = useCallback(
-    (blockId: string, at: number) => {
+    (blockId: string, at: number, to?: number) => {
       if (!notePage) return;
       commitBlock(
         notePage.id,
         blockId,
         (b) => {
-          const rows = b.rows ?? [];
-          const width = rows[0]?.length ?? 0;
-          if (width <= 1 || at < 0 || at >= width) return b;
-          return { ...b, rows: rows.map((r) => r.filter((_, i) => i !== at)), fills: shiftFills(b.fills, 'col', 'remove', at), colW: shiftSizes(b.colW, 'remove', at) };
+          // 행과 같은 규칙 — 큰 번호부터, 커밋은 한 번(⌘Z 한 번에 다 돌아온다).
+          const first = Math.max(0, Math.min(at, to ?? at));
+          const last = Math.max(at, to ?? at);
+          let next = b;
+          for (let i = Math.min(last, ((b.rows ?? [])[0]?.length ?? 0) - 1); i >= first; i -= 1) {
+            const rows = next.rows ?? [];
+            const width = rows[0]?.length ?? 0;
+            if (width <= 1 || i < 0 || i >= width) continue;
+            next = { ...next, rows: rows.map((r) => r.filter((_, k) => k !== i)), fills: shiftFills(next.fills, 'col', 'remove', i), colW: shiftSizes(next.colW, 'remove', i) };
+          }
+          return next;
         },
         false,
       );
@@ -7706,9 +7753,11 @@ export function useEditorState(): EditorController {
   );
 
   const setNoteTableFill = useCallback(
-    (blockId: string, target: TableFillTarget, color: string | null) => {
+    (blockId: string, target: TableFillTarget | TableFillTarget[], color: string | null) => {
       if (!notePage) return;
-      commitBlock(notePage.id, blockId, (b) => ({ ...b, fills: applyFill(b.fills, target, color) }), false);
+      // 여러 자리를 한 번에(여러 행·열을 골랐을 때) — 한 커밋이라 ⌘Z 한 번이다.
+      const many = Array.isArray(target) ? target : [target];
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, fills: many.reduce((acc, t) => applyFill(acc, t, color), b.fills) }), false);
     },
     [commitBlock, notePage],
   );
@@ -7824,6 +7873,7 @@ export function useEditorState(): EditorController {
         if (at?.replace) retypeNoteBlock(at.replace, 'img');
         void setNoteImage(id, file);
       };
+      markPickingFile(input);
       input.click();
     },
     [addNoteBlock, retypeNoteBlock, setNoteImage],

@@ -12,9 +12,10 @@
 // 요소**를 찾아 거기에 대고 동작하는 작은 배관을 따로 쓴다 — 서식 계산 자체는 코어
 // (`applyPartialStyle`)에서 같은 함수를 쓰므로 규칙이 두 벌이 되지는 않는다.
 
-import { applyPartialStyle, charsToRuns, isStyledRuns, runsToChars } from '@mindflow/mindmap-core';
+import { applyPartialStyle, charsToRuns, isStyledRuns, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
 import type { RichRun } from '@mindflow/mindmap-core';
-import { domToRuns, linearize, runsToHtml } from './richtextDom';
+import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
+import { renderListEdit } from './listLines';
 
 /** 공책 본문에서 걸 수 있는 서식 — 코어 `applyPartialStyle`의 종류와 같다. */
 export type NoteFormatKind = 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'link' | 'clear';
@@ -58,33 +59,54 @@ export function noteBoxValue(el: HTMLElement): { text: string; rich: RichRun[] |
   return domToRuns(el, true);
 }
 
-/** 선택 범위를 값 좌표로 되돌린다 — 서식을 걸어 다시 그린 뒤 캐럿이 튀지 않게. */
-function restoreSelection(el: HTMLElement, a: number, b: number): void {
+/**
+ * 값을 이 박스에 **다시 그린다** — 서식을 걸거나 링크를 끼운 뒤의 한 자리.
+ *
+ * 갈래가 둘인 이유: 표의 칸은 마커가 **글자**라 [마커|내용] 행(`renderListEdit`)으로
+ * 그려야 한다. 평평한 `runsToHtml`로 덮으면 서식 한 번에 마커 스팬·행잉 인덴트·
+ * EN SPACE 들여쓰기가 통째로 풀렸다(제보 9: "칸의 목록에 링크를 걸면 마커가 틀어진다").
+ * 맵의 같은 연산(`useEditorState`의 `applyPartialRange`)이 이미 쓰는 규칙이다.
+ *
+ * 선택 복원은 **어느 갈래든** `setLinearSelection` 하나다. `a`/`b`는 언제나 `linearize`
+ * 좌표인데, 예전의 `restoreSelection`은 텍스트 노드만 세어 `<br>`와 블록 경계를
+ * 빠뜨렸다 — Shift+Enter로 줄을 바꾼 **본문**에서도 복원 캐럿이 줄바꿈 수만큼 앞으로
+ * 밀렸다(값 좌표를 DOM 자리로 푸는 곳이 둘이 되면 규칙이 갈라진다 — `richtextDom`의
+ * 경고가 가리키던 바로 그 자리다).
+ */
+function redrawBox(el: HTMLElement, v: { text: string; rich: RichRun[] | null }, a: number, b: number): void {
   if (typeof window === 'undefined') return;
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let seen = 0;
-  let start: { node: Node; offset: number } | null = null;
-  let end: { node: Node; offset: number } | null = null;
-  let node = walker.nextNode();
-  while (node) {
-    const len = (node.nodeValue || '').length;
-    if (!start && seen + len >= a) start = { node, offset: a - seen };
-    if (!end && seen + len >= b) end = { node, offset: b - seen };
-    if (start && end) break;
-    seen += len;
-    node = walker.nextNode();
+  if (el.hasAttribute('data-list-box')) {
+    // `renderListEdit`가 `data-list-sig`까지 새긴다 — 없으면 다음 입력의 재구성
+    // 판정(`cellListSync`)이 어긋난다. 정렬은 칸이 주지 않는다(`cellListHtml`과 같다).
+    renderListEdit(el, v, undefined, a, b);
+    return;
   }
-  if (!start || !end) return;
-  try {
-    const rng = document.createRange();
-    rng.setStart(start.node, Math.max(0, Math.min(start.offset, (start.node.nodeValue || '').length)));
-    rng.setEnd(end.node, Math.max(0, Math.min(end.offset, (end.node.nodeValue || '').length)));
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(rng);
-  } catch {
-    // 범위를 되돌리지 못해도 서식은 걸렸다 — 캐럿만 잃는다(막을 이유가 없다).
+  el.innerHTML = runsToHtml(v);
+  setLinearSelection(el, a, b);
+}
+
+/**
+ * 표의 칸에서 **마커 글자를 뺀** 조각들 — `[a, b)`를 줄마다 잘라 `- `/`1. ` 뒤부터만 남긴다.
+ *
+ * 칸의 마커는 스팬이 아니라 **값에 든 글자**다(`noteCellList`). 그래서 ⌘A로 칸을 통째로
+ * 고르고 링크를 걸면 `• `에도 `href`가 얹히고, 그 값이 그대로 문서에 저장된다 — 화면은
+ * 재렌더가 마커를 평문으로 다시 그려 가려 주지만 저장본은 오염된 채 남는다.
+ *
+ * 줄마다 잘라야 한다: 첫 줄만 당기면 여러 줄 칸(`- 가나\n- 다라`)의 가운데·끝 줄 마커가
+ * 그대로 물린다.
+ */
+function contentSpans(text: string, a: number, b: number): { a: number; b: number }[] {
+  const out: { a: number; b: number }[] = [];
+  let at = 0;
+  for (const line of text.split('\n')) {
+    const start = at + (parseListPrefix(line)?.raw.length ?? 0);
+    const end = at + line.length;
+    const s = Math.max(a, start);
+    const e = Math.min(b, end);
+    if (e > s) out.push({ a: s, b: e });
+    at = end + 1;
   }
+  return out;
 }
 
 /**
@@ -103,22 +125,43 @@ function restoreSelection(el: HTMLElement, a: number, b: number): void {
  * **바로 앞 글자**의 서식을 본다: 굵은 글 끝에 커서를 두면 이어 쓸 때도 굵을 것이므로
  * 그 상태를 비추는 것이 맞다.
  */
-export function noteActiveMarks(el: HTMLElement): { b: boolean; i: boolean; s: boolean; u: boolean; k: boolean } {
-  const off = { b: false, i: false, s: false, u: false, k: false };
+export function noteActiveMarks(el: HTMLElement): NoteMarks {
   // **접힌 캐럿도 받는다**(제보 9) — 여기서 `noteSelectionRange`를 쓰던 것이 버그였다.
   // 그쪽은 고른 글이 없으면 `null`이라, 아래의 "캐럿이면 앞 글자를 본다"는 규칙이
   // 한 번도 닿지 못했다: 굵은 글 **안**에 커서를 둬도 단추가 꺼져 있었다.
   const range = noteCaretSpan(el);
-  if (!range) return off;
+  if (!range) return NO_MARKS;
+  return noteMarksIn(el, range.a, range.b);
+}
+
+/** 툴바가 보는 다섯 단추의 켜짐. */
+export interface NoteMarks { b: boolean; i: boolean; s: boolean; u: boolean; k: boolean }
+
+const NO_MARKS: NoteMarks = { b: false, i: false, s: false, u: false, k: false };
+
+/** 두 켜짐이 같은가 — 값이 같으면 리렌더하지 않기 위해. */
+export function sameMarks(x: NoteMarks, y: NoteMarks): boolean {
+  return x.b === y.b && x.i === y.i && x.s === y.s && x.u === y.u && x.k === y.k;
+}
+
+/**
+ * 이 박스의 **값 좌표 [a, b)**에 걸린 서식.
+ *
+ * 브라우저 선택과 무관하다 — 그래서 **칠해 둔 선택**(`CSS.highlights`로 그리는 우리
+ * 선택)에도 그대로 쓸 수 있다. 서식을 걸고 나면 브라우저 선택을 비우므로(겹친 배경을
+ * 막기 위해) 선택에 기대는 길로는 단추가 전부 꺼져 보였다 — 제보: "줄 전체를 고르고
+ * 서식을 걸어도 툴바 단추가 켜지지 않는다".
+ */
+export function noteMarksIn(el: HTMLElement, a: number, b: number): NoteMarks {
   const { rich } = noteBoxValue(el);
-  if (!rich || rich.length === 0) return off;
+  if (!rich || rich.length === 0) return NO_MARKS;
   // 런을 글자 단위로 펴서 [a, b) 구간을 본다 — 런 경계와 선택 경계는 어긋날 수 있다.
   const chars: RichRun[] = [];
   for (const r of rich) for (let i = 0; i < r.t.length; i += 1) chars.push(r);
-  const a = range.a === range.b ? Math.max(0, range.a - 1) : range.a;
-  const b = range.a === range.b ? range.a : range.b;
-  const span = chars.slice(a, b);
-  if (span.length === 0) return off;
+  const from = a === b ? Math.max(0, a - 1) : a;
+  const to = a === b ? a : b;
+  const span = chars.slice(from, to);
+  if (span.length === 0) return NO_MARKS;
   const all = (pick: (r: RichRun) => boolean): boolean => span.every(pick);
   return {
     b: all((r) => !!r.b),
@@ -126,6 +169,27 @@ export function noteActiveMarks(el: HTMLElement): { b: boolean; i: boolean; s: b
     s: all((r) => !!r.s),
     u: all((r) => !!r.u),
     k: all((r) => !!r.k),
+  };
+}
+
+/**
+ * **여러 줄**에 걸친 선택의 서식 — 줄마다 보고 **전부 켜져 있을 때만** 켠다.
+ *
+ * 한 줄 규칙("고른 글자 전부가 그 서식일 때만")을 줄 바깥으로 그대로 늘린 것이다.
+ * 글자가 하나도 없는 줄(빈 줄)은 판단에서 뺀다 — 여러 줄을 끌면 중간에 빈 줄이
+ * 섞이기 쉬운데, 그 줄 때문에 전부 꺼지면 "왜 안 켜지지"가 된다.
+ */
+export function noteMarksAcross(spans: { el: HTMLElement; from: number; to: number }[]): NoteMarks {
+  const each = spans
+    .filter((s) => s.to > s.from)
+    .map((s) => noteMarksIn(s.el, s.from, s.to));
+  if (each.length === 0) return NO_MARKS;
+  return {
+    b: each.every((m) => m.b),
+    i: each.every((m) => m.i),
+    s: each.every((m) => m.s),
+    u: each.every((m) => m.u),
+    k: each.every((m) => m.k),
   };
 }
 
@@ -163,14 +227,19 @@ export function noteCaretSpan(el: HTMLElement): { a: number; b: number } | null 
 export function insertNoteLink(el: HTMLElement, span: { a: number; b: number }, label: string, href: string): RichRun[] | null {
   if (!label) return null;
   const v = noteBoxValue(el);
+  // 칸의 캐럿이 마커 글자(`- `/`1. `) 안이면 **내용 앞으로 민다** — 거기에 끼우면
+  // 그 줄의 목록 표식이 깨져 줄이 목록에서 풀린다.
+  if (el.hasAttribute('data-list-box')) {
+    const at = contentSpans(v.text, span.a, Math.max(span.b, span.a + 1))[0];
+    if (at && at.a > span.a) span = { a: at.a, b: Math.max(at.a, span.b) };
+  }
   const chars = runsToChars(v);
   chars.splice(span.a, span.b - span.a, ...Array.from(label).map((ch) => ({ ch, b: false, c: null })));
   const text = chars.map((c) => c.ch).join('');
   const runs = charsToRuns(chars).filter((r) => r.t);
   const next = applyPartialStyle({ text, rich: isStyledRuns(runs) ? runs : null }, span.a, span.a + label.length, 'link', href);
-  el.innerHTML = runsToHtml(next);
   const end = span.a + label.length;
-  restoreSelection(el, end, end);
+  redrawBox(el, next, end, end);
   return next.rich ?? [{ t: next.text, b: false, c: null }];
 }
 
@@ -189,8 +258,12 @@ export function applyNoteFormat(el: HTMLElement, kind: NoteFormatKind, val?: str
 export function applyNoteFormatRange(el: HTMLElement, a: number, b: number, kind: NoteFormatKind, val?: string | null): RichRun[] | null {
   if (a === b) return null;
   const parsed = noteBoxValue(el);
-  const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
-  el.innerHTML = runsToHtml(next);
-  restoreSelection(el, a, b);
+  // 칸이면 마커 글자는 건너뛴다 — 서식이 얹히면 그 값이 그대로 저장된다.
+  const spans = el.hasAttribute('data-list-box') ? contentSpans(parsed.text, a, b) : [{ a, b }];
+  if (!spans.length) return null;
+  let next = parsed;
+  // 글자 수는 서식으로 달라지지 않으므로 좌표는 조각 사이에서도 그대로다.
+  for (const sp of spans) next = applyPartialStyle(next, sp.a, sp.b, kind, val ?? null);
+  redrawBox(el, next, a, b);
   return next.rich ?? [{ t: next.text, b: false, c: null }];
 }

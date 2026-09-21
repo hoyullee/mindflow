@@ -493,6 +493,13 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-line [data-list-marker]::selection {
   background: transparent;
 }
+/* 본문 목록의 마커도 같은 계약이다 — 마커는 편집기가 그리는 장식이라 **고를 수 없다**
+   (표 칸의 마커는 글자라 위 규칙, 본문의 마커는 편집 박스 바깥의 형제 요소다).
+   왼쪽에서 끌면 이 스팬이 선택에 물려 13px 모노스페이스 조각이 함께 복사됐다. */
+[data-note-bullet]::selection,
+[data-note-bullet]::-moz-selection {
+  background: transparent;
+}
 .mf-note-line [data-list-marker]::-moz-selection {
   background: transparent;
 }
@@ -506,6 +513,9 @@ input[type='search']::-webkit-search-results-decoration {
   border-radius: 4px;
   background: var(--mf-panel2);
   border: 1px solid var(--mf-border-soft);
+  /* **칠은 번지되 글자는 제자리에**(제보: 배경을 걸면 글이 움직인다) — 아래 `.mf-hl`
+     머리말과 같은 이유이고, 이쪽이 더 심하다(한쪽에 0.3em + 테두리 1px). */
+  margin: 0 calc(-0.3em - 1px);
 }
 .mf-note-line .mf-hl[data-hl='yellow'] { background: #fbefc0; }
 .mf-note-line .mf-hl[data-hl='green'] { background: #d9efdc; }
@@ -517,6 +527,22 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-line .mf-hl {
   border-radius: 3px;
   padding: 0.02em 0.12em;
+  /**
+   * **가로 여백을 음수 마진으로 되돌린다**(제보: 배경색을 걸면 글자 자리가 틀어진다).
+   *
+   * 형광펜은 숨 쉴 틈으로 좌우 `0.12em`을 갖는데, 그 패딩이 글자의 **advance**를
+   * 늘려 칠한 글자가 1.73px, 그 **뒤의 글자들이 3.47px** 밀렸다(실측, 14.5px 기준).
+   * 서식을 걸었다 푸는 것만으로 줄바꿈 자리까지 달라지는 이유가 이것이다.
+   * 음수 마진은 칠만 번지게 하고 자리는 그대로 둔다 — 대가는 **색이 다른 형광펜이
+   * 맞붙을 때 3.5px 겹치는 것**뿐이다(같은 색은 한 런으로 합쳐져 생기지 않는다).
+   *
+   * 세로는 손대지 않았다: 인라인 패딩은 줄 상자를 바꾸지 못하므로 **글자는 세로로
+   * 1px도 움직이지 않는다**(실측으로 확인). 다만 띠(배경 상자) 자체는 크롬이 폰트의
+   * ascent/descent를 정수로 반올림해 14.5px에서 0.35px 위에 앉는다 — 그 보정은
+   * 글자 크기마다 값이 다르고 브라우저 확대에서 부호가 뒤집혀, 고치면 오히려
+   * 나빠지는 자리가 생긴다(0.35px을 잡자고 여덟 개의 손보정 상수를 심는 셈이다).
+   */
+  margin: 0 -0.12em;
   color: #2e2a26;
 }
 
@@ -760,6 +786,23 @@ input[type='search']::-webkit-search-results-decoration {
 }
 .mf-note-item:hover:not(:disabled) {
   background: var(--mf-note-hover);
+}
+/* 팝업의 입력칸(링크 주소·보일 글·문서 찾기) — 바탕은 흰 종이, 선은 한 단계 진하게.
+   얹으면 선이 강조색으로 물들고 초점이 들어오면 **링**이 하나 더 그려진다. 인라인
+   스타일로는 `:hover`·`:focus`를 쓸 수 없어 여기에 둔다(면·선의 기본값은 인라인의
+   `LINK_INPUT`이 쥔다 — 둘이 같은 토큰을 본다). */
+.mf-note-field {
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.mf-note-field:hover:not(:focus) {
+  border-color: var(--mf-accent-mute) !important;
+}
+.mf-note-field:focus {
+  border-color: var(--mf-accent) !important;
+  box-shadow: 0 0 0 3px var(--mf-accent-soft);
+}
+.mf-note-field::placeholder {
+  color: var(--mf-faint2);
 }
 /* 공책 이름 — 눌러서 고칠 수 있음을 밑줄이 알린다(제목과 같은 규칙) */
 [data-note-book-title]:hover { border-bottom-color: var(--mf-border) !important; }

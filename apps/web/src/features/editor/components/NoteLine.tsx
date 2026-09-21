@@ -421,6 +421,11 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       ref={ref}
       {...{ [NOTE_EDIT_ATTR]: lineKey ?? '' }}
       data-note-line={lineKey ?? ''}
+      /**
+       * 마커가 **글자**인 박스(표의 칸)임을 DOM에 남긴다 — 우리 밖에서 이 박스를 다시
+       * 그리는 길(툴바 서식·링크·우클릭·단축키)이 같은 갈래를 고를 수 있게(`redrawBox`).
+       */
+      data-list-box={listBox ? '' : undefined}
       className="mf-note-line"
       contentEditable={!readOnly}
       suppressContentEditableWarning
@@ -463,11 +468,25 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
           e.preventDefault();
           return;
         }
-        // 목록·줄바꿈이 없는 평범한 한 줄 — **주소면 링크로** 붙인다(요청 3).
-        if (pasteAutoLink(el, text, span.from, span.to, onChange, redraw)) {
-          e.preventDefault();
-          dirty.current = false;
-        }
+        /**
+         * 목록·줄바꿈이 없는 평범한 한 줄 — **우리가 넣는다**(제보: 붙여넣은 글의
+         * 크기가 서식을 걸었다 풀면 달라진다).
+         *
+         * 예전에는 여기서 손을 뗐다("되돌리기가 자연스럽다"는 이유로). 그러면 크롬이
+         * 클립보드의 `text/html`을 그대로 심는데, 거기엔 **원본 앱의 계산된
+         * `font-size`·`font-family`·`line-height`가 인라인으로** 붙어 온다. 모델은
+         * 그런 것을 담지 않으므로(`domToRuns`는 아는 서식 아홉만 읽는다) **화면에만
+         * 살아 있는 유령**이 되고, 나중에 서식을 걸어 `runsToHtml`로 다시 그리는
+         * 순간 사라진다 — 그것이 "서식을 걸었다 취소하면 크기가 달라진다"의 정체다.
+         *
+         * 이제 붙인 직후에 **모델에서 다시 그린다**(`redraw`). 클립보드 HTML을 따로
+         * 파싱하지 않는 이유: `domToRuns`가 이미 **아는 것만 남기는 화이트리스트**라,
+         * 크롬이 무엇을 더 실어 와도 저절로 걸러진다(버릴 속성 목록을 따로 들고
+         * 다니면 언젠가 샌다). 주소가 있으면 링크까지 이어서 건다.
+         */
+        e.preventDefault();
+        pasteRuns(el, text, span.from, span.to, onChange, redraw);
+        dirty.current = false;
       }}
       /**
        * **링크 글자를 누르면 연다**(제보) — 편집 박스라 기본 동작은 캐럿 놓기뿐이라
@@ -500,7 +519,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
 
 
 /**
- * 붙여넣은 글에 **주소가 있으면 링크로** 붙인다(요청 3) — 없으면 `false`(브라우저에 맡긴다).
+ * 붙여넣은 글을 **우리 값으로** 넣는다 — 주소가 섞여 있으면 링크까지 건다(요청).
  *
  * 왜 붙여넣기에서만 하나: 타이핑 중에 실시간으로 걸면 반쯤 친 주소가 링크가 됐다
  * 풀렸다 하며 캐럿과 IME가 흔들린다(맵 편집이 같은 이유로 **커밋 때 한 번**만 건다).
@@ -510,7 +529,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
  * 이어 붙은 결과 전체를 다시 보므로, 앞뒤와 이어져 주소가 되는 경우도 잡힌다.
  * 이미 링크·멘션이 걸린 구간은 `applyAutoLinks`가 건너뛴다.
  */
-function pasteAutoLink(
+function pasteRuns(
   el: HTMLElement,
   text: string,
   from: number,
@@ -518,14 +537,14 @@ function pasteAutoLink(
   onChange: (runs: RichRun[]) => void,
   redraw: (el: HTMLElement, value: { text: string; rich: RichRun[] | null }) => void,
 ): boolean {
-  if (!/[.:]/.test(text)) return false; // 주소일 수 없는 글은 값을 만들지도 않는다
   try {
     const chars = runsToChars(domToRuns(el));
     const next = [...chars.slice(0, from), ...[...text].map((ch) => ({ ch, b: false, c: null })), ...chars.slice(to)];
     const body = charsToRuns(next).filter((r) => r.t);
-    const linked = applyAutoLinks({ text: next.map((c) => c.ch).join(''), rich: body.length ? body : null });
-    if (!linked) return false;
-    redraw(el, linked);
+    const plain = { text: next.map((c) => c.ch).join(''), rich: body.length ? body : null };
+    // 주소가 섞여 있으면 링크까지 이어서 건다 — 없으면 평문 그대로 다시 그린다.
+    const value = (/[.:]/.test(text) ? applyAutoLinks(plain) : null) ?? plain;
+    redraw(el, value);
     const spot = pointAt(el, from + [...text].length);
     const range = document.createRange();
     range.setStart(spot.node, spot.offset);
@@ -533,10 +552,11 @@ function pasteAutoLink(
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
-    onChange(linked.rich ?? textRuns(linked.text));
+    onChange(value.rich ?? textRuns(value.text));
     return true;
   } catch {
-    return false; // 값을 못 만들면 브라우저의 기본 붙여넣기가 낫다
+    // 값을 못 만들면 아무것도 넣지 못한다 — 기본 동작은 이미 막았으므로 조용히 만다.
+    return false;
   }
 }
 
