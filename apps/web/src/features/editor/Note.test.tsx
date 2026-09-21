@@ -4498,3 +4498,158 @@ describe('공책 42판 — 칸의 방향키를 본문과 한 정책으로(제보
     await waitFor(() => expect(picked(container)).toEqual(['0:1']));
   });
 });
+
+describe('공책 43판 — 링크 · 체크리스트 · 문서 링크 팝업 · 줄 종류 · 우클릭 메뉴', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 글머리 목록 네 줄 + 앞뒤 문단 한 장. */
+  const LIST = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'b1', kind: 'p', runs: [{ t: '첫 줄입니다', b: false, c: null }] },
+          {
+            id: 'bl',
+            kind: 'ul',
+            items: [
+              { id: 'i1', runs: [{ t: '가', b: false, c: null }] },
+              { id: 'i2', runs: [{ t: '나', b: false, c: null }] },
+              { id: 'i3', runs: [{ t: '다', b: false, c: null }] },
+              { id: 'i4', runs: [{ t: '라', b: false, c: null }] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  /** 그 박스에 캐럿(또는 구간)을 둔다 — 툴바는 **눌리기 전의 선택**을 기억한다. */
+  function select(el: HTMLElement, a: number, b = a): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) {
+      range.setStart(text, Math.min(a, (text.nodeValue ?? '').length));
+      range.setEnd(text, Math.min(b, (text.nodeValue ?? '').length));
+    } else range.setStart(el, 0);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  it('링크는 **앱 안의 판**으로 받는다 — 고른 글이 없어도 걸린다(제보 1)', async () => {
+    const prompt = vi.spyOn(window, 'prompt');
+    localStorage.setItem('mindflow_doc_k1', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=k1&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    select(line, 2);
+
+    const btn = container.querySelector('[data-note-link-btn]') as HTMLElement;
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+    const pop = (await waitFor(() => container.querySelector('[data-note-link-pop]'))) as HTMLElement;
+    // 브라우저의 `prompt`는 부르지 않는다 — 설치형 앱에서는 아예 뜨지 않는다.
+    expect(prompt).not.toHaveBeenCalled();
+
+    fireEvent.change(pop.querySelector('[data-note-link-url]') as HTMLElement, { target: { value: 'https://a.test' } });
+    fireEvent.change(pop.querySelector('[data-note-link-text]') as HTMLElement, { target: { value: '여기' } });
+    fireEvent.click(pop.querySelector('[data-note-link-apply]') as HTMLElement);
+
+    await waitFor(() => expect(line.innerHTML).toContain('여기'));
+    expect(line.innerHTML).toContain('a.test');
+    prompt.mockRestore();
+  });
+
+  it('고른 글이 있으면 **그 글에** 건다(「보일 글」칸은 뜨지 않는다)', async () => {
+    localStorage.setItem('mindflow_doc_k2', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=k2&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    select(line, 0, 2);
+
+    const btn = container.querySelector('[data-note-link-btn]') as HTMLElement;
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+    const pop = (await waitFor(() => container.querySelector('[data-note-link-pop]'))) as HTMLElement;
+    expect(pop.querySelector('[data-note-link-text]')).toBeNull();
+
+    fireEvent.change(pop.querySelector('[data-note-link-url]') as HTMLElement, { target: { value: 'https://b.test' } });
+    fireEvent.click(pop.querySelector('[data-note-link-apply]') as HTMLElement);
+    await waitFor(() => expect(line.innerHTML).toContain('b.test'));
+    // 글자는 늘지 않았다 — 고른 글에 주소만 걸렸다.
+    expect(line.textContent).toBe('첫 줄입니다');
+  });
+
+  it('목록 한 줄에 체크리스트를 걸면 **그 줄만** 바뀐다(제보 2)', async () => {
+    localStorage.setItem('mindflow_doc_k3', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=k3&title=x');
+    const third = (await waitFor(() => container.querySelector('[data-note-line="bl:i3"]'))) as HTMLElement;
+    select(third, 1);
+
+    const btn = container.querySelector('[data-note-insert="ck"]') as HTMLElement;
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+
+    await waitFor(() => expect([...container.querySelectorAll('[data-note-block]')].map((e) => e.getAttribute('data-note-kind'))).toEqual(['p', 'ul', 'ck', 'ul']));
+    // 네 줄이 다 살아 있다(예전에는 빈 체크리스트가 **하나 더** 생겼다).
+    saveNow();
+    await waitFor(() => expect(saved('k3').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['p', 'ul', 'ck', 'ul']));
+    expect([...container.querySelectorAll('[data-note-line]')].map((e) => e.textContent)).toEqual(['첫 줄입니다', '가', '나', '다', '라']);
+  });
+
+  it('줄 종류 메뉴도 **그 줄만** 바꾼다 — 목록 가운데서 제목으로(제보 2·4)', async () => {
+    localStorage.setItem('mindflow_doc_k4', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=k4&title=x');
+    const second = (await waitFor(() => container.querySelector('[data-note-line="bl:i2"]'))) as HTMLElement;
+    select(second, 1);
+
+    fireEvent.mouseDown(container.querySelector('[data-note-blocktype]') as HTMLElement);
+    fireEvent.click(container.querySelector('[data-note-blocktype]') as HTMLElement);
+    const item = (await waitFor(() => container.querySelector('[data-note-blocktype-item="h2"]'))) as HTMLElement;
+    fireEvent.click(item);
+
+    await waitFor(() => expect([...container.querySelectorAll('[data-note-block]')].map((e) => e.getAttribute('data-note-kind'))).toEqual(['p', 'ul', 'h2', 'ul']));
+    expect([...container.querySelectorAll('[data-note-line]')].map((e) => e.textContent)).toEqual(['첫 줄입니다', '가', '나', '다', '라']);
+  });
+
+  it('문서 링크는 **고르개부터** 연다 — 고르지 않으면 자리를 만들지 않는다(요청 3)', async () => {
+    localStorage.setItem('mindflow_doc_k5', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=k5&title=x');
+    await waitFor(() => container.querySelector('[data-note-line="b1"]'));
+
+    const btn = container.querySelector('[data-note-insert="link"]') as HTMLElement;
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(container.querySelector('[data-note-docpick]')).toBeTruthy());
+    // 아직 본문에는 아무것도 없다(예전에는 빈 「문서 고르기」 블록이 먼저 섰다).
+    expect(container.querySelector('[data-note-kind="link"]')).toBeNull();
+
+    fireEvent.pointerDown(container.querySelector('[data-note-docpick-back]') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-note-docpick]')).toBeNull());
+    saveNow();
+    await waitFor(() => expect(saved('k5').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['p', 'ul']));
+  });
+
+  it('우클릭 메뉴는 **화면 아래를 넘지 않는다**(제보 5)', async () => {
+    localStorage.setItem('mindflow_doc_k6', JSON.stringify(LIST));
+    const { container } = renderEditor('/editor?map=k6&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 창 바닥 가까이에서 연다 — 예전에는 어림 높이(430)를 넘는 만큼 잘려 나갔다.
+    fireEvent.contextMenu(line, { bubbles: true, clientX: 300, clientY: window.innerHeight - 20 });
+    const menu = (await waitFor(() => container.querySelector('[data-note-block-menu]'))) as HTMLElement;
+
+    const top = parseFloat(menu.style.top);
+    const height = parseFloat(String(menu.style.maxHeight || '430'));
+    expect(top).toBeGreaterThanOrEqual(8);
+    expect(top + height).toBeLessThanOrEqual(window.innerHeight - 8);
+  });
+});

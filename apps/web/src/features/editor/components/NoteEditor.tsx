@@ -36,7 +36,7 @@ import {
 import type { EditorController } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
-import { applyNoteFormat, noteActiveMarks, noteEditBoxInSelection } from '../noteRichDom';
+import { applyNoteFormat, applyNoteFormatRange, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection } from '../noteRichDom';
 import { buildSelection, caretAt, charOffset, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
@@ -343,6 +343,12 @@ export function NoteEditor({ controller }: Props) {
    * 든다. 박스를 기억하는 이유는 서식 항목이 그 박스의 선택에 걸리기 때문이다.
    */
   const [ctxAt, setCtxAt] = useState<BlockMenuAt | null>(null);
+  /**
+   * **문서 링크 고르개**(요청) — 예전에는 빈 「문서 고르기」 블록을 먼저 세우고 그
+   * 안의 단추를 한 번 더 눌러야 목록이 나왔다. 이미지와 같은 결로, 고르개를 먼저 열고
+   * 고른 뒤에 블록이 선다. `replace`는 **줄 키**다(목록 항목이면 그 줄만 바뀐다).
+   */
+  const [linkPick, setLinkPick] = useState<{ after?: string; replace?: string } | null>(null);
   /**
    * **블록을 가로지른 드래그 선택**(제보: 드래그로 글을 고를 수 없다 → 이어서: 블록이
    * 아니라 **글자**로 골라 달라).
@@ -1031,6 +1037,7 @@ export function NoteEditor({ controller }: Props) {
             rememberBox={rememberBox}
             onInserted={setFreshId}
             openSlash={(id, from) => openSlashAt(id, from)}
+            pickLinkDoc={setLinkPick}
             focus={focus}
             setFocus={setFocus}
             wide={wide}
@@ -1234,6 +1241,7 @@ export function NoteEditor({ controller }: Props) {
                   selectAll={selectAllBody}
                   selectSide={(dir) => extendSide(dir, 'char')}
                   pasteText={pasteText}
+                  pickLinkDoc={setLinkPick}
                   selecting={!!textSel}
                   rememberBox={rememberBox}
                   focusBox={focusBox}
@@ -1242,6 +1250,17 @@ export function NoteEditor({ controller }: Props) {
               </div>
             ))}
             {ctxAt && !readOnly && <BlockMenu controller={controller} at={ctxAt} onClose={() => setCtxAt(null)} />}
+            {linkPick && !readOnly && (
+              <DocPickPopup
+                controller={controller}
+                onClose={() => setLinkPick(null)}
+                onPick={(docId) => {
+                  const id = linkPick.replace ? controller.retypeNoteLine(linkPick.replace, 'link') : controller.addNoteBlock('link', linkPick.after);
+                  if (id) controller.setNoteLinkDoc(id, docId);
+                  setLinkPick(null);
+                }}
+              />
+            )}
             {slashFor && !readOnly && (
               <SlashMenu
                 anchor={slashAt}
@@ -1263,9 +1282,20 @@ export function NoteEditor({ controller }: Props) {
                     closeSlash();
                     return;
                   }
-                  controller.retypeNoteBlock(id, kind);
+                  // 문서 링크도 **고르개부터**(요청) — 고르지 않으면 아무 자리도 만들지 않는다.
+                  if (kind === 'link') {
+                    setLinkPick({ replace: slashFor ?? id });
+                    closeSlash();
+                    return;
+                  }
+                  /**
+                   * **줄 하나만** 바꾼다(제보) — 목록 A·B·C·D의 D줄에서 `/구분선`을
+                   * 골랐더니 A~C까지 사라지고 구분선만 남았다. 목록은 블록 하나에
+                   * 항목 여럿이라 블록째 갈면 나머지 줄이 함께 없어진다.
+                   */
+                  const made = controller.retypeNoteLine(slashFor ?? id, kind);
                   closeSlash();
-                  setFreshId(id);
+                  setFreshId(made ?? id);
                 }}
               />
             )}
@@ -2158,12 +2188,37 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
 function cursorStyle(at: { x: number; y: number }, width: number, height: number): CSSProperties {
   const vw = typeof window === 'undefined' ? 1280 : window.innerWidth;
   const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
+  const room = vh - 16;
+  const h = Math.min(height, room);
   return {
     position: 'fixed',
     left: Math.max(8, Math.min(at.x + 2, vw - width - 8)),
-    top: Math.max(8, Math.min(at.y + 2, vh - height - 8)),
+    top: Math.max(8, Math.min(at.y + 2, vh - h - 8)),
     width,
+    // 화면보다 큰 메뉴는 **스크롤하게** 둔다 — 잘려 나가는 것보다 낫다.
+    ...(height > room ? { maxHeight: room, overflowY: 'auto' as const } : {}),
   };
+}
+
+/**
+ * 커서 자리에 뜨는 판을 **화면 안에 온전히** 놓는다(제보: 페이지 아래쪽에서 우클릭하면
+ * 메뉴 아래가 잘린다).
+ *
+ * 예전에는 높이를 **손으로 적은 어림값**으로 접었다(본문 메뉴 430). 그 값이 실제보다
+ * 작으면 — 항목이 늘거나 글꼴이 커지면 — 그만큼 아래가 잘린다(실측: 실제 476px이라
+ * 38px이 화면 밖으로 나갔다). 그래서 **그린 뒤 실제 높이를 재서** 다시 놓는다.
+ * `scrollHeight`를 보는 이유: 스크롤이 걸린 뒤에도 값이 내용 높이 그대로라 오가지 않는다.
+ */
+function useCursorPlacement(at: { x: number; y: number }, width: number, estimate: number): { ref: RefObject<HTMLDivElement>; style: CSSProperties } {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(estimate);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const next = el.scrollHeight;
+    if (next > 0) setHeight((cur) => (Math.abs(cur - next) < 1 ? cur : next));
+  });
+  return { ref, style: cursorStyle(at, width, height) };
 }
 
 /** 페이지 우클릭 메뉴의 너비 — 날개(`다른 공책으로 이동`)가 이 값만큼 옆으로 붙는다. */
@@ -2186,6 +2241,8 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
    */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [moving, setMoving] = useState(false);
+  // 이 메뉴도 커서 자리에 뜬다 — 목록 맨 아래 줄에서 열면 어림값으로는 잘린다.
+  const { ref: menuRef, style: menuStyle } = useCursorPlacement(menu ?? { x: 0, y: 0 }, PAGE_MENU_W, 246);
   const [renaming, setRenaming] = useState(false);
   const pages = controller.notePages;
   const last = pages.length <= 1;
@@ -2337,10 +2394,12 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
       </div>
       {menu && (
         <div
+          ref={menuRef}
           data-note-page-menu
+          className="lnb-scroll"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
-          style={{ ...POP, ...cursorStyle(menu, PAGE_MENU_W, 246), display: 'flex', flexDirection: 'column', gap: 1 }}
+          style={{ ...POP, ...menuStyle, display: 'flex', flexDirection: 'column', gap: 1 }}
         >
           {/* 어느 페이지의 메뉴인지 — 목록에서 우클릭은 **줄을 겨냥한** 동작이라
               이름이 없으면 옆줄을 지웠는지 알 수 없다(디자인 1번 이미지의 머리). */}
@@ -2455,7 +2514,7 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
           `transform`이 컨테이닝 블록이 되어 `fixed` 좌표가 메뉴 왼쪽 위에서 다시
           세어진다(본문 우클릭 메뉴에서 실측했다 — 화면 밖으로 밀려났다). */}
       {menu && moving && !last && (
-        <MovePageMenu controller={controller} pageId={page.id} anchor={cursorStyle(menu, PAGE_MENU_W, 246)} onDone={closeMenu} />
+        <MovePageMenu controller={controller} pageId={page.id} anchor={menuStyle} onDone={closeMenu} />
       )}
     </div>
   );
@@ -2899,6 +2958,7 @@ function FormatToolbar({
   rememberBox,
   onInserted,
   openSlash,
+  pickLinkDoc,
   focus,
   setFocus,
   wide,
@@ -2906,6 +2966,8 @@ function FormatToolbar({
   controller: EditorController;
   boxRef: { current: HTMLElement | null };
   rememberBox: () => void;
+  /** 문서 링크 — 고르개 팝업부터 연다(요청: 빈 「문서 고르기」 블록을 먼저 세우지 않는다). */
+  pickLinkDoc: (at: { after?: string; replace?: string }) => void;
   /** 새로 만든 블록·항목으로 캐럿을 보낸다(루트의 `freshId`). */
   onInserted: (id: string | null) => void;
   /** `/` 단추 — 지금 줄에서 블록 목록을 연다. `from`을 주면 그 요소를 기준으로 뜬다. */
@@ -2916,6 +2978,12 @@ function FormatToolbar({
   wide: boolean;
 }) {
   const [open, setOpen] = useState<'hl' | 'ink' | null>(null);
+  /** 링크 판 — 열 때의 선택 구간을 함께 든다(입력칸에 초점이 가면 선택이 사라진다). */
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkSpan, setLinkSpan] = useState<{ a: number; b: number } | null>(null);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkText, setLinkText] = useState('');
+  const { ref: linkBtnRef, rect: linkRect } = useAnchored(linkOpen, () => setLinkOpen(false));
   /**
    * 지금 캐럿에 걸린 서식 — 굵게·기울임·취소선·밑줄·코드 단추가 이걸 보고 켜진다(요청).
    *
@@ -2954,15 +3022,32 @@ function FormatToolbar({
    * 표·이미지·구분선·문서 링크는 글을 담지 않으므로 언제나 새로 만든다.
    */
   const insert = (kind: NoteBlockKind) => {
+    const key = boxRef.current?.getAttribute('data-note-line') || '';
     const id = curBlockId();
     // 이미지는 **고르개부터**(요청) — 고르지 않고 닫으면 빈 자리가 남지 않는다.
     if (kind === 'img') {
       controller.promptNoteImage({ ...(id ? { after: id } : {}) });
       return;
     }
+    // 문서 링크도 같다(요청) — 빈 「문서 고르기」 블록을 세우지 않고 팝업으로 고른다.
+    if (kind === 'link') {
+      pickLinkDoc({ ...(id ? { after: id } : {}) });
+      return;
+    }
     const blocks = controller.notePage?.blocks ?? [];
     const cur = blocks.find((b) => b.id === id);
     const textLike = noteBlockShape(kind) === 'items';
+    /**
+     * **목록 줄에서 다른 목록을 고르면 그 줄이 바뀐다**(제보 2).
+     *
+     * 예전에는 아래에 빈 목록이 하나 더 생겼다 — 글머리 기호는 그대로 남고 체크리스트만
+     * 따로 붙어, 사용자가 기대한 "이 줄을 체크리스트로"가 아니었다. 목록은 블록 하나에
+     * 항목 여럿이므로 `retypeNoteLine`이 그 항목만 갈라 낸다.
+     */
+    if (textLike && cur && noteBlockShape(cur.kind) === 'items' && itemIdOf(key)) {
+      onInserted(controller.retypeNoteLine(key, kind));
+      return;
+    }
     if (cur && textLike && noteBlockShape(cur.kind) === 'runs' && runsText(cur.runs) === '') {
       controller.retypeNoteBlock(cur.id, kind);
       onInserted(cur.id);
@@ -2987,15 +3072,34 @@ function FormatToolbar({
   };
 
   /**
-   * 링크 — 고른 글에 주소를 건다. 주소는 `prompt`로 받는다(디자인의 `insertUrl`과 같은
-   * 자리). 취소하거나 빈 값이면 아무 일도 하지 않고, **선택을 기억해 둔 박스**에 건다.
+   * 링크 — **앱 안의 작은 판**으로 받는다(제보 1: 단추를 눌러도 아무 일이 없다).
+   *
+   * 무엇이 문제였나. 예전에는 `window.prompt`로 주소만 받아 `applyNoteFormat('link')`에
+   * 넘겼는데, 그 함수는 **고른 글이 없으면 아무 것도 하지 않는다**(걸 자리가 없다) —
+   * 글을 고르지 않고 누르면 주소를 적고 확인해도 화면이 그대로였다. 게다가 `prompt`는
+   * 설치형 앱(Electron)에서 아예 뜨지 않는다.
+   *
+   * 이제 고른 글이 있으면 거기에 걸고, 없으면 **적은 글(없으면 주소)을 만들어** 건다.
+   * 열 때 구간을 적어 두는 이유: 입력칸에 초점이 가는 순간 편집 박스의 선택은 사라진다.
    */
-  const insertLink = () => {
+  const openLink = () => {
     const el = boxRef.current;
-    if (!el) return;
-    const url = typeof window === 'undefined' ? null : window.prompt('링크 주소');
-    if (!url || !url.trim()) return;
-    apply('link', url.trim());
+    const span = el ? noteCaretSpan(el) : null;
+    setLinkSpan(span);
+    setLinkUrl('');
+    setLinkText('');
+    setOpen(null);
+    setLinkOpen(true);
+  };
+  const applyLink = () => {
+    const el = boxRef.current;
+    const url = linkUrl.trim();
+    if (!el || !url) return;
+    const span = linkSpan ?? { a: 0, b: 0 };
+    const runs = span.a !== span.b ? applyNoteFormatRange(el, span.a, span.b, 'link', url) : insertNoteLink(el, span, linkText.trim() || url, url);
+    if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
+    setLinkOpen(false);
+    el.focus();
   };
 
   const stop = (e: ReactMouseEvent) => {
@@ -3108,12 +3212,66 @@ function FormatToolbar({
         )}
       </div>
       {/* 링크 — 인라인 묶음의 마지막(디자인). 고른 글에 주소를 건다. */}
-      <button type="button" data-note-link-btn className="btn mf-note-tb" title="링크" aria-label="링크" onMouseDown={stop} onClick={insertLink} style={TOOL_BTN}>
+      <button
+        type="button"
+        ref={linkBtnRef as RefObject<HTMLButtonElement>}
+        data-note-link-btn
+        className="btn mf-note-tb"
+        title="링크"
+        aria-label="링크"
+        onMouseDown={stop}
+        onClick={openLink}
+        style={{ ...TOOL_BTN, background: linkOpen ? 'var(--mf-accent-soft)' : 'transparent' }}
+      >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
           <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
         </svg>
       </button>
+      {linkOpen && (
+        <div
+          data-note-link-pop
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{ ...POP, ...anchoredStyle(linkRect, 276, { maxHeight: 260 }), padding: 10, display: 'flex', flexDirection: 'column', gap: 7 }}
+        >
+          <span style={{ ...POP_HEAD, padding: '0 2px 2px' }}>링크</span>
+          <input
+            data-note-link-url
+            autoFocus
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
+              if (e.key === 'Escape') { e.preventDefault(); setLinkOpen(false); }
+            }}
+            placeholder="https://"
+            style={LINK_INPUT}
+          />
+          {/* 고른 글이 없으면 **무슨 글에 걸지**를 함께 받는다 — 비우면 주소가 그대로 글이 된다. */}
+          {(!linkSpan || linkSpan.a === linkSpan.b) && (
+            <input
+              data-note-link-text
+              value={linkText}
+              onChange={(e) => setLinkText(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
+                if (e.key === 'Escape') { e.preventDefault(); setLinkOpen(false); }
+              }}
+              placeholder="보일 글(비우면 주소)"
+              style={LINK_INPUT}
+            />
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            <button type="button" className="btn" onClick={() => setLinkOpen(false)} style={{ ...GHOST_BTN, height: 26 }}>취소</button>
+            <button type="button" data-note-link-apply className="btn" disabled={!linkUrl.trim()} onClick={applyLink} style={{ ...GHOST_BTN, height: 26, background: 'var(--mf-accent)', borderColor: 'transparent', color: '#fff', opacity: linkUrl.trim() ? 1 : 0.5 }}>
+              걸기
+            </button>
+          </div>
+        </div>
+      )}
       <button type="button" data-note-clear className="btn mf-note-tb" title="서식 지우기" aria-label="서식 지우기" onMouseDown={stop} onClick={() => apply('clear')} style={TOOL_BTN}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M7 7h10M12 7v10M8 20h8" />
@@ -3347,14 +3505,15 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
                   return;
                 }
                 if (id) {
-                  controller.retypeNoteBlock(id, t.kind);
+                  // 목록 항목이면 **그 줄만** 바뀐다(제보 2·4 — `retypeNoteLine`).
+                  const made = controller.retypeNoteLine(key, t.kind) ?? id;
                   // 종류를 바꾸면 그 자리의 줄이 다시 그려진다 — **쓰던 자리로 캐럿을
                   // 돌려준다**(제보: 목록을 풀면 포커스가 풀린다). 목록으로 바뀌면
                   // 편집 박스는 블록이 아니라 **첫 항목**이 갖는다.
-                  caretToLine(id);
+                  caretToLine(made);
                   requestAnimationFrame(() => {
-                    const first = document.querySelector<HTMLElement>(`[data-note-block="${id}"] [data-note-line]`);
-                    if (first && first.getAttribute('data-note-line') !== id) caretToLine(first.getAttribute('data-note-line') || id);
+                    const first = document.querySelector<HTMLElement>(`[data-note-block="${made}"] [data-note-line]`);
+                    if (first && first.getAttribute('data-note-line') !== made) caretToLine(first.getAttribute('data-note-line') || made);
                   });
                 }
                 setOpen(false);
@@ -3392,6 +3551,8 @@ interface BlockProps {
   selectSide: (dir: -1 | 1) => boolean;
   /** 평문 붙여넣기 — 목록 표식을 살려 블록으로 세운다. 처리했으면 `true`. */
   pasteText: (key: string, text: string, from: number, to: number) => boolean;
+  /** 문서 링크 고르개를 연다 — 블록 안의 단추도 툴바와 **같은 팝업**을 쓴다. */
+  pickLinkDoc: (at: { after?: string; replace?: string }) => void;
   /** 여러 줄이 칠해져 있는가 — 그동안 줄 부품은 키를 놓아 준다. */
   selecting: boolean;
   rememberBox: () => void;
@@ -3514,7 +3675,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -3693,7 +3854,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   }
 
   if (shape === 'link') {
-    return <LinkBlock controller={controller} block={block} />;
+    return <LinkBlock controller={controller} block={block} pickLinkDoc={pickLinkDoc} />;
   }
 
   if (block.kind === 'callout') {
@@ -5437,7 +5598,7 @@ function TableMenu({
   // 구분선 1 + margin 8 + gap 1, 머리말 22 + 팝업 패딩 14.
   const itemCount = (cellish ? 3 : 0) + 1 + (showRow ? 1 : 0) + (showCol ? 1 : 0) + (showAlign ? 1 : 0) + 1 + 2 + 1;
   const ruleCount = cellish ? 3 : 2;
-  const base = cursorStyle(at, TABLE_MENU_W, 36 + itemCount * 34 + ruleCount * 10);
+  const { ref: menuRef, style: base } = useCursorPlacement(at, TABLE_MENU_W, 36 + itemCount * 34 + ruleCount * 10);
   const cell = block.rows?.[spot.r]?.[spot.c];
   const run = (fn: () => void) => () => {
     fn();
@@ -5458,7 +5619,9 @@ function TableMenu({
   return (
     <>
       <div
+        ref={menuRef}
         data-note-table-menu
+        className="lnb-scroll"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         style={{ ...POP, ...base, display: 'flex', flexDirection: 'column', gap: 1 }}
@@ -5605,7 +5768,8 @@ function BlockMenu({ controller, at, onClose }: { controller: EditorController; 
   const blocks = controller.notePage?.blocks ?? [];
   const block = blocks.find((b) => b.id === at.blockId) ?? null;
   const text = block ? blockText(block) : '';
-  const base = cursorStyle(at, CTX_MENU_W, 430);
+  // 높이는 **그려 보고** 잰다 — 어림값(430)은 실제(476)보다 작아 아래가 잘렸다(제보 5).
+  const { ref: menuRef, style: base } = useCursorPlacement(at, CTX_MENU_W, 430);
   const done = (fn: () => void) => () => {
     fn();
     onClose();
@@ -5657,7 +5821,9 @@ function BlockMenu({ controller, at, onClose }: { controller: EditorController; 
   return (
     <>
     <div
+      ref={menuRef}
       data-note-block-menu
+      className="lnb-scroll"
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       style={{ ...POP, ...base, display: 'flex', flexDirection: 'column', gap: 1 }}
@@ -6038,8 +6204,74 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
  * 무엇보다 여기서 고를 수 있는 것이 곧 "내가 볼 수 있는 문서"라 끊어진 링크가
  * 생기지 않는다.
  */
-function LinkBlock({ controller, block }: { controller: EditorController; block: NoteBlock }) {
-  const [open, setOpen] = useState(false);
+/**
+ * **문서 링크 고르개**(요청) — 어디서 고르든 같은 판 하나.
+ *
+ * 예전에는 툴바·`/`가 빈 「문서 고르기」 블록을 먼저 세우고, 그 블록 안의 단추를 한 번
+ * 더 눌러야 목록이 열렸다. 고르지 않고 지나가면 빈 자리가 본문에 남았고(이미지에서
+ * 이미 걷어낸 그 문제다), 목록이 블록 바로 아래 붙어 있어 페이지 끝에서는 잘렸다.
+ * 이제 화면 한가운데 판으로 열고 **고른 뒤에야** 블록이 선다.
+ */
+function DocPickPopup({ controller, onPick, onClose }: { controller: EditorController; onPick: (docId: string) => void; onClose: () => void }) {
+  const [q, setQ] = useState('');
+  const targets = controller.linkTargets;
+  const needle = q.trim().toLowerCase();
+  const rows = needle ? targets.filter((t) => `${t.title} ${t.kindName} ${t.spaceName ?? ''}`.toLowerCase().includes(needle)) : targets;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  return (
+    <div
+      data-note-docpick-back
+      onPointerDown={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(30,26,22,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <div
+        data-note-docpick
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{ ...POP, position: 'relative', inset: 'auto', width: 'min(420px, 100%)', maxHeight: '70vh', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}
+      >
+        <span style={{ ...POP_HEAD, padding: '0 2px' }}>문서 링크</span>
+        <input
+          data-note-docpick-q
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && rows[0]) {
+              e.preventDefault();
+              onPick(rows[0].docId);
+            }
+          }}
+          placeholder="문서 이름으로 찾기"
+          style={LINK_INPUT}
+        />
+        <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {rows.length === 0 && (
+            <div style={{ padding: '12px 9px', fontSize: 11.5, color: 'var(--mf-faint)' }}>{targets.length ? '찾는 문서가 없어요.' : '연결할 문서가 아직 없어요.'}</div>
+          )}
+          {rows.map((t) => (
+            <button key={t.docId} type="button" data-note-link-option={t.docId} className="btn mf-note-item" onClick={() => onPick(t.docId)} style={MENU_ITEM}>
+              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 2, background: t.color, flex: '0 0 auto' }} />
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+              <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>{t.kindName}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LinkBlock({ controller, block, pickLinkDoc }: { controller: EditorController; block: NoteBlock; pickLinkDoc: (at: { after?: string; replace?: string }) => void }) {
   const readOnly = controller.readOnly;
   const targets = controller.linkTargets;
   const target = targets.find((t) => t.docId === block.docId) ?? null;
@@ -6078,7 +6310,7 @@ function LinkBlock({ controller, block }: { controller: EditorController; block:
             </span>
           </span>
           {!readOnly && (
-            <button type="button" className="btn mf-note-linkact" onClick={(e) => { e.preventDefault(); setOpen((v) => !v); }} style={{ ...GHOST_BTN, height: 22, flex: '0 0 auto' }}>
+            <button type="button" className="btn mf-note-linkact" onClick={(e) => { e.preventDefault(); pickLinkDoc({ replace: block.id }); }} style={{ ...GHOST_BTN, height: 22, flex: '0 0 auto' }}>
               바꾸기
             </button>
           )}
@@ -6091,7 +6323,7 @@ function LinkBlock({ controller, block }: { controller: EditorController; block:
           type="button"
           data-note-link-pick
           disabled={readOnly}
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => pickLinkDoc({ replace: block.id })}
           className="btn"
           style={{
             display: 'flex',
@@ -6111,48 +6343,6 @@ function LinkBlock({ controller, block }: { controller: EditorController; block:
         >
           문서 고르기
         </button>
-      )}
-      {open && !readOnly && (
-        <div
-          data-note-link-menu
-          className="lnb-scroll"
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            zIndex: 30,
-            maxHeight: 260,
-            overflowY: 'auto',
-            padding: 6,
-            borderRadius: 12,
-            background: 'var(--mf-card)',
-            border: '1px solid var(--mf-border)',
-            boxShadow: '0 20px 40px -22px rgba(46,42,38,.5)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-          }}
-        >
-          {targets.length === 0 && <div style={{ padding: '10px 9px', fontSize: 11.5, color: 'var(--mf-faint)' }}>연결할 문서가 아직 없어요.</div>}
-          {targets.map((t) => (
-            <button
-              key={t.docId}
-              type="button"
-              data-note-link-option={t.docId}
-              className="btn"
-              onClick={() => {
-                controller.setNoteLinkDoc(block.id, t.docId);
-                setOpen(false);
-              }}
-              style={MENU_ITEM}
-            >
-              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 2, background: t.color, flex: '0 0 auto' }} />
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-              <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>{t.kindName}</span>
-            </button>
-          ))}
-        </div>
       )}
     </div>
   );
@@ -6693,6 +6883,17 @@ function blockIdOf(key: string): string {
   return key.split(':')[0] ?? '';
 }
 
+/**
+ * 그 키가 가리키는 **목록 항목**의 id — 블록이거나 표의 칸이면 `null`.
+ *
+ * 줄의 종류를 바꾸는 길이 이 답을 본다: 목록 항목이면 **그 줄만** 바꾸고(나머지
+ * 항목은 제자리), 아니면 블록째다. 칸(`r0c1`)은 줄이 아니라 값이라 종류가 없다.
+ */
+function itemIdOf(key: string): string | null {
+  const rest = key.split(':')[1] ?? '';
+  return rest && !/^r\d+c\d+$/.test(rest) ? rest : null;
+}
+
 /** 툴바 단추 — 디자인은 **테두리 없는 30×30**이다(면이 아니라 글리프만 보인다). */
 const TOOL_BTN: CSSProperties = {
   height: 30,
@@ -6709,6 +6910,20 @@ const TOOL_BTN: CSSProperties = {
   fontSize: 13,
   cursor: 'pointer',
   padding: 0,
+};
+
+/** 링크 판의 입력칸 — 팝업 안에서만 쓰는 작은 상자. */
+const LINK_INPUT: CSSProperties = {
+  height: 30,
+  padding: '0 9px',
+  borderRadius: 8,
+  border: '1px solid var(--mf-border)',
+  background: 'var(--mf-panel2)',
+  color: 'var(--mf-text)',
+  fontFamily: 'inherit',
+  fontSize: 12.5,
+  outline: 'none',
+  minWidth: 0,
 };
 
 const GHOST_BTN: CSSProperties = {

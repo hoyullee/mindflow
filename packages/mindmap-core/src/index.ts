@@ -97,6 +97,7 @@ export {
   movePage,
   moveBlock,
   retypeBlock,
+  retypeNoteLine,
   blockText,
   pageText,
   pageExcerpt,
