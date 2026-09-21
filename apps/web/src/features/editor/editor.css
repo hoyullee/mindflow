@@ -478,6 +478,18 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-line [data-list-marker][data-list-kind='ol'] {
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
+/* **마커는 골라지지 않는다**(제보: 칸에서 ⌘A를 누르면 마커까지 선택돼 보인다).
+ *
+ * `user-select: none`을 이미 걸어 두었지만 그것은 **끌어서 고르는 것**만 막는다 —
+ * 편집 박스 전체를 고르는 ⌘A는 박스 안의 모든 글자를 잡으므로 마커도 칠해진다.
+ * 마커는 편집기가 관리하는 장식이라 "내가 지울 수 있는 글자"로 보이면 안 되므로
+ * 그 칠만 지운다(값에는 그대로 있어 복사·커밋은 무변경 — 본문 목록과 같은 계약). */
+.mf-note-line [data-list-marker]::selection {
+  background: transparent;
+}
+.mf-note-line [data-list-marker]::-moz-selection {
+  background: transparent;
+}
 
 /* 인라인 코드·형광펜 — 본문에서 그려지는 모양(런의 `k`/`hl`). 편집 박스 안이라
  * 실제 요소로 들어 있다(`runsToHtml`). */

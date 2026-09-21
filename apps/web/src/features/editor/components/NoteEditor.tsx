@@ -660,8 +660,24 @@ export function NoteEditor({ controller }: Props) {
    */
   const extendSide = useCallback((dir: -1 | 1, to: 'char' | 'edge'): boolean => {
     const col = colRef.current;
-    if (!col || !selAnchor.current || !selFocus.current) return false;
+    if (!col) return false;
     const lines = [...col.querySelectorAll<HTMLElement>('[data-note-line]')].filter((el) => el.getAttribute('contenteditable') === 'true');
+    /**
+     * **앵커가 없으면 지금 캐럿이 앵커다**(제보: 문장 끝에서 Shift+→를 눌러도 다음
+     * 줄로 이어지지 않는다).
+     *
+     * 예전에는 이 길이 **이미 칠해 둔 선택**에만 있었다 — 한 줄 안에서 Shift로 고르다
+     * 줄 끝에 닿으면 브라우저가 거기서 멈추고, 우리는 아직 아무것도 들고 있지 않아
+     * 넘겨받지 못했다. 위·아래(`extendSelection`)는 이미 같은 씨앗을 쓴다.
+     */
+    if (!selAnchor.current || !selFocus.current) {
+      const live = document.activeElement as HTMLElement | null;
+      const sel = window.getSelection();
+      if (!live?.hasAttribute?.('data-note-line') || !sel?.anchorNode || !live.contains(sel.anchorNode)) return false;
+      selAnchor.current = { el: live, node: sel.anchorNode, offset: sel.anchorOffset };
+      selFocus.current = { el: live, node: sel.focusNode ?? sel.anchorNode, offset: sel.focusOffset };
+      selX.current = undefined;
+    }
     const cur = selFocus.current;
     const len = (cur.el.textContent ?? '').length;
     const at = charOffset(cur.el, cur.node, cur.offset);
@@ -1216,6 +1232,7 @@ export function NoteEditor({ controller }: Props) {
                   setFreshId={setFreshId}
                   selectOut={extendSelection}
                   selectAll={selectAllBody}
+                  selectSide={(dir) => extendSide(dir, 'char')}
                   pasteText={pasteText}
                   selecting={!!textSel}
                   rememberBox={rememberBox}
@@ -1235,6 +1252,17 @@ export function NoteEditor({ controller }: Props) {
                   // 본문에 친 `/질의`는 **지우고** 종류를 바꾼다(노션과 같은 결과).
                   if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
                   const id = blockIdOf(slashFor);
+                  /**
+                   * **이미지는 자리를 먼저 만들지 않는다**(요청) — 파일 고르개부터 열고
+                   * 고른 뒤에 넣는다. 빈 줄에서 골랐으면 그 줄을 이미지로 바꾸고, 글이
+                   * 있는 줄이면 그 **아래**에 넣는다(쓰던 글을 잃지 않는다).
+                   */
+                  if (kind === 'img') {
+                    const empty = !noteLineText(page, slashFor).replace(/^\/[^\s]*/, '').trim();
+                    controller.promptNoteImage(empty ? { replace: id } : { after: id });
+                    closeSlash();
+                    return;
+                  }
                   controller.retypeNoteBlock(id, kind);
                   closeSlash();
                   setFreshId(id);
@@ -2927,6 +2955,11 @@ function FormatToolbar({
    */
   const insert = (kind: NoteBlockKind) => {
     const id = curBlockId();
+    // 이미지는 **고르개부터**(요청) — 고르지 않고 닫으면 빈 자리가 남지 않는다.
+    if (kind === 'img') {
+      controller.promptNoteImage({ ...(id ? { after: id } : {}) });
+      return;
+    }
     const blocks = controller.notePage?.blocks ?? [];
     const cur = blocks.find((b) => b.id === id);
     const textLike = noteBlockShape(kind) === 'items';
@@ -3307,6 +3340,12 @@ function BlockTypeMenu({ controller, rememberBox, boxRef }: { controller: Editor
               onClick={() => {
                 const key = boxRef.current?.getAttribute('data-note-line') || '';
                 const id = blockIdOf(key);
+                if (id && t.kind === 'img') {
+                  // 이미지는 고르개부터 — 고른 파일이 있을 때만 그 줄이 이미지가 된다.
+                  controller.promptNoteImage({ replace: id });
+                  setOpen(false);
+                  return;
+                }
                 if (id) {
                   controller.retypeNoteBlock(id, t.kind);
                   // 종류를 바꾸면 그 자리의 줄이 다시 그려진다 — **쓰던 자리로 캐럿을
@@ -3349,6 +3388,8 @@ interface BlockProps {
   selectOut: (dir: -1 | 1, x?: number) => boolean;
   /** ⌘A 두 번째 — 본문 전체 고르기. */
   selectAll: () => boolean;
+  /** Shift+왼쪽/오른쪽으로 줄을 넘어 고르기 — 루트가 그림을 들고 있다. */
+  selectSide: (dir: -1 | 1) => boolean;
   /** 평문 붙여넣기 — 목록 표식을 살려 블록으로 세운다. 처리했으면 `true`. */
   pasteText: (key: string, text: string, from: number, to: number) => boolean;
   /** 여러 줄이 칠해져 있는가 — 그동안 줄 부품은 키를 놓아 준다. */
@@ -3473,7 +3514,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, pasteText, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -3753,6 +3794,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               onArrowOut={moveNoteCaret}
               onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
+      onSelectSide={selectSide}
       onSelectAll={selectAll}
       selecting={selecting}
               onChange={(runs) => {
@@ -3846,6 +3888,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               onArrowOut={moveNoteCaret}
               onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
+      onSelectSide={selectSide}
       onSelectAll={selectAll}
       selecting={selecting}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
@@ -3966,6 +4009,16 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   // 글 한 덩이(문단·제목·인용·코드) — 종류가 겉모습만 정한다.
   const style = runStyleOf(block.kind);
   const heading = block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3';
+  /**
+   * **제목 위의 숨은 줄이 아니라 줄의 상자가 진다**(제보: 제목 왼쪽 세로 바가 글보다
+   * 살짝 위에 있다).
+   *
+   * 제목의 `marginTop`(14·12·8)이 편집 박스에 붙어 있었는데, 그 박스와 세로 바는
+   * `align-items: center`로 나란히 놓인 **flex 형제**다 — 가운데 맞추기는 **마진
+   * 상자**를 기준으로 하므로 글만 그 마진의 절반만큼 아래로 내려가고 바는 제자리에
+   * 남았다. 마진을 바깥 줄로 옮기면 둘이 같은 상자 안에서 가운데로 만난다.
+   */
+  const { marginTop: headGap, ...headStyle } = style as CSSProperties & { marginTop?: number };
   const line = (
     <NoteLine
       onFocusLine={focusBox}
@@ -4003,6 +4056,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onArrowOut={moveNoteCaret}
       onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
+      onSelectSide={selectSide}
       onSelectAll={selectAll}
       onPasteText={(t, from, to) => pasteText(block.id, t, from, to)}
       selecting={selecting}
@@ -4010,7 +4064,12 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
         if (readOnly) return;
         openSlash(block.id, at);
       }}
-      style={heading ? { ...style, flex: 1, minWidth: 0 } : style}
+      /**
+       * 제목의 편집 박스는 **딱 한 줄 높이**다 — 기본값 `minHeight: 1.6em`은 제목의
+       * 줄 높이(1.45~1.55em)보다 커서, 글은 그 상자의 위쪽에 눕고 가운데 맞춘 세로
+       * 바는 상자의 한가운데에 서서 둘이 1~2px 어긋났다(제보).
+       */
+      style={heading ? { ...headStyle, flex: 1, minWidth: 0, minHeight: `${headStyle.lineHeight as number}em` } : style}
     />
   );
   return (
@@ -4020,7 +4079,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onMouseUp={rememberBox}
       style={{
         ...blockFlow(block),
-        ...(heading ? { display: 'flex', alignItems: 'center', gap: 9 } : {}),
+        ...(heading ? { display: 'flex', alignItems: 'center', gap: 9, ...(headGap ? { marginTop: headGap } : {}) } : {}),
         ...(block.kind === 'q' ? { padding: '14px 16px', borderRadius: 13, background: 'var(--mf-panel2)', borderLeft: '3px solid var(--mf-accent-mute)' } : {}),
         ...(block.kind === 'code' ? { background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', borderRadius: 13, padding: '13px 15px' } : {}),
       }}
@@ -5925,7 +5984,6 @@ function blockFlow(block: NoteBlock): CSSProperties {
  */
 function ImageBlock({ controller, block }: { controller: EditorController; block: NoteBlock }) {
   const readOnly = controller.readOnly;
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const url = block.src ? (controller.imageUrls[block.src] ?? (block.src.startsWith('data:') ? block.src : '')) : '';
   return (
     <div data-note-block={block.id} data-note-kind="img" style={{ padding: '8px 0' }}>
@@ -5941,7 +5999,9 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
           type="button"
           data-note-image-pick
           disabled={readOnly}
-          onClick={() => inputRef.current?.click()}
+          /* 고르개는 **손으로 만들어** 연다 — 트리 안의 숨은 입력은 고르개가 떠 있는
+             동안 본문이 다시 그려지면 갈려서 `change`가 닿지 않는다(`promptNoteImage`). */
+          onClick={() => controller.promptNoteImage({ replace: block.id })}
           className="btn"
           style={{
             display: 'flex',
@@ -5967,17 +6027,6 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
           {block.src ? '이미지를 불러오는 중…' : '이미지 올리기'}
         </button>
       )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = ''; // 같은 파일을 다시 골라도 change가 오게
-          if (file) void controller.setNoteImage(block.id, file);
-        }}
-      />
     </div>
   );
 }

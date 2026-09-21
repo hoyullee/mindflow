@@ -76,6 +76,12 @@ interface Props {
    */
   onSelectOut?: (dir: -1 | 1, x?: number) => boolean;
   /**
+   * **Shift+왼쪽/오른쪽으로 줄을 넘어 고른다**(제보: 문장의 끝·처음에 닿으면 거기서
+   * 멈춘다). 브라우저의 선택은 이 편집 박스 안에 갇혀 있어 이웃 줄로 이어지지 않는다 —
+   * 가장자리에 닿았을 때만 넘겨받는다(위·아래의 `onSelectOut`과 같은 규칙).
+   */
+  onSelectSide?: (dir: -1 | 1) => boolean;
+  /**
    * **왼쪽/오른쪽 화살표로 줄을 넘는다** — 글의 맨 끝에서 →, 맨 앞에서 ←.
    *
    * 블록마다 편집 박스가 따로라 브라우저는 그 경계를 넘지 못한다(제보: 문장 끝에서
@@ -131,7 +137,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -325,6 +331,24 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
             return;
           }
           if (onArrowOut(dir, x)) e.preventDefault();
+        }
+      }
+    }
+    /**
+     * **Shift+←/→ = 줄을 넘는 선택**(제보) — 글의 맨 끝에서 →, 맨 앞에서 ←.
+     *
+     * 자리는 **focus** 쪽으로 잰다: Shift로 고르는 동안 움직이는 끝이 그쪽이다
+     * (앵커는 처음 자리에 남아 있다).
+     */
+    if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && onSelectSide && !composing) {
+      const sel = window.getSelection();
+      if (sel) {
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        const len = (el.textContent ?? '').length;
+        const at = caretOffset(el);
+        if ((dir === 1 ? at >= len : at <= 0) && onSelectSide(dir)) {
+          e.preventDefault();
+          return;
         }
       }
     }

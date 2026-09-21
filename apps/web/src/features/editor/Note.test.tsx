@@ -4302,3 +4302,100 @@ describe('공책 39판 — 표의 ⌘A · 가로 스크롤 · 칸 캐럿 · 칠�
     await waitFor(() => expect(pane.getAttribute('data-note-painting')).toBe(null));
   });
 });
+
+describe('공책 41판 — 이미지 바로 넣기 · 마커 선택 · Shift+좌우 · 제목 바', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const TWO_LINES = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'b1', kind: 'p', runs: [{ t: '첫 줄입니다', b: false, c: null }] },
+          { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄입니다', b: false, c: null }] },
+        ],
+      },
+    ],
+  };
+
+  it('이미지는 **고르개부터** 연다 — 빈 자리를 먼저 만들지 않는다(제보 1)', async () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+    localStorage.setItem('mindflow_doc_s1', JSON.stringify(TWO_LINES));
+    const { container } = renderEditor('/editor?map=s1&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    one.focus();
+
+    // 툴바의 넣기 — 이미지는 종류 바꾸기 메뉴가 아니라 이쪽에 있다(글을 담지 않는다).
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-insert="img"]'))) as HTMLElement);
+
+    // 파일 고르개는 열리고
+    expect(click).toHaveBeenCalled();
+    // 문서에는 **아무것도 생기지 않는다**(고르지 않고 닫으면 빈 자리가 남지 않는다).
+    saveNow();
+    await waitFor(() => expect(saved('s1').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['p', 'p']));
+    click.mockRestore();
+  });
+
+  it('문장 끝에서 Shift+→가 **다음 줄로 이어진다**(제보 3)', async () => {
+    localStorage.setItem('mindflow_doc_s2', JSON.stringify(TWO_LINES));
+    const { container } = renderEditor('/editor?map=s2&title=x');
+    const one = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    // 글 끝에 캐럿(하네스는 좌표를 못 재므로 글자 자리로 가른다).
+    one.focus();
+    const text = document.createTreeWalker(one, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, (text.nodeValue ?? '').length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    fireEvent.keyDown(one, { key: 'ArrowRight', shiftKey: true });
+
+    // 두 블록이 칠해진다 = 선택이 줄을 넘었다.
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+  });
+
+  it('문장 앞에서 Shift+←가 **앞 줄로 이어진다**(제보 3)', async () => {
+    localStorage.setItem('mindflow_doc_s3', JSON.stringify(TWO_LINES));
+    const { container } = renderEditor('/editor?map=s3&title=x');
+    const two = (await waitFor(() => container.querySelector('[data-note-line="b2"]'))) as HTMLElement;
+
+    two.focus();
+    const text = document.createTreeWalker(two, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    fireEvent.keyDown(two, { key: 'ArrowLeft', shiftKey: true });
+
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+  });
+
+  it('제목의 위쪽 숨은 **줄의 상자**가 진다 — 세로 바가 글과 어긋나지 않게(제보 4)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'h', kind: 'h2', runs: [{ t: '제목입니다', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_s4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=s4&title=x');
+    const wrap = (await waitFor(() => container.querySelector('[data-note-kind="h2"]'))) as HTMLElement;
+    const line = wrap.querySelector('[data-note-line="h"]') as HTMLElement;
+
+    // 마진이 편집 박스에 붙어 있으면 `align-items: center`가 **마진 상자**를 기준으로
+    // 맞춰 글만 내려간다 — 그래서 바깥 줄이 그 마진을 진다.
+    expect(wrap.style.marginTop).toBe('12px');
+    expect(line.style.marginTop).toBe('');
+    expect(wrap.style.alignItems).toBe('center');
+  });
+});
