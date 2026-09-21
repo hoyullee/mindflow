@@ -15,7 +15,7 @@
 // 그래서 **이 파일이 그 정책의 단일 소스**다. 새 편집 상자를 만들면 keydown에서
 // 이 함수 하나를 부르면 된다.
 
-import { caretRightToWrapEnd, listArrowLeft, listArrowVertical, snapCaretOffListMarker } from './richtextDom';
+import { listArrowLeft, listArrowVertical, snapCaretOffListMarker } from './richtextDom';
 
 /** 이 정책이 보는 키(리액트 이벤트와 네이티브 이벤트 둘 다 이 모양을 갖는다). */
 export interface CaretKey {
@@ -49,8 +49,13 @@ export interface CaretPolicyOpts {
  * 2. **그리고 한 프레임 뒤에 또 스냅**한다(rAF) — 방향키의 기본 동작은 이 핸들러
  *    **뒤에** 실행되므로, 막지 않은 키가 캐럿을 마커에 떨어뜨렸다면 그것은 여기서만
  *    잡힌다. rAF는 같은 프레임의 페인트 전에 돌아 잘못된 자리가 화면에 나가지 않는다.
- * 3. 그다음 방향키를 하나씩 가른다(←는 마커를 통째로 건너, ↑↓는 flex 행을 건너,
- *    →는 감긴 줄의 끝에 서게).
+ * 3. 그다음 방향키를 하나씩 가른다(←는 마커를 통째로 건너, ↑↓는 flex 행을 건너).
+ *
+ * **여기 없는 것 하나** — 감긴 줄의 랩 지점에서 `→`가 앞 행 끝에 서게 하는 규칙을 한 번
+ * 넣었다가 **사용자 요청으로 걷었다**(2026-09-21). 그 자리는 글자 수로는 한 자리인데
+ * 화면에는 둘(앞 행 끝 · 뒷 행 머리)이라 한쪽만 고를 수 있고, 크롬 기본인 **뒷 행 머리**가
+ * 쓰던 감각이었다. 다시 넣을 일이 있으면 `selection.modify('move','forward','lineboundary')`가
+ * 그 방법이다(경위는 `docs/changelog.md`).
  */
 export function editCaretKeydown(el: HTMLElement, e: CaretKey, opts: CaretPolicyOpts): boolean {
   if (opts.composing) return false;
@@ -67,7 +72,5 @@ export function editCaretKeydown(el: HTMLElement, e: CaretKey, opts: CaretPolicy
   if (!plain) return false;
   if (list && e.key === 'ArrowLeft' && listArrowLeft(el)) return true;
   if (list && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && listArrowVertical(el, e.key === 'ArrowUp' ? -1 : 1)) return true;
-  // 감긴 줄의 오른끝 — 마커와 무관하므로 **모든** 편집 박스에 건다(제보 ④).
-  if (e.key === 'ArrowRight' && caretRightToWrapEnd(el)) return true;
   return false;
 }

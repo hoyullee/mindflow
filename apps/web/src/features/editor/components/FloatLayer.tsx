@@ -387,7 +387,7 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
         // **캐럿 정책은 한 벌이다**(`caretPolicy.ts`) — 공책의 줄·표의 칸과 같은
         // 함수를 쓴다: 마커 구역 스냅(입력 전 + rAF로 페인트 전 한 번 더 — 길게
         // 누르면 keyup이 오지 않는다) · ←는 마커를 통째로 건너 앞 줄 끝 · ↑↓는
-        // [마커|내용] flex 행 건너뛰기 · →는 감긴 줄의 오른끝에 서기.
+        // [마커|내용] flex 행 건너뛰기.
         if (!composing && ref.current && editCaretKeydown(ref.current, e, { composing: false })) {
           e.preventDefault();
           return;

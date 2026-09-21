@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { caretRightToWrapEnd, domToRuns, escHtml, linearize, rgbToHex, runsToHtml, setLinearSelection } from './richtextDom';
+import { describe, expect, it } from 'vitest';
+import { domToRuns, escHtml, linearize, rgbToHex, runsToHtml, setLinearSelection } from './richtextDom';
 
 // DOM-facing rich-text helpers (`richtextDom.ts`, port of MindFlow.dc.html:2558-2698).
 // Per CLAUDE.md's task brief: jsdom's `Selection`/`Range` support is limited, so
@@ -275,59 +275,5 @@ describe('공책의 서식 — 밑줄 · 인라인 코드 · 형광펜', () => {
     const out = domToRuns(el).rich;
     expect(out).toEqual([{ t: '주소', b: false, c: null, href: 'https://a.b/' }]); // normalizeUrl이 슬래시를 붙인다
     expect(out?.[0]).not.toHaveProperty('u');
-  });
-});
-
-describe('caretRightToWrapEnd — 감긴 줄의 오른끝(제보 ④)', () => {
-  /** 캐럿을 그 자리에 두고, 「줄 끝으로」가 `to`로 간다고 가장한 셀렉션을 만든다. */
-  function stage(at: number, to: number): { el: HTMLElement; calls: number[] } {
-    const el = document.createElement('div');
-    el.textContent = '아아아아아아';
-    document.body.appendChild(el);
-    setLinearSelection(el, at, at);
-    const sel = window.getSelection() as Selection & { modify?: (a: string, d: string, g: string) => void };
-    const calls: number[] = [];
-    sel.modify = () => {
-      calls.push(to);
-      setLinearSelection(el, to, to);
-    };
-    return { el, calls };
-  }
-  const caret = (el: HTMLElement): number => {
-    const r = window.getSelection()!.getRangeAt(0);
-    return linearize(el, [{ container: r.startContainer, offset: r.startOffset }]).pos[0] ?? -1;
-  };
-  afterEach(() => {
-    // 직접 심은 것만 걷는다(프로토타입의 것이 있으면 그대로 돌아온다).
-    Reflect.deleteProperty(window.getSelection() as object, 'modify');
-    document.body.innerHTML = '';
-  });
-
-  it('다음 한 칸이 곧 줄 끝이면 **그 이동을 쓴다**(앞 행 끝에 선다)', () => {
-    const { el } = stage(2, 3);
-    expect(caretRightToWrapEnd(el)).toBe(true);
-    expect(caret(el)).toBe(3);
-  });
-
-  it('줄 끝이 더 멀면 **아무 일도 없던 것으로** 되돌린다(기본 → 에 맡긴다)', () => {
-    const { el } = stage(2, 6);
-    expect(caretRightToWrapEnd(el)).toBe(false);
-    expect(caret(el)).toBe(2);
-  });
-
-  it('이미 줄 끝이면 되돌린다 — 다음 행으로 넘어가는 것은 기본 동작의 몫', () => {
-    const { el } = stage(3, 3);
-    expect(caretRightToWrapEnd(el)).toBe(false);
-    expect(caret(el)).toBe(3);
-  });
-
-  it('캐럿을 옮겨 줄 수 없는 환경(jsdom 기본)에서는 조용히 물러선다', () => {
-    const el = document.createElement('div');
-    el.textContent = '아아아';
-    document.body.appendChild(el);
-    setLinearSelection(el, 1, 1);
-    // 여기서는 `modify`를 심지 않았다 — 레이아웃이 없어 아무 데도 가지 못한다.
-    expect(caretRightToWrapEnd(el)).toBe(false);
-    expect(caret(el)).toBe(1);
   });
 });
