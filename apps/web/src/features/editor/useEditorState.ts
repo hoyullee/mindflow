@@ -909,6 +909,12 @@ export interface EditorController {
   setNoteTagColor: (tag: string, color: string | null) => void;
   /** 이미지 블록에 파일을 붙인다(플로트 이미지와 같은 저장 경로). */
   setNoteImage: (blockId: string, file: File | Blob) => Promise<void>;
+  /**
+   * **이미지를 바로 넣는다**(요청) — 자리를 먼저 만들지 않고 파일 고르개부터 연다.
+   * `replace`를 주면 그 블록을 이미지로 바꾸고, 아니면 `after` 뒤에 새로 만든다.
+   * 고르지 않고 닫으면 아무 일도 없다(빈 자리가 남지 않는다).
+   */
+  promptNoteImage: (at?: { after?: string; replace?: string }) => void;
   setNoteLinkDoc: (blockId: string, docId: string) => void;
   /** 문서 링크 블록이 고를 수 있는 문서들(공책일 때만 채워진다). */
   linkTargets: LinkTarget[];
@@ -7711,6 +7717,37 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
+  /**
+   * **이미지를 바로 넣는다** — 파일 고르개를 먼저 열고, 고른 뒤에야 블록을 만든다.
+   *
+   * 예전에는 `/이미지`가 **빈 「이미지 올리기」 블록**을 먼저 세우고 그 안의 단추를
+   * 한 번 더 누르게 했다(요청: 커서 자리에 바로 올리게). 고르지 않고 닫으면 빈
+   * 자리가 본문에 남는 것도 그 길의 문제였다.
+   *
+   * `<input>`을 **손으로 만들어** 쓴다(리액트 트리 밖) — 트리 안에 둔 숨은 입력은
+   * 고르개가 떠 있는 동안 본문이 다시 그려지면(문서 채택·되돌리기 등 `docEpoch`가
+   * 오르는 순간) 그 요소가 갈려 `change`가 아무 데도 닿지 않는다. 맵의 노드 이미지가
+   * 이미 이 길을 쓰고 있다(`promptNodeImage`).
+   */
+  const promptNoteImage = useCallback(
+    (at?: { after?: string; replace?: string }) => {
+      if (readOnlyRef.current) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const id = at?.replace ?? addNoteBlock('img', at?.after);
+        if (!id) return;
+        if (at?.replace) retypeNoteBlock(at.replace, 'img');
+        void setNoteImage(id, file);
+      };
+      input.click();
+    },
+    [addNoteBlock, retypeNoteBlock, setNoteImage],
+  );
+
   /** 보드 링크 블록이 가리킬 문서. */
   const setNoteLinkDoc = useCallback(
     (blockId: string, docId: string) => {
@@ -8348,6 +8385,7 @@ export function useEditorState(): EditorController {
     setNotePageTag,
     setNoteTagColor,
     setNoteImage,
+    promptNoteImage,
     setNoteLinkDoc,
     linkTargets,
     noteSpaceName,
