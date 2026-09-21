@@ -344,6 +344,52 @@ export function listArrowLeft(el: HTMLElement): boolean {
 }
 
 /**
+ * ArrowRight 전용: 다음 한 칸이 **감긴 줄의 끝**이면, 한 글자 이동 대신 「줄 끝으로」
+ * 이동해 캐럿을 **앞 행의 오른끝**에 세운다(처리했으면 true — 호출부가 preventDefault).
+ *
+ * 왜 필요한가(제보): 긴 글이 감기면 랩 지점의 오프셋은 **한 자리에 두 모습**이다 —
+ * 앞 행의 끝이기도 하고 뒷 행의 머리이기도 하다(글자 수로는 같은 자리). 어느 쪽에
+ * 그릴지는 브라우저가 쥔 「affinity」가 정하는데, 크롬은 →로 한 글자 나아가 그 자리에
+ * 닿으면 **뒷 행의 머리**를 고른다. 그래서 오른쪽으로 걸어가면 앞 행의 마지막 글자
+ * 뒤에는 캐럿이 한 번도 서지 못하고 줄이 바뀌어 버린다("아아*아에서 줄바꿈된다").
+ *
+ * affinity를 직접 정하는 API는 없다. 대신 **End와 같은 이동**(`lineboundary`)은
+ * 앞 행 끝을 고르므로, 다음 한 칸이 마침 그 자리일 때만 그 이동으로 바꿔 친다.
+ * 실측(xvfb 헤디드 크로뮴): 한 글자 이동으로 닿으면 그 자리에서 다시 「줄 끝으로」가
+ * **뒷 행 끝**(88)까지 뛰고, 이 이동으로 닿으면 **제자리**(44)다 — 앞 행에 섰다는 뜻이다.
+ *
+ * 되돌아오는 ←는 손대지 않는다 — 그쪽은 뒷 행 머리가 자연스럽다(좌우가 대칭이 된다).
+ * `modify`가 없는 환경(jsdom)에서는 아무 일도 하지 않는다.
+ */
+export function caretRightToWrapEnd(el: HTMLElement): boolean {
+  const ws = window.getSelection();
+  if (!ws || !ws.rangeCount || !ws.isCollapsed) return false;
+  const modify = (ws as Selection & { modify?: (alter: string, dir: string, granularity: string) => void }).modify;
+  if (typeof modify !== 'function') return false;
+  const rng = ws.getRangeAt(0);
+  if (!el.contains(rng.startContainer)) return false;
+  const before = collapsedCaret(el);
+  if (!before) return false;
+  const saved = rng.cloneRange();
+  try {
+    modify.call(ws, 'move', 'forward', 'lineboundary');
+  } catch {
+    return false;
+  }
+  const after = collapsedCaret(el);
+  // 마침 한 칸 앞이면 그대로 둔다 — 그 자리가 이 행의 끝이다.
+  if (after && after.off === before.off + 1) return true;
+  // 아니면 아무 일도 없었던 것으로(행 끝이 더 멀거나, 이미 행 끝에 서 있었다).
+  try {
+    ws.removeAllRanges();
+    ws.addRange(saved);
+  } catch {
+    /* 되돌리지 못해도 값은 그대로다 */
+  }
+  return false;
+}
+
+/**
  * ↑/↓ 세로 캐럿 이동 — 리스트 편집 박스에서는 **우리가 직접** 처리한다(처리했으면
  * true — 호출부가 preventDefault).
  *

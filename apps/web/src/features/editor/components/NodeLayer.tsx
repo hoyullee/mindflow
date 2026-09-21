@@ -11,7 +11,8 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, listArrowLeft, listArrowVertical, liveEditValue, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
+import { domToRuns, linearize, liveEditValue, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
+import { editCaretKeydown } from '../caretPolicy';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
@@ -820,25 +821,13 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
           if (e.shiftKey || softKeyboard) pendingBreakRef.current = true;
           return;
         }
-        // 입력 전에 캐럿이 마커 구역이면 내용 시작으로 — selectionchange 스냅의
-        // 이중화(클릭 직후 빠른 타이핑 등 이벤트 순서 편차 대비). ArrowLeft가
-        // 내용 시작에 있으면 마커를 통째로 건너 앞 줄 끝으로(안 그러면 스냅에
-        // 되튕겨 캐럿이 그 줄에 갇힌다). 방향키의 **기본 동작**은 이 핸들러 뒤에
-        // 실행되므로 rAF 스냅도 예약해 마커에 떨어진 캐럿이 페인트되기 전에 교정.
-        if (!composing && ref.current) {
-          snapCaretOffListMarker(ref.current);
-          scheduleSnap();
-          const plainKey = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
-          if (e.key === 'ArrowLeft' && plainKey && listArrowLeft(ref.current)) {
-            e.preventDefault();
-            return;
-          }
-          // ↑/↓는 리스트 행([마커|내용] flex)을 크롬 기본 이동이 건너지 못한다 —
-          // 우리가 직접 옮긴다(제보: ↑를 눌러도 캐럿이 위로 안 올라감).
-          if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && plainKey && listArrowVertical(ref.current, e.key === 'ArrowUp' ? -1 : 1)) {
-            e.preventDefault();
-            return;
-          }
+        // **캐럿 정책은 한 벌이다**(`caretPolicy.ts`) — 공책의 줄·표의 칸과 같은
+        // 함수를 쓴다: 마커 구역 스냅(입력 전 + rAF로 페인트 전 한 번 더 — 길게
+        // 누르면 keyup이 오지 않는다) · ←는 마커를 통째로 건너 앞 줄 끝 · ↑↓는
+        // [마커|내용] flex 행 건너뛰기 · →는 감긴 줄의 오른끝에 서기.
+        if (!composing && ref.current && editCaretKeydown(ref.current, e, { composing: false })) {
+          e.preventDefault();
+          return;
         }
         // Ctrl/Cmd+B·I는 브라우저 기본(execCommand bold/italic) 대신 우리
         // `applyPartial`로 라우팅한다. 기본 동작에 맡기면 루트(700)·1단계(600)
