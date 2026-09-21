@@ -383,6 +383,13 @@ export interface NoteBlock {
   docId?: string;
   /** `img` — 이미지 참조(`mfimg:<경로>` 또는 데이터 URL. 맵의 규칙과 같다). */
   src?: string;
+  /**
+   * `img` — **손으로 정한 너비**(px). 없으면 단 폭에 맞춘다(그림의 원래 폭이 상한).
+   *
+   * 높이를 함께 적지 않는 이유: 비율은 그림이 들고 있고, 우리가 두 값을 적으면 다른
+   * 화면 폭에서 찌그러진다. 폭만 적고 높이는 `auto`로 둔다(표의 `colW`와 같은 결).
+   */
+  imgW?: number;
   /** `callout`의 어조. */
   tone?: NoteCalloutTone;
   /** `toggle`이 펼쳐져 있는가(문서에 저장되는 기본 상태). */

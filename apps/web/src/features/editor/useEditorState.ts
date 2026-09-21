@@ -841,6 +841,8 @@ export interface EditorController {
    * 아무것도 잃지 않으므로 실패해도 원상 그대로다).
    */
   sendNoteBlockToBoard: (blockId: string, targetDocId: string) => Promise<boolean>;
+  /** 이미지 너비(px) — `null`이면 단 폭에 맞춘다. */
+  setNoteImageWidth: (blockId: string, width: number | null, continuous?: boolean) => void;
   retypeNoteBlock: (blockId: string, kind: NoteBlockKind) => void;
   /** 줄 하나의 종류를 바꾼다(목록이면 그 항목만) — 바뀐 줄의 블록 id. */
   retypeNoteLine: (key: string, kind: NoteBlockKind) => string | null;
@@ -7265,6 +7267,34 @@ export function useEditorState(): EditorController {
     [docStore, idFactory, notePage],
   );
 
+  /**
+   * 이미지의 **너비**(px)를 정한다 — `null`이면 단 폭에 맞춘다(손으로 정한 값을 걷는다).
+   *
+   * `continuous`로 커밋하는 이유: 끄는 동안 프레임마다 값이 바뀌므로 되돌리기가
+   * 한 걸음이어야 한다(표의 열 너비와 같은 규칙).
+   */
+  const setNoteImageWidth = useCallback(
+    (blockId: string, width: number | null, continuous = false) => {
+      if (readOnlyRef.current || !notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const next = Math.max(48, Math.round(width ?? 0));
+          if (width === null) {
+            if (b.imgW == null) return b;
+            const rest = { ...b };
+            delete rest.imgW;
+            return rest;
+          }
+          return b.imgW === next ? b : { ...b, imgW: next };
+        },
+        continuous,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
   const retypeNoteBlock = useCallback(
     (blockId: string, kind: NoteBlockKind) => {
       if (!notePage) return;
@@ -8405,6 +8435,7 @@ export function useEditorState(): EditorController {
     removeNoteBlock,
     duplicateNoteBlock,
     sendNoteBlockToBoard,
+    setNoteImageWidth,
     retypeNoteBlock,
     retypeNoteLine,
     splitNoteBlock,
