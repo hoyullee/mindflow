@@ -4776,3 +4776,133 @@ describe('공책 44판 — 링크 클릭 · 블록 선택 · 종류 목록 · �
     await waitFor(() => expect([...container.querySelectorAll('[data-note-blockwrap][data-selected]')].map((e) => e.getAttribute('data-note-blockwrap'))).toEqual(['B']));
   });
 });
+
+describe('공책 45판 — 이미지 크기·확대 · 여러 줄 서식 · 칸의 제한', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const PIX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const DOC = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'im', kind: 'img', src: PIX },
+          { id: 'A', kind: 'p', runs: [{ t: '에이', b: false, c: null }] },
+          { id: 'B', kind: 'p', runs: [{ t: '비이', b: false, c: null }] },
+          { id: 'tb', kind: 'table', rows: [[[{ t: '칸1', b: false, c: null }], [{ t: '칸2', b: false, c: null }]], [[{ t: 'x', b: false, c: null }], [{ t: 'y', b: false, c: null }]]] },
+        ],
+      },
+    ],
+  };
+
+  it('이미지를 누르면 **원본 크기로 보는 판**이 뜬다(요청 1)', async () => {
+    localStorage.setItem('mindflow_doc_g1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=g1&title=x');
+    const img = (await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement;
+
+    fireEvent.click(img);
+    const zoom = (await waitFor(() => container.querySelector('[data-note-image-zoom]'))) as HTMLElement;
+    // 기본은 **화면에 맞춤** — 큰 사진을 원본으로 열면 한 귀퉁이만 보인다.
+    expect((zoom.querySelector('img') as HTMLElement).style.maxWidth).toBe('100%');
+    fireEvent.click(zoom.querySelector('[data-note-image-full]') as HTMLElement);
+    await waitFor(() => expect((container.querySelector('[data-note-image-zoom] img') as HTMLElement).style.maxWidth).toBe(''));
+
+    fireEvent.click(container.querySelector('[data-note-image-close]') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-note-image-zoom]')).toBeNull());
+  });
+
+  it('이미지 크기 손잡이 — 두 번 누르면 **단 폭**으로 돌아온다(요청 1)', async () => {
+    localStorage.setItem('mindflow_doc_g2', JSON.stringify({ ...DOC, pages: [{ ...DOC.pages[0], blocks: [{ id: 'im', kind: 'img', src: PIX, imgW: 240 }] }] }));
+    const { container } = renderEditor('/editor?map=g2&title=x');
+    const grip = (await waitFor(() => container.querySelector('[data-note-image-grip]'))) as HTMLElement;
+    const wrap = grip.parentElement as HTMLElement;
+    expect(wrap.style.width).toBe('240px');
+
+    fireEvent.doubleClick(grip);
+    saveNow();
+    await waitFor(() => expect(saved('g2').pages[0].blocks[0].imgW).toBeUndefined());
+    await waitFor(() => expect((container.querySelector('[data-note-image-grip]')?.parentElement as HTMLElement).style.width).toBe('fit-content'));
+  });
+
+  it('**여러 줄을 칠해 두고** 굵게를 누르면 그 줄들이 다 굵어진다(제보 3)', async () => {
+    localStorage.setItem('mindflow_doc_g3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=g3&title=x');
+    const a = (await waitFor(() => container.querySelector('[data-note-line="A"]'))) as HTMLElement;
+    const b = container.querySelector('[data-note-line="B"]') as HTMLElement;
+
+    fireEvent.pointerDown(a, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(b, { clientX: 0, clientY: 0 });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(2));
+
+    const bold = container.querySelector('[data-note-mark="b"]') as HTMLElement;
+    fireEvent.mouseDown(bold);
+    fireEvent.click(bold);
+
+    saveNow();
+    await waitFor(() => {
+      const blocks = saved('g3').pages[0].blocks as { id: string; runs?: { b?: boolean }[] }[];
+      expect(blocks.find((x) => x.id === 'A')?.runs?.every((r) => r.b)).toBe(true);
+      expect(blocks.find((x) => x.id === 'B')?.runs?.some((r) => r.b)).toBe(true);
+    });
+  });
+
+  it('표의 칸에서는 **담을 수 없는 것들**이 꺼진다(요청 5)', async () => {
+    localStorage.setItem('mindflow_doc_g4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=g4&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="tb:r0c0"]'))) as HTMLElement;
+    fireEvent.doubleClick(cell.closest('td') as HTMLElement);
+    cell.focus();
+    // 툴바는 **선택이 바뀔 때** 다시 읽는다.
+    const text = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, 1);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    const off = (sel: string): boolean => !!container.querySelector(sel)?.hasAttribute('disabled');
+    await waitFor(() => expect(off('[data-note-slash-btn]')).toBe(true));
+    for (const kind of ['ck', 'table', 'hr', 'img', 'link']) {
+      expect(off(`[data-note-insert="${kind}"]`)).toBe(true);
+    }
+    // 글머리·번호는 칸에서도 된다(`noteCellList`) — 끄지 않는다.
+    expect(off('[data-note-insert="ul"]')).toBe(false);
+    expect(off('[data-note-insert="ol"]')).toBe(false);
+    // 칸은 줄이 아니라 값이라 **블록 종류**도 닿지 않는다(표 전체가 바뀌던 자리).
+    expect(off('[data-note-blocktype]')).toBe(true);
+  });
+
+  it('표의 칸에서 친 `/`로는 **블록 넣기가 열리지 않는다**(요청 4)', async () => {
+    localStorage.setItem('mindflow_doc_g5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=g5&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="tb:r0c0"]'))) as HTMLElement;
+    fireEvent.doubleClick(cell.closest('td') as HTMLElement);
+    cell.focus();
+
+    fireEvent.keyDown(cell, { key: '/' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(container.querySelector('[data-note-slash-panel]')).toBeNull();
+
+    // 본문 줄에서는 그대로 열린다 — 막은 것은 칸뿐이다.
+    const line = container.querySelector('[data-note-line="A"]') as HTMLElement;
+    line.focus();
+    const t = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const r = document.createRange();
+    r.setStart(t, 0);
+    r.collapse(true);
+    const s2 = window.getSelection();
+    s2?.removeAllRanges();
+    s2?.addRange(r);
+    fireEvent.keyDown(line, { key: '/' });
+    await waitFor(() => expect(container.querySelector('[data-note-slash-panel]')).toBeTruthy());
+  });
+});

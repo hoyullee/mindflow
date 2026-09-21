@@ -528,6 +528,35 @@ function caretRect(el: HTMLElement, sel: Selection): DOMRect | null {
  * 환경(jsdom)에서는 예전의 글자 기준으로 물러선다.
  */
 function caretOnEdgeLine(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean {
+  /**
+   * **브라우저에게 직접 묻는다** — 「줄 끝으로/줄 처음으로」가 글의 끝(처음)에 닿으면
+   * 지금 그 시각 줄에 있다는 뜻이다.
+   *
+   * 왜 사각형만으로는 안 되나(제보): 감긴 줄의 **랩 지점**은 글자 수로는 한 자리인데
+   * 화면에는 둘이고(앞 행의 끝 · 뒷 행의 머리), `Range`의 사각형은 그 자리를 **늘 앞
+   * 행으로 접어** 돌려준다(`probe-pitfalls` E12). 그래서 감긴 목록 줄의 두 번째 행
+   * 머리에 캐럿을 두고 ↓를 누르면, 우리는 "아직 마지막 행이 아니다"로 읽어 넘기지
+   * 않았고 브라우저는 "더 내려갈 행이 없다"며 **글의 끝으로** 캐럿을 보냈다.
+   *
+   * `modify`는 선택을 움직이므로 두 끝을 적어 두었다 되돌린다(`setBaseAndExtent`는
+   * 방향까지 지킨다 — Shift로 고르는 중에도 안전하다).
+   */
+  const probe = (sel as Selection & { modify?: (a: string, d: string, g: string) => void }).modify;
+  if (typeof probe === 'function' && sel.anchorNode && sel.focusNode && el.contains(sel.focusNode)) {
+    const keep = { an: sel.anchorNode, ao: sel.anchorOffset, fn: sel.focusNode, fo: sel.focusOffset };
+    try {
+      probe.call(sel, 'move', dir === -1 ? 'backward' : 'forward', 'lineboundary');
+      const at = sel.focusNode && el.contains(sel.focusNode) ? charOffset(el, sel.focusNode, sel.focusOffset) : -1;
+      sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
+      if (at >= 0) return dir === -1 ? at <= 0 : at >= (el.textContent ?? '').length;
+    } catch {
+      try {
+        sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
+      } catch {
+        /* 되돌리지 못해도 값은 그대로다 */
+      }
+    }
+  }
   const c = caretRect(el, sel);
   const b = el.getBoundingClientRect();
   if (c && b.height > 0) {
