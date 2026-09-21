@@ -4,6 +4,7 @@
 // 이 파일이 지키는 것: 캔버스 UI가 **하나도** 뜨지 않는다 · 글이 문서에 저장된다 ·
 // 블록 종류를 바꿔도 글을 잃지 않는다 · **열 것이 없어지지 않는다**(마지막 페이지).
 
+import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -528,7 +529,7 @@ describe('공책 3판 — 디자인 이식', () => {
     expect(container.querySelector('[data-note-tab="기록"]')).toBeTruthy();
   });
 
-  it('본문 끝에 **글의 부피**가 적힌다', async () => {
+  it('글의 부피는 **태그 줄의 오른끝**에 적힌다(요청 — 본문 아래 띠는 걷었다)', async () => {
     localStorage.setItem('mindflow_doc_ns25', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns25&title=x');
     const stats = await waitFor(() => {
@@ -540,6 +541,11 @@ describe('공책 3판 — 디자인 이식', () => {
     expect(stats.textContent).toMatch(/\d+단어/);
     // `읽기 n분`은 뺐다(요청) — 한 장짜리 페이지에서 말해 주는 것이 거의 없었다.
     expect(stats.textContent).not.toMatch(/읽기/);
+    // 머리의 태그 줄 **안**에, 그 줄의 **마지막**으로.
+    expect(stats.closest('[data-note-page-head]')).toBeTruthy();
+    expect(stats.parentElement?.lastElementChild).toBe(stats);
+    // 본문 아래의 고정 띠와 그 구분선은 사라졌다 — `NN 전 수정`은 이 줄에 이미 있다.
+    expect(container.querySelector('[data-note-stats-rule]')).toBeNull();
   });
 });
 
@@ -2418,22 +2424,6 @@ describe('공책 22판 — 본문 6건(통계 띠·지우고 올라가는 커서
   });
   afterEach(cleanup);
 
-  it('통계는 **본문 밖의 고정 띠**다 — 굴러가지 않는다(요청)', async () => {
-    localStorage.setItem('mindflow_doc_nx0', JSON.stringify(NOTE));
-    const { container } = renderEditor('/editor?map=nx0&title=x');
-    const stats = (await waitFor(() => container.querySelector('[data-note-stats]'))) as HTMLElement;
-
-    // 굴러가는 단(`[data-note-page]`) **안**에 있으면 끝까지 내려야 보인다.
-    expect(stats.closest('[data-note-page]')).toBeNull();
-    expect(stats.style.flex).toBe('0 0 auto');
-    // 구분선도 함께 온다(요청: "바로 위의 구분선과 함께"). **경계선이 아니라
-    // 본문의 구분선**이라 화면을 가로지르지 않고 본문 단의 폭만큼만 그어진다(제보).
-    const rule = stats.querySelector('[data-note-stats-rule]') as HTMLElement;
-    expect(stats.style.borderTop).toBe('');
-    expect(rule.style.background).toBe('var(--mf-border-soft)');
-    expect((rule.parentElement as HTMLElement).style.maxWidth).toBe('700px');
-  });
-
   it('빈 줄에서 ⌫를 누르면 그 줄이 사라지고 **캐럿이 앞 줄 끝으로** 간다(제보)', async () => {
     const doc = {
       ...NOTE,
@@ -2508,9 +2498,6 @@ describe('공책 22판 — 본문 6건(통계 띠·지우고 올라가는 커서
 
     fireEvent.click(container.querySelector('[data-note-width]')!);
     await waitFor(() => expect((container.querySelector('[data-note-page-head]')!.parentElement as HTMLElement).style.maxWidth).toBe(''));
-    // 통계 띠도 함께 넓어진다 — 단과 세로줄이 어긋나지 않게.
-    expect((container.querySelector('[data-note-stats]')!.firstElementChild as HTMLElement).style.maxWidth).toBe('');
-
     // 값은 **공책 한 권**에 남는다(`cover.wide`).
     saveNow();
     await waitFor(() => expect(saved('nx5').cover.wide).toBe(true));
@@ -2669,22 +2656,6 @@ describe('공책 25판 — 본문 4건(구분선·방향키·마크다운 단축
     sel?.removeAllRanges();
     sel?.addRange(range);
   }
-
-  it('통계 위의 선은 **본문의 구분선**이다 — 화면을 가로지르지 않는다(제보)', async () => {
-    localStorage.setItem('mindflow_doc_o0', JSON.stringify(NOTE));
-    const { container } = renderEditor('/editor?map=o0&title=x');
-    const stats = (await waitFor(() => container.querySelector('[data-note-stats]'))) as HTMLElement;
-    const rule = stats.querySelector('[data-note-stats-rule]') as HTMLElement;
-    const head = container.querySelector('[data-note-page-head]') as HTMLElement;
-
-    // 머리 아래의 그 선과 **같은 색**이고, 같은 폭의 단 안에 선다.
-    expect(rule.style.background).toBe('var(--mf-border-soft)');
-    expect((head.nextElementSibling as HTMLElement).style.background).toBe('var(--mf-border-soft)');
-    expect((rule.parentElement as HTMLElement).style.maxWidth).toBe('700px');
-    // 글이 아니라 장식이다 — 고를 수도 지울 수도 없다.
-    expect(rule.getAttribute('aria-hidden')).toBe('true');
-    expect(rule.getAttribute('contenteditable')).toBeNull();
-  });
 
   it('↓는 다음 줄로, ↑는 이전 줄로 간다(제보: 방향키로 이동되지 않는다)', async () => {
     localStorage.setItem('mindflow_doc_o1', JSON.stringify(NOTE));
@@ -5242,5 +5213,87 @@ describe('공책 48판 — 칸의 링크 · 구분선 초점 · 붙여넣기 자
     fireEvent(line, ev);
 
     expect(ev.defaultPrevented).toBe(false); // 막지 않았다 = 브라우저가 붙인다
+  });
+});
+
+describe('공책 49판 — 친 주소·머리의 부피·제목 밑줄·태그 기억·목록 줄 높이', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('**손으로 친 주소**도 줄을 떠날 때 링크가 된다(요청)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_n1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=n1&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    line.focus();
+    line.textContent = 'https://geurio.com 보세요';
+    fireEvent.input(line);
+    // 치는 **동안에는** 걸지 않는다 — 반쯤 친 주소가 링크가 됐다 풀렸다 하면 캐럿이 흔들린다.
+    expect(line.querySelector('[data-href]')).toBeNull();
+
+    fireEvent.blur(line);
+    saveNow();
+
+    await waitFor(() => {
+      const runs = saved('n1').pages[0].blocks[0].runs as { t: string; href?: string }[];
+      expect(runs.find((r) => r.href)?.href).toBe('https://geurio.com/');
+    });
+    // 비제어 박스라 **화면도 함께** 다시 그린다 — 아니면 링크가 보이지 않는다.
+    expect(line.querySelector('[data-href]')).toBeTruthy();
+  });
+
+  it('제목에 초점이 가도 **주황 밑줄은 쓰지 않는다**(요청)', async () => {
+    localStorage.setItem('mindflow_doc_n2', JSON.stringify(NOTE));
+    renderEditor('/editor?map=n2&title=x');
+    await waitFor(() => expect(document.querySelector('[data-note-title]')).toBeTruthy());
+    // 규칙은 CSS에 있다(jsdom은 그 파일을 싣지 않는다) — 값이 강조색이 아닌지를 못박는다.
+    // 그 파일을 글자 그대로 읽는다(`?raw`는 vitest에서 빈 문자열로 온다 — 실측).
+    const cssPath = ['src/features/editor/editor.css', 'apps/web/src/features/editor/editor.css'].find((f) => existsSync(f));
+    expect(cssPath).toBeTruthy();
+    const rule = /\[data-note-title\]:focus \{([^}]*)\}/.exec(readFileSync(cssPath as string, 'utf8'))?.[1] ?? '';
+    expect(rule).toContain('--mf-border');
+    expect(rule).not.toContain('--mf-accent');
+  });
+
+  it('만든 태그는 **떼어도 목록에 남는다**(요청 4)', async () => {
+    localStorage.setItem('mindflow_doc_n3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=n3&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-tag-pick]'))) as HTMLElement);
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-tag-add]'))) as HTMLElement);
+    const input = (await waitFor(() => container.querySelector('[data-note-tag-new]'))) as HTMLInputElement;
+    // 단추는 **「적용」 글자**다(요청 3) — 체크 아이콘이 아니다.
+    expect((container.querySelector('[data-note-tag-commit]') as HTMLElement).textContent).toBe('적용');
+    fireEvent.change(input, { target: { value: '회의준비' } });
+    fireEvent.click(container.querySelector('[data-note-tag-commit]') as HTMLElement);
+
+    // 공책이 기억한다.
+    saveNow();
+    await waitFor(() => expect(saved('n3').cover.tags).toContain('회의준비'));
+
+    // 떼어도 고르개에 남아 있다.
+    fireEvent.click(container.querySelector('[data-note-tag-pick]') as HTMLElement);
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-tag-clear]'))) as HTMLElement);
+    fireEvent.click(container.querySelector('[data-note-tag-pick]') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-note-tag-opt="회의준비"]')).toBeTruthy());
+  });
+
+  it('목록 줄은 **문단과 같은 글자 상자**다(제보 5: 아래 줄들이 위로 틀어진다)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '문단', b: false, c: null }] },
+      { id: 'b2', kind: 'ul', items: [{ id: 'i1', runs: [{ t: '항목', b: false, c: null }] }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_n4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=n4&title=x');
+    const para = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    const item = container.querySelector('[data-note-line="b2:i1"]') as HTMLElement;
+
+    // jsdom은 레이아웃을 재지 않으므로 **값**을 못박는다 — 실측(브라우저)은 3px였다.
+    expect(item.style.fontSize).toBe(para.style.fontSize);
+    expect(item.style.lineHeight).toBe(para.style.lineHeight);
   });
 });

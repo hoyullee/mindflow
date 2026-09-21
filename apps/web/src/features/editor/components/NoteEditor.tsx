@@ -1330,7 +1330,7 @@ export function NoteEditor({ controller }: Props) {
               return;
             }
             // 줄 밖 — **가장 가까운 줄**에 캐럿을 놓고 거기서 드래그를 시작한다.
-            if (!col || target?.closest('button, input, textarea, a, [role="button"], [data-note-page-head], [data-note-stats-rule]')) {
+            if (!col || target?.closest('button, input, textarea, a, [role="button"], [data-note-page-head]')) {
               dragFrom.current = null;
               return;
             }
@@ -1574,10 +1574,6 @@ export function NoteEditor({ controller }: Props) {
 
           </div>
         </div>
-        {/* 글의 부피는 **본문 밖의 고정 띠**다(요청) — 예전에는 본문 맨 끝에 붙어
-            있어 끝까지 굴려야 보였고, 글을 쓰는 동안 계속 아래로 밀려났다. 이제
-            페이지 바닥에 붙어 늘 같은 자리에서 같은 값을 말한다. */}
-        <PageStats page={page} wide={wide} />
       </div>
     </div>
   );
@@ -2870,47 +2866,6 @@ function pageHit(page: NotePage, query: string): string | null {
 /* ── 페이지 머리(제목·태그·페이지 조작) ───────────────────────────────────── */
 
 /**
- * 글의 부피 — `176자 · 56단어 · 읽기 1분`(디자인 원본의 본문 맨 아래 줄).
- *
- * 회의록·정책처럼 **읽을 사람이 있는 글**에서 "이거 길어요?"에 답해 주는 줄이다.
- * 읽기 시간은 한국어 분당 500자(일반적인 추정치)로, 1분 미만도 `1분`으로 적는다.
- */
-function PageStats({ page, wide }: { page: NotePage; wide: boolean }) {
-  const text = pageText(page);
-  const chars = [...text.replace(/\s+/g, '')].length;
-  const words = text.split(/\s+/).filter(Boolean).length;
-  return (
-    <div
-      data-note-stats
-      style={{
-        // **자리를 따로 잡는다**(요청) — 본문과 함께 구르지 않고 페이지 바닥에 붙는다.
-        flex: '0 0 auto',
-        background: 'var(--mf-note-body)',
-        padding: '0 30px 9px',
-        boxSizing: 'border-box',
-      }}
-    >
-      <div style={{ ...(wide ? {} : { maxWidth: 700 }), margin: '0 auto' }}>
-        {/* 화면을 가로지르는 **경계선이 아니라 본문의 구분선**이다(제보) — 머리 아래의
-            그 선과 같은 색·같은 가로 길이라 한 문서의 선 둘이 세로로 맞아떨어진다.
-            글이 아니라 장식이므로 고를 수도 지울 수도 없다(`aria-hidden`인 빈 span). */}
-        <span aria-hidden="true" data-note-stats-rule style={{ display: 'block', height: 1, background: 'var(--mf-border-soft)', marginBottom: 9 }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10.5, color: 'var(--mf-faint)', flexWrap: 'wrap' }}>
-          <span>{chars}자</span>
-          <span aria-hidden="true">·</span>
-          {/* `읽기 n분`은 뺐다(요청) — 디자인에는 있지만 한 장짜리 공책 페이지에서
-              500자/분 추정이 말해 주는 것이 거의 없다(대개 `1분`으로 고정된다). 길이는
-              자·단어 두 값이 이미 말한다. */}
-          <span>{words}단어</span>
-          <span style={{ flex: 1, minWidth: 0 }} />
-          {page.updatedAt && <span>{formatLastEdited(page.updatedAt)} 수정</span>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
  * 페이지 태그 고르개 — 칩(점 · 이름 · 캐럿)과 팝업(디자인 3번 이미지).
  *
  * **태그 만들기**가 여기 있다: 기본 여섯(`NOTE_TAGS`)으로는 팀마다 다른 분류를 담지
@@ -2942,21 +2897,32 @@ function TagPick({
   const tag = page.tag ?? null;
   const inks = controller.doc.tagColors;
   const { ref, rect } = useAnchored(open, () => setOpen(() => false));
-  /** 고를 수 있는 태그 — 기본 여섯 뒤에 이 공책이 실제로 쓰고 있는 것들. */
+  /**
+   * 고를 수 있는 태그 — 기본 여섯 + **이 공책에서 만든 것**(`cover.tags`) + 지금 쓰이는 것.
+   *
+   * 가운데 것이 요청으로 들어온 자리다: 예전에는 "실제로 쓰이는 것"만 모았기 때문에
+   * 애써 만든 태그를 한 페이지에서 떼면 **그 태그가 목록에서도 사라졌다**. 이제
+   * 만든 순간 공책에 적히고, 어느 페이지도 쓰지 않아도 남는다.
+   */
+  const made = controller.doc.cover?.tags;
   const options = useMemo(() => {
     const out = [...NOTE_TAGS];
-    for (const pg of controller.notePages) {
-      const t = pg.tag?.trim();
-      if (t && !out.includes(t)) out.push(t);
-    }
+    const add = (t: string | null | undefined): void => {
+      const n = t?.trim();
+      if (n && !out.includes(n)) out.push(n);
+    };
+    (made ?? []).forEach(add);
+    for (const pg of controller.notePages) add(pg.tag);
     return out;
-  }, [controller.notePages]);
+  }, [controller.notePages, made]);
 
   const commit = () => {
     const name = draft.trim();
     if (name) {
       // 색을 **먼저** 적는다 — 태그가 먼저 붙으면 한 프레임 동안 기본색으로 그려진다.
       if (hue) controller.setNoteTagColor(name, hue);
+      // 만든 태그는 **공책이 기억한다** — 떼어도 목록에 남는다(요청 4).
+      if (!NOTE_TAGS.includes(name) && !(made ?? []).includes(name)) controller.setNoteCover({ tags: [...(made ?? []), name] });
       controller.setNotePageTag(page.id, name);
     }
     setDraft('');
@@ -3078,13 +3044,13 @@ function TagPick({
                   type="button"
                   data-note-tag-commit
                   onClick={commit}
-                  title="추가"
-                  aria-label="태그 추가"
-                  style={{ width: 22, height: 22, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+                  title="적용"
+                  aria-label="태그 적용"
+                  // 체크 아이콘이 아니라 **「적용」 글자**다(요청) — 체크는 "고름"으로도
+                  // 읽혀 "이 이름으로 만든다"라는 뜻이 한눈에 오지 않았다.
+                  style={{ height: 22, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '0 9px', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}
                 >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="m5 13 4.5 4.5L19 7" />
-                  </svg>
+                  적용
                 </button>
               </span>
               {/* 색 고르개(요청·디자인) — 고르지 않으면 이름에서 정해지는 그 색이다.
@@ -3143,6 +3109,16 @@ function TagPick({
 function PageHead({ controller, page }: { controller: EditorController; page: NotePage }) {
   const [tagOpen, setTagOpen] = useState(false);
   const readOnly = controller.readOnly;
+  /**
+   * 글의 부피 — **태그 줄의 오른끝**에 붙는다(요청).
+   *
+   * 예전에는 본문 아래의 고정 띠였는데(`nnn자 · nnn단어 · NN 전 수정`), 그 띠가
+   * 본문 높이를 한 줄만큼 먹으면서 늘 같은 말을 되풀이했다 — `NN 전 수정`은 바로
+   * 이 줄에도 이미 있었다. 띠를 걷고 두 값만 머리로 옮긴다.
+   */
+  const body = pageText(page);
+  const chars = [...body.replace(/\s+/g, '')].length;
+  const words = body.split(/\s+/).filter(Boolean).length;
   const who = page.updatedBy?.trim() || controller.myName || '나';
   const mine = !page.updatedBy?.trim();
   const linked = page.linkedDocId ? controller.linkTargets.find((t) => t.docId === page.linkedDocId) : undefined;
@@ -3182,6 +3158,14 @@ function PageHead({ controller, page }: { controller: EditorController; page: No
           <span style={{ fontSize: 11.5, color: 'var(--mf-subtext)', whiteSpace: 'nowrap' }}>{mine ? '나' : who}</span>
         </span>
         {page.updatedAt && <span style={{ fontSize: 11, color: 'var(--mf-faint)', flex: '0 0 auto', whiteSpace: 'nowrap' }}>{formatLastEdited(page.updatedAt)} 수정</span>}
+        {/* 줄의 **오른끝**으로 밀어 둔다 — 왼쪽 묶음(태그·사람·시각)과 다른 종류의
+            정보라, 사이를 벌려 두면 눈이 둘을 따로 읽는다. */}
+        <span aria-hidden="true" style={{ flex: 1, minWidth: 0 }} />
+        <span data-note-stats style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>
+          <span>{chars}자</span>
+          <span aria-hidden="true">·</span>
+          <span>{words}단어</span>
+        </span>
         {/* 연결 문서 — 이 페이지가 어느 보드의 회의록인지. 눌러서 그리로 간다. */}
         {linked && (
           <a
@@ -4340,7 +4324,8 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                   // 디자인: 18×18 · 반지름 6 · 빈 테두리는 `#DCD1C6` · 켜지면 **페이지 태그 색**.
                   width: 18,
                   height: 18,
-                  marginTop: 4,
+                  // 글자 상자가 문단과 같아지면서(제보 5) 첫 글자의 윗변도 1px 내려갔다.
+                  marginTop: 5,
                   flex: '0 0 auto',
                   borderRadius: 6,
                   border: `1.5px solid ${item.done ? accent : 'var(--mf-note-ck)'}`,
@@ -4360,7 +4345,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 )}
               </button>
             ) : (
-              <span aria-hidden="true" data-note-bullet={marks[j] ?? ''} style={{ flex: '0 0 auto', width: 18, marginTop: 3, textAlign: 'right', fontSize: 13, color: 'var(--mf-faint)', fontFamily: block.kind === 'ol' ? 'ui-monospace, monospace' : undefined }}>
+              <span aria-hidden="true" data-note-bullet={marks[j] ?? ''} style={{ flex: '0 0 auto', width: 18, marginTop: 4, textAlign: 'right', fontSize: 13, color: 'var(--mf-faint)', fontFamily: block.kind === 'ol' ? 'ui-monospace, monospace' : undefined }}>
                 {marks[j] ?? '•'}
               </span>
             )}
@@ -4470,8 +4455,15 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               style={{
                 flex: 1,
                 minWidth: 0,
-                fontSize: 14,
-                lineHeight: 1.7,
+                /**
+                 * **문단과 같은 글자 상자**여야 한다(제보 5) — 예전에는 14/1.7이라
+                 * 문단(14.5/1.85)보다 줄이 3px 낮았고, 그래서 어느 줄을 목록으로
+                 * 바꾸면 **그 아래 모든 줄이 3px씩 위로 올라갔다**(실측: 26.83 → 23.80).
+                 * 목록은 글의 종류가 아니라 **표식이 붙은 문단**이므로 크기가 갈릴
+                 * 이유가 없다(제목·인용·코드는 일부러 다르다).
+                 */
+                fontSize: 14.5,
+                lineHeight: 1.85,
                 // 끝낸 항목은 **흐려지고 줄이 그어진다**(요청). 색만 바꾸면 "옅은 글"과
                 // "끝난 글"이 같아 보여서, 목록을 훑을 때 무엇이 남았는지 한눈에 안 들어온다.
                 color: block.kind === 'ck' && item.done ? 'var(--mf-muted)' : 'var(--mf-text)',
