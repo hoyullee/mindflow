@@ -37,7 +37,7 @@ import type { EditorController } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { applyNoteFormat, applyNoteFormatRange, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection } from '../noteRichDom';
-import { buildSelection, caretAt, charOffset, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildLineSelection, buildSelection, caretAt, charOffset, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectWholeLines, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
@@ -58,18 +58,22 @@ interface Props {
  * **줄의 종류**(`inMenu`)만 보여 준다 — 표·이미지·구분선·문서 링크는 "이 줄을 무엇으로
  * 바꿀까"가 아니라 "여기에 무엇을 넣을까"라서 툴바 아이콘과 `/`가 맡는다.
  *
- * 목록 셋(글머리·번호·체크리스트)은 **메뉴에 있다**(제보). 한 번 뺐었는데, 그러면
- * 목록 줄에 커서를 뒀을 때 단추에는 `글머리 목록`이라 적히는데 열어 보면 그 항목이
- * 없다 — 라벨과 메뉴가 어긋난다. 목록은 문단과 서로 오갈 수 있는 **줄의 종류**가 맞다.
+ * 목록 셋(글머리·번호·체크리스트)은 **메뉴에 있다**. 세 번 뒤집힌 자리라 경위를 적어
+ * 둔다: ① 1판에서 디자인을 따라 아홉으로 줄이며 뺐다 ② 제보로 되돌렸다(목록 줄에
+ * 커서를 두면 단추에는 `글머리 기호`라 적히는데 열어 보면 그 항목이 없다 — **라벨과
+ * 메뉴가 어긋난다**) ③ 뒤 라운드에서 **시안이 여덟만 담고 있어** 그 판단을 따라 다시
+ * 뺐다(그때 이 주석만 ②인 채로 남아 실제와 어긋나 있었다) ④ 사용자가 "여기 뭐가 들어가야
+ * 하나"를 다시 물어(2026-09-21) **열하나로 확정**했다 — ②의 어긋남이 시안을 따르는
+ * 값보다 크다고 봤다. 목록은 문단과 서로 오갈 수 있는 **줄의 종류**가 맞다.
  */
 const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
   { kind: 'p', name: '본문', hint: '⌘⌥0', desc: '일반 글', group: '기본', inMenu: true, icon: <path d="M4 7h16M4 12h16M4 17h10" /> },
   { kind: 'h1', name: '제목 1', hint: '⌘⌥1', desc: '가장 큰 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M12 5v14M4 12h8" /><path d="M17 9.5 19.5 8V19" /></>) },
   { kind: 'h2', name: '제목 2', hint: '⌘⌥2', desc: '섹션 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 10a2 2 0 1 1 3.4 1.4L15.5 16H20" /></>) },
   { kind: 'h3', name: '제목 3', hint: '⌘⌥3', desc: '작은 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 9.5h4.5l-2.5 3a2.2 2.2 0 1 1-2 3.6" /></>) },
-  { kind: 'ul', name: '글머리 기호', hint: '', desc: '점으로 나열', group: '목록',   icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
-  { kind: 'ol', name: '번호 매기기', hint: '', desc: '순서가 있는 나열', group: '목록',  icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
-  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록',  icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
+  { kind: 'ul', name: '글머리 기호', hint: '', desc: '점으로 나열', group: '목록', inMenu: true, sepBefore: true, icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
+  { kind: 'ol', name: '번호 매기기', hint: '', desc: '순서가 있는 나열', group: '목록', inMenu: true, icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
+  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록', inMenu: true, icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
   { kind: 'q', name: '인용', hint: '⌘⇧.', desc: '다른 글이나 말을 인용', group: '강조', inMenu: true, sepBefore: true, icon: <path d="M7 7h4v5c0 2-1 3.5-3 4.5M14 7h4v5c0 2-1 3.5-3 4.5" /> },
   { kind: 'callout', name: '콜아웃', hint: '', desc: '주의 · 결정 · 질문', group: '강조', inMenu: true, icon: (<><rect x="3.5" y="5" width="17" height="14" rx="3" /><path d="M12 9v3.5M12 15.5h.01" /></>) },
   { kind: 'toggle', name: '접기', hint: '', desc: '긴 내용을 접어 두기', group: '강조', inMenu: true, icon: (<><path d="m8 6 6 6-6 6" /><path d="M4 21h16" opacity=".35" /></>) },
@@ -491,6 +495,36 @@ export function NoteEditor({ controller }: Props) {
 
   /** 고른 줄들의 블록 id — 칠하기가 안 되는 브라우저에서 면으로 물러설 때 쓴다. */
   const selectedIds = useMemo(() => (textSel ?? []).map((l) => blockIdOf(l.key)), [textSel]);
+
+  /**
+   * **Esc = 이 블록을 통째로 고른다**(요청 7 — 글자 선택만 있고 블록 선택이 없었다).
+   *
+   * 새 상태를 하나 더 두지 않고 **칠하기 선택**(`textSel`)에 얹는다: 복사·잘라내기·
+   * 지우기·Tab 들여쓰기·Shift+방향키로 넓히기가 전부 그 위에 이미 서 있다. 그래서
+   * 이 고리는 "그 블록의 모든 줄을 통째로" 한 줄이면 되고, 나머지는 공짜로 따라온다.
+   * 한 번 더 누르면 풀린다(칠해진 상태의 Esc가 이미 그 일을 한다).
+   *
+   * `/` 목록이 떠 있을 때는 그쪽의 Esc다 — 목록을 닫는 것이 먼저다.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented || textSelRef.current || slashFor !== null) return;
+      const col = colRef.current;
+      const active = document.activeElement as HTMLElement | null;
+      const line = active?.closest?.('[data-note-line]') as HTMLElement | null;
+      if (!col || !line || !col.contains(line)) return;
+      const id = blockIdOf(line.getAttribute('data-note-line') || '');
+      const lines = [...col.querySelectorAll<HTMLElement>(`[data-note-block="${id}"] [data-note-line]`)];
+      const next = selectWholeLines(lines.length ? lines : [line]);
+      if (!next) return;
+      e.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      line.blur();
+      setTextSel(next);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [slashFor]);
 
   /**
    * 칠하기는 DOM 작업이라 그리고 난 뒤에 — 선택이 바뀔 때마다 다시 칠한다.
@@ -1133,10 +1167,31 @@ export function NoteEditor({ controller }: Props) {
             // 단 바깥이면 **가장 가까운 줄**로 친다(좌·우 여백을 훑어도 글이 골라진다).
             const near = overLine ? null : lineNear(col, e.clientX, e.clientY);
             const line = overLine ?? near?.el ?? null;
-            if (!line || line === from.el) return;
+            if (!line) return;
             const at = overLine
               ? (caretAt(e.clientX, e.clientY) ?? { node: line, offset: (line.textContent ?? '').length })
               : { node: near!.node, offset: near!.offset };
+            /**
+             * **시작한 줄로 되돌아왔다**(제보 10) — 아직 한 줄 안이면 브라우저에 맡기고,
+             * 이미 칠하고 있었으면 **그 줄 안에서** 이어 칠한다. 예전에는 여기서 그냥
+             * 빠져나가 마지막으로 칠한 그림이 그대로 얼어붙었다(브라우저의 선택은
+             * 비워 두고 박스의 초점도 거둔 뒤라 맡길 상대가 없었다).
+             */
+            if (line === from.el) {
+              if (!dragPainted.current) return;
+              const w = wordSel.current;
+              let head = { node: from.node, offset: from.offset };
+              if (w && w.el === from.el) {
+                // 두 번 눌러 고른 낱말은 통째로 남는다 — 커서가 그 앞이면 낱말의 끝이 앵커다.
+                const spot = pointAt(from.el, charOffset(from.el, at.node, at.offset) < w.from ? w.to : w.from);
+                head = { node: spot.node, offset: spot.offset };
+              }
+              window.getSelection()?.removeAllRanges();
+              const same = document.activeElement as HTMLElement | null;
+              if (same?.hasAttribute('data-note-line')) same.blur();
+              setTextSel(buildLineSelection(from.el, head, at));
+              return;
+            }
             /**
              * 두 번 눌러 고른 낱말이 있으면 **그 낱말이 통째로 남도록** 앵커를 고른다 —
              * 아래로 끌면 낱말의 **앞**, 위로 끌면 **뒤**가 앵커다.

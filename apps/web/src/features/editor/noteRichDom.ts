@@ -105,7 +105,10 @@ function restoreSelection(el: HTMLElement, a: number, b: number): void {
  */
 export function noteActiveMarks(el: HTMLElement): { b: boolean; i: boolean; s: boolean; u: boolean; k: boolean } {
   const off = { b: false, i: false, s: false, u: false, k: false };
-  const range = noteSelectionRange(el);
+  // **접힌 캐럿도 받는다**(제보 9) — 여기서 `noteSelectionRange`를 쓰던 것이 버그였다.
+  // 그쪽은 고른 글이 없으면 `null`이라, 아래의 "캐럿이면 앞 글자를 본다"는 규칙이
+  // 한 번도 닿지 못했다: 굵은 글 **안**에 커서를 둬도 단추가 꺼져 있었다.
+  const range = noteCaretSpan(el);
   if (!range) return off;
   const { rich } = noteBoxValue(el);
   if (!rich || rich.length === 0) return off;

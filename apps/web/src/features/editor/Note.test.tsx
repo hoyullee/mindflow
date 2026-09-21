@@ -619,7 +619,10 @@ describe('공책 5판 — 편집 동작', () => {
   });
   afterEach(cleanup);
 
-  it('블록 메뉴는 **여덟**이다 — 글의 종류만(요청·시안)', async () => {
+  // 한때 **여덟**이었다(시안을 따라 목록 셋을 뺐다). 2026-09-21에 사용자가 "여기 무엇이
+  // 들어가야 하나"를 다시 물어 **열하나**로 확정했다 — 목록 줄에서 단추 라벨과 메뉴가
+  // 어긋나던 값이 시안을 따르는 값보다 컸다(경위는 `BLOCK_TYPES` 주석).
+  it('블록 메뉴는 **줄의 종류 열하나**다 — 넣기 넷은 들어오지 않는다', async () => {
     localStorage.setItem('mindflow_doc_ns40', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns40&title=x');
     await waitFor(() => expect(container.querySelector('[data-note-blocktype]')).toBeTruthy());
@@ -627,7 +630,7 @@ describe('공책 5판 — 편집 동작', () => {
     fireEvent.click(container.querySelector('[data-note-blocktype]')!);
     const menu = (await waitFor(() => container.querySelector('[data-note-blocktype-menu]'))) as HTMLElement;
     expect([...menu.querySelectorAll('[data-note-blocktype-item]')].map((b) => b.getAttribute('data-note-blocktype-item'))).toEqual([
-      'p', 'h1', 'h2', 'h3', 'q', 'callout', 'toggle', 'code',
+      'p', 'h1', 'h2', 'h3', 'ul', 'ol', 'ck', 'q', 'callout', 'toggle', 'code',
     ]);
     // 단추는 **폭이 고정**이라 이름이 길어져도(`코드 블록`) 오른쪽 단추들이 밀리지 않는다.
     expect((container.querySelector('[data-note-blocktype]') as HTMLElement).style.width).toBe('118px');
@@ -4651,5 +4654,125 @@ describe('공책 43판 — 링크 · 체크리스트 · 문서 링크 팝업 · 
     const height = parseFloat(String(menu.style.maxHeight || '430'));
     expect(top).toBeGreaterThanOrEqual(8);
     expect(top + height).toBeLessThanOrEqual(window.innerHeight - 8);
+  });
+});
+
+describe('공책 44판 — 링크 클릭 · 블록 선택 · 종류 목록 · 캐럿 서식 · 되돌아온 드래그', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'lk', kind: 'p', runs: [{ t: '앞 ', b: false, c: null }, { t: '링크', b: false, c: null, href: 'https://example.com/go' }, { t: ' 뒤', b: false, c: null }] },
+          { id: 'bd', kind: 'p', runs: [{ t: '보통 ', b: false, c: null }, { t: '굵은글', b: true, c: null }] },
+          { id: 'A', kind: 'p', runs: [{ t: '에이', b: false, c: null }] },
+          { id: 'B', kind: 'p', runs: [{ t: '비이', b: false, c: null }] },
+          { id: 'C', kind: 'p', runs: [{ t: '씨이', b: false, c: null }] },
+          { id: 'ul', kind: 'ul', items: [{ id: 'u1', runs: [{ t: '하나', b: false, c: null }] }, { id: 'u2', runs: [{ t: '둘', b: false, c: null }] }] },
+        ],
+      },
+    ],
+  };
+
+  /** 그 줄의 **글자 자리**에 캐럿을 두고 툴바에 알린다(서식 스팬을 넘나든다). */
+  function caretIn(host: HTMLElement, at: number): void {
+    const walk = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    let seen = 0;
+    let node = walk.nextNode() as Text | null;
+    let spot: { node: Text; offset: number } | null = null;
+    while (node) {
+      const len = (node.nodeValue ?? '').length;
+      if (seen + len >= at) {
+        spot = { node, offset: at - seen };
+        break;
+      }
+      seen += len;
+      node = walk.nextNode() as Text | null;
+    }
+    if (!spot) return;
+    const range = document.createRange();
+    range.setStart(spot.node, spot.offset);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+  }
+
+  it('링크 글자를 **그냥 누르면** 열린다 — ⌥와 함께면 캐럿만(제보 6)', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    localStorage.setItem('mindflow_doc_m1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m1&title=x');
+    const link = (await waitFor(() => container.querySelector('[data-note-line="lk"] [data-href]'))) as HTMLElement;
+
+    fireEvent.click(link);
+    expect(open).toHaveBeenCalledWith('https://example.com/go', '_blank', 'noopener,noreferrer');
+
+    open.mockClear();
+    fireEvent.click(link, { altKey: true });
+    expect(open).not.toHaveBeenCalled();
+    open.mockRestore();
+  });
+
+  it('굵은 글 **안에 캐럿만** 두어도 단추가 켜진다(제보 9)', async () => {
+    localStorage.setItem('mindflow_doc_m2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m2&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="bd"]'))) as HTMLElement;
+
+    // `보통 굵은글` — 4번째 글자는 굵은 구간 안이다.
+    caretIn(line, 4);
+    await waitFor(() => expect(container.querySelector('[data-note-mark="b"]')?.getAttribute('aria-pressed')).toBe('true'));
+
+    // 보통 글로 옮기면 꺼진다 — "고른 글 전부가 그 서식일 때만"이라는 규칙 그대로.
+    caretIn(line, 1);
+    await waitFor(() => expect(container.querySelector('[data-note-mark="b"]')?.getAttribute('aria-pressed')).toBe('false'));
+  });
+
+  it('블록 종류 목록은 **줄의 종류 열하나** — 목록 셋이 빠져 있었다(질문 8)', async () => {
+    localStorage.setItem('mindflow_doc_m3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m3&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-blocktype]'))) as HTMLElement);
+
+    const items = [...container.querySelectorAll('[data-note-blocktype-item]')].map((e) => e.getAttribute('data-note-blocktype-item'));
+    expect(items).toEqual(['p', 'h1', 'h2', 'h3', 'ul', 'ol', 'ck', 'q', 'callout', 'toggle', 'code']);
+    // 넣기 넷(표·이미지·구분선·문서 링크)은 **줄의 종류가 아니다** — 툴바 아이콘과 `/`의 몫.
+    for (const kind of ['table', 'img', 'hr', 'link']) expect(container.querySelector(`[data-note-blocktype-item="${kind}"]`)).toBeNull();
+  });
+
+  it('Esc가 **그 블록을 통째로** 고른다 — 한 번 더 누르면 풀린다(요청 7)', async () => {
+    localStorage.setItem('mindflow_doc_m4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m4&title=x');
+    const first = (await waitFor(() => container.querySelector('[data-note-line="ul:u1"]'))) as HTMLElement;
+    first.focus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect([...container.querySelectorAll('[data-note-blockwrap][data-selected]')].map((e) => e.getAttribute('data-note-blockwrap'))).toEqual(['ul']));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0));
+  });
+
+  it('B→C로 끌었다가 **B로 돌아오면** 그 줄만 남는다(제보 10)', async () => {
+    localStorage.setItem('mindflow_doc_m5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m5&title=x');
+    const b = (await waitFor(() => container.querySelector('[data-note-line="B"]'))) as HTMLElement;
+    const c = container.querySelector('[data-note-line="C"]') as HTMLElement;
+
+    fireEvent.pointerDown(b, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(c, { clientX: 0, clientY: 0 });
+    await waitFor(() => expect([...container.querySelectorAll('[data-note-blockwrap][data-selected]')].map((e) => e.getAttribute('data-note-blockwrap'))).toEqual(['B', 'C']));
+
+    // 예전에는 여기서 그림이 얼어붙었다 — 브라우저의 선택은 비워 둔 뒤라 맡길 상대가 없었다.
+    fireEvent.pointerMove(b, { clientX: 0, clientY: 0 });
+    await waitFor(() => expect([...container.querySelectorAll('[data-note-blockwrap][data-selected]')].map((e) => e.getAttribute('data-note-blockwrap'))).toEqual(['B']));
   });
 });

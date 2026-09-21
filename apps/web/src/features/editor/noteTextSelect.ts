@@ -135,6 +135,60 @@ export function buildSelection(
   return out;
 }
 
+/**
+ * **한 줄 안**의 선택 — `buildSelection`이 만들지 않는 모양이다(그쪽은 두 줄 이상만).
+ *
+ * 왜 필요한가(제보 10): B줄에서 시작해 C줄까지 끌었다가 **다시 B줄로 돌아오면**
+ * 드래그가 얼어붙었다. 돌아온 순간 "같은 줄이면 브라우저에 맡긴다"로 빠져나갔는데,
+ * 그때는 이미 우리가 칠하는 중이라 브라우저의 선택을 비우고 박스의 초점까지 거둔
+ * 뒤였다 — 맡길 상대가 없었다. 한 번 칠하기 시작했으면 되돌아와도 우리가 그린다.
+ */
+export function buildLineSelection(el: HTMLElement, a: { node: Node; offset: number }, b: { node: Node; offset: number }): LineSel[] | null {
+  const key = el.getAttribute('data-note-line') ?? '';
+  const length = (el.textContent ?? '').length;
+  const p = charOffset(el, a.node, a.offset);
+  const q = charOffset(el, b.node, b.offset);
+  const from = Math.min(p, q);
+  const to = Math.max(p, q);
+  if (from === to) return null;
+  const range = document.createRange();
+  const s = pointAt(el, Math.min(from, length));
+  const e = pointAt(el, Math.min(to, length));
+  try {
+    range.setStart(s.node, s.offset);
+    range.setEnd(e.node, e.offset);
+  } catch {
+    range.selectNodeContents(el);
+  }
+  return [{ key, el, from, to, length, range }];
+}
+
+/**
+ * 줄 여럿을 **통째로** 고른 모양 — Esc로 여는 **블록 선택**(요청 7)이 쓴다.
+ *
+ * 블록 선택을 따로 만들지 않고 이 그림에 얹는 이유: 복사·잘라내기·지우기·Tab·
+ * 드래그로 넓히기가 전부 이 `LineSel[]` 위에 이미 서 있다. 새 상태를 하나 더 두면
+ * 두 선택이 동시에 살아 있는 경우를 매번 갈라야 한다.
+ */
+export function selectWholeLines(els: HTMLElement[]): LineSel[] | null {
+  const out: LineSel[] = [];
+  for (const el of els) {
+    const key = el.getAttribute('data-note-line') ?? '';
+    const length = (el.textContent ?? '').length;
+    const range = document.createRange();
+    try {
+      const s = pointAt(el, 0);
+      const e = pointAt(el, length);
+      range.setStart(s.node, s.offset);
+      range.setEnd(e.node, e.offset);
+    } catch {
+      range.selectNodeContents(el);
+    }
+    out.push({ key, el, from: 0, to: length, length, range });
+  }
+  return out.length ? out : null;
+}
+
 /** 고른 글자를 칠한다 — DOM은 건드리지 않는다(`::highlight(mf-note-sel)`). */
 export function paint(sel: LineSel[]): void {
   paintRanges(sel.map((s) => s.range));

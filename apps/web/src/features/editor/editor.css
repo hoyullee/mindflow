@@ -245,6 +245,12 @@
   color: var(--mf-link, #1a63d8);
 }
 
+/* 공책 본문의 링크는 **그냥 눌러 연다**(제보) — 커서가 그렇다고 먼저 말해 준다.
+   맵의 도형은 ⌘/Ctrl+클릭이라 글자 커서를 그대로 둔다(여는 규칙이 다르다). */
+.mf-note-line .mf-link {
+  cursor: pointer;
+}
+
 /* 댓글 입력창 — 작성 중 멘션 강조(백드롭 오버레이)를 위해 textarea 글자를
    투명하게 그리는데, 크롬은 placeholder 색을 글자색에서 계산해 placeholder까지
    투명해진다 → CSS 변수(인라인에서 테마 subtext를 내려 줌)로 되살린다.
