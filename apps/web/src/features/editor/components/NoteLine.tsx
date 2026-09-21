@@ -23,6 +23,7 @@ import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListT
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
 import { editCaretKeydown } from '../caretPolicy';
+import { openLink } from '../richSpans';
 
 interface Props {
   runs: RichRun[] | undefined;
@@ -423,6 +424,24 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         if (!el || !text) return;
         const span = selectedRange(el);
         if (onPasteText(text, span.from, span.to)) e.preventDefault();
+      }}
+      /**
+       * **링크 글자를 누르면 연다**(제보) — 편집 박스라 기본 동작은 캐럿 놓기뿐이라
+       * 아무 일도 일어나지 않았다. 맵의 도형은 ⌘/Ctrl+클릭으로만 여는데(한 번 누르는
+       * 것이 도형 **선택**이라 충돌한다) 공책의 줄은 늘 글을 고치는 자리라 그 충돌이
+       * 없다 — 문서 편집기의 관례대로 **그냥 누르면 열린다**.
+       *
+       * 글자를 고쳐야 할 때가 두 가지로 열려 있다: **⌥(Alt)와 함께 누르면** 캐럿만
+       * 놓이고, **끌어서 고르는 중**이면(선택이 접혀 있지 않다) 열지 않는다.
+       */
+      onClick={(e) => {
+        const href = (e.target as HTMLElement | null)?.closest?.('[data-href]')?.getAttribute('data-href');
+        if (!href || e.altKey) return;
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openLink(href);
       }}
       onFocus={() => {
         const el = ref.current;
