@@ -554,7 +554,9 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
     r.setEnd(b.node, b.offset);
     ws.removeAllRanges();
     ws.addRange(r);
-    el.focus();
+    // **스크롤은 옮기지 않는다** — 선택을 되돌리는 일이지 화면을 움직이는 일이 아니다.
+    // 긴 페이지에서 서식을 걸 때마다 본문이 튀던 자리다(제보 계열).
+    el.focus({ preventScroll: true });
   } catch {
     /* a stale/detached range (element unmounted mid-operation) — nothing to restore */
   }

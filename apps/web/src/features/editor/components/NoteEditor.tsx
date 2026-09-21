@@ -9,7 +9,7 @@
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from 'react';
-import type { Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, NotePage, RichRun, TableFillTarget } from '@mindflow/mindmap-core';
+import type { ClipLine, Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, NotePage, RichRun, TableFillTarget } from '@mindflow/mindmap-core';
 import {
   NOTE_HIGHLIGHTS,
   NOTE_TAG_COLORS,
@@ -36,15 +36,18 @@ import {
   fillAt,
 } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
+import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
-import { applyNoteFormat, applyNoteFormatRange, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, type NoteFormatKind } from '../noteRichDom';
-import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectWholeLines, selectionText, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { applyNoteFormat, applyNoteFormatRange, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
+import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectWholeLines, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
+import { linesClipboard, selectionClipboard, writeClipboard } from '../noteClipboard';
+import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
@@ -125,7 +128,7 @@ const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; c
  * 공책의 색 — **디자인 원본의 종이 팔레트를 값 그대로** 깐다.
  *
  * 공책은 캔버스가 아니라 **종이**다. 디자인 원본이 그 종이를 따뜻한 크림 한 벌로
- * 정해 두었고(바탕 `#FBF7F1` · 상단 `#F6F0E8` · 본문 `#FDFBF8` · 면 `#FFFDFB`),
+ * 정해 두었고(바탕 `#FBF7F1` · 상단 `#F6F0E8` · 본문 `#FDFBF8` → 제보로 `#FCFCFB` · 면 `#FFFDFB`),
  * 그 관계가 곧 이 화면의 인상이다. 그래서 여기서는 테마에서 **만들어 내지 않고**
  * 디자인 값을 그대로 쓴다(요청: "디자인 html과 완벽하게 동일하게").
  *
@@ -165,6 +168,11 @@ export function noteTokens(t: Theme): CSSProperties {
       '--mf-note-bar-dot': mix(t.border, 70, 'transparent'),
       '--mf-note-body': t.panel,
       '--mf-note-hover': t.panel2,
+      '--mf-note-field': t.panel2,
+      // 툴팁 — 밝은 테마에서는 **뒤집힌 상자**(어두운 면에 밝은 글자)가 관례지만,
+      // 어두운 테마에서 그러면 바탕과 붙어 사라진다. 그래서 다크는 한 톤 **올린다**.
+      '--mf-tip-bg': mix(t.text, 14, t.panel),
+      '--mf-tip-fg': t.text,
       '--mf-tag-on': mix(t.accent, 10, t.panel),
       // 표 — 손잡이 알약과 선택(면·링·글자). 값은 스펙의 밝은 테마 색과 같은 관계를
       // 테마에서 다시 만든다(색을 박으면 다크에서 종이 위에 베이지 띠가 뜬다).
@@ -201,8 +209,16 @@ export function noteTokens(t: Theme): CSSProperties {
     '--mf-accent-deep': mix(t.accent, 82, '#3a352f'),
     '--mf-note-bar': '#f6f0e8', // 상단 바 — 본문보다 한 톤 짙다
     '--mf-note-bar-dot': 'rgba(199,186,172,.28)', // 그 위의 도트 무늬(14px)
-    '--mf-note-body': '#fdfbf8', // 본문 바탕 — 면보다 아주 살짝 어둡다
+    // 본문 바탕 — 면보다 아주 살짝 어둡다. 디자인 원본의 `#FDFBF8`은 크림 계열이라
+    // 넓은 종이에서 주황으로 읽혔다(제보) → **거의 중립**으로 내린다. 위아래 관계는
+    // 그대로다: 상단 바(0.934) < 본문(0.973) < 면(0.985).
+    '--mf-note-body': '#fcfcfb',
     '--mf-note-hover': '#f7f0e8', // 메뉴·단추에 마우스를 얹었을 때(요청 값)
+    // 입력칸 바탕 — **가라앉은 면을 쓰지 않는다**. `--mf-panel2`는 세그먼트 트랙처럼
+    // "눌리지 않는 자리"의 색이라 입력칸에 쓰면 비활성으로 읽혔다(제보).
+    '--mf-note-field': '#ffffff',
+    '--mf-tip-bg': '#2f2a25', // 툴팁 — 뒤집힌 상자
+    '--mf-tip-fg': '#f7f2ea',
     '--mf-tag-on': '#fbf3ee', // 태그 메뉴에서 **고른** 태그의 면(요청 값)
     '--mf-th': '#eadfd3', // 표 손잡이 알약(스펙 값)
     '--mf-tsel-bg': '#fbede6', // 고른 칸의 면(스펙 값)
@@ -379,74 +395,112 @@ export function NoteEditor({ controller }: Props) {
     const el = pageRef.current;
     if (!el || !pageId) return;
     const key = scrollKeyOf(controller.docId, pageId);
-    const want = recallScroll(key);
-    if (want > 0) {
-      el.scrollTop = want;
-      /**
-       * 한 프레임 뒤에 **한 번 더** 맞춘다 — 이미지·표는 늦게 자리를 잡아, 처음
-       * 맞출 때는 판이 아직 그만큼 길지 않아 `scrollTop`이 잘려 들어간다.
-       */
-      requestAnimationFrame(() => {
-        if (pageRef.current && pageRef.current.scrollTop < want) pageRef.current.scrollTop = want;
-      });
-    }
-    const onScroll = (): void => rememberScroll(key, el.scrollTop);
-    el.addEventListener('scroll', onScroll, { passive: true });
     /**
-     * **앱으로 돌아온 직후의 튐을 붙든다**(제보 3).
+     * **앱으로 돌아온 직후의 튐을 붙든다**(제보 3 — 두 번째 수리).
      *
-     * 뒤에 둔 창을 휠로 굴려 캐럿이 살짝 화면 밖으로 나간 상태에서 창을 활성화하면
-     * 스크롤이 튄다 — 창이 초점을 되찾을 때 브라우저(설치형 앱에서는 셸)가 **아까
+     * 증상: 뒤에 둔 창을 굴려 캐럿이 화면 밖으로 나간 상태에서 창을 활성화하면
+     * 스크롤이 튄다. 창이 초점을 되찾을 때 브라우저(설치형 앱에서는 셸)가 **아까
      * 초점을 갖고 있던 편집 박스**를 다시 부르고, 그 `focus()`가 캐럿을 화면 안으로
-     * 끌어오기 때문이다. 우리가 부르는 `focus()`는 전부 `preventScroll`이지만 이건
-     * 우리 호출이 아니라 막을 손잡이가 없다.
+     * 끌어온다 — 우리가 부르는 `focus()`는 전부 `preventScroll`이지만 이건 우리
+     * 호출이 아니라 막을 손잡이가 없다. 그래서 **결과를 되돌린다**.
      *
-     * 그래서 **결과를 되돌린다**: 활성화된 순간의 자리를 적어 두고 다음 몇 프레임
-     * 동안 그 자리를 지킨다(약 200ms). 사용자가 스스로 굴리거나 글쇠를 누르면 그
-     * 즉시 손을 뗀다 — 지키는 것이 사용자의 조작을 이기면 그게 더 나쁜 버그다.
+     * 앞 판은 붙들었는데도 제보가 이어졌다. 코드를 다시 읽어 찾은 것 셋:
+     *
+     * ① **깨우는 신호가 둘 오면 방어가 1프레임 만에 죽었다.** `release`를 바깥
+     *    클로저 변수 **하나**로 공유해, 먼저 예약된 tick이 "자기 것"이 아니라 그때의
+     *    `release`(= 두 번째 붙들기의 것)를 불러 껐다. 브라우저·PWA에서 다른 앱에
+     *    갔다 오면 `visibilitychange(visible)`와 `focus`가 **둘 다** 뜬다(이 저장소가
+     *    이미 "계기가 겹쳐 온다"고 적어 둔 그 자리다).
+     * ② **다시 마운트되면 붙들기가 끊겼다.** 상태가 effect 안에 있어서다.
+     * ③ **튄 값이 기억에 박혔다.** 붙드는 동안에도 `scroll`이 `rememberScroll`을
+     *    불러, 다음 마운트가 오염된 자리를 복원했다.
+     *
+     * 그래서 붙들기 상태를 **모듈 스코프**(`noteHold`)로 올린다 — 셋이 한꺼번에 닫힌다.
+     * 기한은 프레임 수가 아니라 `Date.now()`로 잰다(rAF가 30fps면 12프레임은 400ms다).
      */
-    let release: (() => void) | null = null;
+    const pump = (): void => {
+      noteHoldRaf = 0;
+      const cur = pageRef.current;
+      const h = noteHold;
+      if (!cur || !h || h.key !== key || Date.now() > h.until) {
+        if (h && (!cur || h.key === key)) {
+          // 놓을 때 **마지막으로 한 번** 적는다(붙드는 동안 얼려 뒀다).
+          if (cur) rememberScroll(h.key, cur.scrollTop);
+          noteHold = null;
+        }
+        return;
+      }
+      if (Math.abs(cur.scrollTop - h.top) > 1) cur.scrollTop = h.top;
+      noteHoldRaf = requestAnimationFrame(pump);
+    };
+    const startPump = (): void => {
+      if (!noteHoldRaf) noteHoldRaf = requestAnimationFrame(pump);
+    };
     const hold = (): void => {
-      release?.();
       const box = pageRef.current;
       if (!box) return;
-      const want = box.scrollTop;
-      let frames = 0;
-      let stop = false;
-      const cancel = (): void => {
-        stop = true;
-      };
-      window.addEventListener('wheel', cancel, { passive: true });
-      window.addEventListener('keydown', cancel);
-      release = () => {
-        stop = true;
-        window.removeEventListener('wheel', cancel);
-        window.removeEventListener('keydown', cancel);
-        release = null;
-      };
-      const tick = (): void => {
-        const cur = pageRef.current;
-        if (stop || !cur) {
-          release?.();
-          return;
-        }
-        if (Math.abs(cur.scrollTop - want) > 1) cur.scrollTop = want;
-        frames += 1;
-        if (frames < 12) requestAnimationFrame(tick);
-        else release?.();
-      };
-      requestAnimationFrame(tick);
+      // 우리가 띄운 대화상자(이미지 고르기)에서 돌아온 초점은 붙들지 않는다 —
+      // 그 직후는 그림이 들어와 판 높이가 바뀌는 순간이라 붙들면 싸운다.
+      if (consumePickingFile()) return;
+      // 이미 붙들고 있으면 **자리는 처음 것을 지키고 기한만 늘린다**.
+      if (!noteHold || noteHold.key !== key) noteHold = { key, top: box.scrollTop, until: 0 };
+      noteHold.until = Date.now() + HOLD_MS;
+      // 에디터 루트는 `overflow: hidden`이라 정상 상태의 `window.scrollY`는 0이다 —
+      // 0이 아니면 사파리가 캐럿 때문에 민 것뿐이라 되돌려도 잃을 것이 없다.
+      if (typeof window !== 'undefined' && window.scrollY) window.scrollTo(0, 0);
+      startPump();
     };
+    const drop = (e: Event): void => {
+      if (!noteHold) return;
+      // 수식키만 눌린 것은 조작이 아니다 — ⌥Tab·⌘Tab으로 돌아오는 길에 들어온다.
+      if (e.type === 'keydown') {
+        const k = e as KeyboardEvent;
+        if (k.isComposing || MOD_KEYS.has(k.key)) return;
+      }
+      noteHold = null;
+    };
+
+    /**
+     * 복원 — 붙들고 있던 자리가 있으면 **그것이 먼저다**(기억은 튐에 오염됐을 수 있다).
+     * 이미지·표는 늦게 자리를 잡아 처음 맞출 때는 판이 아직 그만큼 길지 않으므로,
+     * 한 프레임 뒤 한 번이 아니라 **펌프로** 계속 맞춘다(모자랄 때도 넘칠 때도).
+     */
+    const live = noteHold && noteHold.key === key && Date.now() <= noteHold.until ? noteHold.top : null;
+    const want = live ?? recallScroll(key);
+    if (want > 0) {
+      el.scrollTop = want;
+      noteHold = { key, top: want, until: Date.now() + (live === null ? REFLOW_MS : HOLD_MS) };
+      startPump();
+    }
+
+    // 붙드는 동안에는 기억을 **얼린다** — 튄 값이 `sessionStorage`에 박히지 않게.
+    const onScroll = (): void => {
+      if (!noteHold || noteHold.key !== key) rememberScroll(key, el.scrollTop);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+
     const onVisible = (): void => {
       if (document.visibilityState === 'visible') hold();
     };
     window.addEventListener('focus', hold);
+    window.addEventListener('pageshow', hold);
     document.addEventListener('visibilitychange', onVisible);
+    // 모바일에는 `wheel`이 없다 — 손가락·포인터·글쇠를 모두 듣는다.
+    for (const t of HOLD_DROP_EVENTS) window.addEventListener(t, drop, { passive: true, capture: true });
     return () => {
       el.removeEventListener('scroll', onScroll);
       window.removeEventListener('focus', hold);
+      window.removeEventListener('pageshow', hold);
       document.removeEventListener('visibilitychange', onVisible);
-      release?.();
+      for (const t of HOLD_DROP_EVENTS) window.removeEventListener(t, drop, true);
+      /**
+       * **`noteHold`는 여기서 비우지 않는다** — 다시 마운트되는 그 순간이 바로
+       * 붙들기가 필요한 자리다(②). 기한이 지나면 펌프가 스스로 놓는다.
+       */
+      if (noteHoldRaf) {
+        cancelAnimationFrame(noteHoldRaf);
+        noteHoldRaf = 0;
+      }
     };
   }, [controller.docId, pageId]);
   /** 문서에 건 리스너가 **지금** 선택을 볼 수 있게(상태는 클로저에 갇힌다). */
@@ -1090,15 +1144,22 @@ export function NoteEditor({ controller }: Props) {
         selectAllBody();
         return;
       }
-      const text = () => selectionText(sel);
+      /**
+       * **두 벌을 싣는다**(제보 12) — 평문과 서식. 평문 규칙(마크다운 마커)은 그대로다.
+       *
+       * 여기서 `copy` 이벤트를 기다리지 않는 이유: 칠해 둔 선택은 브라우저 선택이
+       * 접혀 있거나 아예 비어 있어(`formatSelection`이 비운다) 크롬이 copy 커맨드
+       * 자체를 끈다 — 이벤트가 오지 않는다. 그리고 미루면 사파리가 "제스처 밖"이라며
+       * 거절하므로 **이 태스크 안에서** 동기로 쓴다.
+       */
+      const payload = () => selectionClipboard(sel);
       if (mod && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
-        // 클립보드가 없는 환경(안전하지 않은 출처·옛 브라우저·하네스)에서도 지우기는 듣는다.
-        void navigator.clipboard?.writeText(text()).catch(() => undefined);
+        writeClipboard(payload());
       } else if (mod && (e.key === 'x' || e.key === 'X')) {
         e.preventDefault();
-        // 클립보드가 없는 환경(안전하지 않은 출처·옛 브라우저·하네스)에서도 지우기는 듣는다.
-        void navigator.clipboard?.writeText(text()).catch(() => undefined);
+        // 지우기 **전에** 만든다. 클립보드가 없는 환경에서도 지우기는 듣는다.
+        writeClipboard(payload());
         if (!readOnly) remove();
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && !readOnly) {
         e.preventDefault();
@@ -1252,6 +1313,8 @@ export function NoteEditor({ controller }: Props) {
       data-note-hl={supportsHighlight() ? '1' : undefined}
       style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', background: 'var(--mf-note-body)', overflow: 'hidden' }}
     >
+      {/* 툴바 이름·링크 주소 툴팁 — 위임 리스너 하나가 이 안의 `[data-tip]`·`[data-href]`를 맡는다. */}
+      <NoteTips />
       <PageList controller={controller} collapsed={focus} />
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!readOnly && (
@@ -1263,6 +1326,7 @@ export function NoteEditor({ controller }: Props) {
             openSlash={(id, from) => openSlashAt(id, from)}
             pickLinkDoc={setLinkPick}
             formatSelection={formatSelection}
+            painted={textSel}
             focus={focus}
             setFocus={setFocus}
             wide={wide}
@@ -1281,6 +1345,29 @@ export function NoteEditor({ controller }: Props) {
            * 커서"로 읽히므로 색만 지운다(CSS `caret-color`).
            */
           data-note-painting={textSel ? '1' : undefined}
+          /**
+           * **한 줄 안의 복사에도 서식을 싣는다**(제보 12).
+           *
+           * 이 길은 브라우저 선택이 살아 있어 진짜 `copy` 이벤트가 온다(칠해 둔 여러
+           * 줄은 선택이 접혀 있어 오지 않는다 — 그쪽은 ⌘C 키 핸들러가 직접 쓴다).
+           * 기본 복사에 맡기면 잃는 것이 둘이다: **마커**(편집 박스 밖의 형제 span이라
+           * 선택에 들어오지 않는다)와 **링크·형광펜**(클래스로 칠해서 시트가 따라가지
+           * 않는다). 값에서 다시 지어 두 벌로 싣는다.
+           */
+          onCopy={(e) => {
+            const live = window.getSelection();
+            if (!live || live.isCollapsed || !live.rangeCount) return;
+            const r = live.getRangeAt(0);
+            const box = (r.startContainer.nodeType === 1 ? (r.startContainer as HTMLElement) : r.startContainer.parentElement)?.closest<HTMLElement>('[data-note-line]');
+            // 한 박스 안의 선택만 여기서 다룬다 — 박스를 넘어가면 우리 칠하기의 일이다.
+            if (!box || !box.contains(r.endContainer)) return;
+            const one = buildLineSelection(box, { node: r.startContainer, offset: r.startOffset }, { node: r.endContainer, offset: r.endOffset });
+            if (!one || !one.length) return;
+            const payload = selectionClipboard(one);
+            e.preventDefault();
+            e.clipboardData.setData('text/plain', payload.plain);
+            e.clipboardData.setData('text/html', payload.html);
+          }}
           /**
            * **본문 단 바깥을 눌러도 글을 고른다**(제보 1·2) — 예전에는 누름·끌기를
            * 단(`colRef`)에만 걸어 두어, 줄과 줄 사이나 좌·우 여백에서 시작한 드래그는
@@ -3196,6 +3283,7 @@ function FormatToolbar({
   openSlash,
   pickLinkDoc,
   formatSelection,
+  painted,
   focus,
   setFocus,
   wide,
@@ -3213,6 +3301,14 @@ function FormatToolbar({
    * 찾지 못했다 — 제보: "한 줄은 되는데 여러 줄은 굵게가 안 먹는다".
    */
   formatSelection: (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null) => boolean;
+  /**
+   * **칠해 둔 선택**(`CSS.highlights`가 그리는 우리 선택) — 단추 켜짐을 여기서도 읽는다.
+   *
+   * 서식을 걸고 나면 브라우저 선택을 비우므로(겹친 배경을 막기 위해) 선택에만 기대면
+   * 걸자마자 단추가 전부 꺼져 보인다 — 제보: "줄 전체 선택 후 서식을 걸어도 툴바에서
+   * 활성으로 보이지 않는다".
+   */
+  painted: LineSel[] | null;
   /** 새로 만든 블록·항목으로 캐럿을 보낸다(루트의 `freshId`). */
   onInserted: (id: string | null) => void;
   /** `/` 단추 — 지금 줄에서 블록 목록을 연다. `from`을 주면 그 요소를 기준으로 뜬다. */
@@ -3246,17 +3342,40 @@ function FormatToolbar({
    * 바뀌었다(블록 종류). 글머리·번호는 칸에서도 되므로 켜 둔다(`noteCellList`).
    */
   const [inCell, setInCell] = useState(false);
+  /** 칠해 둔 선택은 리스너 안에서 **지금 값**을 봐야 한다(리스너는 한 번만 붙는다). */
+  const paintedRef = useRef<LineSel[] | null>(null);
+  paintedRef.current = painted;
   useEffect(() => {
     const read = () => {
-      const el = noteEditBoxInSelection() ?? boxRef.current;
-      const next = el ? noteActiveMarks(el) : { b: false, i: false, s: false, u: false, k: false };
-      setMarks((cur) => (cur.b === next.b && cur.i === next.i && cur.s === next.s && cur.u === next.u && cur.k === next.k ? cur : next));
+      const liveBox = noteEditBoxInSelection();
+      const live = typeof window === 'undefined' ? null : window.getSelection();
+      const paint = paintedRef.current;
+      const el = liveBox ?? boxRef.current;
+      /**
+       * **살아 있는 선택이 먼저, 칠한 자리가 그 다음.** 순서는 `formatSelection`과 같다 —
+       * 끌고 있는 동안에는 브라우저 선택이 진짜이고, 걸고 난 뒤에는 칠한 자리만 남는다.
+       * 칠한 줄의 요소는 다시 그려졌을 수 있으므로 **키로 다시 찾는다**.
+       */
+      const usePaint = !!paint && paint.length > 0 && (!live || live.isCollapsed || !liveBox);
+      const next = usePaint
+        ? noteMarksAcross(
+            paint.map((ln) => ({
+              el: document.querySelector<HTMLElement>(`[data-note-line="${ln.key}"]`) ?? ln.el,
+              from: ln.from,
+              to: ln.to,
+            })),
+          )
+        : el
+          ? noteActiveMarks(el)
+          : { b: false, i: false, s: false, u: false, k: false };
+      setMarks((cur) => (sameMarks(cur, next) ? cur : next));
       const cell = isCellKey(el?.getAttribute('data-note-line') ?? '');
       setInCell((cur) => (cur === cell ? cur : cell));
     };
+    read();
     document.addEventListener('selectionchange', read);
     return () => document.removeEventListener('selectionchange', read);
-  }, [boxRef]);
+  }, [boxRef, painted]);
 
   /**
    * 지금 **다루는 블록** — 캐럿이 들어 있던 줄. 아직 아무 데도 두지 않았으면
@@ -3406,7 +3525,7 @@ function FormatToolbar({
           key={m.kind}
           type="button"
           data-note-mark={m.kind}
-          title={m.name}
+          data-tip={m.name}
           aria-label={m.name}
           className="btn mf-note-tb"
           aria-pressed={marks[m.kind]}
@@ -3430,9 +3549,10 @@ function FormatToolbar({
       <div style={{ position: 'relative' }}>
         <button
           type="button"
-          data-note-hl
+          data-note-hl-btn
           className="btn mf-note-tb"
-          title="형광펜"
+          data-tip="형광펜"
+          aria-label="형광펜"
           onMouseDown={stop}
           onClick={() => setOpen((v) => (v === 'hl' ? null : 'hl'))}
           style={{ ...TOOL_BTN, flexDirection: 'column', gap: 2, background: open === 'hl' ? 'var(--mf-accent-soft)' : 'transparent' }}
@@ -3447,9 +3567,9 @@ function FormatToolbar({
         {open === 'hl' && (
           <div style={SWATCH_POP}>
             {NOTE_HIGHLIGHTS.map(([key, name]) => (
-              <button key={key} type="button" title={name} aria-label={name} className="btn" onMouseDown={stop} onClick={() => apply('hl', key)} style={{ ...SWATCH, background: noteHighlightColor(key) ?? 'transparent' }} />
+              <button key={key} type="button" data-note-hl-swatch={key} data-tip={name} aria-label={name} className="btn" onMouseDown={stop} onClick={() => apply('hl', key)} style={{ ...SWATCH, background: noteHighlightColor(key) ?? 'transparent' }} />
             ))}
-            <button type="button" title="형광펜 지우기" aria-label="형광펜 지우기" className="btn" onMouseDown={stop} onClick={() => apply('hl', '')} style={{ ...SWATCH, background: 'transparent', fontSize: 11 }}>
+            <button type="button" data-tip="형광펜 지우기" aria-label="형광펜 지우기" className="btn" onMouseDown={stop} onClick={() => apply('hl', '')} style={{ ...SWATCH, background: 'transparent', fontSize: 11 }}>
               ✕
             </button>
           </div>
@@ -3461,7 +3581,8 @@ function FormatToolbar({
           type="button"
           data-note-ink
           className="btn mf-note-tb"
-          title="글자색"
+          data-tip="글자색"
+          aria-label="글자색"
           onMouseDown={stop}
           onClick={() => setOpen((v) => (v === 'ink' ? null : 'ink'))}
           style={{ ...TOOL_BTN, flexDirection: 'column', gap: 2, background: open === 'ink' ? 'var(--mf-accent-soft)' : 'transparent' }}
@@ -3475,7 +3596,7 @@ function FormatToolbar({
               <button
                 key={name}
                 type="button"
-                title={name}
+                data-tip={name}
                 aria-label={name}
                 className="btn"
                 onMouseDown={stop}
@@ -3494,7 +3615,7 @@ function FormatToolbar({
         ref={linkBtnRef as RefObject<HTMLButtonElement>}
         data-note-link-btn
         className="btn mf-note-tb"
-        title="링크"
+        data-tip="링크"
         aria-label="링크"
         onMouseDown={stop}
         onClick={openLink}
@@ -3514,6 +3635,7 @@ function FormatToolbar({
         >
           <span style={{ ...POP_HEAD, padding: '0 2px 2px' }}>링크</span>
           <input
+            className="mf-note-field"
             data-note-link-url
             autoFocus
             value={linkUrl}
@@ -3529,6 +3651,7 @@ function FormatToolbar({
           {/* 고른 글이 없으면 **무슨 글에 걸지**를 함께 받는다 — 비우면 주소가 그대로 글이 된다. */}
           {(!linkSpan || linkSpan.a === linkSpan.b) && (
             <input
+              className="mf-note-field"
               data-note-link-text
               value={linkText}
               onChange={(e) => setLinkText(e.target.value)}
@@ -3549,7 +3672,7 @@ function FormatToolbar({
           </div>
         </div>
       )}
-      <button type="button" data-note-clear className="btn mf-note-tb" title="서식 지우기" aria-label="서식 지우기" onMouseDown={stop} onClick={() => apply('clear')} style={TOOL_BTN}>
+      <button type="button" data-note-clear className="btn mf-note-tb" data-tip="서식 지우기" aria-label="서식 지우기" onMouseDown={stop} onClick={() => apply('clear')} style={TOOL_BTN}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M7 7h10M12 7v10M8 20h8" />
           <path d="m4 4 16 16" />
@@ -3567,7 +3690,7 @@ function FormatToolbar({
             type="button"
             data-note-insert={t.kind}
             disabled={off}
-            title={off ? `${t.name} — 표의 칸에는 넣을 수 없어요` : t.name}
+            data-tip={off ? `${t.name} — 표의 칸에는 넣을 수 없어요` : t.name}
             aria-label={t.name}
             className="btn mf-note-tb"
             onMouseDown={stop}
@@ -3591,7 +3714,7 @@ function FormatToolbar({
             type="button"
             data-note-align={t.align}
             aria-pressed={on}
-            title={t.name}
+            data-tip={t.name}
             aria-label={t.name}
             className="btn mf-note-tb"
             onMouseDown={stop}
@@ -3612,7 +3735,7 @@ function FormatToolbar({
           key={t.name}
           type="button"
           data-note-indent={t.delta > 0 ? 'in' : 'out'}
-          title={t.name}
+          data-tip={t.name}
           aria-label={t.name}
           className="btn mf-note-tb"
           onMouseDown={stop}
@@ -3635,7 +3758,7 @@ function FormatToolbar({
         type="button"
         data-note-slash-btn
         disabled={inCell}
-        title={inCell ? '블록 넣기 — 표의 칸에는 넣을 수 없어요' : '블록 넣기 (/)'}
+        data-tip={inCell ? '블록 넣기 — 표의 칸에는 넣을 수 없어요' : '블록 넣기 (/)'}
         aria-label="블록 넣기"
         className="btn mf-note-tb"
         onMouseDown={stop}
@@ -3661,7 +3784,7 @@ function FormatToolbar({
         type="button"
         data-note-width
         aria-pressed={wide}
-        title={wide ? '본문 폭 — 창 너비에 맞춤 (눌러서 가운데 정렬)' : '본문 폭 — 가운데 정렬 (눌러서 창 너비에 맞춤)'}
+        data-tip={wide ? '본문 폭 — 창 너비에 맞춤 (눌러서 가운데 정렬)' : '본문 폭 — 가운데 정렬 (눌러서 창 너비에 맞춤)'}
         aria-label={wide ? '본문 폭 가운데 정렬로' : '본문 폭 창 너비에 맞춤'}
         className="btn mf-note-tb"
         onMouseDown={stop}
@@ -3690,7 +3813,7 @@ function FormatToolbar({
         type="button"
         data-note-focus
         aria-pressed={focus}
-        title={focus ? '집중 모드 끄기' : '집중 모드'}
+        data-tip={focus ? '집중 모드 끄기' : '집중 모드'}
         aria-label={focus ? '집중 모드 끄기' : '집중 모드'}
         className="btn mf-note-tb"
         onMouseDown={stop}
@@ -3705,7 +3828,7 @@ function FormatToolbar({
       <button
         type="button"
         data-note-keys
-        title="단축키"
+        data-tip="단축키"
         aria-label="단축키"
         className="btn mf-note-tb"
         onMouseDown={stop}
@@ -3736,7 +3859,7 @@ function BlockTypeMenu({ controller, rememberBox, boxRef, disabled }: { controll
         data-note-blocktype
         className="btn"
         disabled={disabled}
-        title={disabled ? '블록 종류 — 표의 칸은 줄이 아니라 값이에요' : '블록 종류'}
+        data-tip={disabled ? '블록 종류 — 표의 칸은 줄이 아니라 값이에요' : '블록 종류'}
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => {
           rememberBox();
@@ -4345,7 +4468,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 )}
               </button>
             ) : (
-              <span aria-hidden="true" data-note-bullet={marks[j] ?? ''} style={{ flex: '0 0 auto', width: 18, marginTop: 4, textAlign: 'right', fontSize: 13, color: 'var(--mf-faint)', fontFamily: block.kind === 'ol' ? 'ui-monospace, monospace' : undefined }}>
+              <span aria-hidden="true" data-note-bullet={marks[j] ?? ''} style={{ flex: '0 0 auto', width: 18, marginTop: 4, textAlign: 'right', userSelect: 'none', WebkitUserSelect: 'none', fontSize: 13, color: 'var(--mf-faint)', fontFamily: block.kind === 'ol' ? 'ui-monospace, monospace' : undefined }}>
                 {marks[j] ?? '•'}
               </span>
             )}
@@ -4575,9 +4698,39 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
 type TableSel =
   | { mode: 'cell'; r: number; c: number }
   | { mode: 'range'; r0: number; c0: number; r1: number; c1: number; r: number; c: number }
-  | { mode: 'row'; r: number }
-  | { mode: 'col'; c: number }
+  /**
+   * 행·열은 **끝 번호를 선택적으로** 든다(요청 10: 레일을 끌어 여러 줄 고르기).
+   * `r`/`c`는 누른 줄(기준), `r1`/`c1`은 끌어간 끝 — 없으면 예전과 똑같은 한 줄이다.
+   * 거꾸로(오른쪽→왼쪽) 끌 수 있으므로 끝이 더 작을 수 있다 — 읽는 쪽이 `axisSpan`으로 편다.
+   */
+  | { mode: 'row'; r: number; r1?: number }
+  | { mode: 'col'; c: number; c1?: number }
   | { mode: 'all' };
+
+/** 기준과 끝을 **오름차순 한 쌍**으로 — 끝이 없으면 한 줄이다. */
+function axisSpan(a: number, b?: number): [number, number] {
+  return [Math.min(a, b ?? a), Math.max(a, b ?? a)];
+}
+
+/** 그 축의 `i`번째 줄이 고른 것에 드는가(손잡이 강조·칸 배경이 함께 본다). */
+function axisHit(sel: TableSel | null, axis: 'row' | 'col', i: number): boolean {
+  if (!sel) return false;
+  if (sel.mode === 'all') return true;
+  if (axis === 'col' && sel.mode === 'col') {
+    const [a, b] = axisSpan(sel.c, sel.c1);
+    return i >= a && i <= b;
+  }
+  if (axis === 'row' && sel.mode === 'row') {
+    const [a, b] = axisSpan(sel.r, sel.r1);
+    return i >= a && i <= b;
+  }
+  return false;
+}
+
+/** `a`부터 `b`까지의 번호들(둘 다 포함). */
+function upto(a: number, b: number): number[] {
+  return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+}
 
 /** 채울 수 있는 색 — 표를 읽기 쉽게 하는 **옅은 면**들이다(글자가 그대로 읽혀야 한다). */
 const CELL_FILLS: readonly (readonly [string, string])[] = [
@@ -4594,21 +4747,26 @@ function showIf(on: boolean | undefined): CSSProperties {
   return on ? { opacity: 1, pointerEvents: 'auto' } : { opacity: 0, pointerEvents: 'none' };
 }
 
-/** 고른 자리를 **채울 자리**로 — 칩과 메뉴가 같은 값을 쓴다(스냅샷으로 넘긴다). */
-function fillTargetOf(sel: TableSel): TableFillTarget {
-  if (sel.mode === 'cell') return { kind: 'cell', r: sel.r, c: sel.c };
-  if (sel.mode === 'range') return { kind: 'range', r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 };
-  if (sel.mode === 'row') return { kind: 'row', r: sel.r };
-  if (sel.mode === 'col') return { kind: 'col', c: sel.c };
-  return { kind: 'all' };
+/**
+ * 고른 자리를 **채울 자리들**로 — 칩과 메뉴가 같은 값을 쓴다(스냅샷으로 넘긴다).
+ *
+ * 여럿인 경우는 하나뿐이다: 레일을 끌어 여러 행·열을 골랐을 때. 그때도 **행·열 키**로
+ * 적는다(칸 키로 펴면 나중에 행을 끼워 넣을 때 색이 따라오지 않는다).
+ */
+function fillTargetsOf(sel: TableSel): TableFillTarget[] {
+  if (sel.mode === 'cell') return [{ kind: 'cell', r: sel.r, c: sel.c }];
+  if (sel.mode === 'range') return [{ kind: 'range', r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }];
+  if (sel.mode === 'row') return upto(...axisSpan(sel.r, sel.r1)).map((r) => ({ kind: 'row', r }) as TableFillTarget);
+  if (sel.mode === 'col') return upto(...axisSpan(sel.c, sel.c1)).map((c) => ({ kind: 'col', c }) as TableFillTarget);
+  return [{ kind: 'all' }];
 }
 
 /** 이 칸이 고른 것에 드는가. */
 function selHas(sel: TableSel | null, r: number, c: number): boolean {
   if (!sel) return false;
   if (sel.mode === 'all') return true;
-  if (sel.mode === 'row') return sel.r === r;
-  if (sel.mode === 'col') return sel.c === c;
+  if (sel.mode === 'row') return axisHit(sel, 'row', r);
+  if (sel.mode === 'col') return axisHit(sel, 'col', c);
   if (sel.mode === 'cell') return sel.r === r && sel.c === c;
   return r >= Math.min(sel.r0, sel.r1) && r <= Math.max(sel.r0, sel.r1) && c >= Math.min(sel.c0, sel.c1) && c <= Math.max(sel.c0, sel.c1);
 }
@@ -4629,8 +4787,14 @@ function selLabel(sel: TableSel, rows: number, cols: number): { name: string; co
     const w = Math.abs(sel.c1 - sel.c0) + 1;
     return { name: '범위 선택', count: `${h}×${w}` };
   }
-  if (sel.mode === 'row') return { name: '행 선택', count: `${cols}칸` };
-  if (sel.mode === 'col') return { name: '열 선택', count: `${rows}칸` };
+  if (sel.mode === 'row') {
+    const [a, b] = axisSpan(sel.r, sel.r1);
+    return { name: '행 선택', count: b > a ? `${b - a + 1}행` : `${cols}칸` };
+  }
+  if (sel.mode === 'col') {
+    const [a, b] = axisSpan(sel.c, sel.c1);
+    return { name: '열 선택', count: b > a ? `${b - a + 1}열` : `${rows}칸` };
+  }
   return { name: '표 전체', count: `${rows}×${cols}` };
 }
 
@@ -4764,6 +4928,16 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   );
   /** 끌어서 고르는 중 — 누른 칸이 기준이고, 다른 칸에 닿으면 구간이 된다. */
   const drag = useRef<{ r: number; c: number } | null>(null);
+  /**
+   * **레일을 끄는 중**(요청 10) — 누른 손잡이가 기준이고, 다른 손잡이에 닿으면 여러 줄이 된다.
+   *
+   * `moved`를 같은 덩이에 두는 이유: 끌고 제자리로 돌아와 떼면 뒤따르는 `click`이
+   * 선택을 한 줄로 되돌린다. 그 click을 건너뛰어야 하는데, 표식을 따로 두면 수명이
+   * 어긋난다(손잡이 click은 mousedown 없이도 온다 — 테스트가 그렇게 쏜다).
+   */
+  const railDown = useRef<{ axis: 'row' | 'col'; i: number; moved: boolean } | null>(null);
+  /** 같은 일을 **그림에도** 알린다 — 끄는 동안 ＋를 감추려면 렌더가 다시 돌아야 한다. */
+  const [railing, setRailing] = useState(false);
   /**
    * **크기를 끄는 중**(요청) — 경계선을 잡고 끌면 그 열·행만 커지고 줄어든다.
    *
@@ -4916,9 +5090,27 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       return Math.max(0, spans.length - 1);
     };
     const move = (e: MouseEvent) => {
-      const from = drag.current;
       const t = tableRef.current;
       const g = geomRef.current;
+      /**
+       * **레일 끌기가 먼저다** — 포인터가 레일을 벗어나도(본문 위로 내려가도) 범위가
+       * 이어져야 한다. 슬롯의 `mouseenter`만으로는 레일 안에서만 이어진다.
+       */
+      const rail = railDown.current;
+      if (rail) {
+        if (!t || !g || !g.rows.length || !g.cols.length) return;
+        const rb = t.getBoundingClientRect();
+        const i =
+          rail.axis === 'col'
+            ? near(g.cols.map((x) => ({ a: x.l, b: x.l + x.w })), e.clientX - rb.left)
+            : near(g.rows.map((x) => ({ a: x.t, b: x.t + x.h })), e.clientY - rb.top);
+        if (i === rail.i && !rail.moved) return;
+        rail.moved = true;
+        window.getSelection()?.removeAllRanges();
+        pick(rail.axis === 'col' ? { mode: 'col', c: rail.i, c1: i } : { mode: 'row', r: rail.i, r1: i });
+        return;
+      }
+      const from = drag.current;
       if (!from || !t || !g || !g.rows.length || !g.cols.length) return;
       const base = t.getBoundingClientRect();
       const r = near(g.rows.map((x) => ({ a: x.t, b: x.t + x.h })), e.clientY - base.top);
@@ -4930,6 +5122,12 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     };
     const up = () => {
       drag.current = null;
+      /**
+       * `railDown`은 **여기서 비우지 않는다** — `mouseup`이 `click`보다 먼저라, 비우면
+       * "끌었다"는 표식이 사라져 뒤따르는 click이 선택을 한 줄로 되돌린다. 다음
+       * mousedown이 새 덩이를 만들어 갈아 끼운다.
+       */
+      setRailing(false);
     };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
@@ -4981,6 +5179,12 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    * `@media (hover: none)`에서 일부러 상시 노출되는 조작 수단이다.
    */
   const handleClick = (e: ReactMouseEvent, next: TableSel, same: boolean) => {
+    // 끌고 나서 온 click은 **무시한다** — 제자리로 돌아와 뗀 경우 그 click이 범위를
+    // 한 줄로 되돌린다(다음 끌기의 mousedown이 이 덩이를 새로 만든다).
+    if (railDown.current?.moved) {
+      railDown.current = null;
+      return;
+    }
     if (same && touch) {
       openMenu(e, next);
       return;
@@ -4996,7 +5200,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     openMenu(e, next);
   };
 
-  const fill = (target: TableFillTarget, color: string | null) => {
+  const fill = (target: TableFillTarget | TableFillTarget[], color: string | null) => {
     controller.setNoteTableFill(block.id, target, color);
     // 칠하고 나면 선택을 놓는다(스펙 3-2) — 색을 보려면 면이 가리지 않아야 한다.
     setSel(null);
@@ -5080,10 +5284,10 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       // 막지 않으면 고르기만 해 둔 칸에서 글자가 하나 지워진다.
       e.preventDefault();
       if (sel.mode === 'row' && rows.length > 1) {
-        controller.removeNoteTableRow(block.id, sel.r);
+        controller.removeNoteTableRow(block.id, ...axisSpan(sel.r, sel.r1));
         setSel(null);
       } else if (sel.mode === 'col' && width > 1) {
-        controller.removeNoteTableCol(block.id, sel.c);
+        controller.removeNoteTableCol(block.id, ...axisSpan(sel.c, sel.c1));
         setSel(null);
       }
       return;
@@ -5133,11 +5337,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     if (railZone === axis) return true;
     if (hot?.axis === axis && hot.i === i) return true;
     if (hoverAt && (axis === 'col' ? hoverAt.c : hoverAt.r) === i) return true;
-    const live = menu?.sel ?? sel;
-    if (live?.mode === 'all') return true;
-    if (axis === 'col' && live?.mode === 'col') return live.c === i;
-    if (axis === 'row' && live?.mode === 'row') return live.r === i;
-    return false;
+    return axisHit(menu?.sel ?? sel, axis, i);
   };
 
   const colRail = !readOnly && width > 0 && (
@@ -5159,7 +5359,8 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
        * 좌표가 밀리지 않는다 — 그 둘을 가른 것이 스크롤 추종(#669)의 처방이었다.
        */
       onMouseEnter={() => setRailZone('col')}
-      onMouseLeave={() => setRailZone(null)}
+      // 끄는 동안에는 숨지 않는다 — 숨으면 `pointer-events: none`이 되어 길이 끊긴다.
+      onMouseLeave={() => { if (!railDown.current) setRailZone(null); }}
       style={{ position: 'absolute', left: 0, right: 0, bottom: '100%', height: 14, overflow: 'hidden', padding: '8px 12px', margin: '-8px -12px -4px', boxSizing: 'content-box' }}
     >
       {/* 안쪽 트랙 — 손잡이의 절대 배치 원점이자 **스크롤을 따라가는 판**이다.
@@ -5168,7 +5369,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       <div style={{ position: 'relative', height: 14, width: '100%', display: geom ? 'block' : 'flex', alignItems: 'center', gap: 4, transform: scrollX ? `translateX(${-scrollX}px)` : undefined }}>
       {Array.from({ length: width }, (_, ci) => {
         const box = geom?.cols[ci];
-        const on = sel?.mode === 'col' ? sel.c === ci : sel?.mode === 'all';
+        const on = axisHit(sel, 'col', ci);
         // 칸 사이를 2px씩 비운다 — 붙여 두면 손잡이 셋이 띠 하나로 읽혀 "열마다
         // 하나"라는 것이 보이지 않는다(스펙의 레일 `column-gap: 4px`와 같은 자리).
         const place: CSSProperties = box ? { position: 'absolute', left: box.l + 2, width: Math.max(6, box.w - 4), top: 0, height: 14 } : { position: 'relative', flex: 1, minWidth: 0, height: 14 };
@@ -5179,20 +5380,39 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             style={{ ...place, ...showIf(railOn('col', ci)) }}
             // hover는 **감싸는 칸**이 잡는다 — 손잡이 단추에만 걸면 ＋로 마우스를
             // 옮기는 순간 `hot`이 풀려 ＋가 사라진다(＋는 단추 바깥에 그려진다).
-            onMouseEnter={() => setHot({ axis: 'col', i: ci })}
+            onMouseEnter={() => {
+              setHot({ axis: 'col', i: ci });
+              // 끄는 중이면 **여기까지** 넓힌다(요청 10). 레일 밖으로 나간 경우는 문서 `move`가 잇는다.
+              const d = railDown.current;
+              if (!d || d.axis !== 'col') return;
+              d.moved = true;
+              window.getSelection()?.removeAllRanges();
+              pick({ mode: 'col', c: d.i, c1: ci });
+            }}
             onMouseLeave={() => setHot(null)}
           >
-            {/* ＋는 **얹은 손잡이의 왼쪽**에만 — 그 자리에 열을 끼워 넣는다(요청). */}
-            {plus(ci === 0 ? '맨 앞에 열 넣기' : `${ci + 1}번째 열 왼쪽에 열 넣기`, () => controller.addNoteTableCol(block.id, ci), { left: -10, top: -3, ...showIf(hot?.axis === 'col' && hot.i === ci) })}
+            {/* ＋는 **얹은 손잡이의 왼쪽**에만 — 그 자리에 열을 끼워 넣는다(요청).
+                끄는 동안에는 감춘다: 이웃 슬롯 위로 10px 튀어나와 있어 그 위를 지나면
+                앞 슬롯의 `mouseenter`가 뜨지 않는 사각지대가 생긴다. */}
+            {plus(ci === 0 ? '맨 앞에 열 넣기' : `${ci + 1}번째 열 왼쪽에 열 넣기`, () => controller.addNoteTableCol(block.id, ci), { left: -10, top: -3, ...showIf(!railing && hot?.axis === 'col' && hot.i === ci) })}
             <button
               type="button"
               className="mf-note-thandle"
               data-note-table-colhandle={ci}
               aria-label={`${ci + 1}번째 열 선택`}
-              title="열 선택 · 우클릭하면 메뉴"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => handleClick(e, { mode: 'col', c: ci }, sel?.mode === 'col' && sel.c === ci)}
-              onContextMenu={(e) => handleContext(e, { mode: 'col', c: ci })}
+              title="열 선택 · 끌면 여러 열 · 우클릭하면 메뉴"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                // 터치에는 끌기가 없다 — 여기서 고르면 "첫 탭=고르기 · 둘째 탭=메뉴"가 깨진다.
+                if (readOnly || touch || e.button !== 0) return;
+                e.preventDefault(); // 끄는 동안 본문 글자가 함께 칠해지지 않게
+                railDown.current = { axis: 'col', i: ci, moved: false };
+                setRailing(true);
+                pick({ mode: 'col', c: ci });
+                focusKeys();
+              }}
+              onClick={(e) => handleClick(e, { mode: 'col', c: ci }, sel?.mode === 'col' && sel.c === ci && sel.c1 === undefined)}
+              onContextMenu={(e) => handleContext(e, axisHit(sel, 'col', ci) && sel ? sel : { mode: 'col', c: ci })}
               style={{ width: '100%', height: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
             >
               <span aria-hidden="true" style={{ display: 'block', width: '100%', height: 5, borderRadius: 999, background: handleTone(!!on, hot?.axis === 'col' && hot.i === ci) }} />
@@ -5209,7 +5429,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       className="mf-note-trail"
       data-note-table-rowrail
       onMouseEnter={() => setRailZone('row')}
-      onMouseLeave={() => setRailZone(null)}
+      onMouseLeave={() => { if (!railDown.current) setRailZone(null); }}
       /**
        * 상자 **왼쪽 바깥**에 뜬다(흐름 밖).
        *
@@ -5223,20 +5443,41 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     >
       {rows.map((_, ri) => {
         const box = geom?.rows[ri];
-        const on = sel?.mode === 'row' ? sel.r === ri : sel?.mode === 'all';
+        const on = axisHit(sel, 'row', ri);
         const place: CSSProperties = box ? { position: 'absolute', top: box.t + 2, height: Math.max(6, box.h - 4), left: 0, width: 14 } : { position: 'relative', flex: 1, minHeight: 24, width: 14 };
         return (
-          <div key={ri} data-note-table-rowslot={ri} style={{ ...place, ...showIf(railOn('row', ri)) }} onMouseEnter={() => setHot({ axis: 'row', i: ri })} onMouseLeave={() => setHot(null)}>
-            {plus(ri === 0 ? '맨 위에 행 넣기' : `${ri + 1}번째 행 위에 행 넣기`, () => controller.addNoteTableRow(block.id, ri), { top: -10, left: -3, ...showIf(hot?.axis === 'row' && hot.i === ri) })}
+          <div
+            key={ri}
+            data-note-table-rowslot={ri}
+            style={{ ...place, ...showIf(railOn('row', ri)) }}
+            onMouseEnter={() => {
+              setHot({ axis: 'row', i: ri });
+              const d = railDown.current;
+              if (!d || d.axis !== 'row') return;
+              d.moved = true;
+              window.getSelection()?.removeAllRanges();
+              pick({ mode: 'row', r: d.i, r1: ri });
+            }}
+            onMouseLeave={() => setHot(null)}
+          >
+            {plus(ri === 0 ? '맨 위에 행 넣기' : `${ri + 1}번째 행 위에 행 넣기`, () => controller.addNoteTableRow(block.id, ri), { top: -10, left: -3, ...showIf(!railing && hot?.axis === 'row' && hot.i === ri) })}
             <button
               type="button"
               className="mf-note-thandle"
               data-note-table-rowhandle={ri}
               aria-label={`${ri + 1}번째 행 선택`}
-              title="행 선택 · 우클릭하면 메뉴"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => handleClick(e, { mode: 'row', r: ri }, sel?.mode === 'row' && sel.r === ri)}
-              onContextMenu={(e) => handleContext(e, { mode: 'row', r: ri })}
+              title="행 선택 · 끌면 여러 행 · 우클릭하면 메뉴"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                if (readOnly || touch || e.button !== 0) return;
+                e.preventDefault();
+                railDown.current = { axis: 'row', i: ri, moved: false };
+                setRailing(true);
+                pick({ mode: 'row', r: ri });
+                focusKeys();
+              }}
+              onClick={(e) => handleClick(e, { mode: 'row', r: ri }, sel?.mode === 'row' && sel.r === ri && sel.r1 === undefined)}
+              onContextMenu={(e) => handleContext(e, axisHit(sel, 'row', ri) && sel ? sel : { mode: 'row', r: ri })}
               style={{ width: '100%', height: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
             >
               <span aria-hidden="true" style={{ display: 'block', width: 5, height: '100%', borderRadius: 999, background: handleTone(!!on, hot?.axis === 'row' && hot.i === ri) }} />
@@ -5682,7 +5923,38 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           // 글을 고치는 중인 칸 안의 끌기는 **글자 선택**이다 — 문서에
                           // 걸린 끌기 감시가 그것을 칸 선택으로 바꾸지 않게 비워 둔다.
                           if (readOnly || e.button !== 0 || editing) return;
+                          /**
+                           * **두 번째 누름은 그 자리에서 편집을 연다** — `dblclick`을 기다리면
+                           * 한 박자 늦다. 다만 **이미 고른 바로 그 칸**일 때만이다: `e.detail`은
+                           * 좌표 임계 안이면 대상이 달라져도 2가 되어(행이 얇은 표에서 몇 px
+                           * 옮겨 누른 경우) 엉뚱한 칸이 열린다.
+                           */
+                          if (e.detail >= 2 && sel?.mode === 'cell' && sel.r === ri && sel.c === ci) {
+                            openEdit(ri, ci, { x: e.clientX, y: e.clientY });
+                            return;
+                          }
                           drag.current = { r: ri, c: ci };
+                          /**
+                           * **누르는 순간 이미 골라져 있다**(제보 11) — 예전에는 `onMouseUp`에서
+                           * 골랐다. 누른 채 멈춰 있으면 아무 표시도 없어 "선택이 느리다"였다.
+                           *
+                           * 기본 동작을 막는 이유는 하나다: 고른 칸은 곧 `armed`가 되며
+                           * `user-select`가 `text`로 바뀌는데, 리액트가 이 이벤트의 상태를
+                           * **기본 동작 직전에 동기로 흘려** 브라우저가 그 바뀐 상자에서 글자
+                           * 드래그를 시작한다 — 끄는 동안 칸 선택 위에 브라우저 선택이 겹쳐
+                           * 그려진다. 터치에서는 막지 않는다(합성 mousedown을 막으면 포커스
+                           * 흐름이 달라진다 — 고른 칸에 포커스를 주는 길도 터치에선 다르다).
+                           */
+                          if (!touch) e.preventDefault();
+                          /**
+                           * 자연 blur가 막혔으므로 **떠나는 쪽을 직접 커밋시킨다**. 표 안의 다른
+                           * 칸뿐 아니라 본문 줄·제목에서 넘어오는 경우도 같다 — `NoteLine`의
+                           * `onBlur`는 고친 것이 있을 때만 커밋하므로 헛호출 비용이 없다.
+                           */
+                          const leaving = document.activeElement as HTMLElement | null;
+                          if (leaving && leaving !== e.currentTarget && !e.currentTarget.contains(leaving)) leaving.blur();
+                          setEdit(null);
+                          pick({ mode: 'cell', r: ri, c: ci });
                         }}
                         onMouseEnter={() => {
                           setHoverAt({ r: ri, c: ci });
@@ -5704,11 +5976,20 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                             focusKeys();
                             return;
                           }
+                          // 누를 때 이미 고른 그 칸이면 되접을 것이 없다(헛 렌더·글자 재선택).
+                          if (sel?.mode === 'cell' && sel.r === ri && sel.c === ci) return;
                           setEdit(null);
                           pick({ mode: 'cell', r: ri, c: ci });
                         }}
-                        // 두 번 누르면 그 자리에 캐럿이 들어간다(제보).
-                        onDoubleClick={(e) => openEdit(ri, ci, { x: e.clientX, y: e.clientY })}
+                        /**
+                         * 두 번 누르면 그 자리에 캐럿이 들어간다(제보). mousedown의
+                         * `e.detail >= 2` 가지가 이미 열었으면 건너뛴다 — `setEdit`이 새
+                         * 객체를 만들어 캐럿 놓는 효과가 한 번 더 돈다.
+                         */
+                        onDoubleClick={(e) => {
+                          if (edit?.r === ri && edit.c === ci) return;
+                          openEdit(ri, ci, { x: e.clientX, y: e.clientY });
+                        }}
                         onContextMenu={(e) => {
                           if (readOnly) return;
                           e.preventDefault();
@@ -5826,7 +6107,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             focusFor(next);
           }}
           onFill={(color) => {
-            fill(fillTargetOf(menu.sel), color);
+            fill(fillTargetsOf(menu.sel), color);
             setMenu(null);
           }}
           onDone={() => {
@@ -5894,6 +6175,9 @@ function TableMenu({
 }) {
   const [wing, setWing] = useState<'pick' | 'row' | 'col' | 'align' | 'fill' | null>(null);
   const spot = selAnchor(sel);
+  /** 고른 행·열의 범위 — 레일을 끌어 여럿을 골랐으면 그 전부가 삭제 대상이다. */
+  const rowSpan = sel.mode === 'row' ? axisSpan(sel.r, sel.r1) : ([spot.r, spot.r] as [number, number]);
+  const colSpan = sel.mode === 'col' ? axisSpan(sel.c, sel.c1) : ([spot.c, spot.c] as [number, number]);
   /**
    * **고른 것에 뜻이 있는 항목만 그린다**(제보).
    *
@@ -5996,7 +6280,16 @@ function TableMenu({
           <CtxItem mark="row-dup" name="행 복제" onClick={run(() => controller.duplicateNoteTableRow(block.id, spot.r))} />
           <CtxItem mark="row-up" name="행 위로 이동" disabled={spot.r === 0} onClick={run(() => controller.moveNoteTableRow(block.id, spot.r, -1))} />
           <CtxItem mark="row-down" name="행 아래로 이동" disabled={spot.r >= rows - 1} onClick={run(() => controller.moveNoteTableRow(block.id, spot.r, 1))} />
-          <CtxItem mark="row-del" name="행 삭제" hint="⌫" danger disabled={rows <= 1} onClick={run(() => controller.removeNoteTableRow(block.id, spot.r))} />
+          {/* 여러 행을 골라 두었으면 **그 전부**를 지운다(요청 10) — 메뉴로 가는 순간
+              한 행으로 좁아지면 "골라 놓고 지웠는데 하나만 사라진다"가 된다. */}
+          <CtxItem
+            mark="row-del"
+            name={rowSpan[1] > rowSpan[0] ? `행 ${rowSpan[1] - rowSpan[0] + 1}개 삭제` : '행 삭제'}
+            hint="⌫"
+            danger
+            disabled={rows <= 1}
+            onClick={run(() => controller.removeNoteTableRow(block.id, rowSpan[0], rowSpan[1]))}
+          />
         </CtxWing>
       )}
       {wing === 'col' && (
@@ -6005,7 +6298,14 @@ function TableMenu({
           <CtxItem mark="col-right" name="오른쪽에 열 추가" hint="⌥→" onClick={run(() => controller.addNoteTableCol(block.id, spot.c + 1))} />
           <CtxItem mark="col-left-move" name="열 왼쪽으로 이동" disabled={spot.c === 0} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, -1))} />
           <CtxItem mark="col-right-move" name="열 오른쪽으로 이동" disabled={spot.c >= cols - 1} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, 1))} />
-          <CtxItem mark="col-del" name="열 삭제" hint="⌫" danger disabled={cols <= 1} onClick={run(() => controller.removeNoteTableCol(block.id, spot.c))} />
+          <CtxItem
+            mark="col-del"
+            name={colSpan[1] > colSpan[0] ? `열 ${colSpan[1] - colSpan[0] + 1}개 삭제` : '열 삭제'}
+            hint="⌫"
+            danger
+            disabled={cols <= 1}
+            onClick={run(() => controller.removeNoteTableCol(block.id, colSpan[0], colSpan[1]))}
+          />
         </CtxWing>
       )}
       {wing === 'align' && (
@@ -6109,13 +6409,12 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
    * 아래에 문단으로 넣는다. 클립보드 접근은 브라우저가 막을 수 있어(권한·보안
    * 맥락) 실패하면 조용히 넘어간다 — 그때는 ⌘V가 그대로 동작한다.
    */
-  const copy = async (): Promise<boolean> => {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return false;
-    }
+  const copy = (): boolean => {
+    // ⌘C와 **같은 두 벌**을 싣는다(제보 12) — 여기만 평문이면 "키보드는 서식이 오는데
+    // 메뉴는 안 온다"가 된다. 클립보드를 막아 둔 환경에서는 조용히 넘어간다.
+    if (!block) return false;
+    writeClipboard(linesClipboard(text, blockClipLines(block)));
+    return true;
   };
   const paste = async (plain: boolean) => {
     let read = '';
@@ -6127,8 +6426,9 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
     const lines = read.split('\n').map((l) => l.trim()).filter(Boolean);
     if (!lines.length) return;
     // 서식 없이 붙여넣기는 **줄마다 문단 하나**. 그냥 붙여넣기도 지금은 같다 —
-    // 우리가 다루는 클립보드가 글자뿐이라(HTML 조각을 읽지 않는다) 두 항목이
-    // 같은 일을 한다는 사실을 숨기지 않는다(메뉴에는 둘 다 둔다 — 디자인).
+    // **읽는** 쪽은 아직 평문뿐이기 때문이다. 쓰는 쪽은 이제 `text/html`도 싣지만
+    // (제보 12) 읽기는 `readText` 하나라 두 항목이 같은 일을 한다. 그 비대칭을
+    // 숨기지 않고 둘 다 둔다(디자인) — `read()`로 HTML까지 받는 것은 다음 일이다.
     let after = at.blockId;
     for (const line of lines.slice(0, 40)) {
       const id = controller.addNoteBlock('p', after);
@@ -6149,8 +6449,10 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
       style={{ ...POP, ...base, display: 'flex', flexDirection: 'column', gap: 1 }}
     >
       <span style={POP_HEAD}>블록</span>
-      <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={done(() => void copy().then((ok) => ok && controller.removeNoteBlock(at.blockId)))} />
-      <CtxItem mark="copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(() => void copy())} />
+      <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={done(() => {
+        if (copy()) controller.removeNoteBlock(at.blockId);
+      })} />
+      <CtxItem mark="copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(copy)} />
       <CtxItem mark="paste" name="붙여넣기" hint="⌘V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>} onClick={done(() => void paste(false))} />
       <CtxItem mark="paste-plain" name="서식 없이 붙여넣기" hint="⌘⇧V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /><path d="M9 13h6" /></>} onClick={done(() => void paste(true))} />
 
@@ -6612,8 +6914,74 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
  * 스크린샷은 원본이라야 글자가 읽힌다. 기본은 전체가 보이는 쪽으로 두고 원본은 한 번
  * 눌러 간다(원본에서는 판이 스크롤한다).
  */
+/** 이미지 판의 배율 한계 — 아래는 **맞춤**(그보다 작게 볼 이유가 없다), 위는 800%. */
+const IMG_ZOOM_MAX = 8;
+/** 단추 한 번의 배율 — 캔버스 확대와 같은 값(1.2배). */
+const IMG_ZOOM_STEP = 1.2;
+
+/**
+ * 이미지 판 — **배율로 본다**(요청 8).
+ *
+ * 예전에는 「화면에 맞춤 ↔ 원본 크기」 토글 하나였다(상태가 불리언 하나라 그 사이가
+ * 없었다). 사진 한 장의 글자를 읽으려면 그 둘 사이가 필요하다 — 그래서 상태를
+ * **배율과 이동**으로 바꾸고 토글 단추는 걷었다.
+ *
+ * - 배율 1 = **원본 픽셀 100%**(캔버스의 `zoom`과 같은 뜻).
+ * - 아래 한계는 `fit`(판에 들어가는 배율) — 그보다 작게 줄일 이유가 없다.
+ * - 휠·트랙패드·더블클릭은 **가리킨 자리**를 기준으로 당긴다(캔버스와 같은 수학).
+ * - 휠은 리액트 `onWheel`로는 막히지 않는다(리액트 18이 루트에 passive로 붙인다) —
+ *   그래서 판에 직접 `{ passive: false }`로 건다. 막지 않으면 뒤의 본문이 굴러간다.
+ */
 function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
-  const [full, setFull] = useState(false);
+  const padRef = useRef<HTMLDivElement | null>(null);
+  /** 원본 픽셀 크기 — `onLoad`에서, 캐시된 그림은 마운트에서 한 번 더 본다. */
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
+  /** 판 크기 — 창을 바꾸면 `fit`이 달라진다. */
+  const [box, setBox] = useState(() => ({ w: typeof window === 'undefined' ? 0 : window.innerWidth, h: typeof window === 'undefined' ? 0 : window.innerHeight }));
+  const [scale, setScale] = useState<number | null>(null);
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const pan = useRef<{ x: number; y: number; ox: number; oy: number; id: number } | null>(null);
+
+  /** 판에 들어가는 배율 — 좌우 24px 여백을 뺀 자리에 맞춘다(예전 값 그대로). */
+  const fit = nat && box.w && box.h ? Math.min(1, (box.w - 48) / nat.w, (box.h - 48) / nat.h) : 1;
+  const cur = scale ?? fit;
+  /** 지금 배율을 참조로도 든다 — 창 크기 효과가 의존 없이 읽는다. */
+  const scaleRef = useRef<number | null>(null);
+  scaleRef.current = scale;
+
+  const clampOff = useCallback(
+    (v: { x: number; y: number }, at: number): { x: number; y: number } => {
+      if (!nat) return v.x === 0 && v.y === 0 ? v : { x: 0, y: 0 };
+      // 그림이 판보다 작은 축은 가운데 고정 — 빈 곳으로 끌려가지 않게.
+      const mx = Math.max(0, (nat.w * at - box.w) / 2);
+      const my = Math.max(0, (nat.h * at - box.h) / 2);
+      const x = Math.max(-mx, Math.min(mx, v.x));
+      const y = Math.max(-my, Math.min(my, v.y));
+      // 값이 같으면 **같은 객체**를 돌려준다 — 새 객체는 그 자체로 리렌더다.
+      return x === v.x && y === v.y ? v : { x, y };
+    },
+    [nat, box.w, box.h],
+  );
+
+  /**
+   * **가리킨 자리를 붙들고** 배율을 바꾼다 — 그 점이 화면에서 움직이지 않아야
+   * "그 자리를 확대했다"로 읽힌다(캔버스 `zoomAtState`와 같은 수학).
+   */
+  const zoomAt = useCallback(
+    (factor: number, px?: number, py?: number) => {
+      setScale((prev) => {
+        const from = prev ?? fit;
+        const to = Math.max(fit, Math.min(IMG_ZOOM_MAX, from * factor));
+        if (to === from) return from;
+        const cx = (px ?? box.w / 2) - box.w / 2;
+        const cy = (py ?? box.h / 2) - box.h / 2;
+        setOff((o) => clampOff({ x: cx - ((cx - o.x) * to) / from, y: cy - ((cy - o.y) * to) / from }, to));
+        return to;
+      });
+    },
+    [fit, box.w, box.h, clampOff],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
@@ -6623,31 +6991,139 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
   }, [onClose]);
+
+  // 창 크기가 바뀌면 `fit`이 달라진다 — **배율은 초기화하지 않고** 다시 조이기만 한다
+  // (초기화하면 주소창이 접히거나 키보드가 올라올 때마다 확대가 날아간다).
+  useEffect(() => {
+    const onResize = (): void => setBox({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  useEffect(() => {
+    // `fit`이 바뀔 때만 다시 조인다 — 지금 배율은 **참조로** 읽는다(의존에 넣으면
+    // 확대할 때마다 이 효과가 돌아 이동이 튄다).
+    const at = Math.max(fit, Math.min(IMG_ZOOM_MAX, scaleRef.current ?? fit));
+    if (scaleRef.current !== null && scaleRef.current !== at) setScale(at);
+    setOff((o) => clampOff(o, at));
+  }, [fit, clampOff]);
+
+  // 휠은 직접 건다 — 리액트의 passive 리스너로는 `preventDefault`가 먹지 않는다.
+  useEffect(() => {
+    const el = padRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault();
+      // 트랙패드의 핀치는 `ctrlKey`로 온다 — 그때는 연속 배율, 휠 한 칸이면 1.12배.
+      const f = e.ctrlKey || e.metaKey ? Math.exp(-e.deltaY * 0.011) : e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      zoomAt(f, e.clientX, e.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoomAt]);
+
+  /**
+   * 원본 픽셀을 읽는다 — **값이 같으면 상태를 갈지 않는다**.
+   *
+   * 이 함수는 `ref` 갈래로도 불리는데(캐시된 그림은 `onLoad`가 오지 않는다) 그때마다
+   * 새 객체를 넣으면 렌더 → ref → setState → 렌더가 끝없이 돈다(실브라우저에서
+   * React #185로 터졌다 — jsdom은 `naturalWidth`가 0이라 이 길을 지나지 않았다).
+   */
+  const readNat = useCallback((img: HTMLImageElement | null): void => {
+    if (!img || img.naturalWidth <= 0) return;
+    setNat((prev) => (prev && prev.w === img.naturalWidth && prev.h === img.naturalHeight ? prev : { w: img.naturalWidth, h: img.naturalHeight }));
+  }, []);
+  const pct = Math.round(cur * 100);
+
   return (
     <div
+      ref={padRef}
       data-note-image-zoom
-      onPointerDown={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(24,20,17,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: 24 }}
+      /**
+       * **전파를 무조건 먼저 멈춘다** — 이 판은 본문 블록의 자식으로 그려지므로,
+       * 막지 않으면 본문 단의 `onPointerDown`이 캐럿을 옮기고 `onPointerMove`가
+       * 줄 사이에 파란 선택을 칠한다(끌어서 이동을 붙이면 바로 드러난다).
+       * 타깃 가드를 먼저 두면 자식(단추·그림)에서 올라온 누름이 그대로 샌다.
+       */
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (e.target !== e.currentTarget) return;
+        onClose();
+      }}
+      onPointerMove={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(24,20,17,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', touchAction: 'none' }}
     >
       <img
         src={url}
         alt=""
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => setFull((v) => !v)}
-        style={full
-          ? { display: 'block', margin: 'auto', borderRadius: 6, cursor: 'zoom-out' }
-          : { display: 'block', margin: 'auto', maxWidth: '100%', maxHeight: '100%', borderRadius: 6, cursor: 'zoom-in' }}
+        data-note-image-canvas
+        onLoad={(e) => readNat(e.currentTarget)}
+        ref={readNat}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          if (e.button !== 0) return;
+          // 맞춤 배율에서는 끌 자리가 없다 — 그때는 누름이 곧 닫기다(예전과 같은 결).
+          if (cur <= fit + 0.001) return;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+          pan.current = { x: e.clientX, y: e.clientY, ox: off.x, oy: off.y, id: e.pointerId };
+        }}
+        onPointerMove={(e) => {
+          const p = pan.current;
+          if (!p || p.id !== e.pointerId) return;
+          setOff(clampOff({ x: p.ox + (e.clientX - p.x), y: p.oy + (e.clientY - p.y) }, cur));
+        }}
+        onPointerUp={(e) => {
+          if (pan.current?.id === e.pointerId) pan.current = null;
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          // 맞춤이면 원본(최소 2배)까지, 이미 키웠으면 맞춤으로 — 누른 자리 기준.
+          if (cur <= fit + 0.001) zoomAt(Math.max(1, fit * 2) / cur, e.clientX, e.clientY);
+          else {
+            setScale(fit);
+            setOff({ x: 0, y: 0 });
+          }
+        }}
+        onDragStart={(e) => e.preventDefault()}
+        style={{
+          display: 'block',
+          width: nat ? nat.w * cur : undefined,
+          height: nat ? nat.h * cur : undefined,
+          maxWidth: nat ? undefined : '100%',
+          maxHeight: nat ? undefined : '100%',
+          transform: `translate(${off.x}px, ${off.y}px)`,
+          borderRadius: 6,
+          cursor: cur > fit + 0.001 ? (pan.current ? 'grabbing' : 'grab') : 'zoom-in',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        }}
       />
-      <button
-        type="button"
-        data-note-image-full
+      {/* 배율 막대 — 「원본 크기」 토글을 대신한다(요청 8). 퍼센트를 누르면 맞춤으로. */}
+      <div
+        data-note-image-bar
         onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => setFull((v) => !v)}
-        className="btn"
-        style={{ position: 'fixed', left: 20, bottom: 20, height: 30, padding: '0 12px', borderRadius: 9, border: '1px solid rgba(255,255,255,.28)', background: 'rgba(24,20,17,.6)', color: '#fff', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        style={{ position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 2, height: 32, padding: '0 4px', borderRadius: 999, border: '1px solid rgba(255,255,255,.28)', background: 'rgba(24,20,17,.6)' }}
       >
-        {full ? '화면에 맞춤' : '원본 크기'}
-      </button>
+        <ZoomKey label="축소" mark="out" disabled={cur <= fit + 0.001} onClick={() => zoomAt(1 / IMG_ZOOM_STEP)}>
+          <path d="M5 12h14" />
+        </ZoomKey>
+        <button
+          type="button"
+          data-note-image-pct
+          className="btn"
+          aria-label={`배율 ${pct}% — 눌러서 화면에 맞춤`}
+          onClick={() => {
+            setScale(fit);
+            setOff({ x: 0, y: 0 });
+          }}
+          style={{ minWidth: 52, height: 26, padding: '0 6px', borderRadius: 999, border: 0, background: 'transparent', color: '#fff', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        >
+          {pct}%
+        </button>
+        <ZoomKey label="확대" mark="in" disabled={cur >= IMG_ZOOM_MAX - 0.001} onClick={() => zoomAt(IMG_ZOOM_STEP)}>
+          <path d="M12 5v14M5 12h14" />
+        </ZoomKey>
+      </div>
       <button
         type="button"
         data-note-image-close
@@ -6662,6 +7138,25 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
         </svg>
       </button>
     </div>
+  );
+}
+
+/** 배율 막대의 단추 하나 — ＋와 －가 같은 모양을 쓴다. */
+function ZoomKey({ label, mark, disabled, onClick, children }: { label: string; mark: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      data-note-image-zoom-key={mark}
+      className="btn"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      style={{ width: 26, height: 26, borderRadius: 999, border: 0, background: 'transparent', color: '#fff', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.38 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+        {children}
+      </svg>
+    </button>
   );
 }
 
@@ -6708,6 +7203,7 @@ function DocPickPopup({ controller, onPick, onClose }: { controller: EditorContr
       >
         <span style={{ ...POP_HEAD, padding: '0 2px' }}>문서 링크</span>
         <input
+          className="mf-note-field"
           data-note-docpick-q
           autoFocus
           value={q}
@@ -7024,7 +7520,10 @@ function SlashMenu({
           </div>
           {/* 푸터 — 이 패널에서 쓸 수 있는 키 셋. 본문에 캐럿이 남아 있어 "지금 무엇을
               누를 수 있나"가 보이지 않으므로, 여기에 적어 둔다(스펙 §7). */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 11px', borderTop: '1px solid var(--mf-border-soft)', background: 'var(--mf-note-body)' }}>
+          {/* 이 띠는 **본문 종이가 아니라 카드 속 가라앉은 면**이다 — 같은 팝업의 키캡이
+              쓰는 토큰을 함께 쓴다. 예전에는 본문 색을 빌려 썼는데, 본문을 중립으로
+              내리자 카드와의 단차가 거의 사라졌다(그때 이 자리를 다시 봐야 했다). */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 11px', borderTop: '1px solid var(--mf-border-soft)', background: 'var(--mf-panel2)' }}>
             {[
               ['↑↓', '고르기'],
               ['↵', '넣기'],
@@ -7222,6 +7721,22 @@ let caretMemo: { doc: string; key: string; at: number; when: number } | null = n
  * 마운트가 아니라 **새로 로드**라 모듈 변수도 함께 사라진다.
  */
 const scrollMemo = new Map<string, number>();
+
+/**
+ * **붙들기 상태는 모듈에 둔다** — 다시 마운트돼도 이어져야 하고(에디터는 문서가
+ * 바뀔 때 통째로 새로 선다), 깨우는 신호가 둘 와도 하나의 자리를 지켜야 한다.
+ * `scrollMemo`와 같은 자리에 두는 이유이기도 하다: 붙드는 동안 그 기억을 얼린다.
+ */
+let noteHold: { key: string; top: number; until: number } | null = null;
+let noteHoldRaf = 0;
+/** 붙드는 기한 — 프레임 수가 아니라 시간으로 잰다(rAF는 30fps일 수 있다). */
+const HOLD_MS = 600;
+/** 늦게 자리를 잡는 것들(이미지·표)을 기다리는 첫 복원의 기한. */
+const REFLOW_MS = 400;
+/** 순수 수식키 — 이것만 눌린 것은 "사용자가 굴렸다"가 아니다(⌥Tab으로 돌아오는 길). */
+const MOD_KEYS = new Set(['Alt', 'Control', 'Meta', 'Shift', 'Tab', 'CapsLock']);
+/** 붙들기를 놓는 계기 — 사용자의 조작을 이기면 그게 더 나쁜 버그다. */
+const HOLD_DROP_EVENTS = ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'mousedown', 'keydown'] as const;
 
 function scrollKeyOf(docId: string, pageId: string): string {
   return `${docId}:${pageId}`;
@@ -7427,6 +7942,25 @@ function blockIdOf(key: string): string {
   return key.split(':')[0] ?? '';
 }
 
+/**
+ * 한 블록을 **클립보드 줄들**로 — 우클릭 메뉴의 `복사`가 쓴다(제보 12).
+ * 화면이 아니라 모델에서 짓는다(메뉴를 여는 자리에 그 블록의 DOM이 있다는 보장이 없다).
+ */
+function blockClipLines(block: NoteBlock): ClipLine[] {
+  const kind = block.kind;
+  if (block.items?.length) {
+    return block.items.map((it, i) => ({
+      kind,
+      runs: it.runs ?? null,
+      text: (it.runs ?? []).map((r) => r.t).join(''),
+      depth: it.indent ?? 0,
+      done: !!it.done,
+      ...(kind === 'ol' && i === 0 ? { num: 1 } : {}),
+    }));
+  }
+  return [{ kind, runs: block.runs ?? null, text: (block.runs ?? []).map((r) => r.t).join('') }];
+}
+
 /** 그 키가 **표의 칸**인가 — 칸은 줄이 아니라 값이라 블록 조작이 닿지 않는다. */
 function isCellKey(key: string): boolean {
   return /^[^:]+:r\d+c\d+$/.test(key);
@@ -7461,16 +7995,21 @@ const TOOL_BTN: CSSProperties = {
   padding: 0,
 };
 
-/** 링크 판의 입력칸 — 팝업 안에서만 쓰는 작은 상자. */
+/**
+ * 링크 판의 입력칸 — 팝업 안에서만 쓰는 작은 상자.
+ * 바탕을 **흰 종이**(`--mf-note-field`)로 올리고 테두리를 한 단계 진하게 잡는다: 가라앉은
+ * 면 위의 옅은 선은 "쓸 수 없는 칸"으로 읽혔다(제보). 얹음·초점 반응은 `editor.css`의
+ * `.mf-note-field`에 있다(인라인 스타일로는 `:focus`를 쓸 수 없다).
+ */
 const LINK_INPUT: CSSProperties = {
-  height: 30,
-  padding: '0 9px',
-  borderRadius: 8,
-  border: '1px solid var(--mf-border)',
-  background: 'var(--mf-panel2)',
+  height: 32,
+  padding: '0 10px',
+  borderRadius: 9,
+  border: '1px solid var(--mf-border-hover)',
+  background: 'var(--mf-note-field)',
   color: 'var(--mf-text)',
   fontFamily: 'inherit',
-  fontSize: 12.5,
+  fontSize: 13,
   outline: 'none',
   minWidth: 0,
 };
