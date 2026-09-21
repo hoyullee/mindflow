@@ -176,6 +176,53 @@ export function retypeBlock(block: NoteBlock, kind: NoteBlockKind): NoteBlock {
   return next;
 }
 
+/**
+ * 목록의 **그 한 줄만** 다른 종류로 — 블록을 `[앞 / 바뀐 줄 / 뒤]`로 가른다.
+ *
+ * 왜 필요한가(제보): 글머리 목록 A·B·C·D의 **D줄에서 `/구분선`**을 골랐더니 A~C까지
+ * 통째로 사라지고 구분선 하나만 남았다. 목록은 **블록 하나에 항목 여럿**이라
+ * `retypeBlock`이 그 덩이 전체를 갈아치웠기 때문이다. 사용자가 고른 것은 **한 줄**이므로
+ * 나머지 줄은 제자리에 있어야 한다.
+ *
+ * 돌려주는 `id`는 **바뀐 줄의 블록 id**다 — 호출부가 거기로 캐럿을 보낸다.
+ * 항목이 하나뿐이거나 목록이 아니면 가를 것이 없어 예전처럼 블록째 바꾼다.
+ */
+export function retypeNoteLine(
+  block: NoteBlock,
+  itemId: string,
+  kind: NoteBlockKind,
+  /**
+   * 새로 생기는 두 덩이의 id. **미리 만들어 넘긴다** — 리액트의 커밋 함수는 같은
+   * 갱신에 두 번 불릴 수 있어, 그 안에서 id를 만들면 호출마다 달라진다.
+   */
+  ids: { mid: string; tail: string } = { mid: noteId('b'), tail: noteId('b') },
+): { blocks: NoteBlock[]; id: string } {
+  const items = block.items ?? [];
+  const at = items.findIndex((it) => it.id === itemId);
+  if (noteBlockShape(block.kind) !== 'items' || at < 0 || items.length <= 1) {
+    const one = retypeBlock(block, kind);
+    return { blocks: [one], id: one.id };
+  }
+  if (block.kind === kind) return { blocks: [block], id: block.id };
+  const before = items.slice(0, at);
+  const after = items.slice(at + 1);
+  // 그 줄만 담은 한 덩이를 만들어 **같은 변환 규칙**(`retypeBlock`)에 태운다 —
+  // 종류별 처리가 두 벌이 되면 언젠가 갈라진다.
+  const solo: NoteBlock = { id: before.length ? ids.mid : block.id, kind: block.kind, items: [items[at] as NoteListItem] };
+  if (block.align) solo.align = block.align;
+  const mid = retypeBlock(solo, kind);
+  const out: NoteBlock[] = [];
+  if (before.length) out.push({ ...block, items: before });
+  out.push(mid);
+  if (after.length) {
+    const tail: NoteBlock = { ...block, id: ids.tail, items: after };
+    // 번호 매기기는 **이어서 센다** — 가른 자리에서 1로 돌아가면 한 목록이 둘로 보인다.
+    if (block.kind === 'ol') tail.start = (block.start ?? 1) + before.length + 1;
+    out.push(tail);
+  }
+  return { blocks: out, id: mid.id };
+}
+
 /** 블록 한 덩이의 평문 — 검색과 목록 요약이 쓴다. 줄 구분은 개행이다. */
 export function blockText(block: NoteBlock): string {
   switch (noteBlockShape(block.kind)) {

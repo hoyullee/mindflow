@@ -12,7 +12,7 @@
 // 요소**를 찾아 거기에 대고 동작하는 작은 배관을 따로 쓴다 — 서식 계산 자체는 코어
 // (`applyPartialStyle`)에서 같은 함수를 쓰므로 규칙이 두 벌이 되지는 않는다.
 
-import { applyPartialStyle } from '@mindflow/mindmap-core';
+import { applyPartialStyle, charsToRuns, isStyledRuns, runsToChars } from '@mindflow/mindmap-core';
 import type { RichRun } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml } from './richtextDom';
 
@@ -126,12 +126,68 @@ export function noteActiveMarks(el: HTMLElement): { b: boolean; i: boolean; s: b
   };
 }
 
+/**
+ * 이 박스의 **캐럿 자리**(선택이 있으면 그 구간) — 접혀 있어도 돌려준다.
+ *
+ * `noteSelectionRange`는 접힌 캐럿에 `null`을 준다(서식은 고른 글이 있어야 한다).
+ * 링크 **넣기**는 반대다 — 고른 글이 없으면 그 자리에 글자를 만들어 건다.
+ */
+export function noteCaretSpan(el: HTMLElement): { a: number; b: number } | null {
+  if (typeof window === 'undefined') return null;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const rng = sel.getRangeAt(0);
+  if (!el.contains(rng.startContainer) || !el.contains(rng.endContainer)) return null;
+  const lin = linearize(el, [
+    { container: rng.startContainer, offset: rng.startOffset },
+    { container: rng.endContainer, offset: rng.endOffset },
+  ]);
+  const a = lin.pos[0] ?? 0;
+  const b = lin.pos[1] ?? 0;
+  return { a: Math.min(a, b), b: Math.max(a, b) };
+}
+
+/**
+ * **글자를 만들어 링크를 건다** — 고른 글이 없을 때의 링크 넣기(제보 1).
+ *
+ * 예전에는 링크 단추가 `prompt`로 주소만 받아 `applyNoteFormat('link')`로 넘겼는데,
+ * 그 함수는 **고른 글이 없으면 아무 일도 하지 않는다**(걸 자리가 없다). 그래서
+ * 글을 고르지 않고 누르면 주소를 적고 확인을 눌러도 화면이 그대로였다.
+ *
+ * 여기서는 캐럿 자리(또는 고른 구간)를 `label`로 **갈아 끼운 뒤** 그 구간에 주소를
+ * 건다. 글자 단위로 다루므로 앞뒤에 걸린 굵게·형광펜은 그대로 살아남는다.
+ */
+export function insertNoteLink(el: HTMLElement, span: { a: number; b: number }, label: string, href: string): RichRun[] | null {
+  if (!label) return null;
+  const v = noteBoxValue(el);
+  const chars = runsToChars(v);
+  chars.splice(span.a, span.b - span.a, ...Array.from(label).map((ch) => ({ ch, b: false, c: null })));
+  const text = chars.map((c) => c.ch).join('');
+  const runs = charsToRuns(chars).filter((r) => r.t);
+  const next = applyPartialStyle({ text, rich: isStyledRuns(runs) ? runs : null }, span.a, span.a + label.length, 'link', href);
+  el.innerHTML = runsToHtml(next);
+  const end = span.a + label.length;
+  restoreSelection(el, end, end);
+  return next.rich ?? [{ t: next.text, b: false, c: null }];
+}
+
 export function applyNoteFormat(el: HTMLElement, kind: NoteFormatKind, val?: string | null): RichRun[] | null {
   const range = noteSelectionRange(el);
   if (!range) return null;
+  return applyNoteFormatRange(el, range.a, range.b, kind, val);
+}
+
+/**
+ * 같은 일을 **자리를 지정해서** — 팝업이 떠 있는 동안에는 선택을 읽을 수 없다.
+ *
+ * 입력칸에 초점이 가는 순간 편집 박스의 선택은 사라진다. 그래서 링크 팝업은 **열 때**
+ * 구간을 적어 두고 확인할 때 이 함수로 넘긴다(제보 1의 수리에서 갈라 낸 자리다).
+ */
+export function applyNoteFormatRange(el: HTMLElement, a: number, b: number, kind: NoteFormatKind, val?: string | null): RichRun[] | null {
+  if (a === b) return null;
   const parsed = noteBoxValue(el);
-  const next = applyPartialStyle(parsed, range.a, range.b, kind, val ?? null);
+  const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
   el.innerHTML = runsToHtml(next);
-  restoreSelection(el, range.a, range.b);
+  restoreSelection(el, a, b);
   return next.rich ?? [{ t: next.text, b: false, c: null }];
 }

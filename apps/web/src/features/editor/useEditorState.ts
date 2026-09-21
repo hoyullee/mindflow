@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, NotePaste, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, indentListItems, noteBlockShape, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, runsText, textRuns } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, indentListItems, noteBlockShape, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, retypeNoteLine as retypeNoteLineCore, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -842,6 +842,8 @@ export interface EditorController {
    */
   sendNoteBlockToBoard: (blockId: string, targetDocId: string) => Promise<boolean>;
   retypeNoteBlock: (blockId: string, kind: NoteBlockKind) => void;
+  /** 줄 하나의 종류를 바꾼다(목록이면 그 항목만) — 바뀐 줄의 블록 id. */
+  retypeNoteLine: (key: string, kind: NoteBlockKind) => string | null;
   /** 문단을 캐럿 자리에서 둘로 가른다 — 새 블록의 id를 돌려준다(요청). */
   splitNoteBlock: (blockId: string, at: number) => { id: string; head: RichRun[] } | null;
   /** 문단을 목록으로 바꾸고 글을 비운다 — 본문의 `- ` · `3. ` 단축(요청). */
@@ -7272,6 +7274,55 @@ export function useEditorState(): EditorController {
   );
 
   /**
+   * **줄 하나의 종류를 바꾼다** — 목록 안이면 그 항목만, 아니면 블록째.
+   *
+   * 왜 블록째가 아닌가(제보): 글머리 목록 A·B·C·D의 D줄에서 `/구분선`을 골랐더니
+   * A~C까지 사라지고 구분선만 남았다. 목록은 **블록 하나에 항목 여럿**이라
+   * `retypeNoteBlock`이 그 덩이를 통째로 갈았기 때문이다. 사용자가 고른 것은 한 줄이다.
+   *
+   * `key`는 편집 박스의 `data-note-line` — 블록이면 `<blockId>`, 목록 항목이면
+   * `<blockId>:<itemId>`, 표의 칸이면 `<blockId>:r0c1`이다(칸은 줄이 아니라 값이라
+   * 종류를 바꾸지 않는다). 돌려주는 것은 **바뀐 줄의 블록 id**다 — 캐럿을 그리로 보낸다.
+   *
+   * 가르기는 커밋 **바깥에서** 계산한다: 커밋 함수는 리액트가 두 번 부를 수 있고
+   * 그 안에서 `noteId()`를 부르면 호출마다 다른 id가 나온다(`noteListShortcut`과 같은 이유).
+   */
+  const retypeNoteLine = useCallback(
+    (key: string, kind: NoteBlockKind): string | null => {
+      if (readOnlyRef.current || !notePage) return null;
+      const [blockId, rest] = key.split(':');
+      if (!blockId) return null;
+      const itemId = rest && !/^r\d+c\d+$/.test(rest) ? rest : null;
+      const block = notePage.blocks.find((b) => b.id === blockId);
+      if (!block) return null;
+      if (!itemId || noteBlockShape(block.kind) !== 'items') {
+        retypeNoteBlock(blockId, kind);
+        return blockId;
+      }
+      /**
+       * 가르기는 **커밋 안에서** 한다 — 바로 앞에 친 `/구분선` 같은 글을 지우는 커밋이
+       * 아직 반영되지 않았을 수 있어, 밖에서 뜬 블록으로 계산하면 그 글이 되살아난다.
+       * 대신 새 id 둘은 밖에서 미리 만들어 넘긴다(커밋 함수는 두 번 불릴 수 있다).
+       */
+      const items = block.items ?? [];
+      const at = items.findIndex((it) => it.id === itemId);
+      const splits = at >= 0 && items.length > 1 && block.kind !== kind;
+      const ids = { mid: noteId('b'), tail: noteId('b') };
+      commitPage(
+        notePage.id,
+        (pg) => ({
+          ...pg,
+          blocks: pg.blocks.flatMap((b) => (b.id === blockId ? retypeNoteLineCore(b, itemId, kind, ids).blocks : [b])),
+        }),
+        false,
+      );
+      // 바뀐 줄의 id — 앞에 남는 덩이가 있으면 그쪽이 원래 id를 지킨다(코어와 같은 규칙).
+      return splits && at > 0 ? ids.mid : blockId;
+    },
+    [commitPage, notePage, retypeNoteBlock],
+  );
+
+  /**
    * 그 문단을 **목록으로 바꾸고 글을 비운다** — 본문의 `- ` · `3. ` 단축(요청).
    *
    * 한 번의 커밋으로 묶는 이유: 종류 바꾸기와 글 비우기를 따로 커밋하면 ⌘Z가 두 번
@@ -8355,6 +8406,7 @@ export function useEditorState(): EditorController {
     duplicateNoteBlock,
     sendNoteBlockToBoard,
     retypeNoteBlock,
+    retypeNoteLine,
     splitNoteBlock,
     noteListShortcut,
     moveNoteBlock,

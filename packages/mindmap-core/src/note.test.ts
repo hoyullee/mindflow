@@ -28,6 +28,7 @@ import {
   pageText,
   removePage,
   retypeBlock,
+  retypeNoteLine,
   indentListItem,
   indentListItems,
   listMarkers,
@@ -581,5 +582,67 @@ describe('고른 여러 항목을 한꺼번에 들이고 내민다', () => {
   it('고른 것이 없으면 그대로', () => {
     const items = four();
     expect(indentListItems(items, [], 1)).toBe(items);
+  });
+});
+
+describe('목록의 한 줄만 종류 바꾸기 — 나머지 줄은 제자리에', () => {
+  const four = (kind: 'ul' | 'ol' = 'ul'): NoteBlock => ({
+    id: 'b1',
+    kind,
+    items: [
+      { id: 'a', runs: textRuns('가') },
+      { id: 'b', runs: textRuns('나') },
+      { id: 'c', runs: textRuns('다') },
+      { id: 'd', runs: textRuns('라') },
+    ],
+  });
+
+  it('마지막 줄을 구분선으로 — 앞 셋은 목록으로 남는다(제보 4)', () => {
+    const { blocks, id } = retypeNoteLine(four(), 'd', 'hr');
+    expect(blocks.map((b) => b.kind)).toEqual(['ul', 'hr']);
+    expect(blocks[0]!.items!.map((it) => runsText(it.runs))).toEqual(['가', '나', '다']);
+    expect(blocks[1]!.id).toBe(id);
+  });
+
+  it('가운데 줄을 바꾸면 **셋으로** 갈린다 — 앞 · 바뀐 줄 · 뒤', () => {
+    const { blocks, id } = retypeNoteLine(four(), 'b', 'h2');
+    expect(blocks.map((b) => b.kind)).toEqual(['ul', 'h2', 'ul']);
+    expect(runsText(blocks[1]!.runs)).toBe('나');
+    expect(blocks[1]!.id).toBe(id);
+    expect(blocks[2]!.items!.map((it) => runsText(it.runs))).toEqual(['다', '라']);
+    // 앞 덩이는 **원래 id를 지킨다** — 되돌리기·선택이 그 id를 들고 있다.
+    expect(blocks[0]!.id).toBe('b1');
+  });
+
+  it('첫 줄을 바꾸면 바뀐 줄이 원래 id를 갖는다(캐럿이 그리로 간다)', () => {
+    const { blocks, id } = retypeNoteLine(four(), 'a', 'ck');
+    expect(blocks.map((b) => b.kind)).toEqual(['ck', 'ul']);
+    expect(id).toBe('b1');
+    expect(blocks[0]!.items!.map((it) => runsText(it.runs))).toEqual(['가']);
+  });
+
+  it('글머리 한 줄을 체크리스트로 — 그 줄만 상자가 생긴다(제보 2)', () => {
+    const { blocks } = retypeNoteLine(four(), 'c', 'ck');
+    expect(blocks.map((b) => b.kind)).toEqual(['ul', 'ck', 'ul']);
+    expect(blocks[1]!.items![0]).toHaveProperty('done', false);
+  });
+
+  it('번호 매기기를 가르면 뒤쪽이 **이어서 센다**', () => {
+    const { blocks } = retypeNoteLine(four('ol'), 'b', 'p');
+    expect(blocks[2]!.start).toBe(3);
+  });
+
+  it('항목이 하나뿐이면 가르지 않고 블록째 바꾼다', () => {
+    const one: NoteBlock = { id: 'b9', kind: 'ul', items: [{ id: 'x', runs: textRuns('혼자') }] };
+    const { blocks, id } = retypeNoteLine(one, 'x', 'p');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.kind).toBe('p');
+    expect(id).toBe('b9');
+  });
+
+  it('같은 종류를 고르면 아무 일도 없다', () => {
+    const items = four();
+    const { blocks } = retypeNoteLine(items, 'b', 'ul');
+    expect(blocks).toEqual([items]);
   });
 });
