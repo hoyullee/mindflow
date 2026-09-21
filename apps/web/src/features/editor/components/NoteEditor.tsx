@@ -4053,7 +4053,18 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       // 표처럼 **고쳐 쓸 수 없는 줄**만 가진 블록은 건너뛴다(캐럿이 갈 자리가 없다).
       const lines = [...prev.querySelectorAll<HTMLElement>('[data-note-line][contenteditable="true"]')];
       const el = lines[lines.length - 1];
-      if (!el) return;
+      if (!el) {
+        /**
+         * **구분선이면 그것을 고른다**(제보 4) — 예전에는 여기서 조용히 손을 뗐고,
+         * 빈 줄을 Backspace로 지우면 캐럿이 갈 곳을 잃어 **아무 데도 초점이 없는**
+         * 상태가 됐다(글쇠가 어디로도 들어가지 않는다). 구분선은 이미 초점을 받는
+         * 칸이므로(넣고 나서 지울 수 있어야 해서 그렇게 만들었다) 그리로 보낸다 —
+         * 한 번 더 Backspace를 누르면 그 구분선이 지워진다. 글이 있는 줄에서 이어
+         * 붙이려던 길은 이미 같은 처방을 쓰고 있었다(`backBlock`).
+         */
+        prev.querySelector<HTMLElement>('[data-note-hr]')?.focus({ preventScroll: true });
+        return;
+      }
       el.focus({ preventScroll: true });
       try {
         const range = document.createRange();
@@ -5749,6 +5760,9 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           placeholder=""
                           listBox
                           listKeys={editing}
+                          // 고른 칸의 글자는 우리가 통째로 골라 둔다 — 링크를 누르면
+                          // 열리게 그 사실을 줄 부품에도 알린다(제보 1).
+                          armed={armed}
                           /**
                            * Enter가 **편집을 연다**(요청) — 고른 칸에서 한 번 누르면
                            * 글을 고치는 자리가 되고, 고치는 중에 누르면 닫힌다
@@ -6845,6 +6859,25 @@ function SlashMenu({
   // 목록이 좁혀지면 고른 줄을 처음으로 되돌린다(없는 줄을 가리키지 않게).
   useEffect(() => setCursor(0), [q]);
   /**
+   * **고른 줄은 늘 보이게**(제보 2) — 방향키로 내려가면 표시만 옮겨 가고 판은
+   * 그대로 있어, 고른 줄이 화면 밖인 채로 Enter를 누르게 됐다.
+   *
+   * `scrollIntoView`를 쓰지 않는다: 그 함수는 **조상 전부**를 굴려 본문 판까지
+   * 움직인다(목록은 본문 위에 떠 있는 판이라 그 움직임이 그대로 보인다).
+   * 목록 상자 안에서만, 넘친 만큼만 굴린다.
+   */
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    const box = listRef.current;
+    const el = activeRef.current;
+    if (!box || !el) return;
+    const br = box.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    if (er.top < br.top) box.scrollTop -= br.top - er.top;
+    else if (er.bottom > br.bottom) box.scrollTop += er.bottom - br.bottom;
+  }, [cursor, q]);
+  /**
    * 키보드는 **본문에 있다**(캐럿이 그대로다 — 글은 계속 본문에 들어간다). 그래서
    * Enter·Tab·↑·↓·Esc만 **캡처 단계**에서 가로채 본문 핸들러에 닿지 않게 한다: 그러지
    * 않으면 Enter가 목록을 고르면서 새 블록도 만든다.
@@ -6933,7 +6966,7 @@ function SlashMenu({
               </span>
             )}
           </div>
-          <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : 288, overflowY: 'auto' }}>
+          <div ref={listRef} className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : 288, overflowY: 'auto' }}>
             {groups.map((g) =>
               g.items.length === 0 ? null : (
                 <div key={g.name || 'hits'} style={{ display: 'contents' }}>
@@ -6944,6 +6977,7 @@ function SlashMenu({
                       <button
                         key={t.kind}
                         type="button"
+                        ref={active ? activeRef : undefined}
                         data-note-slash-item={t.kind}
                         className="btn mf-note-item"
                         onMouseDown={(e) => e.preventDefault()}

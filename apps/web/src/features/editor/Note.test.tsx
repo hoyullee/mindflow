@@ -5150,3 +5150,97 @@ describe('공책 47판 — 좌표계 한 벌 · 커서만 옮기면 저장 없�
     });
   });
 });
+
+describe('공책 48판 — 칸의 링크 · 구분선 초점 · 붙여넣기 자동 링크', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('**고른 칸**의 링크를 누르면 열린다(제보 1 — 우리가 골라 둔 선택이 막고 있었다)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'tb', kind: 'table', rows: [[[{ t: '링크칸', b: false, c: null, href: 'https://example.com/' }], [{ t: '칸2', b: false, c: null }]], [[{ t: 'x', b: false, c: null }], [{ t: 'y', b: false, c: null }]]] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_m1', JSON.stringify(doc));
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const { container } = renderEditor('/editor?map=m1&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="0:0"]'))) as HTMLElement;
+
+    // 한 번 누르면 **칸을 고른다**(armed) — 그 칸의 글자는 우리가 통째로 골라 둔다.
+    fireEvent.mouseDown(cell);
+    fireEvent.mouseUp(cell);
+    await waitFor(() => expect(cell.getAttribute('data-armed')).toBe('1'));
+
+    const link = container.querySelector('[data-note-line="tb:r0c0"] [data-href]') as HTMLElement;
+    fireEvent.click(link);
+
+    expect(open).toHaveBeenCalled();
+    expect(open.mock.calls[0]?.[0]).toBe('https://example.com/');
+    open.mockRestore();
+  });
+
+  it('빈 줄을 지울 때 위가 구분선이면 **구분선이 초점을 받는다**(제보 4: 커서가 사라졌다)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'a', kind: 'p', runs: [{ t: '위', b: false, c: null }] },
+      { id: 'hr', kind: 'hr' },
+      { id: 'b', kind: 'p', runs: [{ t: '', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_m2', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=m2&title=x');
+    const empty = (await waitFor(() => container.querySelector('[data-note-line="b"]'))) as HTMLElement;
+
+    empty.focus();
+    const range = document.createRange();
+    range.setStart(empty, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.keyDown(empty, { key: 'Backspace' });
+
+    await waitFor(() => expect(document.activeElement?.hasAttribute('data-note-hr')).toBe(true));
+  });
+
+  it('본문에 주소를 붙여넣으면 **링크가 걸린다**(요청 3)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '여기: ', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_m3', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=m3&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    line.focus();
+    const text = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, text.nodeValue?.length ?? 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.paste(line, { clipboardData: { getData: () => 'https://geurio.com/home' } });
+    saveNow();
+
+    await waitFor(() => {
+      const runs = saved('m3').pages[0].blocks[0].runs as { t: string; href?: string }[];
+      expect(runs.find((r) => r.href)?.href).toBe('https://geurio.com/home');
+      expect(runs.map((r) => r.t).join('')).toBe('여기: https://geurio.com/home');
+    });
+  });
+
+  it('주소가 아닌 글은 그대로 — 브라우저의 기본 붙여넣기에 맡긴다', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b1', kind: 'p', runs: [{ t: '가', b: false, c: null }] },
+    ] }] };
+    localStorage.setItem('mindflow_doc_m4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=m4&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    line.focus();
+    const ev = createEvent.paste(line, { clipboardData: { getData: () => '그냥 글자' } } as unknown as Event);
+    fireEvent(line, ev);
+
+    expect(ev.defaultPrevented).toBe(false); // 막지 않았다 = 브라우저가 붙인다
+  });
+});
