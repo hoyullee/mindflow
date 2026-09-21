@@ -15,7 +15,7 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { RichRun } from '@mindflow/mindmap-core';
-import { runsText, textRuns } from '@mindflow/mindmap-core';
+import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, runsToHtml } from '../richtextDom';
 import { NOTE_EDIT_ATTR } from '../noteRichDom';
 import { charOffset, lineLength, lineText, pointAt } from '../noteTextSelect';
@@ -112,6 +112,14 @@ interface Props {
    */
   onPasteText?: (text: string, from: number, to: number) => boolean;
   /**
+   * **고른 표의 칸이다** — 그 칸의 글자는 우리가 **통째로 골라 둔다**(키를 받으려고).
+   *
+   * 링크를 누르면 여는 고리는 "끌어서 고르는 중이면 열지 않는다"를 지키는데, 그
+   * 선택은 사용자가 끈 것이 아니라 **우리가 세운 것**이라 칸에서는 링크가 한 번도
+   * 열리지 않았다(제보 1). 이 표식이 붙은 박스에서는 그 조건을 건너뛴다.
+   */
+  armed?: boolean;
+  /**
    * **이 박스 안에서 목록을 글자로 다룬다**(표의 칸 — `noteCellList` 머리말).
    *
    * 본문의 목록은 블록이라 이 모드가 아니다: 마커를 항목 옆에 따로 그리고
@@ -139,7 +147,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, armed, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -419,12 +427,20 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       }}
       onPaste={(e) => {
         // 여러 줄이 칠해져 있으면 **문서 리스너가 맡는다**(`selecting` 머리말).
-        if (readOnly || selecting || !onPasteText) return;
+        if (readOnly || selecting) return;
         const el = ref.current;
         const text = e.clipboardData?.getData('text/plain') ?? '';
         if (!el || !text) return;
         const span = selectedRange(el);
-        if (onPasteText(text, span.from, span.to)) e.preventDefault();
+        if (onPasteText?.(text, span.from, span.to)) {
+          e.preventDefault();
+          return;
+        }
+        // 목록·줄바꿈이 없는 평범한 한 줄 — **주소면 링크로** 붙인다(요청 3).
+        if (pasteAutoLink(el, text, span.from, span.to, onChange)) {
+          e.preventDefault();
+          dirty.current = false;
+        }
       }}
       /**
        * **링크 글자를 누르면 연다**(제보) — 편집 박스라 기본 동작은 캐럿 놓기뿐이라
@@ -439,7 +455,8 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         const href = (e.target as HTMLElement | null)?.closest?.('[data-href]')?.getAttribute('data-href');
         if (!href || e.altKey) return;
         const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) return;
+        // 고른 칸에서는 **우리가** 글자를 통째로 골라 둔 것이라 이 조건을 건너뛴다(`armed`).
+        if (!armed && sel && sel.rangeCount > 0 && !sel.isCollapsed) return;
         e.preventDefault();
         e.stopPropagation();
         openLink(href);
@@ -452,6 +469,41 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       style={{ outline: 'none', minHeight: '1.6em', whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...style }}
     />
   );
+}
+
+
+/**
+ * 붙여넣은 글에 **주소가 있으면 링크로** 붙인다(요청 3) — 없으면 `false`(브라우저에 맡긴다).
+ *
+ * 왜 붙여넣기에서만 하나: 타이핑 중에 실시간으로 걸면 반쯤 친 주소가 링크가 됐다
+ * 풀렸다 하며 캐럿과 IME가 흔들린다(맵 편집이 같은 이유로 **커밋 때 한 번**만 건다).
+ * 붙여넣기는 한 번에 끝나는 조작이라 그 흔들림이 없다.
+ *
+ * 값은 **글자 단위**로 다룬다(`runsToChars`) — 붙인 글에만 주소가 걸리는 것이 아니라
+ * 이어 붙은 결과 전체를 다시 보므로, 앞뒤와 이어져 주소가 되는 경우도 잡힌다.
+ * 이미 링크·멘션이 걸린 구간은 `applyAutoLinks`가 건너뛴다.
+ */
+function pasteAutoLink(el: HTMLElement, text: string, from: number, to: number, onChange: (runs: RichRun[]) => void): boolean {
+  if (!/[.:]/.test(text)) return false; // 주소일 수 없는 글은 값을 만들지도 않는다
+  try {
+    const chars = runsToChars(domToRuns(el));
+    const next = [...chars.slice(0, from), ...[...text].map((ch) => ({ ch, b: false, c: null })), ...chars.slice(to)];
+    const body = charsToRuns(next).filter((r) => r.t);
+    const linked = applyAutoLinks({ text: next.map((c) => c.ch).join(''), rich: body.length ? body : null });
+    if (!linked) return false;
+    el.innerHTML = runsToHtml(linked);
+    const spot = pointAt(el, from + [...text].length);
+    const range = document.createRange();
+    range.setStart(spot.node, spot.offset);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    onChange(linked.rich ?? textRuns(linked.text));
+    return true;
+  } catch {
+    return false; // 값을 못 만들면 브라우저의 기본 붙여넣기가 낫다
+  }
 }
 
 /**
