@@ -308,9 +308,19 @@ describe('알림 센터', () => {
     // "추가순 = 시간순"을 전제로 reverse()하는데, 저장 배열이 시간순이 아니면
     // (기기 간 시계 어긋남·재작성 경로) '이전' 그룹이 '오늘' 위에 선다 —
     // 실브라우저 프로브에서 재현한 화면.
+    /**
+     * **`오늘` 묶음은 날짜로 못박는다** — 위 테스트와 같은 처방이다(CI가 00:02 UTC에
+     * 돌아 실제로 깨졌다: `Date.now() - 5분`이 자정 직후에는 **어제 23:57**이라
+     * `오늘` 머리가 서지 않는다). 오늘 09:00을 쓰되 아직 오지 않았으면 `지금`으로
+     * 물러서고, 이전 묶음은 **자정 앞**으로 둔다.
+     */
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const todayish = new Date(Math.min(midnight.getTime() + 9 * 3600_000, Date.now())).toISOString();
+    const earlier = new Date(midnight.getTime() - 2 * 3600_000).toISOString();
     seed([
-      { id: 'new', createdAt: new Date(Date.now() - 5 * 60_000).toISOString() },
-      { id: 'old', createdAt: new Date(Date.now() - 26 * 3600_000).toISOString(), kind: 'share', nodeId: null, preview: '' },
+      { id: 'new', createdAt: todayish },
+      { id: 'old', createdAt: earlier, kind: 'share', nodeId: null, preview: '' },
     ]);
     renderBell();
     fireEvent.click(await screen.findByRole('button', { name: /^알림 2개 ·/ }));
