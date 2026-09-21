@@ -10,6 +10,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { NOTE_LIST_MAX_INDENT } from '@mindflow/mindmap-core';
+import { linearize, setLinearSelection } from './richtextDom';
 
 const NOTE = {
   v: 1,
@@ -4397,5 +4398,103 @@ describe('공책 41판 — 이미지 바로 넣기 · 마커 선택 · Shift+좌
     expect(wrap.style.marginTop).toBe('12px');
     expect(line.style.marginTop).toBe('');
     expect(wrap.style.alignItems).toBe('center');
+  });
+});
+
+describe('공책 42판 — 칸의 방향키를 본문과 한 정책으로(제보 1)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 칸 하나에 목록 두 줄 — 값은 `• 가나\n• 다라`(마커가 곧 글자다). */
+  const CELLS = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'b4', kind: 'table', rows: [[[{ t: '- 가나\n- 다라', b: false, c: null }], [{ t: '옆', b: false, c: null }]], [[{ t: 'x', b: false, c: null }], [{ t: 'y', b: false, c: null }]]] },
+        ],
+      },
+    ],
+  };
+
+  async function openCell(container: HTMLElement): Promise<HTMLElement> {
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+    fireEvent.doubleClick(cell.closest('td') as HTMLElement);
+    await waitFor(() => expect(cell.querySelectorAll('[data-list-marker]')).toHaveLength(2));
+    return cell;
+  }
+
+  /** 캐럿의 **값 좌표** — 마커도 글자이므로 `• 가나\n• 다라`에서 센다. */
+  function caret(el: HTMLElement): number {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return -1;
+    const r = sel.getRangeAt(0);
+    return linearize(el, [{ container: r.startContainer, offset: r.startOffset }]).pos[0] ?? -1;
+  }
+  /** 캐럿이 마커 스팬 **안**인가 — 거기에 친 글자는 줄바꿈되지 않아 칸을 뚫는다. */
+  function inMarker(): boolean {
+    const r = window.getSelection()?.getRangeAt(0);
+    const host = r && (r.startContainer.nodeType === 3 ? r.startContainer.parentElement : (r.startContainer as Element));
+    return !!host?.closest?.('[data-list-marker]');
+  }
+
+  it('← 한 번이면 **앞 줄 끝**으로 — 문장 첫머리에 갇히지 않는다(증상 2)', async () => {
+    localStorage.setItem('mindflow_doc_c1', JSON.stringify(CELLS));
+    const { container } = renderEditor('/editor?map=c1&title=x');
+    const cell = await openCell(container);
+
+    setLinearSelection(cell, 7, 7); // 둘째 줄 내용 시작(`• 가나\n• ` 뒤)
+    fireEvent.keyDown(cell, { key: 'ArrowLeft' });
+
+    expect(caret(cell)).toBe(4); // 앞 줄 끝(`• 가나`)
+    expect(inMarker()).toBe(false);
+  });
+
+  it('마커 구역에 떨어진 캐럿은 **누르는 그 순간** 걷어낸다 — 길게 눌러도(증상 1)', async () => {
+    localStorage.setItem('mindflow_doc_c2', JSON.stringify(CELLS));
+    const { container } = renderEditor('/editor?map=c2&title=x');
+    const cell = await openCell(container);
+
+    // 길게 누르면 `keyup`이 오지 않는다 — 예전에는 그 스냅 하나뿐이라 캐럿이
+    // 마커 위를 훑고 지나갔다. 이제 keydown에서 먼저 걷고 ←는 마커를 통째로 건넌다.
+    for (const at of [5, 6]) {
+      setLinearSelection(cell, at, at);
+      fireEvent.keyDown(cell, { key: 'ArrowLeft' });
+      expect(caret(cell)).toBe(4);
+      expect(inMarker()).toBe(false);
+    }
+  });
+
+  it('↑ · ↓ 로 칸 안의 줄을 오르내린다 — [마커|내용] 행을 크롬은 못 건넌다(증상 3)', async () => {
+    localStorage.setItem('mindflow_doc_c3', JSON.stringify(CELLS));
+    const { container } = renderEditor('/editor?map=c3&title=x');
+    const cell = await openCell(container);
+
+    setLinearSelection(cell, 8, 8); // 둘째 줄 `다|라`
+    fireEvent.keyDown(cell, { key: 'ArrowUp' });
+    expect(caret(cell)).toBe(3); // 첫 줄의 같은 열(`가|나`)
+    expect(inMarker()).toBe(false);
+
+    fireEvent.keyDown(cell, { key: 'ArrowDown' });
+    expect(caret(cell)).toBe(8);
+  });
+
+  it('칸을 **고르기만** 한 상태에서 방향키는 여전히 표의 것이다', async () => {
+    localStorage.setItem('mindflow_doc_c4', JSON.stringify(CELLS));
+    const { container } = renderEditor('/editor?map=c4&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-line="b4:r0c0"]'))) as HTMLElement;
+    const td = cell.closest('td') as HTMLElement;
+    fireEvent.mouseDown(td);
+    fireEvent.mouseUp(td);
+    await waitFor(() => expect(td.getAttribute('data-armed')).toBe('1'));
+
+    fireEvent.keyDown(cell, { key: 'ArrowRight' });
+    await waitFor(() => expect(picked(container)).toEqual(['0:1']));
   });
 });

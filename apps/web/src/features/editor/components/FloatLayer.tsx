@@ -12,7 +12,8 @@ import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, listArrowLeft, listArrowVertical, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
+import { domToRuns, linearize, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
+import { editCaretKeydown } from '../caretPolicy';
 import { isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { insertLineBreak, listBackspaceOpAt, maybeContinueList } from './NodeLayer';
 import { AttachedImg } from './AttachedImg';
@@ -383,22 +384,13 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
           if (e.shiftKey || softKeyboard) pendingBreakRef.current = true;
           return;
         }
-        // 캐럿이 마커 구역이면 입력 전에 내용 시작으로 + ArrowLeft는 마커를 건너
-        // 앞 줄 끝으로(노드 편집과 같은 규칙 — selectionchange 스냅의 이중화).
-        // 방향키 기본 동작은 이 핸들러 뒤에 실행되므로 rAF 스냅도 예약(페인트 전 교정).
-        if (!composing && ref.current) {
-          snapCaretOffListMarker(ref.current);
-          scheduleSnap();
-          const plainKey = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
-          if (e.key === 'ArrowLeft' && plainKey && listArrowLeft(ref.current)) {
-            e.preventDefault();
-            return;
-          }
-          // ↑/↓ 세로 이동은 우리가 직접 — 크롬 기본이 리스트 행을 못 건넌다(노드와 동일).
-          if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && plainKey && listArrowVertical(ref.current, e.key === 'ArrowUp' ? -1 : 1)) {
-            e.preventDefault();
-            return;
-          }
+        // **캐럿 정책은 한 벌이다**(`caretPolicy.ts`) — 공책의 줄·표의 칸과 같은
+        // 함수를 쓴다: 마커 구역 스냅(입력 전 + rAF로 페인트 전 한 번 더 — 길게
+        // 누르면 keyup이 오지 않는다) · ←는 마커를 통째로 건너 앞 줄 끝 · ↑↓는
+        // [마커|내용] flex 행 건너뛰기 · →는 감긴 줄의 오른끝에 서기.
+        if (!composing && ref.current && editCaretKeydown(ref.current, e, { composing: false })) {
+          e.preventDefault();
+          return;
         }
         // Ctrl/Cmd+B·I는 브라우저 기본 토글 대신 툴바와 같은 applyPartial로
         // (노드 편집과 동일 — 기본 토글은 굵은 박스에서 거꾸로 동작한다).

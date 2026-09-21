@@ -22,6 +22,7 @@ import { charOffset, pointAt } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
+import { editCaretKeydown } from '../caretPolicy';
 
 interface Props {
   runs: RichRun[] | undefined;
@@ -186,6 +187,20 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     if (!el) return;
     // 여러 줄이 칠해져 있으면 **문서 리스너가 맡는다**(`selecting` 머리말).
     if (selecting) return;
+    /**
+     * **캐럿 정책은 한 벌이다**(`caretPolicy.ts`) — 맵의 도형·메모 편집과 같은 함수를
+     * 쓴다(요청: "텍스트 편집 정책은 하나의 묶음으로"). 마커 건너뛰기·[마커|내용]
+     * 행 오르내리기는 박스 안에 마커가 글자로 있는 상자(= 표의 칸)에서만, 감긴 줄의
+     * 오른끝은 **모든** 줄에서.
+     *
+     * 칸을 *고르기만* 한 상태(`!listKeys`)에서는 마커 규칙을 끈다 — 그때 방향키는
+     * 칸 사이를 옮겨 다니는 표의 것이다.
+     */
+    if (!readOnly && editCaretKeydown(el, e, { composing: e.nativeEvent.isComposing, list: !!(listBox && listKeys) })) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     /**
      * **칸 안의 목록**(`listBox`) — Tab·Shift+Enter·마커 Backspace를 여기서 받는다.
      *
