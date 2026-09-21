@@ -677,8 +677,11 @@ input[type='search']::-webkit-search-results-decoration {
 [data-note-title]:hover {
   border-bottom-color: var(--mf-border) !important;
 }
+/* 초점을 받아도 **주황은 쓰지 않는다**(요청) — 제목은 글이지 단추가 아니라,
+   강조색이 들어오면 화면에서 가장 센 자리가 된다. 밑줄은 남긴다(고치는 중임을
+   말해 주는 것은 그 선이고, 색은 hover와 같은 옅은 테두리색이다). */
 [data-note-title]:focus {
-  border-bottom-color: var(--mf-accent) !important;
+  border-bottom-color: var(--mf-border) !important;
 }
 
 /* ── 공책 — 디자인 원본의 상호작용 ─────────────────────────────────────────── */

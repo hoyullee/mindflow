@@ -193,15 +193,42 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
    */
   const dirty = useRef(false);
 
-  const commit = (): void => {
+  /** 값을 이 박스에 **다시 그린다** — 칸은 마커가 글자라 그리는 함수가 다르다. */
+  const redraw = (el: HTMLElement, value: { text: string; rich: RichRun[] | null }): void => {
+    if (listBox) {
+      el.innerHTML = cellListHtml(value);
+      el.dataset.listSig = listSignature(value);
+    } else {
+      el.innerHTML = runsToHtml(value);
+    }
+  };
+
+  /**
+   * `final`이면 **줄을 떠나는 커밋**이다 — 그때 친 주소를 링크로 바꾼다(요청).
+   *
+   * 타이핑 중에 실시간으로 걸지 않는 이유는 맵 편집과 같다: 반쯤 친 주소가 링크가
+   * 됐다 풀렸다 하며 캐럿과 한글 조합이 흔들린다. 떠나는 순간이면 그 흔들림이 없고,
+   * 비제어 박스라 화면도 우리가 함께 다시 그려야 링크가 보인다.
+   */
+  const commit = (final = false): void => {
     const el = ref.current;
     if (!el) return;
     // 마커가 생기거나 사라졌으면 **읽기 전에** 다시 그린다 — 그래야 화면과 값이
     // 같은 것을 말한다(`- `를 친 그 순간 `• `가 되는 자리).
     if (listBox && !composing.current) cellListSync(el);
     const { text, rich } = domToRuns(el);
-    dirty.current = false;
-    onChange(rich ?? textRuns(text));
+    let value: { text: string; rich: RichRun[] | null } = { text, rich };
+    if (final) {
+      const linked = applyAutoLinks(value);
+      if (linked) {
+        value = linked;
+        redraw(el, value);
+      }
+    }
+    // **떠나는 커밋에서만** 표식을 내린다 — 글쇠마다 내리면 그 뒤의 blur가
+    // "고친 적 없음"으로 읽혀 주소를 링크로 바꿀 마지막 기회를 놓친다(실측).
+    if (final) dirty.current = false;
+    onChange(value.rich ?? textRuns(value.text));
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -409,7 +436,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       }}
       // 고친 적이 없으면 읽지 않는다(`dirty` 머리말) — 커서만 지나가도 저장되던 자리.
       onBlur={() => {
-        if (dirty.current) commit();
+        if (dirty.current) commit(true);
       }}
       onCompositionStart={() => {
         composing.current = true;
@@ -437,7 +464,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
           return;
         }
         // 목록·줄바꿈이 없는 평범한 한 줄 — **주소면 링크로** 붙인다(요청 3).
-        if (pasteAutoLink(el, text, span.from, span.to, onChange)) {
+        if (pasteAutoLink(el, text, span.from, span.to, onChange, redraw)) {
           e.preventDefault();
           dirty.current = false;
         }
@@ -483,7 +510,14 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
  * 이어 붙은 결과 전체를 다시 보므로, 앞뒤와 이어져 주소가 되는 경우도 잡힌다.
  * 이미 링크·멘션이 걸린 구간은 `applyAutoLinks`가 건너뛴다.
  */
-function pasteAutoLink(el: HTMLElement, text: string, from: number, to: number, onChange: (runs: RichRun[]) => void): boolean {
+function pasteAutoLink(
+  el: HTMLElement,
+  text: string,
+  from: number,
+  to: number,
+  onChange: (runs: RichRun[]) => void,
+  redraw: (el: HTMLElement, value: { text: string; rich: RichRun[] | null }) => void,
+): boolean {
   if (!/[.:]/.test(text)) return false; // 주소일 수 없는 글은 값을 만들지도 않는다
   try {
     const chars = runsToChars(domToRuns(el));
@@ -491,7 +525,7 @@ function pasteAutoLink(el: HTMLElement, text: string, from: number, to: number, 
     const body = charsToRuns(next).filter((r) => r.t);
     const linked = applyAutoLinks({ text: next.map((c) => c.ch).join(''), rich: body.length ? body : null });
     if (!linked) return false;
-    el.innerHTML = runsToHtml(linked);
+    redraw(el, linked);
     const spot = pointAt(el, from + [...text].length);
     const range = document.createRange();
     range.setStart(spot.node, spot.offset);
