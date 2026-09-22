@@ -418,6 +418,23 @@ export function listArrowVertical(el: HTMLElement, dir: -1 | 1): boolean {
   return true;
 }
 
+/**
+ * **빈 편집 박스의 채움 `<br>`** — 글자로 세지 않는다(제보: 빈 줄에서 ↓가 먹지 않는다).
+ *
+ * 글을 다 지우면 크로뮴이 줄을 보이게 하려고 `<br>` 하나를 남긴다(bogus BR — 우리가
+ * 그린 것이 아니다). 그것을 `\n` 한 글자로 세면 **빈 줄인데 길이가 1**이 되어
+ * "글 끝인가"가 영영 거짓이 된다: `caretOnEdgeLine`의 `at >= lineLength(el)`가
+ * `0 >= 1`로 읽혀 ↓가 다음 줄로 넘어가지 못했다(↑는 `at <= 0`이라 멀쩡해서, 같은 줄에서
+ * 위로는 가는데 아래로는 못 가는 이상한 모양이었다 — 실브라우저로 재현했다).
+ *
+ * **혼자 있을 때만** 채움으로 본다 — 글 뒤의 `<br>`은 진짜 줄바꿈이다(`가<br>`).
+ * 값이 정확히 `"\n"` 하나인 줄은 이 규칙에서 빈 줄로 접히는데, 화면으로는 어차피
+ * 같은 빈 줄이라 잃는 것이 없다.
+ */
+export function fillerBr(el: HTMLElement): Node | null {
+  return el.childNodes.length === 1 && el.firstChild?.nodeName === 'BR' ? el.firstChild : null;
+}
+
 /** One DOM position to resolve into a linear text offset — the `{ container, offset }`
  * shape a `Range`'s `startContainer`/`startOffset` (or `endContainer`/`endOffset`) already
  * has, so callers typically pass those straight through. */
@@ -433,7 +450,9 @@ export interface DomMark {
 export function linearize(el: HTMLElement, marks: DomMark[]): { text: string; pos: number[] } {
   let text = '';
   const res = new Array<number>(marks.length).fill(-1);
+  const skip = fillerBr(el);
   const walk = (node: Node): void => {
+    if (node === skip) return;
     marks.forEach((m, i) => {
       if (res[i]! < 0 && m.container === node && node.nodeType === 3) res[i] = text.length + m.offset;
     });
@@ -476,6 +495,7 @@ export function linearize(el: HTMLElement, marks: DomMark[]): { text: string; po
  */
 export function linearPoints(el: HTMLElement, positions: number[]): { node: Node; offset: number }[] {
   const out = new Array<{ node: Node; offset: number } | null>(positions.length).fill(null);
+  const skip = fillerBr(el);
   let acc = 0;
   // 마지막으로 지나온 위치 — 어떤 이유로든 오프셋을 못 찾았을 때의 폴백.
   // 예전엔 못 찾으면 `el` 전체를 선택했는데, 그러면 다음 타이핑이 본문을 통째로
@@ -510,6 +530,20 @@ export function linearPoints(el: HTMLElement, positions: number[]): { node: Node
       return;
     }
     if (node.nodeType !== 1) return;
+    if (node === skip) {
+      // 채움 `<br>`은 글자가 아니지만 **캐럿이 설 자리**이긴 하다 — 빈 줄의 0번
+      // 자리를 그 앞(부모 + 인덱스)으로 돌려준다(`linearize`와 같은 셈).
+      const parent = node.parentNode;
+      const idx = parent ? Array.prototype.indexOf.call(parent.childNodes, node) : 0;
+      positions.forEach((pos, i) => {
+        if (!out[i] && pos <= acc && parent) out[i] = { node: parent, offset: idx };
+      });
+      if (parent) {
+        lastC = parent;
+        lastO = idx;
+      }
+      return;
+    }
     if (node.nodeName === 'BR') {
       // 빈 줄은 텍스트 노드가 없고 `<br>`만 있다 — 그 자리를 캐럿 위치로 인정한다
       // (부모 + 자식 인덱스). 이게 없으면 빈 줄로 가는 오프셋이 영영 안 풀린다.

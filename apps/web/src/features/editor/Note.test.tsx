@@ -2235,7 +2235,9 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     slash(c, '/');
     await waitFor(() => expect(c.querySelector('[data-note-slash-item="code"]')).toBeTruthy());
 
-    fireEvent.mouseEnter(c.querySelector('[data-note-slash-item="code"]')!);
+    // **움직여서** 얹어야 한다(제보 5) — 목록이 캐럿 아래 뜨므로 포인터가 가만히
+    // 있는데도 `mouseenter`가 오는 일이 잦고, 그것이 방향키와 겹쳤다.
+    fireEvent.mouseMove(c.querySelector('[data-note-slash-item="code"]')!);
     await waitFor(() => expect(activeItem(c)).toBe('code'));
     // 그래서 Enter가 넣는 것도 손으로 가리킨 그 줄이다.
     fireEvent.keyDown(document, { key: 'Enter' });
@@ -5968,14 +5970,14 @@ describe('공책 — 글 앞에서 여는 `/`', () => {
     // 화면이 먼저다 — 저장은 커밋이 렌더에 반영된 **뒤에** 찍는다(그러지 않으면
     // 마지막 커밋 하나가 빠진 판이 저장된다: 이 파일의 다른 테스트들이 운으로
     // 통과하고 있던 자리다).
-    await waitFor(() => expect(container.querySelectorAll('[data-note-block]')).toHaveLength(2));
+    // 구분선 **뒤에 빈 문단**이 하나 선다(제보 4) — 구분선에는 캐럿이 설 자리가
+    // 없어, 문서 끝에 넣으면 이어서 쓸 곳이 사라진다.
+    await waitFor(() => expect(container.querySelectorAll('[data-note-block]')).toHaveLength(3));
     saveNow();
 
-    await waitFor(() => expect(saved('nsC4').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['p', 'hr']));
+    await waitFor(() => expect(saved('nsC4').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['p', 'hr', 'p']));
     const blocks = saved('nsC4').pages[0].blocks;
-    expect(blocks[0].kind).toBe('p');
     expect(runsOf(blocks[0])).toBe('안녕하세요');
-    expect(blocks[1].kind).toBe('hr');
   });
 
   it('빈 줄에서는 예전처럼 **그 줄을** 구분선으로 바꾼다(회귀 방어)', async () => {
@@ -5991,7 +5993,8 @@ describe('공책 — 글 앞에서 여는 `/`', () => {
     saveNow();
 
     await waitFor(() => expect(saved('nsC5').pages[0].blocks[0].kind).toBe('hr'));
-    expect(saved('nsC5').pages[0].blocks).toHaveLength(1);
+    // 그 아래에 이어서 쓸 빈 문단(제보 4).
+    expect(saved('nsC5').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['hr', 'p']);
   });
 });
 
@@ -6080,5 +6083,100 @@ describe('공책 — 찾기 하이라이트', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// ── 링크 판 · 넣은 뒤의 캐럿 · 목록의 방향키(제보 3·4·5) ────────────────────
+describe('공책 — 링크 판과 넣기 뒤의 캐럿', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...NOTE,
+    pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'lk', kind: 'p', runs: [{ t: '앞 ', b: false, c: null }, { t: '링크글', b: false, c: null, href: 'https://example.com/go' }, { t: ' 뒤', b: false, c: null }] },
+      { id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] },
+    ] }],
+  };
+
+  /** 그 링크 스팬을 통째로 고른다 — 사람이 끌어서 고른 것과 같은 상태. */
+  function selectLink(container: HTMLElement): void {
+    const span = container.querySelector('[data-note-line="lk"] [data-href]') as HTMLElement;
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+  }
+
+  it('링크 글을 고르면 **주소·이동·삭제** 판이 뜬다(요청 3)', async () => {
+    localStorage.setItem('mindflow_doc_lp1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=lp1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="lk"] [data-href]')).toBeTruthy());
+
+    selectLink(container);
+    await waitFor(() => expect(container.querySelector('[data-note-linkpop]')).toBeTruthy());
+    const pop = container.querySelector('[data-note-linkpop]') as HTMLElement;
+    expect(pop.textContent).toContain('example.com/go');
+    expect(pop.querySelector('[data-note-linkpop-open]')).toBeTruthy();
+    expect(pop.querySelector('[data-note-linkpop-remove]')).toBeTruthy();
+  });
+
+  it('「링크 삭제」는 **링크만** 뗀다 — 글도 다른 서식도 그대로', async () => {
+    localStorage.setItem('mindflow_doc_lp2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=lp2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="lk"] [data-href]')).toBeTruthy());
+
+    selectLink(container);
+    await waitFor(() => expect(container.querySelector('[data-note-linkpop-remove]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-linkpop-remove]')!);
+
+    await waitFor(() => expect(container.querySelector('[data-note-line="lk"] [data-href]')).toBeNull());
+    expect((container.querySelector('[data-note-line="lk"] ') as HTMLElement).textContent).toBe('앞 링크글 뒤');
+    // 저장본은 **한 번 찍고 폴링**한다(`probe-pitfalls` F8·F10) — ⌘S는 200ms 뒤에
+    // 실제로 쓰므로, 폴링 안에서 다시 누르면 그 타이머를 매번 꺼 영영 저장되지 않는다.
+    saveNow();
+    await waitFor(() => expect(JSON.stringify(saved('lp2').pages[0].blocks[0].runs)).not.toContain('href'));
+    expect(runsOf(saved('lp2').pages[0].blocks[0])).toBe('앞 링크글 뒤');
+  });
+
+  it('「이동」은 새 창으로 연다', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    localStorage.setItem('mindflow_doc_lp3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=lp3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="lk"] [data-href]')).toBeTruthy());
+
+    selectLink(container);
+    await waitFor(() => expect(container.querySelector('[data-note-linkpop-open]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-linkpop-open]')!);
+    expect(open).toHaveBeenCalledWith('https://example.com/go', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('`/` 목록의 활성은 **마우스를 움직였을 때만** 따라온다(제보 5)', async () => {
+    localStorage.setItem('mindflow_doc_lp4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=lp4&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/제목');
+    await waitFor(() => expect(container.querySelectorAll('[data-note-slash-item]')).toHaveLength(3));
+    const items = () => [...container.querySelectorAll('[data-note-slash-item]')];
+    const activeAt = () => items().findIndex((e) => e.getAttribute('aria-selected') === 'true');
+    expect(activeAt()).toBe(0);
+
+    // 포인터가 목록 위에 **얹혀만** 있는 것은 고르는 일이 아니다 — 목록이 캐럿 아래
+    // 뜨므로 브라우저가 `mouseenter`를 쏘는 일이 잦고, 그것이 방향키와 겹쳤다.
+    fireEvent.mouseEnter(items()[2]!);
+    expect(activeAt()).toBe(0);
+
+    // 진짜로 움직이면 따라온다.
+    fireEvent.mouseMove(items()[2]!);
+    await waitFor(() => expect(activeAt()).toBe(2));
   });
 });
