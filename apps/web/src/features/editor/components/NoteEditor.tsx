@@ -40,7 +40,7 @@ import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { applyNoteFormat, applyNoteFormatRange, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
-import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, paintSlash, pointAt, rangeOfChars, selectWholeLines, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
@@ -332,6 +332,12 @@ export function NoteEditor({ controller }: Props) {
    * 줄이 다시 그려져도 값 하나로 다시 계산된다.
    */
   const [slashTail, setSlashTail] = useState('');
+  /**
+   * 공책 안 **찾기에 걸린 낱말**(요청 5) — 목록이 알려 주고 본문이 칠한다.
+   * 목록 쪽 표시는 그쪽이 스팬으로 그리고, 여기서는 **열려 있는 페이지의 글**을
+   * `CSS.highlights`로 칠한다(값도 DOM도 건드리지 않는 길 — 선택·`/`와 같은 방식).
+   */
+  const [findQ, setFindQ] = useState('');
   const openSlashAt = (lineKey: string, from?: Element | number | null, tail = '') => {
     const at = typeof from === 'number' ? from : null;
     const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
@@ -657,6 +663,25 @@ export function NoteEditor({ controller }: Props) {
    * `/` **한 글자부터** 칠한다 — 질의가 비어 있는 첫 순간에도 "여기서부터 명령"이
    * 보여야 한다(빈 구간은 아무것도 그리지 못한다).
    */
+  /**
+   * 찾는 말을 **본문에서도** 칠한다(요청 5) — 목록에서 고른 그 페이지의 글이다.
+   *
+   * 줄마다 값(`lineText`)을 훑어 구간을 만든다(화면 글이 아니라 값이라야 `<br>`이
+   * 든 줄에서도 자리가 맞는다). 글을 고치면 `page`가 바뀌어 다시 칠하고, 검색을
+   * 지우면 걷힌다. 아는 브라우저에서만 켜지고 모르는 브라우저에서는 조용히 넘어간다.
+   */
+  useEffect(() => {
+    const col = colRef.current;
+    if (!findQ || !col) {
+      paintFind([]);
+      return;
+    }
+    const out: Range[] = [];
+    for (const line of col.querySelectorAll<HTMLElement>('[data-note-line]')) out.push(...findRangesIn(line, findQ));
+    paintFind(out);
+    return () => paintFind([]);
+  }, [findQ, page]);
+
   useEffect(() => {
     if (slashFor === null || slashSpan === null) {
       paintSlash(null);
@@ -742,34 +767,15 @@ export function NoteEditor({ controller }: Props) {
   formatSelRef.current = formatSelection;
 
   /**
-   * **Esc = 이 블록을 통째로 고른다**(요청 7 — 글자 선택만 있고 블록 선택이 없었다).
+   * **Esc는 글을 고르지 않는다**(제보 6·7 — 걷어냈다).
    *
-   * 새 상태를 하나 더 두지 않고 **칠하기 선택**(`textSel`)에 얹는다: 복사·잘라내기·
-   * 지우기·Tab 들여쓰기·Shift+방향키로 넓히기가 전부 그 위에 이미 서 있다. 그래서
-   * 이 고리는 "그 블록의 모든 줄을 통째로" 한 줄이면 되고, 나머지는 공짜로 따라온다.
-   * 한 번 더 누르면 풀린다(칠해진 상태의 Esc가 이미 그 일을 한다).
-   *
-   * `/` 목록이 떠 있을 때는 그쪽의 Esc다 — 목록을 닫는 것이 먼저다.
+   * 한동안 Esc가 "그 블록을 통째로 고르기"였다(요청으로 들어온 기능이다). 그런데
+   * 실제로 쓰는 동안에는 **쓰던 자리를 잃는 동작**이었다: `/` 목록을 Esc로 닫으면
+   * 그 줄의 글이 통째로 칠해져 다음 글자가 그것을 덮었고(제보 6), 목록이 없을 때도
+   * 캐럿이 사라졌다(제보 7). 그래서 이 고리를 **없앤다** — Esc는 떠 있는 것을 닫고
+   * 캐럿은 그대로 둔다. 칠해 둔 선택을 Esc로 **놓는** 길은 그대로 남는다
+   * (아래 문서 리스너의 `setTextSel(null)` — 그쪽은 고르는 것이 아니라 놓는 것이다).
    */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || e.defaultPrevented || textSelRef.current || slashFor !== null) return;
-      const col = colRef.current;
-      const active = document.activeElement as HTMLElement | null;
-      const line = active?.closest?.('[data-note-line]') as HTMLElement | null;
-      if (!col || !line || !col.contains(line)) return;
-      const id = blockIdOf(line.getAttribute('data-note-line') || '');
-      const lines = [...col.querySelectorAll<HTMLElement>(`[data-note-block="${id}"] [data-note-line]`)];
-      const next = selectWholeLines(lines.length ? lines : [line]);
-      if (!next) return;
-      e.preventDefault();
-      window.getSelection()?.removeAllRanges();
-      line.blur();
-      setTextSel(next);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [slashFor]);
 
   /**
    * 칠하기는 DOM 작업이라 그리고 난 뒤에 — 선택이 바뀔 때마다 다시 칠한다.
@@ -1356,7 +1362,7 @@ export function NoteEditor({ controller }: Props) {
     >
       {/* 툴바 이름·링크 주소 툴팁 — 위임 리스너 하나가 이 안의 `[data-tip]`·`[data-href]`를 맡는다. */}
       <NoteTips />
-      <PageList controller={controller} collapsed={focus} />
+      <PageList controller={controller} collapsed={focus} onQuery={setFindQ} />
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!readOnly && (
           <FormatToolbar
@@ -2308,7 +2314,7 @@ function Caret() {
 /** 목록 정렬 둘 — 디자인 원본의 `noteSorts`. */
 type PageSort = 'edited' | 'title';
 
-function PageList({ controller, collapsed }: { controller: EditorController; collapsed: boolean }) {
+function PageList({ controller, collapsed, onQuery }: { controller: EditorController; collapsed: boolean; onQuery: (q: string) => void }) {
   const pages = controller.notePages;
   const curId = controller.notePage?.id ?? null;
   const cover = noteCoverColor(controller.doc.cover);
@@ -2320,6 +2326,15 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
    * 그 자리에 보여 줘 "이 장이 맞나"를 목록에서 판단할 수 있게 한다.
    */
   const [q, setQ] = useState('');
+  /**
+   * 찾는 말을 **본문 쪽에도** 알린다(요청 5) — 목록에서 짚어 주는 것과 같은 낱말을
+   * 열려 있는 페이지의 글에서도 칠한다. 상태는 여기 그대로 두고 값만 올려 보낸다
+   * (검색칸·정렬·태그는 이 목록의 일이다).
+   */
+  useEffect(() => {
+    onQuery(q.trim());
+    return () => onQuery('');
+  }, [q, onQuery]);
   const [sort, setSort] = useState<PageSort>('edited');
   const [tag, setTag] = useState<string>('전체');
   const query = q.trim().toLowerCase();
@@ -2542,7 +2557,7 @@ function PageList({ controller, collapsed }: { controller: EditorController; col
 
       <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 8px 14px', display: 'flex', flexDirection: 'column', gap: 3 }}>
         {shown.map(({ pg, hit }) => (
-          <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} cover={cover} />
+          <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} find={query} cover={cover} />
         ))}
 
         {shown.length === 0 && (
@@ -2616,7 +2631,7 @@ function useCursorPlacement(at: { x: number; y: number }, width: number, estimat
 /** 페이지 우클릭 메뉴의 너비 — 날개(`다른 공책으로 이동`)가 이 값만큼 옆으로 붙는다. */
 const PAGE_MENU_W = 212;
 
-function PageRow({ controller, page, index, active, hit, cover }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null; cover: string }) {
+function PageRow({ controller, page, index, active, hit, find, cover }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null; find?: string; cover: string }) {
   // 검색 중이면 **걸린 줄**을 보여 준다 — 첫 줄은 왜 걸렸는지를 말해 주지 못한다.
   const excerpt = hit ?? pageExcerpt(page, 90);
   const tag = page.tag ?? null;
@@ -2757,7 +2772,7 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
                 whiteSpace: 'nowrap',
               }}
             >
-              {page.title.trim() || '제목 없는 페이지'}
+              <Marked text={page.title.trim() || '제목 없는 페이지'} find={find} />
             </span>
           )}
           {page.updatedAt && !renaming && (
@@ -2769,7 +2784,7 @@ function PageRow({ controller, page, index, active, hit, cover }: { controller: 
             data-note-page-hit={hit ? '1' : undefined}
             style={{ fontSize: 11.5, color: 'var(--mf-subtext)', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'keep-all' }}
           >
-            {excerpt}
+            <Marked text={excerpt} find={find} />
           </div>
         )}
         {/* 태그 줄 — 태그가 없어도 **자리를 비우지 않는다**(요청): 빈 자리는 "아직 안
@@ -2996,6 +3011,34 @@ function MovePageMenu({ controller, pageId, anchor, onDone }: { controller: Edit
  * 제목에서 걸리면 빈 문자열을 돌려준다(행이 제목을 이미 보여 주므로 같은 말을
  * 두 번 쓰지 않는다 — 호출부는 `!== null`로 판단한다).
  */
+/**
+ * **찾은 낱말을 짚어 준다**(요청 5) — 목록의 제목·걸린 줄에서 그 글자만 배경을 준다.
+ *
+ * 본문은 `CSS.highlights`로 칠하지만(값도 DOM도 건드리지 않는다) 목록은 우리가 그리는
+ * 글이라 스팬으로 감싸는 편이 간단하고, 말줄임·두 줄 자르기와 함께 움직인다.
+ * 빈 검색어면 글자 그대로 — 감싸지 않는다.
+ */
+function Marked({ text, find }: { text: string; find?: string }) {
+  const q = (find ?? '').trim();
+  if (!q) return <>{text}</>;
+  const hay = text.toLowerCase();
+  const want = q.toLowerCase();
+  const out: ReactNode[] = [];
+  let at = 0;
+  for (let i = hay.indexOf(want); i >= 0; i = hay.indexOf(want, at)) {
+    if (i > at) out.push(text.slice(at, i));
+    out.push(
+      <span key={`${i}`} className="mf-note-find" data-note-find>
+        {text.slice(i, i + q.length)}
+      </span>,
+    );
+    at = i + q.length;
+  }
+  if (at === 0) return <>{text}</>;
+  if (at < text.length) out.push(text.slice(at));
+  return <>{out}</>;
+}
+
 function pageHit(page: NotePage, query: string): string | null {
   if (page.title.toLowerCase().includes(query)) return '';
   for (const b of page.blocks) {
@@ -3399,6 +3442,16 @@ function FormatToolbar({
    * 바뀌었다(블록 종류). 글머리·번호는 칸에서도 되므로 켜 둔다(`noteCellList`).
    */
   const [inCell, setInCell] = useState(false);
+  /**
+   * **캐럿이 지금 어느 줄에 있나**(제보 2 — 툴바의 블록 종류가 즉시 안 바뀐다).
+   *
+   * 예전에는 `BlockTypeMenu`가 렌더 중에 `boxRef.current`를 읽었다. 그것은 **ref**라
+   * 값이 바뀌어도 리렌더 계기가 없다 — 번호 매기기 줄을 눌렀다가 본문 줄로 옮겨도
+   * 알약은 `번호 매기기`인 채였고, 다른 이유로 리렌더가 돌 때에야 따라왔다.
+   * 서식 단추가 이미 `selectionchange`로 갱신되고 있으므로 같은 자리에서 줄 키를
+   * **상태로** 들어 함께 내려 준다.
+   */
+  const [lineKey, setLineKey] = useState('');
   /** 칠해 둔 선택은 리스너 안에서 **지금 값**을 봐야 한다(리스너는 한 번만 붙는다). */
   const paintedRef = useRef<LineSel[] | null>(null);
   paintedRef.current = painted;
@@ -3426,8 +3479,10 @@ function FormatToolbar({
           ? noteActiveMarks(el)
           : { b: false, i: false, s: false, u: false, k: false };
       setMarks((cur) => (sameMarks(cur, next) ? cur : next));
-      const cell = isCellKey(el?.getAttribute('data-note-line') ?? '');
+      const key = el?.getAttribute('data-note-line') ?? '';
+      const cell = isCellKey(key);
       setInCell((cur) => (cur === cell ? cur : cell));
+      setLineKey((cur) => (cur === key ? cur : key));
     };
     read();
     document.addEventListener('selectionchange', read);
@@ -3575,7 +3630,7 @@ function FormatToolbar({
         background: 'var(--mf-card)',
       }}
     >
-      <BlockTypeMenu controller={controller} rememberBox={rememberBox} boxRef={boxRef} disabled={inCell} />
+      <BlockTypeMenu controller={controller} rememberBox={rememberBox} boxRef={boxRef} lineKey={lineKey} disabled={inCell} />
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
       {MARKS.map((m) => (
         <button
@@ -3901,9 +3956,14 @@ function FormatToolbar({
 }
 
 /** 블록 종류 바꾸기 — 캐럿이 있는 블록에 걸린다. */
-function BlockTypeMenu({ controller, rememberBox, boxRef, disabled }: { controller: EditorController; rememberBox: () => void; boxRef: { current: HTMLElement | null }; disabled?: boolean }) {
+function BlockTypeMenu({ controller, rememberBox, boxRef, lineKey, disabled }: { controller: EditorController; rememberBox: () => void; boxRef: { current: HTMLElement | null }; lineKey: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
-  const cur = controller.notePage?.blocks.find((b) => b.id === blockIdOf(boxRef.current?.getAttribute('data-note-line') || ''));
+  /**
+   * 알약이 말하는 종류는 **캐럿이 있는 줄**의 것이다. 그 줄은 `lineKey`(상태)가
+   * 알려 준다 — `boxRef`만 읽으면 값이 바뀌어도 다시 그리지 않는다(제보 2).
+   * 아직 아무 줄에도 서지 않았으면 예전처럼 기억해 둔 박스로 물러선다.
+   */
+  const cur = controller.notePage?.blocks.find((b) => b.id === blockIdOf(lineKey || boxRef.current?.getAttribute('data-note-line') || ''));
   const curType = BLOCK_TYPES.find((t) => t.kind === (cur?.kind ?? 'p')) ?? BLOCK_TYPES[0]!;
   const { ref, rect } = useAnchored(open, () => setOpen(false));
   return (
@@ -5011,7 +5071,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    * 커밋하면 실행 취소가 한 칸씩 수십 개로 쌓인다(맵의 드래그와 같은 처방).
    */
   const sizing = useRef<{ axis: 'col' | 'row'; i: number; from: number; base: number[]; boxTop: number } | null>(null);
-  const [live, setLive] = useState<{ axis: 'col' | 'row'; sizes: number[] } | null>(null);
+  const [live, setLive] = useState<{ axis: 'col' | 'row'; sizes: number[]; fit: boolean } | null>(null);
   /** 끄는 중의 마지막 크기 — 손을 뗄 때 **업데이터를 거치지 않고** 읽는다(`up` 머리말). */
   const liveRef = useRef(live);
   liveRef.current = live;
@@ -5664,6 +5724,8 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
          * 이미 넘치던 표(가로로 스크롤하던 표)는 건드리지 않는다.
          */
         const sc = scrollRef.current;
+        /** 잡는 순간 이 표가 판에 **들어맞는가** — 끄는 동안의 막대 정책이 이 값이다. */
+        const fits = !sc || sc.scrollWidth <= sc.clientWidth + 1;
         if (axis === 'col' && sc && sc.scrollWidth <= sc.clientWidth + 1) {
           let over = base.reduce((a, b) => a + b, 0) - sc.clientWidth;
           while (over > 0) {
@@ -5678,7 +5740,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
         // 표 **윗변의 화면 자리**를 못박는다 — 끄는 동안 여기서 벗어나면 되돌린다.
         pin.current = { top: boxRef.current?.getBoundingClientRect().top ?? 0 };
         if (typeof requestAnimationFrame === 'function') pinRaf.current = requestAnimationFrame(keepTop);
-        setLive({ axis, sizes: base.slice() });
+        setLive({ axis, sizes: base.slice(), fit: fits });
       }}
       // 열 그립이 행 그립 **위**에 온다. 둘은 경계가 만나는 자리에서 6×6으로 겹치는데,
       // 행 그립은 표 너비를 통째로 덮으므로 순서만으로는 열을 잡을 수 없다(실측:
@@ -5737,7 +5799,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       const d = (g.axis === 'col' ? e.clientX : e.clientY) - g.from;
       const next = g.base.slice();
       next[g.i] = Math.max(min, Math.round((g.base[g.i] ?? min) + d));
-      setLive({ axis: g.axis, sizes: next });
+      setLive((cur) => ({ axis: g.axis, sizes: next, fit: cur?.fit ?? true }));
     };
     const up = () => {
       const g = sizing.current;
@@ -5851,15 +5913,21 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
              * 통째로 위아래로 튄다. 실측(xvfb headed): 한 번의 드래그에서 막대가
              * **42번** 뒤집히고 문서 높이가 `1274 ↔ 1283`을 프레임마다 오갔다.
              *
-             * 끄는 동안 `scroll`로 못박으면 막대가 처음부터 끝까지 제자리에 있어 높이가
-             * 변하지 않는다. `hidden`은 쓰지 않는다 — 가로로 스크롤해 둔 자리를 잃는다.
-             * 손을 떼면 `auto`로 돌아가 넘치지 않는 표에서는 막대가 사라진다.
+             * 끄는 동안 못박으면 막대가 처음부터 끝까지 그대로라 높이가 변하지 않는다.
+             * 무엇으로 못박을지는 **잡는 순간 넘치고 있었는가**로 가른다(제보: 그래도
+             * 깜빡인다 — 프로브로 다시 재니 끄는 **중**에는 0번이고 잡을 때 한 번,
+             * 놓을 때 한 번 뒤집혔다. 넘치지 않는 표에서도 `scroll`이 막대를 만들어
+             * 잡자마자 9px이 생기고 놓자마자 사라졌다 — 그 두 번이 눈에는 깜빡임이다):
+             * ① 들어맞던 표는 `hidden` — 끄는 동안 막대가 **아예 생기지 않는다**(가로로
+             * 스크롤해 둔 자리가 0이라 잃을 것도 없다) ② 이미 넘치던 표는 `scroll` —
+             * 그쪽은 막대가 원래 있었고, 스크롤해 둔 자리를 지켜야 한다.
+             * 손을 떼면 `auto`로 돌아간다 — 그때 실제로 넘치면 막대가 한 번 선다.
              *
              * **인라인 스타일을 손으로 쓰지 않는 이유**: 이 요소의 `style`은 리액트가
              * 렌더마다 다시 적어, 명령형으로 넣은 값이 다음 프레임에 지워진다
              * (실측: 그렇게 했을 때 토글이 42 → 2로 줄었을 뿐 0이 되지 않았다).
              */
-            overflowX: live ? 'scroll' : 'auto',
+            overflowX: live ? (live.fit ? 'hidden' : 'scroll') : 'auto',
             /**
              * **세로는 절대 스크롤하지 않는다**(제보: 열을 줄이면 아래에 가로
              * 스크롤이 생겼다 사라졌다 한다).
@@ -7007,6 +7075,10 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
 const IMG_ZOOM_MAX = 8;
 /** 단추 한 번의 배율 — 캔버스 확대와 같은 값(1.2배). */
 const IMG_ZOOM_STEP = 1.2;
+/** 줄 단위(`deltaMode: 1`) 휠 한 줄을 몇 px로 볼까 — 크로뮴이 쓰는 값과 같게. */
+const WHEEL_LINE_PX = 33;
+/** 한 이벤트가 아무리 커도 이만큼까지만 — 페이지 단위 스크롤이 한 번에 튀지 않게. */
+const WHEEL_MAX_PX = 240;
 
 /**
  * 이미지 판 — **배율로 본다**(요청 8).
@@ -7102,8 +7174,24 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
     if (!el) return;
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault();
-      // 트랙패드의 핀치는 `ctrlKey`로 온다 — 그때는 연속 배율, 휠 한 칸이면 1.12배.
-      const f = e.ctrlKey || e.metaKey ? Math.exp(-e.deltaY * 0.011) : e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      /**
+       * **굴린 양에 비례해서** 확대한다(제보: 마우스 휠로는 무조건 최대까지 튄다).
+       *
+       * 예전에는 이벤트 하나에 무조건 1.12배였다. 그 값은 "한 이벤트 = 한 칸"이라는
+       * 가정인데, 그 가정이 기기마다 다르다: 마우스 한 칸이 이벤트 **여럿**으로
+       * 잘려 오는 조합(고해상도 휠·부드러운 스크롤)에서는 한 번 굴릴 때마다 배율이
+       * 여러 번 곱해져 **상한·하한까지 내달렸다**. 트랙패드가 멀쩡했던 이유는 그쪽의
+       * 확대가 핀치(`ctrlKey`)라 아래의 연속 배율 가지를 타기 때문이다.
+       *
+       * 이제 두 가지 모두 **굴린 픽셀**에 비례한다 — 한 칸(100~120px)이 약 1.15배이고,
+       * 같은 칸이 잘게 잘려 와도 합이 같으므로 결과가 같다(기기에 기대지 않는다).
+       * 줄·페이지 단위로 오는 브라우저는 픽셀로 환산하고(파이어폭스는 `deltaMode: 1`),
+       * 한 이벤트가 아무리 커도 상한을 둔다.
+       */
+      const px = e.deltaMode === 1 ? e.deltaY * WHEEL_LINE_PX : e.deltaMode === 2 ? e.deltaY * (el.clientHeight || 600) : e.deltaY;
+      const dy = Math.max(-WHEEL_MAX_PX, Math.min(WHEEL_MAX_PX, px));
+      // 트랙패드의 핀치는 `ctrlKey`로 온다 — 그쪽은 손가락 간격이라 훨씬 민감하다.
+      const f = Math.exp(-dy * (e.ctrlKey || e.metaKey ? 0.011 : 0.0013));
       zoomAt(f, e.clientX, e.clientY);
     };
     el.addEventListener('wheel', onWheel, { passive: false });

@@ -122,8 +122,7 @@ function contentSpans(text: string, a: number, b: number): { a: number; b: numbe
  *
  * 규칙은 "고른 글자 **전부**가 그 서식일 때만 켜짐"이다(부분만 굵으면 꺼짐) — 그래야
  * 단추를 눌렀을 때 "전체에 건다 / 전체에서 뗀다"가 예측된다. 캐럿만 있을 때(범위 0)는
- * **바로 앞 글자**의 서식을 본다: 굵은 글 끝에 커서를 두면 이어 쓸 때도 굵을 것이므로
- * 그 상태를 비추는 것이 맞다.
+ * **앞뒤 두 글자**를 본다(제보) — 아래 `noteMarksIn` 머리말.
  */
 export function noteActiveMarks(el: HTMLElement): NoteMarks {
   // **접힌 캐럿도 받는다**(제보 9) — 여기서 `noteSelectionRange`를 쓰던 것이 버그였다.
@@ -158,9 +157,23 @@ export function noteMarksIn(el: HTMLElement, a: number, b: number): NoteMarks {
   // 런을 글자 단위로 펴서 [a, b) 구간을 본다 — 런 경계와 선택 경계는 어긋날 수 있다.
   const chars: RichRun[] = [];
   for (const r of rich) for (let i = 0; i < r.t.length; i += 1) chars.push(r);
-  const from = a === b ? Math.max(0, a - 1) : a;
-  const to = a === b ? a : b;
-  const span = chars.slice(from, to);
+  /**
+   * **접힌 캐럿은 앞뒤를 함께 본다**(제보: 서식이 걸린 글이 커서 **뒤**에 있으면
+   * 단추가 꺼져 있다).
+   *
+   * 예전에는 **앞 글자 하나**만 봤다. 굵은 글 끝에서는 맞지만, 굵은 글의 **머리**에
+   * 커서를 두면 — 그 자리도 그 서식의 자리인데 — 꺼져 보였다. 두 이웃 중 하나라도
+   * 그 서식이면 켠다: "이 자리가 그 서식의 자리인가"가 사람이 묻는 것이고, 경계에
+   * 섰을 때 켜 두는 편이 꺼 두는 편보다 덜 놀랍다(꺼져 있으면 "왜 안 켜지지"가 되고,
+   * 켜져 있으면 눌러서 끄면 된다).
+   */
+  if (a === b) {
+    const near = [chars[a - 1], chars[a]].filter((r): r is RichRun => !!r);
+    if (near.length === 0) return NO_MARKS;
+    const any = (pick: (r: RichRun) => boolean): boolean => near.some(pick);
+    return { b: any((r) => !!r.b), i: any((r) => !!r.i), s: any((r) => !!r.s), u: any((r) => !!r.u), k: any((r) => !!r.k) };
+  }
+  const span = chars.slice(a, b);
   if (span.length === 0) return NO_MARKS;
   const all = (pick: (r: RichRun) => boolean): boolean => span.every(pick);
   return {

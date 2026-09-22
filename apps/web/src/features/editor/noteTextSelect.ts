@@ -44,6 +44,12 @@ const HIGHLIGHT_NAME = 'mf-note-sel';
  * 그대로 유지"가 곧 이 성질이다.
  */
 const SLASH_NAME = 'mf-note-slash';
+/**
+ * **찾기에 걸린 글자**(요청) — 공책 안 검색어를 열려 있는 페이지의 글에서 짚어 준다.
+ * 선택·`/`와 **또 다른 이름**이다: 셋이 동시에 켜질 수 있고(찾아 둔 채로 글을 고른다),
+ * 한 이름에 몰아넣으면 나중에 칠한 쪽이 앞의 것을 지운다.
+ */
+const FIND_NAME = 'mf-note-find';
 
 /** 이 브라우저가 `CSS.highlights`를 아는가 — 모르면 호출부가 블록 면으로 물러선다. */
 export function supportsHighlight(): boolean {
@@ -231,6 +237,36 @@ export function paintSlash(range: Range | null): void {
     return;
   }
   CSS.highlights.set(SLASH_NAME, new Highlight(range));
+}
+
+/** 찾기에 걸린 구간들을 칠한다 — 빈 목록이면 지운다(`::highlight(mf-note-find)`). */
+export function paintFind(ranges: Range[]): void {
+  if (!supportsHighlight()) return;
+  if (!ranges.length) {
+    CSS.highlights.delete(FIND_NAME);
+    return;
+  }
+  CSS.highlights.set(FIND_NAME, new Highlight(...ranges));
+}
+
+/**
+ * 그 줄에서 `needle`이 나오는 **모든 구간**(대소문자 무시) — 값의 좌표계다.
+ *
+ * 화면의 글이 아니라 **값**을 훑어야 `<br>`이 든 줄에서도 자리가 맞는다
+ * (`lineText`가 그 좌표계이고 `pointAt`이 그 자를 되돌린다 — D5·선택과 같은 규칙).
+ */
+export function findRangesIn(el: HTMLElement, needle: string): Range[] {
+  if (!needle) return [];
+  const hay = lineText(el).toLowerCase();
+  const want = needle.toLowerCase();
+  const out: Range[] = [];
+  let at = hay.indexOf(want);
+  while (at >= 0) {
+    const r = rangeOfChars(el, at, at + want.length);
+    if (r) out.push(r);
+    at = hay.indexOf(want, at + want.length);
+  }
+  return out;
 }
 
 /**
