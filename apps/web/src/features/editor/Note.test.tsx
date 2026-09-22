@@ -4731,6 +4731,36 @@ describe('공책 44판 — 링크 클릭 · 블록 선택 · 종류 목록 · �
     await waitFor(() => expect(container.querySelector('[data-note-mark="b"]')?.getAttribute('aria-pressed')).toBe('false'));
   });
 
+  it('굵은 글이 캐럿 **뒤**에 있어도 켜진다 — 그 자리도 그 서식의 자리다(제보 1)', async () => {
+    localStorage.setItem('mindflow_doc_m2b', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m2b&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="bd"]'))) as HTMLElement;
+
+    // `보통 굵은글` — 3번째 자리는 굵은 구간의 **머리**다(앞은 보통, 뒤는 굵다).
+    // 예전에는 앞 글자만 봐서 꺼져 있었다.
+    caretIn(line, 3);
+    await waitFor(() => expect(container.querySelector('[data-note-mark="b"]')?.getAttribute('aria-pressed')).toBe('true'));
+
+    // 줄 맨 앞(뒤가 보통 글)은 그대로 꺼져 있다 — 아무 데서나 켜지는 것이 아니다.
+    caretIn(line, 0);
+    await waitFor(() => expect(container.querySelector('[data-note-mark="b"]')?.getAttribute('aria-pressed')).toBe('false'));
+  });
+
+  it('툴바의 블록 종류가 **캐럿을 따라 즉시** 바뀐다(제보 2)', async () => {
+    localStorage.setItem('mindflow_doc_m3b', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m3b&title=x');
+    const label = () => container.querySelector('[data-note-blocktype] span')?.textContent;
+
+    // 목록 항목에 캐럿을 두면 `글머리 목록`.
+    const item = (await waitFor(() => container.querySelector('[data-note-line="ul:u1"]'))) as HTMLElement;
+    caretIn(item, 0);
+    await waitFor(() => expect(label()).toBe('글머리 기호'));
+
+    // 본문 줄로 옮기면 **그 자리에서** `본문`으로 바뀐다(예전에는 앞의 것이 남았다).
+    caretIn(container.querySelector('[data-note-line="A"]') as HTMLElement, 0);
+    await waitFor(() => expect(label()).toBe('본문'));
+  });
+
   it('블록 종류 목록은 **줄의 종류 열하나** — 목록 셋이 빠져 있었다(질문 8)', async () => {
     localStorage.setItem('mindflow_doc_m3', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=m3&title=x');
@@ -4742,17 +4772,40 @@ describe('공책 44판 — 링크 클릭 · 블록 선택 · 종류 목록 · �
     for (const kind of ['table', 'img', 'hr', 'link']) expect(container.querySelector(`[data-note-blocktype-item="${kind}"]`)).toBeNull();
   });
 
-  it('Esc가 **그 블록을 통째로** 고른다 — 한 번 더 누르면 풀린다(요청 7)', async () => {
+  /**
+   * **Esc는 글을 고르지 않는다**(제보 6·7 — 걷어냈다).
+   *
+   * 한동안 Esc가 "그 블록을 통째로 고르기"였는데(요청으로 들어왔던 기능), 쓰는 동안에는
+   * 쓰던 자리를 잃는 동작이었다: `/` 목록을 Esc로 닫으면 그 줄이 통째로 칠해져 다음
+   * 글자가 그것을 덮었다. 지금은 Esc가 아무것도 고르지 않고 **캐럿이 그대로** 있다.
+   */
+  it('Esc는 **아무것도 고르지 않고** 캐럿을 그대로 둔다(제보 7)', async () => {
     localStorage.setItem('mindflow_doc_m4', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=m4&title=x');
     const first = (await waitFor(() => container.querySelector('[data-note-line="ul:u1"]'))) as HTMLElement;
     first.focus();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect([...container.querySelectorAll('[data-note-blockwrap][data-selected]')].map((e) => e.getAttribute('data-note-blockwrap'))).toEqual(['ul']));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0);
+    // 쓰던 자리를 잃지 않는다 — 초점이 그 줄에 남아 있다.
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('`/` 목록을 Esc로 닫아도 **글이 칠해지지 않는다**(제보 6)', async () => {
+    localStorage.setItem('mindflow_doc_m4b', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=m4b&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="ul:u1"]'))) as HTMLElement;
+
+    line.focus();
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '가/');
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0));
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
+    expect(container.querySelectorAll('[data-note-blockwrap][data-selected]')).toHaveLength(0);
+    expect(document.activeElement).toBe(line);
   });
 
   it('B→C로 끌었다가 **B로 돌아오면** 그 줄만 남는다(제보 10)', async () => {
@@ -5637,6 +5690,29 @@ describe('공책 52판 — 복귀 스크롤 방어 · 이미지 배율 · 서식
     await waitFor(() => expect(pct()).toBe('100%'));
   });
 
+  it('휠 확대는 **굴린 양에 비례**한다 — 한 칸에 최대까지 튀지 않는다(제보 3)', async () => {
+    const PIX = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'im', kind: 'img', src: PIX }] }] };
+    localStorage.setItem('mindflow_doc_s3b', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=s3b&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement);
+    const zoom = (await waitFor(() => container.querySelector('[data-note-image-zoom]'))) as HTMLElement;
+    const pct = () => (zoom.querySelector('[data-note-image-pct]') as HTMLElement).textContent;
+
+    // 마우스 휠 한 칸(약 100px) = 약 1.14배. 예전에는 이벤트마다 1.12배라 기기가
+    // 한 칸을 여러 이벤트로 잘라 보내면 상한까지 내달렸다.
+    fireEvent.wheel(zoom, { deltaY: -100 });
+    await waitFor(() => expect(pct()).toBe('114%'));
+
+    // 같은 칸이 **잘게 잘려** 와도 합이 같으면 결과가 같다(기기에 기대지 않는다).
+    for (let i = 0; i < 10; i += 1) fireEvent.wheel(zoom, { deltaY: -10 });
+    await waitFor(() => expect(pct()).toBe('130%'));
+
+    // 되돌리면 맞춤(100%) 아래로는 내려가지 않는다.
+    for (let i = 0; i < 5; i += 1) fireEvent.wheel(zoom, { deltaY: 200 });
+    await waitFor(() => expect(pct()).toBe('100%'));
+  });
+
   it('여러 줄을 골라 복사하면 **서식도 함께** 실린다(제보 12)', async () => {
     const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
       { id: 'b1', kind: 'p', runs: [{ t: '앞말 ', b: false, c: null }, { t: '굵게', b: true, c: null }] },
@@ -5916,5 +5992,93 @@ describe('공책 — 글 앞에서 여는 `/`', () => {
 
     await waitFor(() => expect(saved('nsC5').pages[0].blocks[0].kind).toBe('hr'));
     expect(saved('nsC5').pages[0].blocks).toHaveLength(1);
+  });
+});
+
+// ── 찾기에 걸린 낱말을 짚어 준다(요청 5) ───────────────────────────────────
+//
+// 목록은 우리가 그리는 글이라 **스팬**으로 감싸고(제목·걸린 줄), 본문은 비제어
+// 편집 박스라 `CSS.highlights`로 칠한다 — 값도 DOM도 건드리지 않는 길이다.
+describe('공책 — 찾기 하이라이트', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const BOOK = {
+    ...NOTE,
+    pages: [
+      { id: 'p1', title: '공책 이야기', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '이 페이지는 페이지다', b: false, c: null }] }], updatedAt: '2026-09-16T00:00:00.000Z' },
+      { id: 'p2', title: '다른 장', blocks: [{ id: 'b9', kind: 'p', runs: [{ t: '관계 없는 글', b: false, c: null }] }] },
+    ],
+  };
+
+  function search(container: HTMLElement, value: string): void {
+    fireEvent.change(container.querySelector('[data-note-search]')!, { target: { value } });
+  }
+
+  it('제목이 걸리면 **목록의 제목**에 배경이 붙는다', async () => {
+    localStorage.setItem('mindflow_doc_fh1', JSON.stringify(BOOK));
+    const { container } = renderEditor('/editor?map=fh1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-search]')).toBeTruthy());
+
+    search(container, '공책');
+    await waitFor(() => expect(container.querySelectorAll('[data-note-page-row]')).toHaveLength(1));
+    const marks = [...container.querySelectorAll('[data-note-page-row] [data-note-find]')].map((e) => e.textContent);
+    expect(marks).toEqual(['공책']);
+  });
+
+  it('본문이 걸리면 **걸린 줄**의 그 낱말에 배경이 붙는다 — 여러 번 나와도 전부', async () => {
+    localStorage.setItem('mindflow_doc_fh2', JSON.stringify(BOOK));
+    const { container } = renderEditor('/editor?map=fh2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-search]')).toBeTruthy());
+
+    search(container, '페이지');
+    await waitFor(() => expect(container.querySelector('[data-note-page-hit]')).toBeTruthy());
+    const hit = container.querySelector('[data-note-page-hit]') as HTMLElement;
+    expect([...hit.querySelectorAll('[data-note-find]')].map((e) => e.textContent)).toEqual(['페이지', '페이지']);
+    // 짚는 것은 걸린 낱말뿐이다 — 나머지 글은 그대로다.
+    expect(hit.textContent).toBe('이 페이지는 페이지다');
+  });
+
+  it('검색을 지우면 표시도 사라진다', async () => {
+    localStorage.setItem('mindflow_doc_fh3', JSON.stringify(BOOK));
+    const { container } = renderEditor('/editor?map=fh3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-search]')).toBeTruthy());
+
+    search(container, '공책');
+    await waitFor(() => expect(container.querySelector('[data-note-find]')).toBeTruthy());
+    search(container, '');
+    await waitFor(() => expect(container.querySelector('[data-note-find]')).toBeNull());
+  });
+
+  it('본문의 글자는 **칠해서** 짚는다 — 값도 DOM도 건드리지 않는다', async () => {
+    const shelf = new Map<string, { ranges: Range[] }>();
+    class FakeHighlight {
+      ranges: Range[];
+      constructor(...r: Range[]) {
+        this.ranges = r;
+      }
+    }
+    vi.stubGlobal('Highlight', FakeHighlight);
+    vi.stubGlobal('CSS', { ...(typeof CSS === 'undefined' ? {} : CSS), highlights: shelf });
+    try {
+      localStorage.setItem('mindflow_doc_fh4', JSON.stringify(BOOK));
+      const { container } = renderEditor('/editor?map=fh4&title=x');
+      await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
+
+      search(container, '페이지');
+      await waitFor(() => expect(shelf.get('mf-note-find')?.ranges.map((r) => r.toString())).toEqual(['페이지', '페이지']));
+
+      // 값은 그대로다 — 칠하기는 글을 고치지 않는다.
+      expect((container.querySelector('[data-note-line="b1"]') as HTMLElement).textContent).toBe('이 페이지는 페이지다');
+
+      search(container, '');
+      await waitFor(() => expect(shelf.get('mf-note-find')).toBeUndefined());
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
