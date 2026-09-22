@@ -149,6 +149,12 @@ export interface GoogleCalendarApi {
    */
   selfEmail: string;
   /**
+   * 캘린더 id → 그 캘린더의 **기본 알림**(분). 구글 캘린더에도 `기본`이라는 칸은 없고
+   * 일정을 만들면 그 값이 **실제 값으로** 보이므로(제보), 상세 팝업도 `useDefault`
+   * 일정을 이 표로 풀어 보여 준다.
+   */
+  calendarDefaults: ReadonlyMap<string, number>;
+  /**
    * 그 날의 **근무 위치**를 쓴다(요청) — 구글은 `eventType: 'workingLocation'`
    * 일정으로 들고 **기본 캘린더에만** 받는다. 성공하면 `null`.
    */
@@ -658,6 +664,12 @@ export function useGoogleCalendar(
    * 그 자리에서 예약을 거절했는지 부르는 쪽이 바로 보고 말해 줄 수 있게. 실패하면
    * 불리지 않는다(그때는 반환값이 사람이 읽을 문장이다).
    */
+  const calendarDefaults = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of allCalendars) if (typeof c.defaultMinutes === 'number') m.set(c.id, c.defaultMinutes);
+    return m;
+  }, [allCalendars]);
+
   const createEvent = useCallback(
     (calendarId: string, draft: GoogleEventDraft, onCreated?: (ev: GoogleEvent | null) => void) =>
       write(async (t) => {
@@ -874,6 +886,7 @@ export function useGoogleCalendar(
     cancelConnect: cancelDesktopGoogleConnect,
     writableCalendars,
     selfEmail,
+    calendarDefaults,
     createEvent,
     updateEvent,
     deleteEvent,

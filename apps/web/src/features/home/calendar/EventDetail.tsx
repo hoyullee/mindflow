@@ -165,7 +165,7 @@ export function EventDetail({
    * 알림 — **늘 보이는 자리**(요청 #5). 값을 주면 고칠 수 있고, 없으면 비활성 표식이
    * 뜬다(우리 표에는 알림을 띄울 장치가 없다 — `ReminderField` 주석).
    */
-  reminder?: { value: number | null | undefined; onChange: (minutes: number | null | undefined) => void };
+  reminder?: { value: number | null | undefined; calendarDefault?: number; onChange: (minutes: number | null | undefined) => void };
   /**
    * 일정 색(요청) — 원천이 자기 팔레트와 지금 값을 준다. 없으면 줄을 그리지 않는다
    * (고를 색이 없으면 죽은 칸이 된다). 고른 값은 팝업 초안에 담겨 `완료`가 함께
@@ -535,7 +535,7 @@ export function EventDetail({
                   본문과 함께 저장한다(0038). 못 고르는 경우는 **종일 일정**뿐이고,
                   그건 원천을 가리지 않는다(제보) — 이유는 `ReminderField` 주석. */}
               {reminder ? (
-                <ReminderField value={reminder.value} onChange={(m) => reminder.onChange(m)} kind="google" disabled={draft.allDay} />
+                <ReminderField value={reminder.value} {...(typeof reminder.calendarDefault === 'number' ? { calendarDefault: reminder.calendarDefault } : {})} onChange={(m) => reminder.onChange(m)} kind="google" disabled={draft.allDay} />
               ) : (
                 <ReminderField
                   value={draft.reminderMinutes}

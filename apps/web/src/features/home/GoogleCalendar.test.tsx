@@ -2715,7 +2715,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
       if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
       if (url.includes('/colors')) return ok({ event: {} });
-      if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+      // 그 캘린더의 기본 알림 — 구글의 `defaultReminders`(여기서는 10분).
+      if (url.includes('/users/me/calendarList'))
+        return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner', defaultReminders: [{ method: 'popup', minutes: 10 }] }] });
       if (init?.method === 'PATCH') return ok({});
       return ok({
         items: [
@@ -2730,12 +2732,16 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const { container } = renderHome();
     const pop = await openGoogleChip(container, user, /구글 회의/);
 
-    // `기본` 칩은 없어졌고(요청) 그 값을 가리킬 칸이 없으므로 **아무것도 켜지 않는다** —
-    // 아무거나 켜 두면 저장된 적 없는 값을 골라 둔 척하게 된다.
+    /**
+     * **`기본` 칸은 없고, 그 값을 풀어서 보여 준다**(제보) — 구글 캘린더에도 `기본`이라는
+     * 칸은 없고 일정을 만들면 그 캘린더의 기본 알림이 **실제 값으로**(여기서는 `10분 전`)
+     * 보인다. 그래서 `useDefault` 일정도 그 칩이 켜진 채 열린다.
+     */
     const chips = [...pop.querySelectorAll('[data-gf-remind]')];
     expect(chips.map((c) => c.textContent)).toEqual(['10분 전', '1시간 전', '1일 전', '없음']);
-    expect(chips.filter((c) => c.getAttribute('aria-checked') === 'true')).toHaveLength(0);
-    expect(pop.querySelector('[data-gf-remind-default]')?.textContent).toContain('Google 캘린더의 기본 알림');
+    expect(chips.filter((c) => c.getAttribute('aria-checked') === 'true').map((c) => c.textContent)).toEqual(['10분 전']);
+    // 풀어서 보여 줄 수 있으면 안내 줄은 없다 — 값이 칩으로 다 말한다.
+    expect(pop.querySelector('[data-gf-remind-default]')).toBeNull();
 
     // 알림을 만지지 않고 제목만 고쳐 저장하면 PATCH 본문에 `reminders`가 **없다** —
     // 손대지 않은 알림이 조용히 지워지지 않는다.

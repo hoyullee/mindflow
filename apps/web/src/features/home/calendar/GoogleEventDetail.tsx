@@ -201,6 +201,7 @@ export function GoogleEventDetail({
   onDelete,
   directory,
   colors,
+  calendarDefault,
 }: {
   event: GoogleEvent;
   isMobile: boolean;
@@ -211,6 +212,11 @@ export function GoogleEventDetail({
   directory?: GoogleDirectoryApi;
   /** 구글의 이벤트 색 팔레트(번호 → hex) — 못 받았으면 폴백 표로 그린다. */
   colors?: Record<string, string>;
+  /**
+   * 이 일정이 사는 캘린더의 **기본 알림**(분) — `useDefault` 일정을 실제 값으로 풀어
+   * 보여 주려면 필요하다(구글 캘린더도 `기본`이라는 칸 없이 그 값을 보여 준다).
+   */
+  calendarDefault?: number;
 }) {
   // 구글 전용 필드의 초안 — 본문 초안(제목·날짜·시각…)은 `EventDetail`이 든다.
   // **저장은 완료 버튼에서 한 번**(요청): 팝업이 모아 준 본문 diff와 이 필드 초안을
@@ -249,6 +255,7 @@ export function GoogleEventDetail({
         ? {
             reminder: {
               value: 'reminderMinutes' in pendingFields ? pendingFields.reminderMinutes : event.reminderMinutes,
+              ...(typeof calendarDefault === 'number' ? { calendarDefault } : {}),
               onChange: (m: number | null | undefined) => setPendingFields((p) => ({ ...p, reminderMinutes: m })),
             },
           }
@@ -343,6 +350,7 @@ export function GoogleDetailHost({
   onDelete,
   directory,
   colors,
+  calendarDefaults,
 }: {
   openId: string | null;
   events: readonly GoogleEvent[];
@@ -352,6 +360,8 @@ export function GoogleDetailHost({
   onDelete: (ev: GoogleEvent) => Promise<string | null>;
   directory?: GoogleDirectoryApi;
   colors?: Record<string, string>;
+  /** 캘린더 id → 그 캘린더의 기본 알림(분). 여는 일정의 것만 골라 넘긴다. */
+  calendarDefaults?: ReadonlyMap<string, number>;
 }) {
   const g = openId ? events.find((e) => e.id === openId) : null;
   if (!g) return null;
@@ -362,6 +372,10 @@ export function GoogleDetailHost({
       onClose={onClose}
       {...(directory ? { directory } : {})}
       {...(colors ? { colors } : {})}
+      {...(() => {
+        const d = calendarDefaults?.get(g.calendarId);
+        return typeof d === 'number' ? { calendarDefault: d } : {};
+      })()}
       {...(g.writable
         ? {
             onPatch: (patch: GoogleEventPatch) => onPatch(g, patch),

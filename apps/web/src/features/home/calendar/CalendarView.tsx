@@ -430,6 +430,7 @@ export function CalendarView({
       {/* 항목 상세 — 열려 있으면 그 항목을 찾아 그린다(사라졌으면 조용히 닫힌다). */}
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
       <GoogleDetailHost
+        calendarDefaults={google.calendarDefaults}
         openId={state.calGoogleDetail ?? null}
         events={google.events}
         isMobile={isMobile}

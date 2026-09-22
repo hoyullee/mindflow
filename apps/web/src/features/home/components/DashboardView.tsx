@@ -961,6 +961,7 @@ function CalWidgetDialogs({
     <>
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
       <GoogleDetailHost
+        calendarDefaults={google.calendarDefaults}
         openId={state.calGoogleDetail ?? null}
         events={google.events}
         isMobile={isMobile}

@@ -405,6 +405,7 @@ export function ReminderField({
   onChange,
   disabled,
   kind = 'google',
+  calendarDefault,
   disabledNote = kind === 'google'
     ? '종일 일정의 알림은 Google 캘린더에서 설정할 수 있어요'
     : '종일 일정에는 알림을 걸 수 없어요',
@@ -413,18 +414,33 @@ export function ReminderField({
   onChange: (minutes: number | null | undefined) => void;
   disabled?: boolean;
   kind?: 'google' | 'geurio';
+  /**
+   * 그 캘린더의 **기본 알림**(분) — 구글 `calendarList`의 `defaultReminders` 중 첫 팝업.
+   * 값이 `undefined`(= `useDefault`)인 일정을 **이 값으로 풀어** 보여 준다(위 주석).
+   */
+  calendarDefault?: number;
   /** 비활성인 이유 — 왜 못 고르는지 말하지 않으면 고장으로 읽힌다. */
   disabledNote?: string;
 }) {
   const opts = REMIND_OPTS;
   /**
-   * **아무 칩도 켜지지 않는 상태가 있다** — 구글 캘린더에 설정해 둔 기본 알림을 따르는
-   * 일정(`useDefault` → `undefined`)이다. `기본` 칸을 뺐으므로(요청) 그 값을 가리킬
-   * 칩이 없는데, 아무거나 켜 두면 **저장된 적 없는 값을 골라 둔 척**하게 된다. 참석
-   * 여부의 `needsAction`과 같은 규칙으로 비워 두고 아래 한 줄이 그 사실을 말한다.
+   * **캘린더 기본을 따르는 일정은 그 값을 풀어서 보여 준다**(제보).
+   *
+   * 구글 캘린더에도 `기본`이라는 칸은 없다 — 일정을 만들면 **그 캘린더의 기본 알림이
+   * 실제 값으로**(대개 `10분 전`) 보인다. 그래서 우리도 `useDefault`(값이 `undefined`)를
+   * 그 캘린더의 기본 분(`defaultMinutes`)으로 풀어 해당 칩을 켠다.
+   *
+   * **저장되는 것은 달라지지 않는다**: 사용자가 알림을 만지지 않으면 PATCH는 `reminders`
+   * 키를 아예 보내지 않는다(`GoogleEventDetail`의 `'reminderMinutes' in fields` 가드).
+   * 즉 보여 주는 값과 저장된 상태가 어긋나 있어도 조용히 덮어쓰지 않는다.
+   *
+   * 기본 분을 모르거나(목록을 아직 못 받았다) 우리 칩에 없는 값이면(예: 30분) 켤 칩이
+   * 없다 — 그때는 **비워 두고 아래 한 줄이 그 사실을 말한다**. 아무거나 켜 두면 저장된
+   * 적 없는 값을 골라 둔 척하게 된다(참석 여부의 `needsAction`과 같은 규칙).
    */
-  const key = opts.find((o) => o.minutes === value)?.key ?? '';
-  const followsDefault = key === '' && kind === 'google' && !disabled;
+  const shown = value === undefined && typeof calendarDefault === 'number' ? calendarDefault : value;
+  const key = opts.find((o) => o.minutes === shown)?.key ?? '';
+  const followsDefault = key === '' && value === undefined && kind === 'google' && !disabled;
   const pick = (k: string): void => {
     const minutes = opts.find((o) => o.key === k)?.minutes;
     // **우리가 띄울 알림**이면 OS 알림 권한이 필요하다. 여기서 묻는 이유: 이 클릭이
@@ -456,7 +472,13 @@ export function ReminderField({
           {/* 라벨 옆(`sub`)이 아니라 **칩 아래**에 둔다 — `Field`의 `sub`는 한 줄
               말줄임이라 좁은 화면에서 잘린다. 되돌아갈 길까지 말해 준다: `기본` 칸을
               뺀 뒤로 캘린더 기본 알림으로 되돌리는 것은 구글 캘린더에서만 된다. */}
-          {followsDefault && <SubText mark="data-gf-remind-default">Google 캘린더의 기본 알림을 따라요 · 되돌리려면 Google 캘린더에서 바꿔 주세요</SubText>}
+          {followsDefault && (
+            <SubText mark="data-gf-remind-default">
+              {typeof calendarDefault === 'number'
+                ? `Google 캘린더의 기본 알림(${calendarDefault}분 전)을 따라요`
+                : 'Google 캘린더의 기본 알림을 따라요'}
+            </SubText>
+          )}
         </>
       )}
     </Field>
