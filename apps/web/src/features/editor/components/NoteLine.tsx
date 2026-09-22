@@ -16,8 +16,9 @@ import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
-import { domToRuns, runsToHtml } from '../richtextDom';
-import { NOTE_EDIT_ATTR } from '../noteRichDom';
+import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
+import { codeHtml } from '../noteCode';
+import { NOTE_EDIT_ATTR, disarmCaretMark, fireCaretMark } from '../noteRichDom';
 import { charOffset, lineLength, lineText, pointAt } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
@@ -38,6 +39,8 @@ interface Props {
    * 로 본다(예전 동작 그대로).
    */
   onEnter?: (at: number) => boolean;
+  /** Shift+Enter — **한 블록 안에서** 줄을 바꾼다(막았으면 `true`). */
+  onSoftEnter?: (at: number) => boolean;
   /** 맨 앞에서 백스페이스 — 대개 "이 블록/항목 지우기". 처리했으면 `true`. */
   onBackspaceAtStart?: () => boolean;
   /**
@@ -117,6 +120,13 @@ interface Props {
    * Tab·Enter를 컨트롤러가 받는다. 칸은 모델이 `RichRun[]` 하나뿐이라 마커가 곧
    * 글자이고, 그래서 이 박스가 직접 들여쓰기·이어쓰기·다시 그리기를 맡는다.
    */
+  /**
+   * **이 박스가 코드 블록인가**(요청 7) — 문법 색칠을 여기서 그린다.
+   *
+   * 색은 **클래스로만** 준다(`noteCode` 머리말) — 인라인 `color`로 심으면
+   * `domToRuns`가 그것을 런의 `c`로 읽어 색칠이 문서 값이 된다.
+   */
+  codeBox?: boolean;
   listBox?: boolean;
   /**
    * **이 박스가 목록 글쇠를 받는가** — Tab·Shift+Enter·마커 Backspace.
@@ -138,7 +148,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -150,6 +160,8 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     if (listBox) {
       el.innerHTML = cellListHtml(value);
       el.dataset.listSig = listSignature(value);
+    } else if (codeBox) {
+      el.innerHTML = codeHtml(value.text);
     } else {
       el.innerHTML = runsToHtml(value);
     }
@@ -189,9 +201,26 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     if (listBox) {
       el.innerHTML = cellListHtml(value);
       el.dataset.listSig = listSignature(value);
+    } else if (codeBox) {
+      el.innerHTML = codeHtml(value.text);
     } else {
       el.innerHTML = runsToHtml(value);
     }
+  };
+
+  /**
+   * **친 글을 다시 칠한다** — 코드 블록의 매 입력마다(조합 중에는 건너뛴다).
+   *
+   * 값이 그대로면 손대지 않는다(`html === innerHTML`): 글쇠마다 `innerHTML`을 갈면
+   * 캐럿이 튀고 한글 조합이 끊긴다(`cellListSync`와 같은 계약). 갈아야 할 때는 고른
+   * 자리를 **값 좌표**로 적어 두었다가 그대로 되돌린다.
+   */
+  const codeSync = (el: HTMLElement): void => {
+    const html = codeHtml(liveEditValue(el).text);
+    if (html === el.innerHTML) return;
+    const span = selectedRange(el);
+    el.innerHTML = html;
+    setLinearSelection(el, span.from, span.to);
   };
 
   /**
@@ -207,6 +236,18 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     // 마커가 생기거나 사라졌으면 **읽기 전에** 다시 그린다 — 그래야 화면과 값이
     // 같은 것을 말한다(`- `를 친 그 순간 `• `가 되는 자리).
     if (listBox && !composing.current) cellListSync(el);
+    if (codeBox && !composing.current) codeSync(el);
+    /**
+     * **켜 두었던 서식을 방금 친 글자에 건다**(제보 2 — `armCaretMark` 머리말).
+     * 걸면 박스를 이미 다시 그렸으므로 여기서 값을 읽을 필요가 없다.
+     */
+    if (!composing.current) {
+      const marked = fireCaretMark(el);
+      if (marked) {
+        onChange(marked);
+        return;
+      }
+    }
     const { text, rich } = domToRuns(el);
     let value: { text: string; rich: RichRun[] | null } = { text, rich };
     if (final) {
@@ -286,6 +327,17 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      */
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       if (onEnter?.(caretOffset(el))) {
+        e.preventDefault();
+        return;
+      }
+    }
+    /**
+     * **Shift+Enter는 줄바꿈이다** — 브라우저 기본에 맡기면 엔진마다 `<br>`·`<div>`로
+     * 갈리고, 글 끝에서는 빈 줄이 그려지지 않는다(보초 `<br>`이 없어서). 값에 `\n`을
+     * 넣는 길 하나로 모은다(`softBreak`).
+     */
+    if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing && onSoftEnter) {
+      if (onSoftEnter(caretOffset(el))) {
         e.preventDefault();
         return;
       }
@@ -438,6 +490,9 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       }}
       // 고친 적이 없으면 읽지 않는다(`dirty` 머리말) — 커서만 지나가도 저장되던 자리.
       onBlur={() => {
+        // 줄을 떠나면 켜 두었던 서식도 잊는다 — 그 자리는 이 줄의 좌표였다.
+        const el = ref.current;
+        if (el) disarmCaretMark(el);
         if (dirty.current) commit(true);
       }}
       onCompositionStart={() => {

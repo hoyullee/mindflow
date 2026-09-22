@@ -944,6 +944,11 @@ export interface EditorController {
   /** 이미지 블록에 파일을 붙인다(플로트 이미지와 같은 저장 경로). */
   setNoteImage: (blockId: string, file: File | Blob) => Promise<void>;
   /**
+   * **파일 하나를 이미지 블록으로 바로 넣는다** — 고르개를 거치지 않는 길(요청 10:
+   * 클립보드로 붙여넣은 그림도 단추로 고른 것과 같아야 한다).
+   */
+  insertNoteImage: (file: File | Blob, at?: { after?: string; replace?: string }) => void;
+  /**
    * **이미지를 바로 넣는다**(요청) — 자리를 먼저 만들지 않고 파일 고르개부터 연다.
    * `replace`를 주면 그 블록을 이미지로 바꾸고, 아니면 `after` 뒤에 새로 만든다.
    * 고르지 않고 닫으면 아무 일도 없다(빈 자리가 남지 않는다).
@@ -7859,6 +7864,17 @@ export function useEditorState(): EditorController {
    * 오르는 순간) 그 요소가 갈려 `change`가 아무 데도 닿지 않는다. 맵의 노드 이미지가
    * 이미 이 길을 쓰고 있다(`promptNodeImage`).
    */
+  const insertNoteImage = useCallback(
+    (file: File | Blob, at?: { after?: string; replace?: string }) => {
+      if (readOnlyRef.current) return;
+      const id = at?.replace ?? addNoteBlock('img', at?.after);
+      if (!id) return;
+      if (at?.replace) retypeNoteBlock(at.replace, 'img');
+      void setNoteImage(id, file);
+    },
+    [addNoteBlock, retypeNoteBlock, setNoteImage],
+  );
+
   const promptNoteImage = useCallback(
     (at?: { after?: string; replace?: string }) => {
       if (readOnlyRef.current) return;
@@ -7867,16 +7883,12 @@ export function useEditorState(): EditorController {
       input.accept = 'image/*';
       input.onchange = () => {
         const file = input.files?.[0];
-        if (!file) return;
-        const id = at?.replace ?? addNoteBlock('img', at?.after);
-        if (!id) return;
-        if (at?.replace) retypeNoteBlock(at.replace, 'img');
-        void setNoteImage(id, file);
+        if (file) insertNoteImage(file, at);
       };
       markPickingFile(input);
       input.click();
     },
-    [addNoteBlock, retypeNoteBlock, setNoteImage],
+    [insertNoteImage],
   );
 
   /** 보드 링크 블록이 가리킬 문서. */
@@ -8518,6 +8530,7 @@ export function useEditorState(): EditorController {
     setNotePageTag,
     setNoteTagColor,
     setNoteImage,
+    insertNoteImage,
     promptNoteImage,
     setNoteLinkDoc,
     linkTargets,

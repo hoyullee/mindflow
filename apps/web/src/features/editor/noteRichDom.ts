@@ -256,6 +256,70 @@ export function insertNoteLink(el: HTMLElement, span: { a: number; b: number }, 
   return next.rich ?? [{ t: next.text, b: false, c: null }];
 }
 
+/**
+ * **캐럿만 있을 때의 서식** — 고른 글이 없어도 걸린다(제보 2: 빈 줄에서 인라인 코드를
+ * 눌러도 아무 일이 없다).
+ *
+ * ## 왜 빈 요소를 심지 않나 (실브라우저에서 한 번 틀렸다)
+ *
+ * 처음에는 `<code></code>`를 캐럿 자리에 심고 그 안의 빈 텍스트 노드에 캐럿을 두었다.
+ * jsdom에서는 통과했지만 **크롬에서는 다음 글자가 그 요소 **앞**에 떨어진다**(실측:
+ * `npm i<code></code>`) — 폭이 0인 인라인 요소 안의 자리는 브라우저가 "보이는 자리"로
+ * 치지 않아 바로 앞으로 접어 버린다. 폭을 만들려고 ZWSP를 끼우는 흔한 수법은 값에
+ * 없는 글자를 DOM에 남기는데, 이 편집기는 `linearize`와 `domToRuns`가 **같은 글자 수**를
+ * 세는 것을 계약으로 삼고 있어(캐럿 좌표가 전부 거기 기댄다) 그 순간 좌표가 어긋난다.
+ *
+ * ## 그래서 **다음 한 글자를 기다린다**
+ *
+ * 눌린 서식은 자리(`at`)와 그때의 글자 수(`len`)만 적어 둔다. 글자가 들어오면 그때
+ * 비로소 걸 자리가 생기므로, **이미 서 있는 범위 서식 경로**(`applyNoteFormatRange`)에
+ * 그 한 글자를 넘긴다. 두 번째 글자부터는 브라우저가 알아서 그 요소 안에서 이어 친다
+ * (굵게·기울임이 늘 그렇듯이).
+ *
+ * 적어 둔 것은 **한 벌뿐**이다 — 서식을 켜 두는 일은 "다음에 칠 글자"에 대한 것이라
+ * 동시에 둘이 될 수 없고, 다른 줄에서 다시 누르면 앞의 것은 잊힌다.
+ */
+let armed: { el: HTMLElement; at: number; len: number; kind: NoteFormatKind; val: string | null } | null = null;
+
+/** 접힌 캐럿에 서식을 **예약한다** — 걸 자리가 없으면(선택이 있으면) `false`. */
+export function armCaretMark(el: HTMLElement, kind: NoteFormatKind, val?: string | null): boolean {
+  if (kind === 'clear' || kind === 'link') return false;
+  const span = noteCaretSpan(el);
+  if (!span || span.a !== span.b) return false;
+  armed = { el, at: span.a, len: linearize(el, []).text.length, kind, val: val ?? null };
+  return true;
+}
+
+/** 예약을 버린다 — 줄을 떠나면 그 자리도 사라진다. */
+export function disarmCaretMark(el?: HTMLElement): void {
+  if (!el || armed?.el === el) armed = null;
+}
+
+/** 지금 이 줄에 예약된 서식 — 툴바가 단추를 미리 켜 두는 데 쓴다(없으면 `null`). */
+export function armedCaretMark(el: HTMLElement | null): NoteFormatKind | null {
+  return el && armed?.el === el ? armed.kind : null;
+}
+
+/**
+ * **방금 들어온 글자에** 예약한 서식을 건다 — 걸었으면 새 런, 아니면 `null`.
+ *
+ * 자리가 맞을 때만 건다: 캐럿이 앞으로 갔고, 늘어난 글자 수가 그 걸음과 **같아야**
+ * 한다. 예약해 놓고 캐럿을 옮겨 다른 데 쳤다면 그 둘이 어긋나므로 조용히 잊는다.
+ */
+export function fireCaretMark(el: HTMLElement): RichRun[] | null {
+  if (!armed || armed.el !== el) return null;
+  const { at, len, kind, val } = armed;
+  const span = noteCaretSpan(el);
+  const now = span && span.a === span.b ? span.a : -1;
+  const grew = linearize(el, []).text.length - len;
+  armed = null;
+  if (now <= at || grew <= 0 || now - at !== grew) return null;
+  const runs = applyNoteFormatRange(el, at, now, kind, val);
+  // 다시 그린 뒤의 선택은 **친 글자 전체**다 — 캐럿은 그 끝에 접혀 있어야 이어 친다.
+  if (runs) setLinearSelection(el, now, now);
+  return runs;
+}
+
 export function applyNoteFormat(el: HTMLElement, kind: NoteFormatKind, val?: string | null): RichRun[] | null {
   const range = noteSelectionRange(el);
   if (!range) return null;
