@@ -10,6 +10,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { AppNotification } from '../../../adapters/ports';
 import { useNotificationStore } from '../../../adapters/BackendContext';
 import { listReminderNotices, markReminderNoticesRead, onReminderInboxChange } from '../../reminders/reminderInbox';
+import { listRoomConflictNotices, markRoomConflictNoticesRead, onRoomConflictInboxChange } from '../calendar/roomConflictInbox';
 
 /** 탭 복귀 시 다시 읽는 최소 간격 — 포커스가 들락거려도 요청이 몰리지 않게. */
 const REFRESH_THROTTLE_MS = 30_000;
@@ -57,16 +58,17 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const lastLoadRef = useRef(0);
 
   /**
-   * 서버 우편함 + **이 기기의 일정 알림 기록**을 한 목록으로(제보: 일정 알림이 오면
-   * `알림` 항목에도 남게). 일정 알림은 서버가 만들지 않으므로(스케줄러가 이 기기
-   * 안에서 띄운다 — 캘린더 데이터는 서버에 쌓지 않는다) 기록도 여기에 있다.
+   * 서버 우편함 + **이 기기의 일정 기록 둘**을 한 목록으로(제보: 일정 알림이 오면
+   * `알림` 항목에도 남게 / 요청: 회의실이 거절하면 알림 센터에 적재되게). 그 둘은
+   * 서버가 만들지 않으므로(스케줄러가 이 기기 안에서 띄우고, 회의실 거절은 이 기기가
+   * 받아 온 목록에서 알아챈다 — 캘린더 데이터는 서버에 쌓지 않는다) 기록도 여기에 있다.
    *
    * 서버 조회가 실패해도 **기기 기록은 그대로 보여 준다** — 알림이 통째로 사라지는
    * 편이 더 나쁘다.
    */
   const refresh = useCallback(async (): Promise<AppNotification[]> => {
     lastLoadRef.current = Date.now();
-    const local = listReminderNotices();
+    const local = [...listReminderNotices(), ...listRoomConflictNotices()];
     try {
       const list = byNewest([...(await store.list()), ...local]);
       setItems(list);
@@ -107,6 +109,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   // 일정 알림이 뜨는 그 순간 목록도 따라온다 — 같은 탭 안의 신호라 왕복이 없다.
   useEffect(() => onReminderInboxChange(() => void refresh()), [refresh]);
 
+  // 회의실 거절 기록도 같은 길 — 일정 목록을 받는 자리에서 적재되므로(60초 주기)
+  // 달력을 보고 있는 동안 배지가 저절로 선다.
+  useEffect(() => onRoomConflictInboxChange(() => void refresh()), [refresh]);
+
   useEffect(() => {
     if (paused) return;
     const t = window.setInterval(() => {
@@ -120,6 +126,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     // 실패해도 다음 열기에 다시 시도된다 — 화면은 먼저 읽음으로 둔다.
     void store.markAllRead();
     markReminderNoticesRead();
+    markRoomConflictNoticesRead();
     setItems((cur) => cur.map((i) => ({ ...i, read: true })));
   }, [store]);
 

@@ -64,6 +64,7 @@ import { checkRoom, fetchRooms, searchPeople as searchPeopleApi, type DirectoryP
 import { readGoogleClientId } from '../../auth/googleIdentity';
 import { useLiveRefresh } from './useLiveRefresh';
 import { notifyCalendarChanged } from '../../reminders/calendarChanged';
+import { syncRoomConflictNotices } from './roomConflictInbox';
 
 export interface GoogleCalendarApi {
   /** 이 배포에 구글 클라이언트 ID가 있는가 — 없으면 설정에 구획 자체를 그리지 않는다. */
@@ -164,7 +165,7 @@ export interface GoogleCalendarApi {
    */
   saveWorkLocation: (calendarId: string, draft: WorkLocationDraft) => Promise<string | null>;
   /** 구글에 새 일정. 성공하면 `null`, 실패하면 사람이 읽을 문장. */
-  createEvent: (calendarId: string, draft: GoogleEventDraft, onCreated?: (ev: GoogleEvent | null) => void) => Promise<string | null>;
+  createEvent: (calendarId: string, draft: GoogleEventDraft) => Promise<string | null>;
   updateEvent: (ev: GoogleEvent, patch: GoogleEventPatch) => Promise<string | null>;
   deleteEvent: (ev: GoogleEvent) => Promise<string | null>;
   /**
@@ -659,11 +660,6 @@ export function useGoogleCalendar(
     [allCalendars, events],
   );
 
-  /**
-   * 새 일정. `onCreated`는 **구글이 돌려준 그 일정**을 받는다(요청 4) — 잡아 둔 회의실이
-   * 그 자리에서 예약을 거절했는지 부르는 쪽이 바로 보고 말해 줄 수 있게. 실패하면
-   * 불리지 않는다(그때는 반환값이 사람이 읽을 문장이다).
-   */
   const calendarDefaults = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of allCalendars) if (typeof c.defaultMinutes === 'number') m.set(c.id, c.defaultMinutes);
@@ -671,13 +667,30 @@ export function useGoogleCalendar(
   }, [allCalendars]);
 
   const createEvent = useCallback(
-    (calendarId: string, draft: GoogleEventDraft, onCreated?: (ev: GoogleEvent | null) => void) =>
+    (calendarId: string, draft: GoogleEventDraft) =>
       write(async (t) => {
         const made = await createGoogleEvent(t, calendarId, draft);
-        onCreated?.(made);
+        // 만든 **그 자리에서도** 한 번 훑는다 — 아래 효과는 *보이는 달*의 목록만
+        // 보므로, 다음 달에 만든 일정의 회의실 거절은 그 달을 열 때까지 기록되지
+        // 않는다. 같은 기록에 같은 id로 들어가므로 두 길이 겹쳐도 한 건이다.
+        if (made) syncRoomConflictNotices([made]);
       }),
     [write],
   );
+
+  /**
+   * **회의실이 예약을 거절한 일정을 알림 센터에 적재한다**(요청) — 목록을 받는 바로
+   * 그 자리다. 만든 직후 한 번이 아닌 이유는 두 가지다: 자동 거절이 만든 응답에 아직
+   * 실려 오지 않는 경우가 있고(잠시 뒤 `declined`이 된다), 나중에 거절되는 일정도
+   * 있다. 목록은 60초마다 다시 오므로(`useLiveRefresh`) 두 경우가 한 길로 잡힌다.
+   *
+   * 화면마다 따로 훑지 않고 **훅 안**에 두는 이유: 일정 화면과 대시보드가 같은 이
+   * 훅을 쓰므로, 여기 한 곳이면 어느 화면을 보고 있어도 적재된다(기록은 id로
+   * 중복을 막는다 — 두 화면이 함께 떠 있어도 한 건이다).
+   */
+  useEffect(() => {
+    syncRoomConflictNotices(events);
+  }, [events]);
   const updateEvent = useCallback((ev: GoogleEvent, patch: GoogleEventPatch) => write((t) => updateGoogleEvent(t, ev, patch)), [write]);
   const deleteEvent = useCallback((ev: GoogleEvent) => write((t) => deleteGoogleEvent(t, ev)), [write]);
   const saveWorkLocation = useCallback(

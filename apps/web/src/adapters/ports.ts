@@ -657,11 +657,13 @@ export interface CommentStore {
 // ── Notifications ──────────────────────────────────────────────────────────
 
 /**
- * `reminder`만 **서버에서 오지 않는다** — 일정 알림은 이 기기의 스케줄러가 띄우고
- * (개인정보처리방침대로 캘린더 데이터는 서버에 쌓지 않는다) 그 기록도 이 기기에
- * 남는다(`features/reminders/reminderInbox.ts`). 우편함 목록은 둘을 합쳐 보여 준다.
+ * **일정 쪽 둘(`reminder`·`room_conflict`)만 서버에서 오지 않는다** — 일정 알림은 이
+ * 기기의 스케줄러가 띄우고(개인정보처리방침대로 캘린더 데이터는 서버에 쌓지 않는다)
+ * 회의실 거절은 이 기기가 받아 온 일정 목록에서 알아채므로, 기록도 이 기기에 남는다
+ * (`features/reminders/reminderInbox.ts` · `features/home/calendar/roomConflictInbox.ts`).
+ * 우편함 목록은 셋을 합쳐 보여 준다.
  */
-export type NotificationKind = 'mention' | 'reply' | 'comment' | 'share' | 'doc_mention' | 'reminder';
+export type NotificationKind = 'mention' | 'reply' | 'comment' | 'share' | 'doc_mention' | 'reminder' | 'room_conflict';
 
 /** 일정 알림이 가리키는 것 — 목록에서 누르면 그 일정의 상세까지 연다. */
 export interface NotificationCalendarTarget {
@@ -669,7 +671,7 @@ export interface NotificationCalendarTarget {
   date: string;
   eventId: string;
   source: 'geurio' | 'google';
-  /** `오후 3:30 · 10분 후 시작` — 토스트와 같은 문장. */
+  /** `오후 3:30 · 10분 후 시작` / `회의실이 예약을 거절했어요 — 4층 소회의실` — 목록의 첫 줄. */
   body: string;
 }
 
@@ -687,7 +689,7 @@ export interface AppNotification {
   docTitle: string;
   createdAt: string;
   read: boolean;
-  /** `kind: 'reminder'`에만 있다 — 맵이 아니라 **일정**으로 보내야 한다. */
+  /** 일정 쪽 알림(`reminder`·`room_conflict`)에만 있다 — 맵이 아니라 **일정**으로 보내야 한다. */
   calendar?: NotificationCalendarTarget;
 }
 

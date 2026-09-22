@@ -35,10 +35,21 @@ import { useMergedUpdate } from '../../../pwa/updateControl';
 import { updateNoticeOf } from '../../../platform/shellUpdate';
 import { focusCalendar } from '../calendarFocus';
 
+/**
+ * **일정으로 보내는 알림인가** — 맵이 아니라 화면 안의 일정을 열어야 하는 것들이다
+ * (일정 알림·회의실 거절). 셋 자리(첫 줄·얼굴 자리·눌러 갈 수 있는가)가 같은 값을
+ * 봐야 하므로 한 함수로 둔다 — 한 곳만 고치면 "눌러도 아무 일 없는 항목"이 된다.
+ */
+function isCalendarNotice(n: AppNotification): boolean {
+  return n.kind === 'reminder' || n.kind === 'room_conflict';
+}
+
 function lineOf(n: AppNotification): string {
   // 일정 알림에는 "누가"가 없다 — 그 자리에서 궁금한 것은 **언제 시작하는가**다
   // (토스트·OS 알림과 같은 문장). 어느 일정인지는 아래 칩이 말한다.
   if (n.kind === 'reminder') return n.calendar?.body || '곧 시작하는 일정이에요';
+  // 회의실 거절도 사람이 없는 알림이다 — 첫 줄이 **무슨 일이 있었나**를 말한다.
+  if (n.kind === 'room_conflict') return n.calendar?.body || '회의실이 예약을 거절했어요';
   const who = n.actorName || '누군가';
   if (n.kind === 'mention') return `${who}님이 회원님을 멘션했어요`;
   if (n.kind === 'reply') return `${who}님이 답글을 남겼어요`;
@@ -57,6 +68,7 @@ const KIND_LABEL: Record<AppNotification['kind'], string> = {
   comment: '댓글',
   share: '공유',
   reminder: '일정',
+  room_conflict: '회의실',
 };
 
 /** `종류 · 내용`과 `시간`을 **따로** 돌려준다 — 한 문자열로 이으면 내용이 길 때
@@ -87,6 +99,16 @@ function kindBadge(kind: AppNotification['kind']): [string, string, ReactNode] {
       <g key="i">
         <circle cx="12" cy="12" r="8.5" />
         <path d="M12 7.5V12l3 1.8" />
+      </g>,
+    ];
+  // 회의실 거절 — 느낌표(경고색). 걷어낸 상세 팝업 경고와 같은 언어다.
+  if (kind === 'room_conflict')
+    return [
+      'var(--mf-danger-soft, #FBEAE5)',
+      'var(--mf-danger-ink, #9B3B2F)',
+      <g key="i">
+        <path d="M12 4.5 2.8 20h18.4L12 4.5z" />
+        <path d="M12 10v4.2M12 17.2h.01" />
       </g>,
     ];
   if (kind === 'mention' || kind === 'doc_mention')
@@ -146,9 +168,9 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
 
   const go = (n: AppNotification) => {
     setOpen(false);
-    // 일정 알림은 맵이 아니라 **그 일정**으로 간다 — 토스트의 `일정 보기`와 같은 길
-    // (달을 옮기고 그 날을 골라 상세까지 연다).
-    if (n.kind === 'reminder') {
+    // 일정 쪽 알림은 맵이 아니라 **그 일정**으로 간다 — 토스트의 `일정 보기`와 같은
+    // 길(달을 옮기고 그 날을 골라 상세까지 연다).
+    if (isCalendarNotice(n)) {
       const c = n.calendar;
       focusCalendar(c ? { date: c.date, eventId: c.eventId, source: c.source } : undefined);
       navigate('/home');
@@ -383,8 +405,8 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
             {items.length ? (
               items.map((n, i) => {
                 const href = hrefOf(n);
-                // 일정 알림에는 주소가 없다(맵이 아니라 화면 안의 일정으로 간다).
-                const canGo = !!href || n.kind === 'reminder';
+                // 일정 쪽 알림에는 주소가 없다(맵이 아니라 화면 안의 일정으로 간다).
+                const canGo = !!href || isCalendarNotice(n);
                 const isFresh = fresh.has(n.id);
                 const group = groupOf(n.createdAt);
                 const head = i === 0 || groupOf(items[i - 1]!.createdAt) !== group;
@@ -424,8 +446,8 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
                       {/* 얼굴 + 종류 미니 배지 — 누가, 무슨 일로. 색은 이름 시드라
                           같은 사람은 늘 같은 색이다. */}
                       <span style={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
-                        {n.kind === 'reminder' ? (
-                          // 일정 알림에는 사람이 없다 — 얼굴 자리에 달력 한 장(LNB 일정
+                        {isCalendarNotice(n) ? (
+                          // 일정 쪽 알림에는 사람이 없다 — 얼굴 자리에 달력 한 장(LNB 일정
                           // 카드의 그 타일과 같은 신호).
                           <span data-notification-cal style={{ width: 34, height: 34, borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
