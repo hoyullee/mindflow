@@ -33,6 +33,7 @@ import {
   runsText,
   textRuns,
   blockText,
+  displayUrl,
   fillAt,
 } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
@@ -338,6 +339,14 @@ export function NoteEditor({ controller }: Props) {
    * `CSS.highlights`로 칠한다(값도 DOM도 건드리지 않는 길 — 선택·`/`와 같은 방식).
    */
   const [findQ, setFindQ] = useState('');
+  /**
+   * **링크 글자에 캐럿·선택이 들어왔다**(요청 3) — 주소를 보여 주고 이동·삭제를 준다.
+   *
+   * 얹었을 때 뜨는 툴팁(`NoteTips`)은 "무엇인가"만 말한다. 고친다면 어디로 가야 하는지
+   * (툴바의 링크 단추는 **거는** 자리이고, 뗄 길은 어디에도 없었다 — 서식 지우기로
+   * 굵기·색까지 함께 지우는 수밖에). 그래서 그 자리에 작은 판을 띄운다.
+   */
+  const [linkAt, setLinkAt] = useState<{ key: string; a: number; b: number; href: string; rect: DOMRect } | null>(null);
   const openSlashAt = (lineKey: string, from?: Element | number | null, tail = '') => {
     const at = typeof from === 'number' ? from : null;
     const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
@@ -663,6 +672,48 @@ export function NoteEditor({ controller }: Props) {
    * `/` **한 글자부터** 칠한다 — 질의가 비어 있는 첫 순간에도 "여기서부터 명령"이
    * 보여야 한다(빈 구간은 아무것도 그리지 못한다).
    */
+  /**
+   * 링크 위의 캐럿·선택을 좇는다 — 선택이 바뀔 때마다 그 자리를 다시 잰다.
+   *
+   * **앵커와 포커스가 모두 그 링크 안**일 때만 띄운다: 링크를 지나쳐 여러 글자를
+   * 고르는 중이라면 그 사람이 다루는 것은 링크가 아니라 글이다.
+   */
+  useEffect(() => {
+    const read = (): void => {
+      const col = colRef.current;
+      const sel = typeof window === 'undefined' ? null : window.getSelection();
+      const spanOf = (node: Node | null | undefined): HTMLElement | null => {
+        const el = node?.nodeType === 1 ? (node as HTMLElement) : (node?.parentElement ?? null);
+        return (el?.closest?.('[data-href]') as HTMLElement | null) ?? null;
+      };
+      const span = sel && sel.rangeCount > 0 ? spanOf(sel.focusNode) : null;
+      const line = span?.closest('[data-note-line]') as HTMLElement | null;
+      if (!span || !line || !col?.contains(line) || !sel || spanOf(sel.anchorNode) !== span) {
+        setLinkAt((cur) => (cur === null ? cur : null));
+        return;
+      }
+      const href = span.getAttribute('data-href') || '';
+      const key = line.getAttribute('data-note-line') || '';
+      if (!href || !key) {
+        setLinkAt(null);
+        return;
+      }
+      const a = charOffset(line, span, 0);
+      const b = charOffset(line, span, span.childNodes.length);
+      const rect = span.getBoundingClientRect();
+      setLinkAt((cur) => (cur && cur.key === key && cur.a === a && cur.b === b && cur.href === href && cur.rect.top === rect.top && cur.rect.left === rect.left ? cur : { key, a, b, href, rect }));
+    };
+    read();
+    document.addEventListener('selectionchange', read);
+    document.addEventListener('scroll', read, true);
+    window.addEventListener('resize', read);
+    return () => {
+      document.removeEventListener('selectionchange', read);
+      document.removeEventListener('scroll', read, true);
+      window.removeEventListener('resize', read);
+    };
+  }, []);
+
   /**
    * 찾는 말을 **본문에서도** 칠한다(요청 5) — 목록에서 고른 그 페이지의 글이다.
    *
@@ -1647,6 +1698,59 @@ export function NoteEditor({ controller }: Props) {
                 }}
               />
             )}
+            {/* 링크 판(요청 3) — 주소 · 이동 · 삭제. 보기 전용에서는 이동만 준다. */}
+            {linkAt && (
+              <div
+                data-note-linkpop
+                // 누르는 순간 **선택을 잃지 않게** 막는다 — 잃으면 이 판이 먼저 닫혀
+                // 클릭이 도착하지 못한다(툴바의 다른 판들과 같은 처방).
+                onMouseDown={(e) => e.preventDefault()}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{ ...POP, ...anchoredStyle(linkAt.rect, 268, { maxHeight: 120 }), maxHeight: undefined, overflowY: undefined, padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}
+              >
+                <button
+                  type="button"
+                  data-note-linkpop-open
+                  className="btn mf-note-item"
+                  onClick={() => {
+                    window.open(linkAt.href, '_blank', 'noopener,noreferrer');
+                    setLinkAt(null);
+                  }}
+                  title={linkAt.href}
+                  style={{ ...MENU_ITEM, height: 30 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+                    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+                    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+                  </svg>
+                  {/* 주소는 **읽히는 꼴로** 줄인다(툴팁과 같은 함수) — 자리가 한 줄이다. */}
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--mf-link, var(--mf-accent-deep))' }}>{displayUrl(linkAt.href, 40)}</span>
+                  <span style={{ ...POP_KEY, flex: '0 0 auto' }}>이동</span>
+                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    data-note-linkpop-remove
+                    className="btn mf-note-item"
+                    onClick={() => {
+                      const el = document.querySelector<HTMLElement>(`[data-note-line="${linkAt.key}"]`);
+                      if (el) {
+                        const runs = applyNoteFormatRange(el, linkAt.a, linkAt.b, 'link', null);
+                        if (runs) commitLine(controller, linkAt.key, runs);
+                      }
+                      setLinkAt(null);
+                    }}
+                    style={{ ...MENU_ITEM, height: 30 }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+                      <path d="M10 13a5 5 0 0 0 7.5.5l1.5-1.5M14 11a5 5 0 0 0-7.5-.5L5 12" />
+                      <path d="m4 4 16 16" />
+                    </svg>
+                    링크 삭제
+                  </button>
+                )}
+              </div>
+            )}
             {slashFor && !readOnly && (
               <SlashMenu
                 anchor={slashAt}
@@ -1688,6 +1792,7 @@ export function NoteEditor({ controller }: Props) {
                     const added = controller.addNoteBlock(kind, id);
                     closeSlash();
                     setFreshId(added ?? id);
+                    if (added) caretAfterInsert(controller, page?.blocks ?? [], kind, added, id);
                     return;
                   }
                   /**
@@ -1698,6 +1803,12 @@ export function NoteEditor({ controller }: Props) {
                   const made = controller.retypeNoteLine(slashFor ?? id, kind);
                   closeSlash();
                   setFreshId(made ?? id);
+                  /**
+                   * **캐럿을 그 줄에 세운다**(제보 4) — `freshId`만으로는 목록·체크리스트에
+                   * 닿지 않고(편집 박스를 항목이 갖는다) 구분선에는 설 자리가 없다.
+                   * 자리는 `/`가 있던 그 자리다 — 사람이 치고 있던 곳이다.
+                   */
+                  caretAfterInsert(controller, page?.blocks ?? [], kind, made ?? id, made ?? id, slashAtChar ?? 'end');
                 }}
               />
             )}
@@ -3532,15 +3643,21 @@ function FormatToolbar({
      * 항목 여럿이므로 `retypeNoteLine`이 그 항목만 갈라 낸다.
      */
     if (textLike && cur && noteBlockShape(cur.kind) === 'items' && itemIdOf(key)) {
-      onInserted(controller.retypeNoteLine(key, kind));
+      const made = controller.retypeNoteLine(key, kind);
+      onInserted(made);
+      if (made) caretAfterInsert(controller, blocks, kind, made, made);
       return;
     }
     if (cur && textLike && noteBlockShape(cur.kind) === 'runs' && runsText(cur.runs) === '') {
       controller.retypeNoteBlock(cur.id, kind);
       onInserted(cur.id);
+      caretAfterInsert(controller, blocks, kind, cur.id, cur.id);
       return;
     }
-    onInserted(controller.addNoteBlock(kind, id ?? undefined));
+    const added = controller.addNoteBlock(kind, id ?? undefined);
+    onInserted(added);
+    // 넣은 자리에 **캐럿을 세운다**(제보 4) — 글을 담지 않는 종류면 그 아래 줄에.
+    if (added) caretAfterInsert(controller, blocks, kind, added, id ?? added);
   };
 
   /**
@@ -5075,6 +5192,34 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   /** 끄는 중의 마지막 크기 — 손을 뗄 때 **업데이터를 거치지 않고** 읽는다(`up` 머리말). */
   const liveRef = useRef(live);
   liveRef.current = live;
+
+  /**
+   * **Shift+휠로 가로 스크롤**(제보 1) — 넘치는 표를 손으로 굴릴 수 있게.
+   *
+   * 브라우저가 알아서 해 주는 조합도 있지만(크로뮴/리눅스에서는 실제로 굴러간다 —
+   * 프로브로 확인했다) 플랫폼·입력기기에 따라 그러지 않는다. 눈에 보이는 막대를
+   * 두고 "굴러가지 않는다"는 것은 우리 쪽에서 메워야 하는 자리라, 여기서 직접 굴린다.
+   *
+   * 끝에 닿았거나 넘치지 않는 표에서는 **막지 않는다** — 그때는 본문이 세로로
+   * 굴러가는 편이 맞다(표 위에서 휠이 죽어 버리면 그게 더 답답하다). 리액트의
+   * `onWheel`은 passive라 `preventDefault`가 먹지 않아 직접 건다(이미지 판과 같다).
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent): void => {
+      // 트랙패드의 가로 스와이프(`deltaX`)는 브라우저가 이미 굴린다 — 우리는 Shift만.
+      if (!e.shiftKey || e.deltaX !== 0 || !e.deltaY) return;
+      const max = el.scrollWidth - el.clientWidth;
+      if (max <= 1) return;
+      const next = Math.max(0, Math.min(max, el.scrollLeft + e.deltaY));
+      if (next === el.scrollLeft) return;
+      e.preventDefault();
+      el.scrollLeft = next;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   const pick = useCallback((next: TableSel | null) => {
     pickedAt.current = Date.now();
@@ -7646,9 +7791,18 @@ function SlashMenu({
                         data-note-slash-item={t.kind}
                         className="btn mf-note-item"
                         onMouseDown={(e) => e.preventDefault()}
-                        // 마우스를 얹으면 **키보드 활성도 그리로 옮긴다**(스펙 §7) —
-                        // 그러지 않으면 손으로 가리킨 줄과 Enter가 넣을 줄이 다르다.
-                        onMouseEnter={() => setCursor(flat.indexOf(t))}
+                        /**
+                         * 마우스를 **움직여** 얹으면 키보드 활성도 그리로 옮긴다(스펙 §7) —
+                         * 그러지 않으면 손으로 가리킨 줄과 Enter가 넣을 줄이 다르다.
+                         *
+                         * `mouseenter`가 아니라 `mousemove`인 이유(제보 5: 방향키가 두 칸씩
+                         * 뛰거나 한 번에 안 움직인다): 목록은 **캐럿 아래**에 뜨므로 포인터가
+                         * 그 위에 얹힌 채인 일이 잦은데, 브라우저는 요소가 포인터 아래에
+                         * 새로 나타나거나 목록이 굴러 다른 줄이 그 자리에 오면 `mouseenter`를
+                         * 쏜다. 그러면 손을 대지도 않았는데 활성이 그리로 끌려가 방향키의
+                         * 결과와 겹쳤다. 진짜 움직임에만 반응하면 그 겹침이 사라진다.
+                         */
+                        onMouseMove={() => setCursor((c) => (flat[c] === t ? c : flat.indexOf(t)))}
                         onClick={() => onPick(t.kind)}
                         aria-selected={active}
                         style={{ ...MENU_ITEM, height: 'auto', padding: '6px 9px', gap: 10, ...(active ? { background: 'var(--mf-note-hover)' } : {}) }}
@@ -8110,6 +8264,62 @@ function placeCaretInLine(el: HTMLElement, dir: -1 | 1, x?: number): void {
   } catch {
     /* 캐럿을 못 놓아도 포커스는 갔다 */
   }
+}
+
+/**
+ * 넣은 블록 **안의 첫 줄**로 캐럿을 보낸다 — 목록·체크리스트처럼 항목 id를 모르는
+ * 경우를 위한 길이다(그 id는 코어가 새로 찍는다).
+ */
+function caretIntoBlock(blockId: string, at: number | 'end' = 'end'): void {
+  const go = (): void => {
+    const el = document.querySelector<HTMLElement>(`[data-note-block="${blockId}"] [data-note-line]`);
+    const key = el?.getAttribute('data-note-line');
+    if (key) caretToLine(key, at);
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+  else setTimeout(go, 0);
+}
+
+/**
+ * **넣은 뒤 캐럿을 세운다**(제보 4: 번호 매기기·체크리스트·구분선을 넣으면 커서가
+ * 사라져 바로 칠 수 없다).
+ *
+ * 예전에는 `freshId`(마운트할 때의 `autoFocus`) 하나에 기댔다. 그 길은 **블록 id**로만
+ * 맞춰 보는데 목록의 편집 박스는 **항목**이 갖고 있어(`freshId === item.id`) 한 번도
+ * 맞지 않았고, 구분선·이미지처럼 **글을 담지 않는 블록**에는 애초에 설 자리가 없다.
+ *
+ * 그래서 둘로 가른다: 글을 담는 종류면 그 블록의 첫 줄로, 아니면 **그 아래 줄**로
+ * (아래가 없거나 그쪽도 글을 담지 않으면 빈 문단을 하나 만들어 거기에 선다 — 구분선을
+ * 문서 끝에 넣고도 이어서 쓸 수 있어야 한다).
+ */
+function caretAfterInsert(
+  controller: EditorController,
+  blocks: readonly NoteBlock[],
+  kind: NoteBlockKind,
+  insertedId: string,
+  anchorId: string,
+  at: number | 'end' = 'end',
+): void {
+  if (holdsText(kind)) {
+    caretIntoBlock(insertedId, at);
+    return;
+  }
+  const i = blocks.findIndex((b) => b.id === anchorId);
+  const next = i >= 0 ? blocks[i + 1] : undefined;
+  // **표는 이웃으로 치지 않는다** — 칸의 편집 박스는 고르기 전에는 없어서(그려지지
+  // 않는다) 캐럿을 보낼 자리가 없다. 그때는 아래처럼 빈 문단을 하나 만든다.
+  if (next && (noteBlockShape(next.kind) === 'runs' || noteBlockShape(next.kind) === 'items')) {
+    caretIntoBlock(next.id, 0);
+    return;
+  }
+  const made = controller.addNoteBlock('p', insertedId);
+  if (made) caretIntoBlock(made, 0);
+}
+
+/** 이 종류가 **글을 담는가** — 캐럿이 설 자리가 있는 블록인지. */
+function holdsText(kind: NoteBlockKind): boolean {
+  const shape = noteBlockShape(kind);
+  return shape === 'runs' || shape === 'items' || shape === 'table';
 }
 
 /**

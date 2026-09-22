@@ -133,6 +133,25 @@ describe('linearize', () => {
     expect(pos).toEqual([8]); // "hello " (6) + 2 into "world"
   });
 
+  /**
+   * **빈 편집 박스의 채움 `<br>`은 글자가 아니다**(제보: 빈 줄에서 ↓가 먹지 않는다).
+   *
+   * 글을 다 지우면 크로뮴이 줄을 보이게 하려고 `<br>` 하나를 남긴다. 그것을 `\n`으로
+   * 세면 "빈 줄인데 길이가 1"이 되어 줄 끝 판정(`at >= lineLength`)이 영영 거짓이 된다.
+   */
+  it('빈 줄에 혼자 남은 `<br>`은 **길이 0**이다(브라우저가 넣은 채움)', () => {
+    const div = document.createElement('div');
+    div.innerHTML = '<br>';
+    expect(linearize(div, []).text).toBe('');
+    expect(linearize(div, [{ container: div, offset: 0 }]).pos).toEqual([0]);
+  });
+
+  it('글 **뒤**의 `<br>`은 그대로 줄바꿈이다 — 채움과 갈린다', () => {
+    const div = document.createElement('div');
+    div.innerHTML = '가<br>';
+    expect(linearize(div, []).text).toBe('가\n');
+  });
+
   it('a mark past the end of its container resolves to the total text length', () => {
     const div = document.createElement('div');
     div.innerHTML = 'hi';
