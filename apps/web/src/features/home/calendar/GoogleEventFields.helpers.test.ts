@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { groupRooms, guestSub, meetNote, withOrganizer } from './GoogleEventFields';
-import { inputToGoogleDraft } from './newEventSubmit';
-import { RECURRENCE_OFF } from './googleCalendar';
+import { inputToGoogleDraft, withSelfAccepted } from './newEventSubmit';
+import { attendeesBody, declinedRooms, RECURRENCE_OFF } from './googleCalendar';
 
 describe('참석자 머리 문구(guestSub)', () => {
   it('주최자가 따로 있으면 "일정을 만든 사람 외 N명"', () => {
@@ -67,5 +67,68 @@ describe('종일 일정의 알림(inputToGoogleDraft)', () => {
     // 기본이 그대로 적용된다(우리가 알림을 지어내지도, 지우지도 않는다).
     const draft = inputToGoogleDraft({ ...base, allDay: true }, fields);
     expect(draft.reminderMinutes).toBeUndefined();
+  });
+});
+
+describe('내가 만든 일정에는 내가 참석한다(withSelfAccepted — 요청 3)', () => {
+  it('사람을 초대한 일정에는 나를 **뒤에** 붙이고 응답을 `참석`으로 싣는다', () => {
+    expect(withSelfAccepted(['a@x.com'], 'me@x.com')).toEqual({
+      attendees: ['a@x.com', 'me@x.com'],
+      rsvps: { 'me@x.com': 'accepted' },
+    });
+  });
+
+  it('아무도 초대하지 않은 일정은 **그대로 둔다** — 혼자 쓰는 일정에 손님 목록을 만들지 않는다', () => {
+    expect(withSelfAccepted([], 'me@x.com')).toEqual({ attendees: [] });
+  });
+
+  it('내가 이미 참석자 칸에 있으면 **중복을 만들지 않고 응답만 올린다**', () => {
+    // 키는 배열에 든 **그 표기 그대로**여야 한다 — `attendeesBody`가 정확한 문자열로 찾는다.
+    expect(withSelfAccepted(['a@x.com', 'Me@X.com'], 'me@x.com')).toEqual({
+      attendees: ['a@x.com', 'Me@X.com'],
+      rsvps: { 'Me@X.com': 'accepted' },
+    });
+  });
+
+  it('내 주소를 모르면(연동 직후 목록이 아직 없다) 아무것도 하지 않는다', () => {
+    expect(withSelfAccepted(['a@x.com'])).toEqual({ attendees: ['a@x.com'] });
+  });
+
+  it('초안까지 이어진다 — `attendees`와 `rsvps`가 함께 실린다', () => {
+    const base = { title: '회의', startDate: '2026-09-15', endDate: '2026-09-15', allDay: false, startTime: '10:30', endTime: '11:30' };
+    const fields = { attendees: ['a@x.com'], rooms: [], visibility: 'default' as const, transparency: 'opaque' as const, reminderMinutes: 10, recurrence: RECURRENCE_OFF, addMeet: false };
+    const draft = inputToGoogleDraft(base, fields, 'me@x.com');
+    expect(draft.attendees).toEqual(['a@x.com', 'me@x.com']);
+    expect(draft.rsvps).toEqual({ 'me@x.com': 'accepted' });
+    // 구글로 나가는 본문에서도 그렇다(출력 전용 필드는 보내지 않는다).
+    expect(attendeesBody(draft)).toEqual([{ email: 'a@x.com' }, { email: 'me@x.com', responseStatus: 'accepted' }]);
+  });
+});
+
+describe('화면에서 뺀 사람들을 제자리에(withOrganizer — 둘일 수 있다)', () => {
+  it('주최자와 나를 **함께** 빼 두었다가 제자리에 되돌린다', () => {
+    const original = ['boss@x.com', 'a@x.com', 'me@x.com'];
+    // 화면에는 `a@x.com`만 보인다(주최자와 나는 뺐다).
+    expect(withOrganizer(original, ['boss@x.com', 'me@x.com'], ['a@x.com'])).toEqual(original);
+    // 손님을 하나 더 더하면 뒤에 붙는다.
+    expect(withOrganizer(original, ['boss@x.com', 'me@x.com'], ['a@x.com', 'c@x.com'])).toEqual(['boss@x.com', 'a@x.com', 'me@x.com', 'c@x.com']);
+    // 손님을 전부 지워도 둘은 남는다.
+    expect(withOrganizer(original, ['boss@x.com', 'me@x.com'], [])).toEqual(['boss@x.com', 'me@x.com']);
+  });
+});
+
+describe('예약을 거절한 회의실(declinedRooms — 요청 4)', () => {
+  it('회의실의 `declined`만 고른다 — 사람의 불참은 다른 이야기다', () => {
+    expect(
+      declinedRooms({
+        rooms: ['room-a@x.com', 'room-b@x.com'],
+        rsvps: { 'room-a@x.com': 'declined', 'room-b@x.com': 'accepted', 'who@x.com': 'declined' },
+      }),
+    ).toEqual(['room-a@x.com']);
+  });
+
+  it('회의실이 없거나 아직 답하지 않았으면 빈 배열이다 — 없는 경고를 만들지 않는다', () => {
+    expect(declinedRooms({})).toEqual([]);
+    expect(declinedRooms({ rooms: ['room-a@x.com'], rsvps: { 'room-a@x.com': 'needsAction' } })).toEqual([]);
   });
 });

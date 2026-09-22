@@ -1344,15 +1344,22 @@ describe('일정 화면', () => {
       expect(document.querySelector('[data-gf-remind-off]')).toBeTruthy();
       expect(newEv().textContent).toContain('종일 일정에는 알림을 걸 수 없어요');
       expect(document.querySelector('[data-gf-remind]')).toBeNull();
+      // **저장되지 않을 값을 굵게 칠하지 않는다** — 초기값이 10분이 된 뒤로도 종일
+      // 일정에는 그 값이 실리지 않으므로(`submit`·`inputToGoogleDraft`의 가드),
+      // 굵은 칩이 하나도 없어야 "걸 수 없어요"와 한 말이 된다.
+      const off = [...document.querySelectorAll('[data-gf-remind-off] span')];
+      expect(off.filter((c) => (c as HTMLElement).style.fontWeight === '800')).toHaveLength(0);
 
       fireEvent.click(document.querySelector('[data-new-allday]')!);
       await waitFor(() => expect(document.querySelector('[data-gf-remind]')).toBeTruthy());
-      // Geurio 목적지에는 `기본` 칸이 없다 — 우리에게 "캘린더 기본 알림"이 없으므로
-      // 두면 눌러도 아무 일이 없는 칸이 된다.
+      // **`없음`이 맨 뒤고 `기본`은 없다**(요청) — 실제로 고르는 것은 앞의 셋이고
+      // `없음`은 끄는 칸이라 첫 자리에 두면 기본값처럼 읽힌다. `기본`(구글의
+      // `useDefault`)은 우리 표에 대응하는 값이 아예 없었고, 구글 쪽에서도 뺐다.
       const chips = [...document.querySelectorAll('[data-gf-remind]')].map((c) => c.textContent);
-      expect(chips).toEqual(['없음', '10분 전', '1시간 전', '1일 전']);
+      expect(chips).toEqual(['10분 전', '1시간 전', '1일 전', '없음']);
+      // **10분 전이 기본값이다**(요청) — 고르지 않아도 켜져 있다.
+      expect(screen.getByRole('radio', { name: '10분 전' }).getAttribute('aria-checked')).toBe('true');
 
-      fireEvent.click(screen.getByRole('radio', { name: '10분 전' }));
       fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '팀 회의' } });
       fireEvent.click(document.querySelector('[data-new-submit]')!);
       await waitFor(() => expect(events()).toHaveLength(1));

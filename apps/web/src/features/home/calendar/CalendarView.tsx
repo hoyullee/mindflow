@@ -20,7 +20,7 @@ import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
 import { WorkLocationModal } from './WorkLocationModal';
-import { findWorkLocation, type WorkLocationDraft } from './googleCalendar';
+import { declinedRooms, findWorkLocation, type WorkLocationDraft } from './googleCalendar';
 import { CalendarContextMenu, type CalMenuState } from './CalendarContextMenu';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useCalendarEvents } from './useCalendarEvents';
@@ -107,7 +107,7 @@ export function CalendarView({
   }, [google.writableCalendars, google.pickedIds]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
   // 새 일정의 목적지 — **쓸 수 있는** 구글 캘린더만(공휴일·보기 전용은 뺀다).
-  const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) })), [google.writableCalendars]);
+  const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}), ...(c.primary ? { primary: true } : {}) })), [google.writableCalendars]);
   // 선택 스코프로 열리는 것들(이름 검색·회의실) — 두 팝업이 같은 것을 쓴다.
   const googleDirectory = useMemo(
     () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms, checkRoomBusy: google.checkRoomBusy }),
@@ -430,6 +430,7 @@ export function CalendarView({
       {/* 항목 상세 — 열려 있으면 그 항목을 찾아 그린다(사라졌으면 조용히 닫힌다). */}
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
       <GoogleDetailHost
+        calendarDefaults={google.calendarDefaults}
         openId={state.calGoogleDetail ?? null}
         events={google.events}
         isMobile={isMobile}
@@ -456,7 +457,23 @@ export function CalendarView({
           googleColors={google.eventColors}
           onSubmit={(input, target) => {
             setSaving(true);
-            void submitNewEvent(input, target, { createGeurio: eventsApi.create, createGoogle: google.createEvent }).then((err) => {
+            void submitNewEvent(
+              input,
+              target,
+              {
+                createGeurio: eventsApi.create,
+                /**
+                 * 만든 **그 자리에서** 회의실 충돌을 말해 준다(요청 4) — 구글이 돌려준
+                 * 일정에 회의실의 거절이 이미 실려 있으면 그렇다. 아직 `needsAction`이면
+                 * (리소스 응답은 비동기다) 몇십 초 뒤 재조회가 칩·팝업으로 같은 말을 한다.
+                 */
+                createGoogle: (calendarId, draft) =>
+                  google.createEvent(calendarId, draft, (made) => {
+                    if (made && declinedRooms(made).length > 0) controller.showCalendarToast('회의실이 예약을 거절했어요', '그 시간에 이미 차 있는 회의실이에요. 다른 방을 고르거나 시간을 옮겨 주세요.');
+                  }),
+              },
+              google.selfEmail,
+            ).then((err) => {
               setSaving(false);
               setSaveError(err);
               if (!err) controller.closeNewEvent();

@@ -11,7 +11,7 @@ import type { CSSProperties } from 'react';
 import { UI_THEME, mixHex } from '../../editor/theme';
 import { columnColor, tagColor, tagInk } from '../../editor/kanbanMeta';
 import type { CalendarEntry } from './entries';
-import { myRsvpOf } from './googleCalendar';
+import { declinedRooms, myRsvpOf } from './googleCalendar';
 
 /**
  * 구글에서 온 일정의 표식 색(요청) — 캘린더마다 다른 색 대신 **구글 파랑 하나**로
@@ -168,6 +168,24 @@ export function dayNumTone(selected: boolean, isToday: boolean, dayInk?: string)
  */
 export function isDeclined(e: Pick<CalendarEntry, 'google'>): boolean {
   return !!e.google && myRsvpOf(e.google) === 'declined';
+}
+
+/**
+ * **잡아 둔 회의실이 예약을 거절한** 일정인가(요청 4) — 그 시간에 이미 차 있다.
+ *
+ * 취소선은 쓰지 않는다: 그 표시는 "내가 안 간다"의 뜻으로 이미 쓰이고 있고, 이쪽은
+ * 반대로 **고쳐야 하는 일**이다. 칩은 제목 앞에 ⚠를 붙여 말한다.
+ */
+export function roomRejected(e: Pick<CalendarEntry, 'google'>): boolean {
+  return !!e.google && declinedRooms(e.google).length > 0;
+}
+
+/**
+ * 칩 제목 앞에 붙는 표식 — 지금은 하나다: **회의실이 예약을 거절했다**(요청 4).
+ * 칩은 좁아서 글자를 더 넣을 자리가 없으므로 한 글자로 말하고, 자세한 것은 팝업이 맡는다.
+ */
+export function roomMark(e: Pick<CalendarEntry, 'google'>): string {
+  return roomRejected(e) ? '⚠ ' : '';
 }
 
 /** 거부한 일정의 제목 꾸밈 — 취소선은 **글자색을 따른다**(칩마다 잉크가 다르다). */

@@ -14,7 +14,7 @@ import { googleColorOptions } from './eventColor';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
 import { attendeesBody, conferenceBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
-import { attendeesLocked } from './googleCalendar';
+import { attendeesLocked, declinedRooms } from './googleCalendar';
 import type { GoogleEvent, GoogleEventDraft, GoogleEventPatch, GoogleWriteField } from './googleCalendar';
 
 /** 구글 일정 → 팝업이 읽는 모양. 이름만 다르고 뜻은 같다(`description` ↔ `note`). */
@@ -201,6 +201,7 @@ export function GoogleEventDetail({
   onDelete,
   directory,
   colors,
+  calendarDefault,
 }: {
   event: GoogleEvent;
   isMobile: boolean;
@@ -211,6 +212,11 @@ export function GoogleEventDetail({
   directory?: GoogleDirectoryApi;
   /** 구글의 이벤트 색 팔레트(번호 → hex) — 못 받았으면 폴백 표로 그린다. */
   colors?: Record<string, string>;
+  /**
+   * 이 일정이 사는 캘린더의 **기본 알림**(분) — `useDefault` 일정을 실제 값으로 풀어
+   * 보여 주려면 필요하다(구글 캘린더도 `기본`이라는 칸 없이 그 값을 보여 준다).
+   */
+  calendarDefault?: number;
 }) {
   // 구글 전용 필드의 초안 — 본문 초안(제목·날짜·시각…)은 `EventDetail`이 든다.
   // **저장은 완료 버튼에서 한 번**(요청): 팝업이 모아 준 본문 diff와 이 필드 초안을
@@ -249,6 +255,7 @@ export function GoogleEventDetail({
         ? {
             reminder: {
               value: 'reminderMinutes' in pendingFields ? pendingFields.reminderMinutes : event.reminderMinutes,
+              ...(typeof calendarDefault === 'number' ? { calendarDefault } : {}),
               onChange: (m: number | null | undefined) => setPendingFields((p) => ({ ...p, reminderMinutes: m })),
             },
           }
@@ -267,6 +274,26 @@ export function GoogleEventDetail({
         return onPatch(patchFrom(event, patch, pendingFields));
       }}
       onDelete={async () => (onDelete ? onDelete() : null)}
+      /**
+       * **회의실이 예약을 거절했다**(요청 4) — 그 시간에 이미 차 있다는 뜻이다. 구글의
+       * 회의실 캘린더는 이중 예약되면 스스로 초대를 거절하므로, 새 왕복 없이 이미 받아
+       * 둔 응답에서 읽는다(`declinedRooms`). **왼쪽 열**에 두는 이유: 오른쪽 열
+       * (`GoogleEventFields`)은 쓸 수 있는 일정에만 있어서, 거기 두면 읽기 전용으로
+       * 공유받은 일정에서는 이 경고가 통째로 사라진다.
+       */
+      {...(declinedRooms(event).length > 0
+        ? {
+            alert: (
+              <span
+                data-event-room-declined
+                style={{ fontSize: 12.5, color: 'var(--mf-danger-ink, #9B3B2F)', background: 'var(--mf-danger-soft, #FBEAE5)', border: '1px solid var(--mf-danger-line, #F0C8BE)', borderRadius: 12, padding: '11px 13px', lineHeight: 1.65 }}
+              >
+                회의실이 예약을 거절했어요 — 그 시간에 이미 차 있어요. 다른 방을 고르거나 시간을 옮겨 주세요.
+                {declinedRooms(event).length > 1 ? ` (${declinedRooms(event).length}곳)` : ''}
+              </span>
+            ),
+          }
+        : {})}
       // 구글 전용 필드는 **오른쪽 열**이다(제보 #16 — 새 일정 팝업과 같은 구조).
       // 쓸 수 있는 일정에서만 — 읽기 전용이면 열 자체가 없고 카드도 560px로 남는다.
       {...(writable
@@ -276,6 +303,7 @@ export function GoogleEventDetail({
                 value={{ ...fieldsOf(event), ...pendingFields }}
                 mode="edit"
                 {...(event.organizer ? { organizer: event.organizer } : {})}
+                {...(event.creator ? { creator: event.creator } : {})}
                 {...(directory ? { directory } : {})}
                 when={roomWindow}
                 attendeesLock={attendeesLocked(event)}
@@ -322,6 +350,7 @@ export function GoogleDetailHost({
   onDelete,
   directory,
   colors,
+  calendarDefaults,
 }: {
   openId: string | null;
   events: readonly GoogleEvent[];
@@ -331,6 +360,8 @@ export function GoogleDetailHost({
   onDelete: (ev: GoogleEvent) => Promise<string | null>;
   directory?: GoogleDirectoryApi;
   colors?: Record<string, string>;
+  /** 캘린더 id → 그 캘린더의 기본 알림(분). 여는 일정의 것만 골라 넘긴다. */
+  calendarDefaults?: ReadonlyMap<string, number>;
 }) {
   const g = openId ? events.find((e) => e.id === openId) : null;
   if (!g) return null;
@@ -341,6 +372,10 @@ export function GoogleDetailHost({
       onClose={onClose}
       {...(directory ? { directory } : {})}
       {...(colors ? { colors } : {})}
+      {...(() => {
+        const d = calendarDefaults?.get(g.calendarId);
+        return typeof d === 'number' ? { calendarDefault: d } : {};
+      })()}
       {...(g.writable
         ? {
             onPatch: (patch: GoogleEventPatch) => onPatch(g, patch),

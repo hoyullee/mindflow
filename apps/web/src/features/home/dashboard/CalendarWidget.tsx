@@ -19,7 +19,7 @@ import type { CalendarEntry, HolidayInfo } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
 import type { CellRow } from '../calendar/model';
-import { chipTimeLabel, dayNumTone, declinedStyle, entryChip, isAllDayEntry, markStyle, type ChipSurface } from '../calendar/chips';
+import { type ChipSurface, chipTimeLabel, dayNumTone, declinedStyle, entryChip, isAllDayEntry, markStyle, roomMark } from '../calendar/chips';
 import {
   DOW,
   addDays,
@@ -466,7 +466,7 @@ function DaySide({
                 }}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '5px 8px', border: 0, borderLeft: `3px solid ${chip.dot}`, borderRadius: '3px 8px 8px 3px', background: chip.tint, cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}
               >
-                <span data-cal-widget-allday-title style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(e) }}>{e.title || '제목 없음'}</span>
+                <span data-cal-widget-allday-title style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(e) }}>{roomMark(e)}{e.title || '제목 없음'}</span>
                 <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{e.colName}</span>
               </button>
             );
@@ -525,7 +525,7 @@ function DaySide({
                   overflow: 'hidden',
                 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(b.entry) }}>{b.entry.title || '제목 없음'}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(b.entry) }}>{roomMark(b.entry)}{b.entry.title || '제목 없음'}</span>
               </button>
             );
           })}
@@ -555,7 +555,7 @@ function Row({ entry, todayIso, surface, showTime, onPick }: { entry: CalendarEn
       style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 6px', border: 0, borderRadius: 8, background: 'transparent', font: 'inherit', textAlign: 'left', minWidth: 0, cursor: 'pointer', flexShrink: 0 }}
     >
       <span style={{ flex: '0 0 auto', minWidth: 38, height: 19, padding: '0 6px', borderRadius: 6, background: today ? 'var(--mf-accent-soft)' : over ? 'var(--mf-danger-bg)' : 'var(--mf-panel2)', color: today ? 'var(--mf-accent-strong)' : over ? 'var(--mf-danger)' : 'var(--mf-muted)', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}>{badge}</span>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(entry) }}>{entry.title || '제목 없음'}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedStyle(entry) }}>{roomMark(entry)}{entry.title || '제목 없음'}</span>
       <span style={markStyle(chip)} />
     </button>
   );

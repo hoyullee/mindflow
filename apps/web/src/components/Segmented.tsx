@@ -30,7 +30,16 @@ function useArrowSelect<T extends string>(order: T[], value: T, onChange: (v: T)
     // (Tab으로 들어왔다 나간 경우) 사용자가 보는 자리에서 한 칸 움직인다.
     const focused = (e.target as HTMLElement)?.getAttribute?.('data-seg-value') as T | null;
     const from = order.indexOf(focused && order.includes(focused) ? focused : value);
-    if (from < 0) return;
+    /**
+     * **아무 칸도 켜지지 않은 묶음**에서도 화살표로 첫 선택이 되어야 한다 — 조용히
+     * 물러나면 키보드만 쓰는 사람에게는 고를 길이 아예 없다. 그런 묶음이 둘 있다:
+     * 참석 여부의 `needsAction`(없는 답을 고른 척하지 않는다)과 알림의 "캘린더 기본을
+     * 따름"(`기본` 칸을 뺀 뒤 생겼다).
+     */
+    if (from < 0) {
+      onChange(order[dir > 0 ? 0 : order.length - 1]!);
+      return;
+    }
     onChange(order[(from + dir + order.length) % order.length]!);
   };
 }
