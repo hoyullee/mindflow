@@ -14,7 +14,7 @@ import { googleColorOptions } from './eventColor';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
 import { attendeesBody, conferenceBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
-import { attendeesLocked } from './googleCalendar';
+import { attendeesLocked, declinedRooms } from './googleCalendar';
 import type { GoogleEvent, GoogleEventDraft, GoogleEventPatch, GoogleWriteField } from './googleCalendar';
 
 /** 구글 일정 → 팝업이 읽는 모양. 이름만 다르고 뜻은 같다(`description` ↔ `note`). */
@@ -267,6 +267,26 @@ export function GoogleEventDetail({
         return onPatch(patchFrom(event, patch, pendingFields));
       }}
       onDelete={async () => (onDelete ? onDelete() : null)}
+      /**
+       * **회의실이 예약을 거절했다**(요청 4) — 그 시간에 이미 차 있다는 뜻이다. 구글의
+       * 회의실 캘린더는 이중 예약되면 스스로 초대를 거절하므로, 새 왕복 없이 이미 받아
+       * 둔 응답에서 읽는다(`declinedRooms`). **왼쪽 열**에 두는 이유: 오른쪽 열
+       * (`GoogleEventFields`)은 쓸 수 있는 일정에만 있어서, 거기 두면 읽기 전용으로
+       * 공유받은 일정에서는 이 경고가 통째로 사라진다.
+       */
+      {...(declinedRooms(event).length > 0
+        ? {
+            alert: (
+              <span
+                data-event-room-declined
+                style={{ fontSize: 12.5, color: 'var(--mf-danger-ink, #9B3B2F)', background: 'var(--mf-danger-soft, #FBEAE5)', border: '1px solid var(--mf-danger-line, #F0C8BE)', borderRadius: 12, padding: '11px 13px', lineHeight: 1.65 }}
+              >
+                회의실이 예약을 거절했어요 — 그 시간에 이미 차 있어요. 다른 방을 고르거나 시간을 옮겨 주세요.
+                {declinedRooms(event).length > 1 ? ` (${declinedRooms(event).length}곳)` : ''}
+              </span>
+            ),
+          }
+        : {})}
       // 구글 전용 필드는 **오른쪽 열**이다(제보 #16 — 새 일정 팝업과 같은 구조).
       // 쓸 수 있는 일정에서만 — 읽기 전용이면 열 자체가 없고 카드도 560px로 남는다.
       {...(writable
@@ -276,6 +296,7 @@ export function GoogleEventDetail({
                 value={{ ...fieldsOf(event), ...pendingFields }}
                 mode="edit"
                 {...(event.organizer ? { organizer: event.organizer } : {})}
+                {...(event.creator ? { creator: event.creator } : {})}
                 {...(directory ? { directory } : {})}
                 when={roomWindow}
                 attendeesLock={attendeesLocked(event)}

@@ -111,6 +111,7 @@ export function EventDetail({
   badge = 'Geurio 캘린더',
   footerHint = '',
   notice,
+  alert,
   footerLeft,
   side,
   extraDirty = false,
@@ -133,6 +134,12 @@ export function EventDetail({
   footerHint?: string;
   /** 읽기 전용일 때 대신 보여 줄 안내(왜 못 고치는가). */
   notice?: string;
+  /**
+   * **고쳐야 하는 일**을 알리는 한 줄 — 읽기 전용 안내(`notice`)와 다르다. 지금 쓰는
+   * 곳은 하나다: 잡아 둔 회의실이 예약을 거절했다(요청 4). 읽기 전용에서도 보인다 —
+   * 그 사실이 사라지는 것이 더 나쁘다.
+   */
+  alert?: ReactNode;
   /** 원천이 더 얹는 것 — 본문 열 아래에 이어 붙는다(구글의 "Google에서 열기" 링크). */
   /** 발치의 **취소 왼쪽**에 붙는 원천 전용 버튼(구글의 `Google에서 열기`). */
   footerLeft?: ReactNode;
@@ -433,6 +440,7 @@ export function EventDetail({
             </div>
           ) : null}
 
+          {alert}
           {readOnly ? (
             <span data-event-notice style={{ fontSize: 12.5, color: 'var(--mf-muted)', background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', borderRadius: 12, padding: '11px 13px', lineHeight: 1.65 }}>
               {notice ?? '이 일정은 여기서 고칠 수 없어요.'}

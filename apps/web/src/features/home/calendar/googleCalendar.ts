@@ -243,6 +243,14 @@ export interface GoogleEvent {
    */
   organizer?: { email: string; name?: string; self?: true };
   /**
+   * **누가 만들었나**(제보) — `organizer`와 다를 수 있다. 구글은 주최자를 그 일정이
+   * 사는 **캘린더의 주인**으로 정하므로, 남이 공유해 준 캘린더나 팀 캘린더에 내가
+   * 일정을 만들면 `organizer`는 그 캘린더가 되고 `creator`가 나다. 이 값을 읽지 않던
+   * 동안 화면은 "일정을 만든 사람 · <팀 캘린더>"라고 말했다 — 제보의 "주최자가 나로
+   * 들어가지 않는다"가 그 화면이다.
+   */
+  creator?: { email: string; name?: string; self?: true };
+  /**
    * **참석자별 응답**(email → 상태). 화면이 쓰는 것은 내 응답 하나지만
    * (`myRsvpOf`), 전부 들고 있어야 참석자 배열을 다시 쓸 때 **남의 응답을 지우지
    * 않는다** — 구글의 PATCH는 이 배열을 통째로 바꾸므로, 이메일만 실어 보내면
@@ -287,6 +295,19 @@ export function attendeesLocked(g: Pick<GoogleEvent, 'attendeesOmitted' | 'guest
   // 주최자에게는 명단이 전부 온다 — 잠글 이유가 없다.
   if (g.guestsHidden && !g.organizer?.self) return 'hidden';
   return null;
+}
+
+/**
+ * **예약을 거절한 회의실들**(요청 4) — 그 시간에 이미 차 있다는 뜻이다.
+ *
+ * 구글의 회의실 캘린더는 이중 예약되면 **스스로 초대를 거절한다**(`responseStatus`가
+ * `declined`). 우리는 이미 회의실도 참석자로 파싱하므로(`parseAttendees`가 `resource`를
+ * 보고 사람과 갈라 둔다) 새 왕복도 새 스코프도 없이 그 사실을 읽을 수 있다.
+ * `googleDirectory`의 `checkRoom`이 이미 같은 규칙을 반대 방향으로 쓴다 — "회의실이
+ * 스스로 거절한 초대는 그 방을 쓰지 않는다는 뜻이다".
+ */
+export function declinedRooms(g: Pick<GoogleEvent, 'rooms' | 'rsvps'>): string[] {
+  return (g.rooms ?? []).filter((r) => g.rsvps?.[r] === 'declined');
 }
 
 /** 내 응답 — 초대받지 않은 일정(내가 만든 것 포함)에는 없다. */
@@ -1120,9 +1141,11 @@ function remembered(
   o: ReturnType<typeof parseOrganizer>,
 ): ReturnType<typeof parseAttendees> & ReturnType<typeof parseOrganizer> {
   rememberNames(a.names);
-  const org = o.organizer;
-  if (org?.name) rememberName(org.email, org.name);
-  const names = { ...(a.names ?? {}), ...(org?.name && !a.names?.[org.email] ? { [org.email]: org.name } : {}) };
+  // 주최자와 만든 사람의 이름도 장부에 적는다 — 같은 사람이 참석자 행에서도 그 이름으로 보인다.
+  const people = [o.organizer, o.creator].filter((x): x is { email: string; name?: string; self?: true } => !!x);
+  for (const p of people) if (p.name) rememberName(p.email, p.name);
+  const names = { ...(a.names ?? {}) };
+  for (const p of people) if (p.name && !names[p.email]) names[p.email] = p.name;
   return { ...a, ...o, ...(Object.keys(names).length ? { names } : {}) };
 }
 
@@ -1311,18 +1334,23 @@ export function workLocationPatch(w: WorkLocationDraft, whenChanged: boolean, ad
   return { body, touched };
 }
 
-/** 주최자 — 이름이 없으면 이메일만(구글이 이름을 모르는 계정도 있다). */
-function parseOrganizer(raw: unknown): { organizer?: { email: string; name?: string; self?: true } } {
+/** 사람 한 명(`organizer`·`creator`) — 이름이 없으면 이메일만(구글이 이름을 모르는 계정도 있다). */
+function parsePerson(raw: unknown): { email: string; name?: string; self?: true } | undefined {
   const o = raw as Record<string, unknown> | undefined;
   const email = o && typeof o.email === 'string' ? o.email : '';
-  if (!email) return {};
+  if (!email) return undefined;
   return {
-    organizer: {
-      email,
-      ...(typeof o?.displayName === 'string' && o.displayName ? { name: o.displayName } : {}),
-      ...(o?.self === true ? { self: true as const } : {}),
-    },
+    email,
+    ...(typeof o?.displayName === 'string' && o.displayName ? { name: o.displayName } : {}),
+    ...(o?.self === true ? { self: true as const } : {}),
   };
+}
+
+/** 주최자와 **만든 사람** — 둘이 다를 수 있다(`GoogleEvent.creator` 머리말). */
+function parseOrganizer(raw: unknown, creatorRaw?: unknown): { organizer?: { email: string; name?: string; self?: true }; creator?: { email: string; name?: string; self?: true } } {
+  const organizer = parsePerson(raw);
+  const creator = parsePerson(creatorRaw);
+  return { ...(organizer ? { organizer } : {}), ...(creator ? { creator } : {}) };
 }
 
 /**
@@ -1375,7 +1403,7 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(it.eventType === 'workingLocation'
         ? { workLocation: workLocationLabel(it.workingLocationProperties), ...(workLocationKindOf(it.workingLocationProperties) ? { workLocationKind: workLocationKindOf(it.workingLocationProperties)! } : {}) }
         : {}),
-      ...remembered(parseAttendees(it.attendees), parseOrganizer(it.organizer)),
+      ...remembered(parseAttendees(it.attendees), parseOrganizer(it.organizer, it.creator)),
       // 명단이 온전한가 — 아래 두 경우에는 **우리가 든 목록이 전부가 아니다**.
       ...(it.attendeesOmitted === true ? { attendeesOmitted: true as const } : {}),
       ...(it.guestsCanSeeOtherGuests === false ? { guestsHidden: true as const } : {}),
@@ -1645,10 +1673,18 @@ async function send(path: string, token: string, method: 'POST' | 'PATCH' | 'DEL
   return res.status === 204 ? null : res.json();
 }
 
-export async function createGoogleEvent(token: string, calendarId: string, draft: GoogleEventDraft): Promise<void> {
+/**
+ * 새 일정을 만든다. **구글이 돌려준 그 일정**을 파싱해 함께 준다(요청 4) — 회의실이
+ * 그 자리에서 예약을 거절했는지(`declinedRooms`) 부르는 쪽이 바로 볼 수 있게. 못
+ * 읽었으면 `null`이고, 그때도 만들기는 성공한 것이다(화면은 몇십 초 뒤 재조회가 말한다).
+ */
+export async function createGoogleEvent(token: string, calendarId: string, draft: GoogleEventDraft): Promise<GoogleEvent | null> {
   // Meet 링크를 요청할 때는 `conferenceDataVersion=1`이 있어야 구글이 만들어 준다.
   const qs = draft.addMeet ? '?conferenceDataVersion=1' : '';
-  await send(`/calendars/${encodeURIComponent(calendarId)}/events${qs}`, token, 'POST', draftToBody(draft));
+  const json = await send(`/calendars/${encodeURIComponent(calendarId)}/events${qs}`, token, 'POST', draftToBody(draft));
+  // POST는 **일정 하나**를 돌려준다 — 목록 파서를 쓰려면 한 겹 감싼다.
+  const cal: GoogleCalendarMeta = { id: calendarId, summary: calendarId, writable: true };
+  return parseEvents({ items: [json] }, cal)[0] ?? null;
 }
 
 /**

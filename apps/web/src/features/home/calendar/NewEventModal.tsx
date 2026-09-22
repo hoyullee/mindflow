@@ -38,6 +38,15 @@ export interface GoogleTarget {
   id: string;
   name: string;
   color?: string;
+  /**
+   * **내 캘린더인가**(구글의 `primary`) — 칩에 그 사실을 적는다(제보 1).
+   *
+   * 구글은 일정의 **주최자를 그 일정이 사는 캘린더의 주인**으로 정한다. 남이 공유해
+   * 준 캘린더나 팀 캘린더도 쓸 수 있으면 목적지로 올라오므로, 그쪽을 고르면 내가
+   * 만든 일정인데 주최자가 내가 아니게 된다 — 칩 이름만으로는 어느 쪽인지 알기
+   * 어려웠다(주 캘린더의 이름은 대개 계정 주소지만 조직이 바꿔 둘 수 있다).
+   */
+  primary?: boolean;
 }
 
 /** 회의 길이 빠른 선택(분) — 30분·1시간·2시간·3시간. 상세 팝업도 같은 줄을 쓴다. */
@@ -102,7 +111,15 @@ export function NewEventModal({
   // 기본값은 **우리 표**다 — 남의 서비스에 쓰는 일은 사용자가 골라야 한다.
   const [dest, setDest] = useState<string>('geurio');
   // 구글 전용 필드 — 목적지를 Geurio로 되돌려도 값은 남는다(다시 고르면 그대로).
-  const [gf, setGf] = useState<GoogleFieldsValue>({ attendees: [], rooms: [], visibility: 'default', transparency: 'opaque', reminderMinutes: undefined, recurrence: RECURRENCE_OFF, addMeet: false });
+  /**
+   * 알림의 기본은 **10분 전**이다(요청). 예전에는 `undefined`라 구글 목적지에서는
+   * `기본`(캘린더 설정을 따름), 우리 표에서는 폴백으로 `없음`이 켜져 있었다 — 즉
+   * 직접 고르지 않으면 알림이 없는 일정이 만들어졌다.
+   *
+   * **기존 일정은 이 값을 타지 않는다**: 상세 팝업은 그 일정의 실제 값을 읽는다
+   * (`EventDetail`의 초안 · `GoogleEventDetail`). 여기는 새 일정 하나의 초기값이다.
+   */
+  const [gf, setGf] = useState<GoogleFieldsValue>({ attendees: [], rooms: [], visibility: 'default', transparency: 'opaque', reminderMinutes: 10, recurrence: RECURRENCE_OFF, addMeet: false });
   // 반복은 **목적지와 무관**하다(둘 다 규칙을 저장한다) — 그래서 gf 밖의 자기 상태다.
   const [rep, setRep] = useState<RecurrenceSpec>(RECURRENCE_OFF);
   // 고른 캘린더가 사라지면(연동 해제·권한 변경) 조용히 우리 표로 되돌린다.
@@ -320,6 +337,11 @@ export function NewEventModal({
                       <>
                         <span style={destDotStyle(t.color ?? 'var(--mf-info)')} />
                         {t.name}
+                        {t.primary && (
+                          <span data-new-cal-mine style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: 'var(--mf-faint)' }}>
+                            내 캘린더
+                          </span>
+                        )}
                       </>
                     ),
                   })),
@@ -428,7 +450,13 @@ export function NewEventModal({
               일"인 **종일 일정**뿐이고, 그건 목적지를 가리지 않는다(제보) — 이유는
               `ReminderField` 주석. */}
           <ReminderField
-            value={gf.reminderMinutes}
+            /**
+             * 종일이면 **없는 값으로 보여 준다** — 이 값은 저장되지 않는다(아래 `submit`과
+             * `inputToGoogleDraft`의 종일 가드). 저장되지 않을 칩을 굵게 칠하면 화면이
+             * "10분 전"과 "종일에는 걸 수 없어요"를 동시에 말하는 셈이 된다. 값이 사는
+             * 곳은 그대로 `gf`이므로 종일을 끄면 고른 값이 되살아난다.
+             */
+            value={allDay ? undefined : gf.reminderMinutes}
             onChange={(m) => setGf((v) => ({ ...v, reminderMinutes: m }))}
             kind={target.kind === 'geurio' ? 'geurio' : 'google'}
             disabled={allDay}

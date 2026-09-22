@@ -54,8 +54,13 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-export function SubText({ children }: { children: ReactNode }) {
-  return <span style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.55 }}>{children}</span>;
+export function SubText({ children, mark }: { children: ReactNode; mark?: string }) {
+  // `mark`는 테스트가 그 줄을 집을 표식이다(없으면 속성이 붙지 않는다).
+  return (
+    <span {...(mark ? { [mark]: '1' } : {})} style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.55 }}>
+      {children}
+    </span>
+  );
 }
 
 export function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (n: number) => void }) {

@@ -102,20 +102,23 @@ const RSVP_OPTS: { v: GoogleRsvp; label: string }[] = [
   { v: 'declined', label: '불참' },
 ];
 
-/** 디자인 원본의 `evRemindOpts` + 구글의 실제 상태인 **기본 알림**. */
+/**
+ * 알림 선택지 — 디자인 원본의 `evRemindOpts`에서 **순서를 바꾸고 한 칸을 뺐다**(요청).
+ *
+ * - **`없음`은 맨 뒤다**: 실제로 고르는 것은 앞의 셋이고 `없음`은 끄는 칸이라, 첫
+ *   자리에 두면 기본값처럼 읽힌다.
+ * - **`기본`(구글의 `useDefault`)은 없다**: 한때 여기 있었다 — 구글 일정 대부분의
+ *   실제 상태라 그 칸이 없으면 아무것도 안 켜진 채 열렸기 때문이다. 사용자가 그
+ *   결정을 뒤집었고(요청), 대신 그 상태일 때 **칩 아래 한 줄이 그렇게 말한다**
+ *   (`ReminderField`). 목록이 목적지마다 갈릴 이유도 함께 사라져 한 벌로 합쳤다.
+ */
 const REMIND_OPTS: { key: string; label: string; minutes: number | null | undefined }[] = [
-  { key: 'default', label: '기본', minutes: undefined },
-  { key: 'none', label: '없음', minutes: null },
   { key: '10', label: '10분 전', minutes: 10 },
   { key: '60', label: '1시간 전', minutes: 60 },
   { key: '1440', label: '1일 전', minutes: 1440 },
+  { key: 'none', label: '없음', minutes: null },
 ];
 
-/**
- * Geurio 일정의 선택지 — `기본`이 없다. 그 칸의 뜻은 "구글 캘린더에 설정해 둔 기본
- * 알림"인데 우리에게는 그런 값이 없어서, 두면 눌러도 아무 일이 없는 칸이 된다.
- */
-const REMIND_OPTS_GEURIO = REMIND_OPTS.filter((o) => o.key !== 'default');
 
 export function GoogleEventFields({
   value,
@@ -128,6 +131,7 @@ export function GoogleEventFields({
   mode,
   meetLink,
   organizer,
+  creator,
   directory,
   when,
   attendeesLock,
@@ -145,6 +149,12 @@ export function GoogleEventFields({
    * 참석자 목록에서는 여전히 **빼고 센다**(내가 나를 초대한 것이 아니다).
    */
   organizer?: { email: string; name?: string; self?: true };
+  /**
+   * **누가 만들었나** — 주최자와 다를 수 있다(`GoogleEvent.creator`). 남이 공유해 준
+   * 캘린더나 팀 캘린더에 내가 만든 일정은 주최자가 그 캘린더이고 만든 사람이 나다.
+   * 그때 "일정을 만든 사람 · <팀 캘린더>"라고 말하면 거짓말이므로 이 값을 먼저 본다.
+   */
+  creator?: { email: string; name?: string; self?: true };
   /** 선택 스코프로 열리는 것들 — 없으면 이름 검색·회의실이 빠진다. */
   directory?: GoogleDirectoryApi;
   /**
@@ -174,42 +184,62 @@ export function GoogleEventFields({
    */
   const [orgName, setOrgName] = useState('');
   const orgEmail = organizer?.email ?? '';
-  const orgKnown = organizer?.name ?? value.names?.[orgEmail] ?? knownName(orgEmail) ?? '';
+  /**
+   * **"일정을 만든 사람"은 `creator`다** — `organizer`가 아니다(제보 1). 구글은 주최자를
+   * 그 일정이 사는 **캘린더의 주인**으로 정하므로, 남이 공유해 준 캘린더나 팀 캘린더에
+   * 내가 만든 일정은 주최자가 그 캘린더이고 만든 사람이 나다. `organizer`만 보던 동안
+   * 화면은 그 일정을 "일정을 만든 사람 · <팀 캘린더>"라고 말했다.
+   *
+   * 내가 만든 일정에는 이 줄을 그리지 않는다(예전 결정 그대로 — 자기 이름을 한 줄 더
+   * 읽을 이유가 없다). `creator`가 없는 옛 응답에서는 예전처럼 `organizer`로 물러선다.
+   */
+  const maker = creator ?? organizer;
+  const makerEmail = maker?.email ?? '';
+  const showMaker = !!maker && !maker.self;
+  const orgKnown = maker?.name ?? value.names?.[makerEmail] ?? knownName(makerEmail) ?? '';
   const askOrg = directory?.canSearchPeople ? directory.searchPeople : undefined;
   useEffect(() => {
     setOrgName('');
-    if (!orgEmail || orgKnown || !askOrg) return;
+    if (!makerEmail || orgKnown || !askOrg) return;
     let alive = true;
-    void askOrg(orgEmail).then((hits) => {
-      const hit = (hits ?? []).find((h) => h.email === orgEmail);
+    void askOrg(makerEmail).then((hits) => {
+      const hit = (hits ?? []).find((h) => h.email === makerEmail);
       if (alive && hit?.name) setOrgName(hit.name);
     });
     return () => {
       alive = false;
     };
-  }, [orgEmail, orgKnown, askOrg]);
-  const orgLabel = orgKnown || orgName || guestLabel(orgEmail, {});
+  }, [makerEmail, orgKnown, askOrg]);
+  const orgLabel = orgKnown || orgName || guestLabel(makerEmail, {});
   const rooms = directory?.canPickRooms ? directory.rooms : [];
   const roomName = (email: string): string => rooms.find((r) => r.email === email)?.name ?? email;
   // 구획은 늘 보이고 **상태만 갈린다**: 목록 / 불러오는 중 / 안내(스코프 없음·거절·빈 목록).
   const roomsLoading = !!directory?.canPickRooms && !directory.roomsReady;
   // 참석자 목록에 보이는 사람 — 주최자(나 자신 포함)는 뺀다.
-  const guests = orgEmail ? value.attendees.filter((e) => e.toLowerCase() !== orgEmail.toLowerCase()) : value.attendees;
+  /**
+   * **참석자 목록에서 빼는 사람들** — 주최자와 나다(요청: 만든 사람은 손님이 아니다).
+   * 내가 만든 일정에는 내가 참석자로 들어가므로(`withSelfAccepted`) 나도 빼야 "N명
+   * 초대"가 실제로 초대한 사람 수가 된다. 남의 공유 캘린더에 만든 일정은 주최자가
+   * 그 캘린더라 둘이 다르다 — 그래서 하나가 아니라 목록이다.
+   */
+  const hiddenGuests = [orgEmail, ...(creator?.self ? [creator.email] : [])].filter(Boolean);
+  const hiddenSet = new Set(hiddenGuests.map((e) => e.toLowerCase()));
+  const guests = hiddenSet.size ? value.attendees.filter((e) => !hiddenSet.has(e.toLowerCase())) : value.attendees;
 
   return (
     <div data-google-fields style={{ display: 'flex', flexDirection: 'column', gap: 19 }}>
       {/* **초대**(요청) — 구글 캘린더가 초대받은 일정에만 따로 보여 주는 둘이다:
           누가 불렀는가(고칠 수 없다)와 내 참석 여부(고친다). 설정이 아니라 이
           초대 자체에 대한 것이라 묶음 맨 위에 서고 아래와 선으로 갈린다. */}
-      {(organizer && !organizer.self) || value.rsvp !== undefined ? (
+      {showMaker || value.rsvp !== undefined ? (
         <div data-gf-invite style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 17, borderBottom: '1px solid var(--mf-border-soft)' }}>
-          {organizer && !organizer.self ? (
+          {showMaker ? (
             <Field label="일정을 만든 사람">
               <span data-gf-organizer style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
                 <Avatar label={orgLabel} i={0} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{orgLabel}</span>
-                  <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{organizer.email}</span>
+                  <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{makerEmail}</span>
                 </span>
               </span>
             </Field>
@@ -294,7 +324,7 @@ export function GoogleEventFields({
           싣지만, 초대한 사람과 초대받은 사람은 다른 자리다. 배열 자체에서는 지우지
           않는다(PATCH가 배열을 통째로 바꾸므로 빼고 보내면 주최자가 참석자에서
           떨어진다) — 화면에서만 가르고, 고칠 때 제자리에 되돌려 넣는다. */}
-      <Field label="참석자" sub={attendeesLock ? undefined : guestSub(guests.length, !!organizer && !organizer.self)}>
+      <Field label="참석자" sub={attendeesLock ? undefined : guestSub(guests.length, showMaker)}>
         {attendeesLock ? (
           <span data-gf-guest-locked style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
             {attendeesLock === 'omitted'
@@ -302,7 +332,7 @@ export function GoogleEventFields({
               : '이 일정은 참석자끼리 명단을 볼 수 없어요. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'}
           </span>
         ) : (
-          <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, orgEmail, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+          <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, hiddenGuests, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
         )}
       </Field>
 
@@ -386,9 +416,15 @@ export function ReminderField({
   /** 비활성인 이유 — 왜 못 고르는지 말하지 않으면 고장으로 읽힌다. */
   disabledNote?: string;
 }) {
-  const opts = kind === 'geurio' ? REMIND_OPTS_GEURIO : REMIND_OPTS;
-  const fallback = kind === 'geurio' ? 'none' : 'default';
-  const key = opts.find((o) => o.minutes === value)?.key ?? fallback;
+  const opts = REMIND_OPTS;
+  /**
+   * **아무 칩도 켜지지 않는 상태가 있다** — 구글 캘린더에 설정해 둔 기본 알림을 따르는
+   * 일정(`useDefault` → `undefined`)이다. `기본` 칸을 뺐으므로(요청) 그 값을 가리킬
+   * 칩이 없는데, 아무거나 켜 두면 **저장된 적 없는 값을 골라 둔 척**하게 된다. 참석
+   * 여부의 `needsAction`과 같은 규칙으로 비워 두고 아래 한 줄이 그 사실을 말한다.
+   */
+  const key = opts.find((o) => o.minutes === value)?.key ?? '';
+  const followsDefault = key === '' && kind === 'google' && !disabled;
   const pick = (k: string): void => {
     const minutes = opts.find((o) => o.key === k)?.minutes;
     // **우리가 띄울 알림**이면 OS 알림 권한이 필요하다. 여기서 묻는 이유: 이 클릭이
@@ -415,7 +451,13 @@ export function ReminderField({
           <SubText>{disabledNote}</SubText>
         </>
       ) : (
-        <Segments aria="알림" items={opts.map((o) => ({ value: o.key, label: o.label }))} value={key} onChange={pick} attr="data-gf-remind" wide />
+        <>
+          <Segments aria="알림" items={opts.map((o) => ({ value: o.key, label: o.label }))} value={key} onChange={pick} attr="data-gf-remind" wide />
+          {/* 라벨 옆(`sub`)이 아니라 **칩 아래**에 둔다 — `Field`의 `sub`는 한 줄
+              말줄임이라 좁은 화면에서 잘린다. 되돌아갈 길까지 말해 준다: `기본` 칸을
+              뺀 뒤로 캘린더 기본 알림으로 되돌리는 것은 구글 캘린더에서만 된다. */}
+          {followsDefault && <SubText mark="data-gf-remind-default">Google 캘린더의 기본 알림을 따라요 · 되돌리려면 Google 캘린더에서 바꿔 주세요</SubText>}
+        </>
       )}
     </Field>
   );
@@ -454,15 +496,24 @@ export function guestSub(n: number, hasOrganizer: boolean): string {
 }
 
 /**
- * 화면에서 뺀 주최자를 배열의 **제자리에** 되돌려 넣는다 — 순서를 지켜야 "바뀐 것만
- * 보낸다"는 PATCH 판정이 주최자 자리 이동을 변경으로 오해하지 않는다.
+ * 화면에서 뺀 사람들을 배열의 **제자리에** 되돌려 넣는다 — 순서를 지켜야 "바뀐 것만
+ * 보낸다"는 PATCH 판정이 자리 이동을 변경으로 오해하지 않는다.
+ *
+ * 뺀 사람이 둘일 수 있다: 주최자와 **나**다(내가 만든 일정에는 내가 참석자로 들어가고,
+ * 남의 공유 캘린더에 만들면 주최자는 그 캘린더라 둘이 다르다).
  */
-export function withOrganizer(original: readonly string[], orgEmail: string, guests: readonly string[]): string[] {
-  if (!orgEmail) return [...guests];
-  const idx = original.findIndex((e) => e.toLowerCase() === orgEmail.toLowerCase());
-  if (idx < 0) return [...guests];
-  const at = Math.min(idx, guests.length);
-  return [...guests.slice(0, at), original[idx]!, ...guests.slice(at)];
+export function withOrganizer(original: readonly string[], hidden: string | readonly string[], guests: readonly string[]): string[] {
+  const set = new Set((typeof hidden === 'string' ? [hidden] : hidden).filter(Boolean).map((e) => e.toLowerCase()));
+  if (!set.size) return [...guests];
+  const out: string[] = [];
+  let g = 0;
+  for (const e of original) {
+    // 뺀 사람은 그 자리에 그대로, 그 밖의 자리에는 화면의 손님을 순서대로 채운다.
+    if (set.has(e.toLowerCase())) out.push(e);
+    else if (g < guests.length) out.push(guests[g++]!);
+  }
+  while (g < guests.length) out.push(guests[g++]!);
+  return out;
 }
 
 function Avatar({ label, i }: { label: string; i: number }) {

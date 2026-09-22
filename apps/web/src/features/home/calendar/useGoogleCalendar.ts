@@ -143,6 +143,12 @@ export interface GoogleCalendarApi {
   /** 쓸 수 있는 캘린더만 — 새 일정의 목적지로 내놓는 목록. */
   writableCalendars: GoogleCalendarMeta[];
   /**
+   * 연결된 **구글 계정의 주소** — 구글은 주 캘린더의 id를 계정 주소로 만든다. 우리
+   * 앱의 로그인 이메일과 다를 수 있으므로 그걸 쓰지 않는다. 아직 모르면 빈 문자열이고,
+   * 부르는 쪽은 그때 아무것도 하지 않는다.
+   */
+  selfEmail: string;
+  /**
    * 그 날의 **근무 위치**를 쓴다(요청) — 구글은 `eventType: 'workingLocation'`
    * 일정으로 들고 **기본 캘린더에만** 받는다. 성공하면 `null`.
    */
@@ -152,7 +158,7 @@ export interface GoogleCalendarApi {
    */
   saveWorkLocation: (calendarId: string, draft: WorkLocationDraft) => Promise<string | null>;
   /** 구글에 새 일정. 성공하면 `null`, 실패하면 사람이 읽을 문장. */
-  createEvent: (calendarId: string, draft: GoogleEventDraft) => Promise<string | null>;
+  createEvent: (calendarId: string, draft: GoogleEventDraft, onCreated?: (ev: GoogleEvent | null) => void) => Promise<string | null>;
   updateEvent: (ev: GoogleEvent, patch: GoogleEventPatch) => Promise<string | null>;
   deleteEvent: (ev: GoogleEvent) => Promise<string | null>;
   /**
@@ -637,7 +643,29 @@ export function useGoogleCalendar(
     [withToken],
   );
 
-  const createEvent = useCallback((calendarId: string, draft: GoogleEventDraft) => write((t) => createGoogleEvent(t, calendarId, draft)), [write]);
+  /**
+   * 내 주소 — 주 캘린더의 id가 곧 그것이다. 그 캘린더를 **숨겨 둔 계정**이면 목록에
+   * 오지 않으므로(`parseCalendarList`가 `hidden`을 버린다) 이미 받아 온 일정 중
+   * 내 응답이 붙은 것에서 물러나 찾는다 — 둘 다 없으면 빈 문자열이다.
+   */
+  const selfEmail = useMemo(
+    () => allCalendars.find((c) => c.primary)?.id ?? events.find((e) => e.selfEmail)?.selfEmail ?? '',
+    [allCalendars, events],
+  );
+
+  /**
+   * 새 일정. `onCreated`는 **구글이 돌려준 그 일정**을 받는다(요청 4) — 잡아 둔 회의실이
+   * 그 자리에서 예약을 거절했는지 부르는 쪽이 바로 보고 말해 줄 수 있게. 실패하면
+   * 불리지 않는다(그때는 반환값이 사람이 읽을 문장이다).
+   */
+  const createEvent = useCallback(
+    (calendarId: string, draft: GoogleEventDraft, onCreated?: (ev: GoogleEvent | null) => void) =>
+      write(async (t) => {
+        const made = await createGoogleEvent(t, calendarId, draft);
+        onCreated?.(made);
+      }),
+    [write],
+  );
   const updateEvent = useCallback((ev: GoogleEvent, patch: GoogleEventPatch) => write((t) => updateGoogleEvent(t, ev, patch)), [write]);
   const deleteEvent = useCallback((ev: GoogleEvent) => write((t) => deleteGoogleEvent(t, ev)), [write]);
   const saveWorkLocation = useCallback(
@@ -845,6 +873,7 @@ export function useGoogleCalendar(
     connecting,
     cancelConnect: cancelDesktopGoogleConnect,
     writableCalendars,
+    selfEmail,
     createEvent,
     updateEvent,
     deleteEvent,

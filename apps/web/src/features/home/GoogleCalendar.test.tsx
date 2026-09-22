@@ -2029,6 +2029,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
     await user.click(screen.getByText('새 일정'));
     await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    // **어느 것이 내 캘린더인지 칩이 말한다**(제보 1) — 구글은 주최자를 그 일정이 사는
+    // 캘린더의 주인으로 정하므로, 팀 캘린더를 골랐다는 것을 모르면 "주최자가 내가
+    // 아니다"가 된다. 쓸 수 있는 남의 캘린더도 목적지로 올라오기 때문이다.
+    expect(document.querySelector('[data-new-cal="me@example.com"] [data-new-cal-mine]')?.textContent).toBe('내 캘린더');
     await user.type(screen.getByLabelText('일정 제목'), '팀 회의');
     await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
     await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
@@ -2049,7 +2053,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
       expect(post).toBeTruthy();
       const body = JSON.parse((post![1] as { body: string }).body) as Record<string, unknown>;
-      expect(body.attendees).toEqual([{ email: 'a@b.com' }]);
+      // **내가 만든 일정에는 내가 참석자로 들어간다**(요청 3) — 구글은 API로 만든
+      // 일정의 주최자를 참석자 배열에 넣어 주지 않아서, 내 응답이 없어 팝업의
+      // 「참석 여부」 구획이 통째로 사라졌다. 출력 전용 필드(`self`·`organizer`)는
+      // 보내지 않는다 — 구글이 정하는 값이다.
+      expect(body.attendees).toEqual([{ email: 'a@b.com' }, { email: 'me@example.com', responseStatus: 'accepted' }]);
       expect(body.visibility).toBe('private');
       expect(body.reminders).toMatchObject({ useDefault: false, overrides: [{ minutes: 10 }] });
       expect(body.recurrence).toEqual(['RRULE:FREQ=WEEKLY']);
@@ -2640,6 +2648,152 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(guest.textContent).toContain('여은진');
     expect(guest.textContent).not.toMatch(/eunjin\.yeo(?!@)/);
     expect(pop.textContent).toContain('1명 초대');
+  });
+
+  it('**주최자가 아니라 만든 사람**을 말한다 — 팀 캘린더에 내가 만든 일정(제보 1)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const d1 = inMonth(1);
+    const d2 = inMonth(2);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            // 팀 캘린더에 **내가** 만든 일정 — 구글은 주최자를 그 캘린더로 정한다.
+            // 예전에는 화면이 "일정을 만든 사람 · 팀 캘린더"라고 말했다.
+            {
+              id: 'team',
+              summary: '팀 회의',
+              start: { date: d1 },
+              end: { date: d1 },
+              organizer: { email: 'team@example.com', displayName: '팀 캘린더' },
+              creator: { email: 'me@example.com', self: true },
+            },
+            // 남이 만들어 나를 부른 일정 — 그때는 그 사람을 말한다.
+            {
+              id: 'invited',
+              summary: '초대받은 회의',
+              start: { date: d2 },
+              end: { date: d2 },
+              organizer: { email: 'boss@example.com', displayName: '상사' },
+              creator: { email: 'boss@example.com', displayName: '상사' },
+              attendees: [{ email: 'me@example.com', self: true, responseStatus: 'needsAction' }],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+
+    // 내가 만든 일정에는 그 줄을 그리지 않는다 — 자기 이름을 한 줄 더 읽을 이유가 없다.
+    const mine = await openGoogleChip(container, user, /팀 회의/);
+    expect(mine.querySelector('[data-gf-organizer]')).toBeNull();
+    expect(mine.textContent).not.toContain('팀 캘린더');
+    await user.keyboard('{Escape}');
+
+    // 남이 만든 일정에는 **그 사람**이 온다.
+    const theirs = await openGoogleChip(container, user, /초대받은 회의/);
+    const org = theirs.querySelector('[data-gf-organizer]')!;
+    expect(org.textContent).toContain('상사');
+    expect(org.textContent).toContain('boss@example.com');
+  });
+
+  it('캘린더 기본 알림을 따르는 일정은 **아무 칩도 켜지 않고** 그 사실을 말한다(요청 2)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const d1 = inMonth(1);
+    const f = vi.fn(async (url: string, init?: RequestInit) => {
+      const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+      if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+      if (url.includes('/colors')) return ok({ event: {} });
+      if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+      if (init?.method === 'PATCH') return ok({});
+      return ok({
+        items: [
+          // `useDefault: true` — 구글 일정 대부분의 실제 상태다.
+          { id: 'g1', summary: '구글 회의', start: { dateTime: `${d1}T09:00:00+09:00` }, end: { dateTime: `${d1}T10:00:00+09:00` }, reminders: { useDefault: true } },
+        ],
+      });
+    });
+    vi.stubGlobal('fetch', f);
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+
+    // `기본` 칩은 없어졌고(요청) 그 값을 가리킬 칸이 없으므로 **아무것도 켜지 않는다** —
+    // 아무거나 켜 두면 저장된 적 없는 값을 골라 둔 척하게 된다.
+    const chips = [...pop.querySelectorAll('[data-gf-remind]')];
+    expect(chips.map((c) => c.textContent)).toEqual(['10분 전', '1시간 전', '1일 전', '없음']);
+    expect(chips.filter((c) => c.getAttribute('aria-checked') === 'true')).toHaveLength(0);
+    expect(pop.querySelector('[data-gf-remind-default]')?.textContent).toContain('Google 캘린더의 기본 알림');
+
+    // 알림을 만지지 않고 제목만 고쳐 저장하면 PATCH 본문에 `reminders`가 **없다** —
+    // 손대지 않은 알림이 조용히 지워지지 않는다.
+    const title = pop.querySelector<HTMLInputElement>('[data-event-title]')!;
+    await user.clear(title);
+    await user.type(title, '고친 제목');
+    await user.click(pop.querySelector<HTMLElement>('[data-event-done]')!);
+    await waitFor(() => {
+      const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as { body: string }).body) as Record<string, unknown>;
+      expect(body.summary).toBe('고친 제목');
+      expect('reminders' in body).toBe(false);
+    });
+  });
+
+  it('잡아 둔 회의실이 **예약을 거절하면** 칩과 팝업이 말한다(요청 4)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const d1 = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('resource.calendar.google.com')) return ok({ items: [] });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'g1',
+              summary: '팀 싱크',
+              start: { dateTime: `${d1}T09:00:00+09:00` },
+              end: { dateTime: `${d1}T10:00:00+09:00` },
+              organizer: { email: 'me@example.com', self: true },
+              creator: { email: 'me@example.com', self: true },
+              attendees: [
+                { email: 'me@example.com', self: true, organizer: true, responseStatus: 'accepted' },
+                // 구글의 회의실 캘린더는 이중 예약되면 **스스로 거절한다**.
+                { email: 'room-35-01@resource.calendar.google.com', resource: true, responseStatus: 'declined' },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+
+    // 칩은 좁아서 한 글자로 말한다(취소선은 "내가 안 간다"의 뜻으로 이미 쓰인다).
+    await waitFor(() => expect(container.textContent).toContain('⚠ 팀 싱크'));
+
+    const pop = await openGoogleChip(container, user, /팀 싱크/);
+    expect(pop.querySelector('[data-event-room-declined]')?.textContent).toContain('회의실이 예약을 거절했어요');
   });
 
   it('기존 일정의 참석자 이름을 **전부** 채운다 — 첫 답이 와도 남은 조회가 취소되지 않고, 별칭 주소도 그 사람으로 맞춘다(라이브 제보)', async () => {

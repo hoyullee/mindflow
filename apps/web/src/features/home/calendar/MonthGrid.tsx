@@ -14,6 +14,7 @@ import {
   isAllDayEntry,
   isDeclined,
   markStyle,
+  roomMark,
   type ChipSurface,
 } from "./chips";
 
@@ -333,6 +334,7 @@ function DragGhost({
       <span
         style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", ...declinedStyle(drag.entry) }}
       >
+        {roomMark(drag.entry)}
         {drag.entry.title || "제목 없음"}
       </span>
       {to !== 0 && (
@@ -764,7 +766,7 @@ function DayCell({
                   ...declinedStyle(b.entry),
                 }}
               >
-                {b.label ? b.entry.title : ""}
+                {b.label ? `${roomMark(b.entry)}${b.entry.title}` : ""}
               </span>
               {/* 요청 ⑤ — **그 칸이 며칠째인가**를 바 오른쪽 끝에 적는다(`3/7일째`).
                   이어지는 칸에는 제목을 쓰지 않으므로(시작 칸·주 첫 칸만) 그 칸에서는
@@ -871,6 +873,7 @@ function DayCell({
                 ...declinedStyle(e),
               }}
             >
+              {roomMark(e)}
               {e.title}
             </span>
           </button>
