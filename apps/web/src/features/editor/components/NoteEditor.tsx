@@ -4936,6 +4936,15 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    * 어긋난다(손잡이 click은 mousedown 없이도 온다 — 테스트가 그렇게 쏜다).
    */
   const railDown = useRef<{ axis: 'row' | 'col'; i: number; moved: boolean } | null>(null);
+  /**
+   * **끌고 나서 오는 click 하나를 건너뛰라는 표식**(제보) — `railDown`과 갈라 둔다.
+   *
+   * 예전에는 `railDown`을 mouseup에서 비우지 않고 그 안의 `moved`로 click을 걸렀는데,
+   * **click이 오지 않는 경우**(손잡이 밖에서 손을 뗐다) 그 덩이가 영영 남았다. 그러면
+   * 누르지도 않았는데 슬롯을 지나기만 해도 범위가 따라오고, 문서 `mousemove`의 레일
+   * 가지가 매번 돌며 `removeAllRanges()`를 불러 **본문 글자를 끌어 고를 수 없었다**.
+   */
+  const railClick = useRef(false);
   /** 같은 일을 **그림에도** 알린다 — 끄는 동안 ＋를 감추려면 렌더가 다시 돌아야 한다. */
   const [railing, setRailing] = useState(false);
   /**
@@ -5098,6 +5107,12 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
        */
       const rail = railDown.current;
       if (rail) {
+        // 단추가 안 눌려 있으면 **이미 끝난 끌기**다(창 밖에서 떼면 `mouseup`이 오지 않는다).
+        if (e.buttons === 0) {
+          railDown.current = null;
+          setRailing(false);
+          return;
+        }
         if (!t || !g || !g.rows.length || !g.cols.length) return;
         const rb = t.getBoundingClientRect();
         const i =
@@ -5123,10 +5138,13 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     const up = () => {
       drag.current = null;
       /**
-       * `railDown`은 **여기서 비우지 않는다** — `mouseup`이 `click`보다 먼저라, 비우면
-       * "끌었다"는 표식이 사라져 뒤따르는 click이 선택을 한 줄로 되돌린다. 다음
-       * mousedown이 새 덩이를 만들어 갈아 끼운다.
+       * 끌기는 **여기서 끝난다**. 다만 `mouseup`이 `click`보다 먼저라, 끌었다면 뒤따르는
+       * click 하나를 건너뛰라는 표식만 남긴다(그 click은 범위를 한 줄로 되돌린다).
        */
+      if (railDown.current) {
+        railClick.current = railDown.current.moved;
+        railDown.current = null;
+      }
       setRailing(false);
     };
     document.addEventListener('mousemove', move);
@@ -5181,8 +5199,8 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   const handleClick = (e: ReactMouseEvent, next: TableSel, same: boolean) => {
     // 끌고 나서 온 click은 **무시한다** — 제자리로 돌아와 뗀 경우 그 click이 범위를
     // 한 줄로 되돌린다(다음 끌기의 mousedown이 이 덩이를 새로 만든다).
-    if (railDown.current?.moved) {
-      railDown.current = null;
+    if (railClick.current) {
+      railClick.current = false;
       return;
     }
     if (same && touch) {
@@ -5380,11 +5398,17 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             style={{ ...place, ...showIf(railOn('col', ci)) }}
             // hover는 **감싸는 칸**이 잡는다 — 손잡이 단추에만 걸면 ＋로 마우스를
             // 옮기는 순간 `hot`이 풀려 ＋가 사라진다(＋는 단추 바깥에 그려진다).
-            onMouseEnter={() => {
+            onMouseEnter={(e) => {
               setHot({ axis: 'col', i: ci });
               // 끄는 중이면 **여기까지** 넓힌다(요청 10). 레일 밖으로 나간 경우는 문서 `move`가 잇는다.
               const d = railDown.current;
               if (!d || d.axis !== 'col') return;
+              // 단추를 놓고 지나가는 것은 끌기가 아니다 — 남아 있던 표식이면 여기서 지운다.
+              if (e.buttons === 0) {
+                railDown.current = null;
+                setRailing(false);
+                return;
+              }
               d.moved = true;
               window.getSelection()?.removeAllRanges();
               pick({ mode: 'col', c: d.i, c1: ci });
@@ -5406,6 +5430,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                 // 터치에는 끌기가 없다 — 여기서 고르면 "첫 탭=고르기 · 둘째 탭=메뉴"가 깨진다.
                 if (readOnly || touch || e.button !== 0) return;
                 e.preventDefault(); // 끄는 동안 본문 글자가 함께 칠해지지 않게
+                railClick.current = false;
                 railDown.current = { axis: 'col', i: ci, moved: false };
                 setRailing(true);
                 pick({ mode: 'col', c: ci });
@@ -5450,10 +5475,16 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             key={ri}
             data-note-table-rowslot={ri}
             style={{ ...place, ...showIf(railOn('row', ri)) }}
-            onMouseEnter={() => {
+            onMouseEnter={(e) => {
               setHot({ axis: 'row', i: ri });
               const d = railDown.current;
               if (!d || d.axis !== 'row') return;
+              // 단추를 놓고 지나가는 것은 끌기가 아니다 — 남아 있던 표식이면 여기서 지운다.
+              if (e.buttons === 0) {
+                railDown.current = null;
+                setRailing(false);
+                return;
+              }
               d.moved = true;
               window.getSelection()?.removeAllRanges();
               pick({ mode: 'row', r: d.i, r1: ri });
@@ -5471,6 +5502,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                 e.stopPropagation();
                 if (readOnly || touch || e.button !== 0) return;
                 e.preventDefault();
+                railClick.current = false;
                 railDown.current = { axis: 'row', i: ri, moved: false };
                 setRailing(true);
                 pick({ mode: 'row', r: ri });
