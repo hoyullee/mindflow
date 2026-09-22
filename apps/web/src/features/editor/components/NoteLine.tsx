@@ -23,7 +23,6 @@ import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListT
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
 import { editCaretKeydown } from '../caretPolicy';
-import { openLink } from '../richSpans';
 
 interface Props {
   runs: RichRun[] | undefined;
@@ -112,14 +111,6 @@ interface Props {
    */
   onPasteText?: (text: string, from: number, to: number) => boolean;
   /**
-   * **고른 표의 칸이다** — 그 칸의 글자는 우리가 **통째로 골라 둔다**(키를 받으려고).
-   *
-   * 링크를 누르면 여는 고리는 "끌어서 고르는 중이면 열지 않는다"를 지키는데, 그
-   * 선택은 사용자가 끈 것이 아니라 **우리가 세운 것**이라 칸에서는 링크가 한 번도
-   * 열리지 않았다(제보 1). 이 표식이 붙은 박스에서는 그 조건을 건너뛴다.
-   */
-  armed?: boolean;
-  /**
    * **이 박스 안에서 목록을 글자로 다룬다**(표의 칸 — `noteCellList` 머리말).
    *
    * 본문의 목록은 블록이라 이 모드가 아니다: 마커를 항목 옆에 따로 그리고
@@ -147,7 +138,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, armed, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -495,24 +486,13 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         dirty.current = false;
       }}
       /**
-       * **링크 글자를 누르면 연다**(제보) — 편집 박스라 기본 동작은 캐럿 놓기뿐이라
-       * 아무 일도 일어나지 않았다. 맵의 도형은 ⌘/Ctrl+클릭으로만 여는데(한 번 누르는
-       * 것이 도형 **선택**이라 충돌한다) 공책의 줄은 늘 글을 고치는 자리라 그 충돌이
-       * 없다 — 문서 편집기의 관례대로 **그냥 누르면 열린다**.
+       * **링크 글자를 눌러도 곧바로 열지 않는다**(제보 — 되돌린 결정).
        *
-       * 글자를 고쳐야 할 때가 두 가지로 열려 있다: **⌥(Alt)와 함께 누르면** 캐럿만
-       * 놓이고, **끌어서 고르는 중**이면(선택이 접혀 있지 않다) 열지 않는다.
+       * 한동안은 "누르면 열린다"였다(문서 편집기의 관례). 그런데 링크 판(이동·삭제)이
+       * 생기고 나니 한 번의 클릭이 **두 가지 일**을 했다 — 브라우저가 열리면서 동시에
+       * 판이 떴다. 그래서 여는 일은 **판의 「이동」 하나로 모았다**: 누르면 캐럿이
+       * 놓이고(고치던 자리를 잃지 않는다) 그 자리에 판이 뜬다.
        */
-      onClick={(e) => {
-        const href = (e.target as HTMLElement | null)?.closest?.('[data-href]')?.getAttribute('data-href');
-        if (!href || e.altKey) return;
-        const sel = window.getSelection();
-        // 고른 칸에서는 **우리가** 글자를 통째로 골라 둔 것이라 이 조건을 건너뛴다(`armed`).
-        if (!armed && sel && sel.rangeCount > 0 && !sel.isCollapsed) return;
-        e.preventDefault();
-        e.stopPropagation();
-        openLink(href);
-      }}
       onFocus={() => {
         const el = ref.current;
         if (el) onFocusLine?.(el);

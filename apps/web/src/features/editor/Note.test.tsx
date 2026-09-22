@@ -4704,18 +4704,27 @@ describe('공책 44판 — 링크 클릭 · 블록 선택 · 종류 목록 · �
     document.dispatchEvent(new Event('selectionchange'));
   }
 
-  it('링크 글자를 **그냥 누르면** 열린다 — ⌥와 함께면 캐럿만(제보 6)', async () => {
+  /**
+   * **누르는 것만으로는 열지 않는다**(제보 — 되돌린 결정).
+   *
+   * 한동안은 "누르면 열린다"였는데, 링크 판(이동·삭제)이 생기고 나니 한 번의 클릭이
+   * **두 가지 일**을 했다 — 브라우저가 열리면서 동시에 판이 떴다. 여는 일은 판의
+   * 「이동」 하나로 모았다.
+   */
+  it('링크 글자를 눌러도 **곧바로 열리지 않는다** — 여는 일은 판의 「이동」이다(제보)', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     localStorage.setItem('mindflow_doc_m1', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=m1&title=x');
     const link = (await waitFor(() => container.querySelector('[data-note-line="lk"] [data-href]'))) as HTMLElement;
 
     fireEvent.click(link);
-    expect(open).toHaveBeenCalledWith('https://example.com/go', '_blank', 'noopener,noreferrer');
-
-    open.mockClear();
-    fireEvent.click(link, { altKey: true });
     expect(open).not.toHaveBeenCalled();
+
+    // 캐럿이 그 안에 들어가면 판이 뜨고, 그 「이동」이 연다.
+    caretIn(container.querySelector('[data-note-line="lk"]') as HTMLElement, 3);
+    await waitFor(() => expect(container.querySelector('[data-note-linkpop-open]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-linkpop-open]')!);
+    expect(open).toHaveBeenCalledWith('https://example.com/go', '_blank', 'noopener,noreferrer');
     open.mockRestore();
   });
 
@@ -5196,7 +5205,7 @@ describe('공책 48판 — 칸의 링크 · 구분선 초점 · 붙여넣기 자
   });
   afterEach(cleanup);
 
-  it('**고른 칸**의 링크를 누르면 열린다(제보 1 — 우리가 골라 둔 선택이 막고 있었다)', async () => {
+  it('**고른 칸**의 링크에도 판이 뜬다 — 그 「이동」이 연다(제보 1의 자리)', async () => {
     const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
       { id: 'tb', kind: 'table', rows: [[[{ t: '링크칸', b: false, c: null, href: 'https://example.com/' }], [{ t: '칸2', b: false, c: null }]], [[{ t: 'x', b: false, c: null }], [{ t: 'y', b: false, c: null }]]] },
     ] }] };
@@ -5210,8 +5219,10 @@ describe('공책 48판 — 칸의 링크 · 구분선 초점 · 붙여넣기 자
     fireEvent.mouseUp(cell);
     await waitFor(() => expect(cell.getAttribute('data-armed')).toBe('1'));
 
-    const link = container.querySelector('[data-note-line="tb:r0c0"] [data-href]') as HTMLElement;
-    fireEvent.click(link);
+    // 칸의 글자는 **우리가 통째로 골라 둔다** — 그 선택도 링크 구간 안이므로 판이 뜬다
+    // (예전에는 그 선택 때문에 클릭으로 열리지 않던 자리다).
+    await waitFor(() => expect(container.querySelector('[data-note-linkpop-open]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-linkpop-open]')!);
 
     expect(open).toHaveBeenCalled();
     expect(open.mock.calls[0]?.[0]).toBe('https://example.com/');
@@ -5420,7 +5431,8 @@ describe('공책 50판 — 형광펜 상자 · 툴바 툴팁 · 링크 주소 ·
     fireEvent.pointerOver(link);
     // 글 사이의 링크는 아주 짧게 기다렸다 뜬다 — 지나가는 것만으로 번쩍이지 않게.
     await waitFor(() => expect(document.querySelector('[data-note-tip]')?.textContent).toContain('geurio.com'));
-    expect(document.querySelector('[data-note-tip]')?.textContent).toContain('눌러서 열기');
+    // 누르면 **판**이 뜬다(되돌린 결정) — 여는 일은 그 판의 「이동」 하나다.
+    expect(document.querySelector('[data-note-tip]')?.textContent).toContain('눌러서 이동·삭제');
   });
 
   it('줄 전체를 골라 서식을 걸면 **툴바 단추가 켜진다**(제보 6)', async () => {

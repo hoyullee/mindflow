@@ -22,7 +22,6 @@ import { displayUrl } from '@mindflow/mindmap-core';
  * - 누르거나·굴리거나·키를 치면 바로 감춘다(그 다음 화면이 곧 바뀐다).
  */
 /** ⌥ 키의 이름 — 맥은 기호, 그 밖은 `Alt`. */
-const ALT_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '') ? '⌥' : 'Alt';
 
 export function NoteTips({ enabled = true }: { enabled?: boolean }) {
   const [tip, setTip] = useState<{ text: string; sub: string | null; rect: DOMRect } | null>(null);
@@ -70,7 +69,10 @@ export function NoteTips({ enabled = true }: { enabled?: boolean }) {
       }
       onRef.current = el;
       const rect = el.getBoundingClientRect();
-      const sub = tipText ? null : `눌러서 열기 · ${ALT_LABEL}+눌러서 커서`;
+      // **누르면 판이 뜬다**(제보 — 되돌린 결정): 한동안은 누르는 즉시 열렸는데,
+      // 링크 판이 생긴 뒤로 한 번의 클릭이 두 가지 일을 했다(열리면서 판도 떴다).
+      // 이제 여는 일은 판의 「이동」 하나다 — 툴팁도 그렇게 말한다.
+      const sub = tipText ? null : '눌러서 이동·삭제';
       // **툴바는 0ms**(요청) — 이름을 보려고 기다리는 자리가 아니다. 링크는 글 사이에
       // 섞여 있어 지나가는 것만으로 번쩍이면 시끄러우므로 아주 짧게 기다린다.
       if (tipText) setTip({ text, sub, rect });
