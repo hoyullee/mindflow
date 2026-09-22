@@ -5756,3 +5756,165 @@ describe('공책 53판 — 레일 끌기가 끝나면 **놓는다**(제보)', ()
     expect(picked(container)).toEqual(['0:3', '1:3', '2:3']);
   });
 });
+
+// ── 이미 쓰인 글 **앞에서** `/`를 친다(요청) ─────────────────────────────────
+//
+// `/`는 예전에도 낱말의 시작에서 열렸지만 **질의가 뒤의 글까지 삼켰다** — `안녕하세요`
+// 앞에서 `/제목`을 치면 질의가 `제목안녕하세요`가 되어 아무 항목도 맞지 않았다. 이제
+// 열 때 기억한 **꼬리**를 접미로 떼어 사람이 친 글자만 질의로 본다.
+describe('공책 — 글 앞에서 여는 `/`', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const ONE = (runs: { t: string; b?: boolean; c?: string | null }[]) => ({
+    ...NOTE,
+    pages: [{ id: 'p1', title: '한 줄', blocks: [{ id: 'b1', kind: 'p', runs: runs.map((r) => ({ b: false, c: null, ...r })) }] }],
+  });
+
+  /** 그 줄의 n번째 글자 앞에 캐럿을 두고 `/`를 친다 — 사람이 치는 순서 그대로. */
+  function slashAt(line: HTMLElement, at: number): void {
+    line.focus();
+    const text = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, Math.min(at, (text.nodeValue ?? '').length));
+    else range.setStart(line, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.keyDown(line, { key: '/' });
+  }
+
+  it('질의가 **뒤의 글을 삼키지 않는다** — 목록이 제목으로 좁혀진다', async () => {
+    localStorage.setItem('mindflow_doc_nsC0', JSON.stringify(ONE([{ t: '안녕하세요' }])));
+    const { container } = renderEditor('/editor?map=nsC0&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    slashAt(line, 0);
+    // 브라우저가 `/`를 넣고, 이어 친 `제목`이 그 뒤에 들어간다.
+    type(line, '/제목안녕하세요');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-item="h1"]')).toBeTruthy());
+    expect([...container.querySelectorAll('[data-note-slash-item]')].map((b) => b.getAttribute('data-note-slash-item'))).toEqual(['h1', 'h2', 'h3']);
+  });
+
+  it('고르면 `/질의`만 빠지고 **뒤의 글은 그 줄에 남는다**', async () => {
+    localStorage.setItem('mindflow_doc_nsC1', JSON.stringify(ONE([{ t: '안녕하세요' }])));
+    const { container } = renderEditor('/editor?map=nsC1&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    slashAt(line, 0);
+    type(line, '/제목안녕하세요');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-item="h1"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-slash-item="h1"]')!);
+    saveNow();
+
+    await waitFor(() => expect(saved('nsC1').pages[0].blocks[0].kind).toBe('h1'));
+    expect(runsOf(saved('nsC1').pages[0].blocks[0])).toBe('안녕하세요');
+  });
+
+  it('뒤의 글의 **서식이 살아 있다** — 그 구간만 오려 낸다(예전에는 평문으로 풀렸다)', async () => {
+    localStorage.setItem('mindflow_doc_nsC2', JSON.stringify(ONE([{ t: '굵은글', b: true }])));
+    const { container } = renderEditor('/editor?map=nsC2&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    slashAt(line, 0);
+    // 친 `/인용`은 평문이고 뒤의 글은 굵은 스팬이다 — 브라우저가 만드는 그 모양대로.
+    type(line, '/인용<span style="font-weight:800;">굵은글</span>');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-item="q"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-slash-item="q"]')!);
+    saveNow();
+
+    await waitFor(() => expect(saved('nsC2').pages[0].blocks[0].kind).toBe('q'));
+    const runs = saved('nsC2').pages[0].blocks[0].runs as { t: string; b?: boolean }[];
+    expect(runs.map((r) => r.t).join('')).toBe('굵은글');
+    expect(runs.every((r) => r.b)).toBe(true);
+  });
+
+  it('취소하면 친 글자와 뒤의 글이 **그대로** 남는다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_nsC3', JSON.stringify(ONE([{ t: '안녕하세요' }])));
+    const { container } = renderEditor('/editor?map=nsC3&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    slashAt(line, 0);
+    type(line, '/제목안녕하세요');
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
+
+    saveNow();
+    await waitFor(() => expect(runsOf(saved('nsC3').pages[0].blocks[0])).toBe('/제목안녕하세요'));
+    expect(saved('nsC3').pages[0].blocks[0].kind).toBe('p');
+  });
+
+  it('`/질의`에 **회색 배경**을 얹는다 — 값은 건드리지 않는다(요청)', async () => {
+    // `CSS.highlights`는 jsdom에 없다 — 표준 API의 모양만 흉내 내 무엇을 칠하는지 본다
+    // (아는 브라우저에서만 켜지고, 모르는 브라우저에서는 조용히 넘어간다).
+    const shelf = new Map<string, { ranges: Range[] }>();
+    class FakeHighlight {
+      ranges: Range[];
+      constructor(...r: Range[]) {
+        this.ranges = r;
+      }
+    }
+    vi.stubGlobal('Highlight', FakeHighlight);
+    vi.stubGlobal('CSS', { ...(typeof CSS === 'undefined' ? {} : CSS), highlights: shelf });
+    try {
+      localStorage.setItem('mindflow_doc_nsC6', JSON.stringify(ONE([{ t: '안녕하세요' }])));
+      const { container } = renderEditor('/editor?map=nsC6&title=x');
+      const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+      slashAt(line, 0);
+      type(line, '/제목안녕하세요');
+      // 칠하는 것은 **`/`부터 질의 끝까지** — 질의가 비어 있는 첫 순간에도 보이게.
+      await waitFor(() => expect(shelf.get('mf-note-slash')?.ranges[0]?.toString()).toBe('/제목'));
+
+      // 취소하면 색도 걷힌다(값에는 애초에 손대지 않았다).
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(shelf.get('mf-note-slash')).toBeUndefined());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('구분선처럼 **글을 그리지 않는 종류**는 남은 글을 삼키지 않고 아래에 선다', async () => {
+    localStorage.setItem('mindflow_doc_nsC4', JSON.stringify(ONE([{ t: '안녕하세요' }])));
+    const { container } = renderEditor('/editor?map=nsC4&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    slashAt(line, 0);
+    type(line, '/구분선안녕하세요');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-item="hr"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-slash-item="hr"]')!);
+    // 화면이 먼저다 — 저장은 커밋이 렌더에 반영된 **뒤에** 찍는다(그러지 않으면
+    // 마지막 커밋 하나가 빠진 판이 저장된다: 이 파일의 다른 테스트들이 운으로
+    // 통과하고 있던 자리다).
+    await waitFor(() => expect(container.querySelectorAll('[data-note-block]')).toHaveLength(2));
+    saveNow();
+
+    await waitFor(() => expect(saved('nsC4').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['p', 'hr']));
+    const blocks = saved('nsC4').pages[0].blocks;
+    expect(blocks[0].kind).toBe('p');
+    expect(runsOf(blocks[0])).toBe('안녕하세요');
+    expect(blocks[1].kind).toBe('hr');
+  });
+
+  it('빈 줄에서는 예전처럼 **그 줄을** 구분선으로 바꾼다(회귀 방어)', async () => {
+    localStorage.setItem('mindflow_doc_nsC5', JSON.stringify(ONE([{ t: '' }])));
+    const { container } = renderEditor('/editor?map=nsC5&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+
+    slashAt(line, 0);
+    type(line, '/구분선');
+    await waitFor(() => expect(container.querySelector('[data-note-slash-item="hr"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-slash-item="hr"]')!);
+    await waitFor(() => expect(container.querySelector('[data-note-block="b1"]')?.getAttribute('data-note-kind')).toBe('hr'));
+    saveNow();
+
+    await waitFor(() => expect(saved('nsC5').pages[0].blocks[0].kind).toBe('hr'));
+    expect(saved('nsC5').pages[0].blocks).toHaveLength(1);
+  });
+});

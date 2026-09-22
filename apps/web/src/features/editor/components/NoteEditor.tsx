@@ -40,7 +40,7 @@ import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { applyNoteFormat, applyNoteFormatRange, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
-import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, pointAt, selectWholeLines, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, paintRanges, paintSlash, pointAt, rangeOfChars, selectWholeLines, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { downloadFile } from '../download';
@@ -324,12 +324,21 @@ export function NoteEditor({ controller }: Props) {
    * 툴바 단추로 열었으면 `null`이고, 그때는 예전처럼 목록이 그대로 다 보인다.
    */
   const [slashAtChar, setSlashAtChar] = useState<number | null>(null);
-  const openSlashAt = (lineKey: string, from?: Element | number | null) => {
+  /**
+   * `/`를 칠 때 **캐럿 뒤에 이미 있던 글**(요청) — 질의가 어디서 끝나는지 이 값이
+   * 말해 준다. 이미 쓰인 글 앞에서 열 수 있어야 하는데(`안녕하세요` 앞의 `/제목`)
+   * 줄에서 읽는 것만으로는 `제목안녕하세요`가 되어 아무 항목도 맞지 않았다. 이
+   * 꼬리를 **접미로 떼면** 사람이 친 글자만 남는다 — 캐럿 상태를 따로 들지 않아
+   * 줄이 다시 그려져도 값 하나로 다시 계산된다.
+   */
+  const [slashTail, setSlashTail] = useState('');
+  const openSlashAt = (lineKey: string, from?: Element | number | null, tail = '') => {
     const at = typeof from === 'number' ? from : null;
     const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
     setSlashAt(measureSlash(el));
     setSlashFor(lineKey);
     setSlashAtChar(at);
+    setSlashTail(tail);
   };
   /**
    * 본문을 굴려도 목록이 **따라간다**(제보: 스크롤하면 닫힌다) — 기준 줄을 다시 재
@@ -351,6 +360,7 @@ export function NoteEditor({ controller }: Props) {
   const closeSlash = useCallback(() => {
     setSlashFor(null);
     setSlashAtChar(null);
+    setSlashTail('');
   }, []);
   /**
    * 집중 모드 — **페이지 목록을 왼쪽으로 밀어 넣는다**(요청).
@@ -585,8 +595,18 @@ export function NoteEditor({ controller }: Props) {
   const slashQuery = useMemo(() => {
     if (slashFor === null || slashAtChar === null || !page) return '';
     const text = noteLineText(page, slashFor);
-    return text[slashAtChar] === '/' ? text.slice(slashAtChar + 1) : '';
-  }, [slashFor, slashAtChar, page]);
+    if (text[slashAtChar] !== '/') return '';
+    const rest = text.slice(slashAtChar + 1);
+    // **뒤에 있던 글은 질의가 아니다**(요청) — 열 때 기억한 꼬리를 접미로 뗀다.
+    // 꼬리가 더는 접미가 아니면(뒤쪽 글을 고쳤다) 옛 규칙대로 남은 전부를 질의로
+    // 본다 — 그러면 아래의 접기 규칙(연속 공백·길이)이 곧 세션을 닫는다.
+    return slashTail && rest.endsWith(slashTail) ? rest.slice(0, rest.length - slashTail.length) : rest;
+  }, [slashFor, slashAtChar, slashTail, page]);
+  /** `/질의`가 차지한 글자 구간 — 회색 배경과 지우기가 **같은 값**을 본다. */
+  const slashSpan = useMemo(
+    () => (slashFor !== null && slashAtChar !== null ? { from: slashAtChar, to: slashAtChar + 1 + slashQuery.length } : null),
+    [slashFor, slashAtChar, slashQuery],
+  );
   /**
    * 세션이 살아 있는지 — **`/`를 본 뒤에만** 판단한다.
    *
@@ -625,6 +645,27 @@ export function NoteEditor({ controller }: Props) {
     const bare = slashQuery.replace(/\s/g, '');
     if (/\s/.test(slashQuery) && bare.length >= 7) closeSlash();
   }, [slashFor, slashAtChar, slashQuery, page, closeSlash]);
+
+  /**
+   * **읽고 있는 글자를 회색으로**(요청) — `/질의`에 색만 얹는다.
+   *
+   * 값을 건드리지 않는 이유가 요청의 절반이다: 취소하면 `/제목 안녕하세요`가 그대로
+   * 남아야 하므로, 표시를 위해 런에 마크를 심으면(그것도 undo 단계가 된다) 취소가
+   * 원래대로 돌아오지 못한다. `CSS.highlights`는 DOM도 값도 그대로 두고 그린다
+   * (비제어 편집 박스와 부딪히지 않는 유일한 길 — 글자 선택이 이미 그렇게 산다).
+   *
+   * `/` **한 글자부터** 칠한다 — 질의가 비어 있는 첫 순간에도 "여기서부터 명령"이
+   * 보여야 한다(빈 구간은 아무것도 그리지 못한다).
+   */
+  useEffect(() => {
+    if (slashFor === null || slashSpan === null) {
+      paintSlash(null);
+      return;
+    }
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${slashFor}"]`);
+    paintSlash(el ? rangeOfChars(el, slashSpan.from, slashSpan.to) : null);
+    return () => paintSlash(null);
+  }, [slashFor, slashSpan, page]);
 
   /** 고른 줄들의 블록 id — 칠하기가 안 되는 브라우저에서 면으로 물러설 때 쓴다. */
   const selectedIds = useMemo(() => (textSel ?? []).map((l) => blockIdOf(l.key)), [textSel]);
@@ -1584,7 +1625,7 @@ export function NoteEditor({ controller }: Props) {
                   selecting={!!textSel}
                   rememberBox={rememberBox}
                   focusBox={focusBox}
-                  openSlash={(id, at) => openSlashAt(id, at)}
+                  openSlash={(id, at, tail) => openSlashAt(id, at, tail)}
                 />
               </div>
             ))}
@@ -1607,24 +1648,40 @@ export function NoteEditor({ controller }: Props) {
                 inline={slashAtChar !== null}
                 onClose={closeSlash}
                 onPick={(kind) => {
+                  /**
+                   * **고른 뒤에도 남는 글**(요청) — `/질의`만 뺀 나머지다. 이미 쓰인 글
+                   * 앞에서 열 수 있게 되면서 이 값이 판단의 기준이 됐다: 글을 담는
+                   * 종류(제목·인용·목록…)는 그 글을 그대로 데려가지만, **글을 그리지
+                   * 않는 종류**(이미지·문서 링크·구분선)로 그 줄을 갈면 남은 글이
+                   * 조용히 사라진다. 그때는 갈지 않고 **아래에 새로 만든다**.
+                   */
+                  const rest = slashSpan ? slashRest(page, slashFor, slashSpan) : noteLineText(page, slashFor);
                   // 본문에 친 `/질의`는 **지우고** 종류를 바꾼다(노션과 같은 결과).
                   if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
                   const id = blockIdOf(slashFor);
+                  const keepsText = noteBlockShape(kind) === 'runs' || noteBlockShape(kind) === 'items' || noteBlockShape(kind) === 'table';
+                  const replaces = keepsText || !rest.trim();
                   /**
                    * **이미지는 자리를 먼저 만들지 않는다**(요청) — 파일 고르개부터 열고
                    * 고른 뒤에 넣는다. 빈 줄에서 골랐으면 그 줄을 이미지로 바꾸고, 글이
                    * 있는 줄이면 그 **아래**에 넣는다(쓰던 글을 잃지 않는다).
                    */
                   if (kind === 'img') {
-                    const empty = !noteLineText(page, slashFor).replace(/^\/[^\s]*/, '').trim();
-                    controller.promptNoteImage(empty ? { replace: id } : { after: id });
+                    controller.promptNoteImage(replaces ? { replace: id } : { after: id });
                     closeSlash();
                     return;
                   }
                   // 문서 링크도 **고르개부터**(요청) — 고르지 않으면 아무 자리도 만들지 않는다.
                   if (kind === 'link') {
-                    setLinkPick({ replace: slashFor ?? id });
+                    setLinkPick(replaces ? { replace: slashFor ?? id } : { after: id });
                     closeSlash();
+                    return;
+                  }
+                  // 구분선처럼 글을 그리지 않는 종류 + 남은 글 → **아래에** 만든다.
+                  if (!replaces) {
+                    const added = controller.addNoteBlock(kind, id);
+                    closeSlash();
+                    setFreshId(added ?? id);
                     return;
                   }
                   /**
@@ -3977,7 +4034,7 @@ interface BlockProps {
   focusBox: (el: HTMLElement) => void;
   /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
    * 칸에서도 열린다(그 줄의 글로 좁혀져야 하므로 블록 id로는 모자란다). */
-  openSlash: (lineKey: string, at?: number) => void;
+  openSlash: (lineKey: string, at?: number, tail?: string) => void;
 }
 
 /**
@@ -4393,9 +4450,9 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 else controller.addNoteItem(block.id);
               }}
               style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--mf-subtext)' }}
-            onSlash={(at) => {
+            onSlash={(at, tail) => {
                 if (readOnly) return;
-                openSlash(`${block.id}:body`, at);
+                openSlash(`${block.id}:body`, at, tail);
               }}
               />
           </div>
@@ -4489,9 +4546,9 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       selecting={selecting}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
               onPasteText={(t, from, to) => pasteText(`${block.id}:${item.id}`, t, from, to)}
-              onSlash={(at) => {
+              onSlash={(at, tail) => {
                 if (readOnly) return;
-                openSlash(`${block.id}:${item.id}`, at);
+                openSlash(`${block.id}:${item.id}`, at, tail);
               }}
               onEnter={(at) => {
                 if (readOnly) return false;
@@ -4657,9 +4714,9 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSelectAll={selectAll}
       onPasteText={(t, from, to) => pasteText(block.id, t, from, to)}
       selecting={selecting}
-      onSlash={(at) => {
+      onSlash={(at, tail) => {
         if (readOnly) return;
-        openSlash(block.id, at);
+        openSlash(block.id, at, tail);
       }}
       /**
        * 제목의 편집 박스는 **딱 한 줄 높이**다 — 기본값 `minHeight: 1.6em`은 제목의
@@ -7616,6 +7673,24 @@ function noteLineText(page: NotePage, key: string): string {
   return runsText(block.items?.find((it) => it.id === rest)?.runs ?? []);
 }
 
+/** 그 줄의 **런** — `noteLineText`의 짝(서식을 지키며 고칠 때 쓴다). */
+function noteLineRuns(page: NotePage, key: string): RichRun[] {
+  const [blockId, rest] = key.split(':');
+  const block = page.blocks.find((b) => b.id === blockId);
+  if (!block) return [];
+  if (!rest) return block.runs ?? [];
+  const cell = /^r(\d+)c(\d+)$/.exec(rest);
+  if (cell) return block.rows?.[Number(cell[1])]?.[Number(cell[2])] ?? [];
+  return block.items?.find((it) => it.id === rest)?.runs ?? [];
+}
+
+/** `/질의`를 뺀 **남는 글** — 고른 종류가 그 줄을 가져도 되는지의 판단 근거다. */
+function slashRest(page: NotePage | null, key: string, span: { from: number; to: number }): string {
+  if (!page) return '';
+  const text = noteLineText(page, key);
+  return text.slice(0, span.from) + text.slice(span.to);
+}
+
 /**
  * 고른 뒤 본문에서 **`/질의`를 지운다** — 모델과 DOM을 함께.
  *
@@ -7623,15 +7698,26 @@ function noteLineText(page: NotePage, key: string): string {
  * 바꾸면 화면에는 친 글자가 그대로 남는다. 종류가 바뀌어 다시 그려지는 경우
  * (문단 → 목록)에는 이 손질이 덮이지만, 같은 모양으로 남는 경우(문단 → 인용)에는
  * 이것이 유일한 길이다.
+ *
+ * **그 구간만** 뺀다(요청) — 예전에는 남은 글을 평문으로 다시 써서(`textRuns`),
+ * 이미 쓰인 글 앞에서 `/`를 치고 고르면 그 글의 굵기·링크가 통째로 풀렸다. 값은
+ * 글자 단위로 오려 붙이고(`runsToChars`), DOM은 그 구간을 `Range`로 지운다
+ * (`textContent`로 덮으면 살아 있는 서식 스팬이 사라진다).
  */
 function dropSlashText(page: NotePage | null, key: string, at: number, query: string, controller: EditorController): void {
   if (!page) return;
   const text = noteLineText(page, key);
   if (text[at] !== '/') return;
-  const next = text.slice(0, at) + text.slice(at + 1 + query.length);
-  commitLine(controller, key, textRuns(next));
+  const cut = 1 + query.length;
+  const runs = noteLineRuns(page, key);
+  const chars = runsToChars({ text, rich: runs });
+  const next = charsToRuns([...chars.slice(0, at), ...chars.slice(at + cut)]);
+  commitLine(controller, key, next);
   const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
-  if (el) el.textContent = next;
+  if (!el) return;
+  const range = rangeOfChars(el, at, at + cut);
+  if (range) range.deleteContents();
+  else el.textContent = runsText(next);
 }
 
 /**

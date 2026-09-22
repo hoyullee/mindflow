@@ -34,6 +34,16 @@ export interface LineSel {
 }
 
 const HIGHLIGHT_NAME = 'mf-note-sel';
+/**
+ * `/` 커맨드가 **지금 읽고 있는 글자**를 회색으로 — 선택과 **다른 이름**이라야 한다
+ * (같은 이름에 넣으면 둘 중 하나가 다른 하나를 지운다).
+ *
+ * 왜 배경을 그리나(요청): 이미 쓰인 글 앞에서 `/`를 치면 뒤의 글과 지금 치는 질의가
+ * 한 줄에 붙어 보여 **어디까지가 명령인지** 알 수 없다. 값은 건드리지 않고 색만
+ * 얹으므로(`CSS.highlights`) 취소하면 아무 흔적도 남지 않는다 — 요청의 "텍스트는
+ * 그대로 유지"가 곧 이 성질이다.
+ */
+const SLASH_NAME = 'mf-note-slash';
 
 /** 이 브라우저가 `CSS.highlights`를 아는가 — 모르면 호출부가 블록 면으로 물러선다. */
 export function supportsHighlight(): boolean {
@@ -211,6 +221,33 @@ export function paintRanges(ranges: Range[]): void {
 export function clearPaint(): void {
   if (!supportsHighlight()) return;
   CSS.highlights.delete(HIGHLIGHT_NAME);
+}
+
+/** `/질의` 구간을 회색으로 — `null`이면 지운다(`::highlight(mf-note-slash)`). */
+export function paintSlash(range: Range | null): void {
+  if (!supportsHighlight()) return;
+  if (!range) {
+    CSS.highlights.delete(SLASH_NAME);
+    return;
+  }
+  CSS.highlights.set(SLASH_NAME, new Highlight(range));
+}
+
+/**
+ * 그 줄의 **글자 구간**을 가리키는 `Range` — 값의 좌표계(`pointAt`)로 잡는다.
+ * 잡을 수 없으면(줄이 다시 그려지는 중) `null`이다.
+ */
+export function rangeOfChars(el: HTMLElement, from: number, to: number): Range | null {
+  try {
+    const a = pointAt(el, from);
+    const b = pointAt(el, to);
+    const r = document.createRange();
+    r.setStart(a.node, a.offset);
+    r.setEnd(b.node, b.offset);
+    return r;
+  } catch {
+    return null;
+  }
 }
 
 /**
