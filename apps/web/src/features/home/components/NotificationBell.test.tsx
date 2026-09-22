@@ -6,6 +6,7 @@ import { NotificationsProvider } from './NotificationsContext';
 import { pushLocalNotification, readLocalNotifications, writeLocalNotifications, type StoredNotification } from '../../../adapters/local/localNotifications';
 import { __resetUpdateControl, publishUpdateStatus, setUpdateControls } from '../../../pwa/updateControl';
 import { pushReminderNotice } from '../../reminders/reminderInbox';
+import { syncRoomConflictNotices } from '../calendar/roomConflictInbox';
 import { takeCalendarFocus } from '../calendarFocus';
 
 // 홈 알림 센터(0022의 로컬 짝) — 벨 배지·열기=읽음 처리·항목 클릭=딥링크.
@@ -521,5 +522,66 @@ describe('일정 알림이 우편함에 남는다', () => {
     fireEvent.click(bell);
     await waitFor(() => expect(bell.textContent).not.toContain('1'));
     expect(localStorage.getItem('mf_reminder_inbox')).toContain('"read":true');
+  });
+});
+
+// ── 회의실 거절도 우편함에 남는다(요청) ─────────────────────────────────────
+//
+// 처음 판은 토스트 + 상세 팝업 경고였다 — 둘 다 그 자리에 있어야만 보이는 말이라
+// 놓치면 끝이었다. 요청대로 둘을 걷고 **남는 자리**로 옮겼다(달력 칩은 그대로).
+describe('회의실 거절이 우편함에 남는다', () => {
+  const conflict = [
+    {
+      id: 'c#g9',
+      calendarId: 'me@example.com',
+      calendarName: '내 캘린더',
+      title: '팀 싱크',
+      startDate: '2099-01-20',
+      endDate: '2099-01-20',
+      startTime: '09:00',
+      endTime: '10:00',
+      allDay: false,
+      eventId: 'g9',
+      creator: { email: 'me@example.com', self: true as const },
+      rooms: ['room-35-01@resource.calendar.google.com'],
+      rsvps: { 'room-35-01@resource.calendar.google.com': 'declined' as const },
+      names: { 'room-35-01@resource.calendar.google.com': '35층 회의실' },
+    },
+  ];
+
+  it('배지·목록에 섞이고, 누르면 **그 일정**으로 간다', async () => {
+    syncRoomConflictNotices(conflict);
+    renderBell();
+
+    const bell = await screen.findByRole('button', { name: /알림/ });
+    await waitFor(() => expect(bell.textContent).toContain('1'));
+
+    fireEvent.click(bell);
+    const panel = await waitFor(() => {
+      const el = document.querySelector('[data-notification-panel]') as HTMLElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    // 사람이 없는 알림이라 얼굴 자리에 달력이 오고, 첫 줄은 **무슨 일이 있었나**다.
+    expect(panel.querySelector('[data-notification-cal]')).toBeTruthy();
+    const row = within(panel).getByText(/회의실이 예약을 거절했어요/).closest('button') as HTMLElement;
+    expect(row.getAttribute('data-notification-item')).toBe('room_conflict');
+    // 어느 방인지까지 — 이름을 아는 방은 이름으로 말한다.
+    expect(row.textContent).toContain('35층 회의실');
+    expect(row.textContent).toContain('팀 싱크');
+
+    fireEvent.click(row);
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/home'));
+    expect(takeCalendarFocus()).toEqual({ date: '2099-01-20', eventId: 'g9', source: 'google' });
+  });
+
+  it('열면 함께 읽음 처리된다', async () => {
+    syncRoomConflictNotices(conflict);
+    renderBell();
+    const bell = await screen.findByRole('button', { name: /알림/ });
+    await waitFor(() => expect(bell.textContent).toContain('1'));
+    fireEvent.click(bell);
+    await waitFor(() => expect(bell.textContent).not.toContain('1'));
+    expect(localStorage.getItem('mf_room_conflict_inbox')).toContain('"read":true');
   });
 });

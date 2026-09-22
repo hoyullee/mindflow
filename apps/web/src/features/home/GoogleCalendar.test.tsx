@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
 import { GOOGLE_RECONNECT_MSG } from './calendar/googleCalendar';
+import { listRoomConflictNotices } from './calendar/roomConflictInbox';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -2758,7 +2759,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
-  it('잡아 둔 회의실이 **예약을 거절하면** 칩과 팝업이 말한다(요청 4)', async () => {
+  it('잡아 둔 회의실이 **예약을 거절하면** 칩이 서고 알림 센터에 쌓인다(요청)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -2798,8 +2799,19 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 칩은 좁아서 한 글자로 말한다(취소선은 "내가 안 간다"의 뜻으로 이미 쓰인다).
     await waitFor(() => expect(container.textContent).toContain('⚠ 팀 싱크'));
 
+    /**
+     * **상세 팝업은 이제 말하지 않는다**(요청) — 토스트와 함께 걷어내고 알림 센터로
+     * 옮겼다. 그 자리에 있어야만 보이는 말이라 놓치면 끝이었다.
+     */
     const pop = await openGoogleChip(container, user, /팀 싱크/);
-    expect(pop.querySelector('[data-event-room-declined]')?.textContent).toContain('회의실이 예약을 거절했어요');
+    expect(pop.querySelector('[data-event-room-declined]')).toBeNull();
+
+    // 남는 자리 — 목록을 받는 그 자리에서 우편함에 적재된다.
+    const notices = listRoomConflictNotices();
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.preview).toBe('팀 싱크');
+    expect(notices[0]!.calendar?.body).toContain('회의실이 예약을 거절했어요');
+    expect(notices[0]!.calendar).toMatchObject({ date: d1, eventId: 'g1', source: 'google' });
   });
 
   it('기존 일정의 참석자 이름을 **전부** 채운다 — 첫 답이 와도 남은 조회가 취소되지 않고, 별칭 주소도 그 사람으로 맞춘다(라이브 제보)', async () => {

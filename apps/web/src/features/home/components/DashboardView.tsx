@@ -16,7 +16,6 @@ import { CalWidgetBody, type CalWidgetSide } from '../dashboard/CalendarWidget';
 import { useCalendarEntries } from '../calendar/useCalendarEntries';
 import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap, type CalendarEntry } from '../calendar/entries';
-import { declinedRooms } from '../calendar/googleCalendar';
 import { googlePrefsOf, useGoogleCalendar, type GoogleCalendarApi } from '../calendar/useGoogleCalendar';
 import { GoogleConnectButton } from '../calendar/GoogleConnectButton';
 import { addDays, addMonth, daysBetween, gridRange, isoOf, partsOf, todayISO, weekStartISO } from '../calendar/model';
@@ -991,15 +990,7 @@ function CalWidgetDialogs({
               target,
               {
                 createGeurio: events.create,
-                /**
-                 * 만든 **그 자리에서** 회의실 충돌을 말해 준다(요청 4) — 구글이 돌려준
-                 * 일정에 회의실의 거절이 이미 실려 있으면 그렇다. 아직 `needsAction`이면
-                 * (리소스 응답은 비동기다) 몇십 초 뒤 재조회가 칩·팝업으로 같은 말을 한다.
-                 */
-                createGoogle: (calendarId, draft) =>
-                  google.createEvent(calendarId, draft, (made) => {
-                    if (made && declinedRooms(made).length > 0) controller.showCalendarToast('회의실이 예약을 거절했어요', '그 시간에 이미 차 있는 회의실이에요. 다른 방을 고르거나 시간을 옮겨 주세요.');
-                  }),
+                createGoogle: google.createEvent,
               },
               google.selfEmail,
             ).then((err) => {

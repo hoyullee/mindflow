@@ -1676,7 +1676,8 @@ async function send(path: string, token: string, method: 'POST' | 'PATCH' | 'DEL
 /**
  * 새 일정을 만든다. **구글이 돌려준 그 일정**을 파싱해 함께 준다(요청 4) — 회의실이
  * 그 자리에서 예약을 거절했는지(`declinedRooms`) 부르는 쪽이 바로 볼 수 있게. 못
- * 읽었으면 `null`이고, 그때도 만들기는 성공한 것이다(화면은 몇십 초 뒤 재조회가 말한다).
+ * 읽었으면 `null`이고, **그때도 만들기는 성공한 것이다** — 보이는 달 안이면 재조회가
+ * 같은 사실을 싣고 온다(`useGoogleCalendar`가 두 자리에서 기록을 맞춘다).
  */
 export async function createGoogleEvent(token: string, calendarId: string, draft: GoogleEventDraft): Promise<GoogleEvent | null> {
   // Meet 링크를 요청할 때는 `conferenceDataVersion=1`이 있어야 구글이 만들어 준다.
