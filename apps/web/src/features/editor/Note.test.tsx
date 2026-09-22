@@ -5469,7 +5469,7 @@ describe('공책 51판 — 표: 칸의 목록 서식 · 레일 끌어 여러 줄
 
     fireEvent.mouseDown(h0, { button: 0 });
     expect(picked(container)).toEqual(['0:0', '1:0', '2:0']); // 누르는 순간 한 열
-    fireEvent.mouseEnter(container.querySelector('[data-note-table-colslot="2"]') as HTMLElement);
+    fireEvent.mouseEnter(container.querySelector('[data-note-table-colslot="2"]') as HTMLElement, { buttons: 1 });
     // 0~2열 × 3행 = 9칸. 3열은 들지 않는다.
     expect(picked(container)).toEqual(['0:0', '0:1', '0:2', '1:0', '1:1', '1:2', '2:0', '2:1', '2:2']);
     fireEvent.mouseUp(document);
@@ -5486,13 +5486,13 @@ describe('공책 51판 — 표: 칸의 목록 서식 · 레일 끌어 여러 줄
     const { container } = renderEditor('/editor?map=tc4&title=x');
     const h2 = (await waitFor(() => container.querySelector('[data-note-table-colhandle="2"]'))) as HTMLElement;
     fireEvent.mouseDown(h2, { button: 0 });
-    fireEvent.mouseEnter(container.querySelector('[data-note-table-colslot="0"]') as HTMLElement);
+    fireEvent.mouseEnter(container.querySelector('[data-note-table-colslot="0"]') as HTMLElement, { buttons: 1 });
     expect(picked(container)).toHaveLength(9);
     fireEvent.mouseUp(document);
 
     const r0 = container.querySelector('[data-note-table-rowhandle="0"]') as HTMLElement;
     fireEvent.mouseDown(r0, { button: 0 });
-    fireEvent.mouseEnter(container.querySelector('[data-note-table-rowslot="1"]') as HTMLElement);
+    fireEvent.mouseEnter(container.querySelector('[data-note-table-rowslot="1"]') as HTMLElement, { buttons: 1 });
     // 0~1행 × 4열 = 8칸.
     expect(picked(container)).toEqual(['0:0', '0:1', '0:2', '0:3', '1:0', '1:1', '1:2', '1:3']);
     fireEvent.mouseUp(document);
@@ -5503,7 +5503,7 @@ describe('공책 51판 — 표: 칸의 목록 서식 · 레일 끌어 여러 줄
     const { container } = renderEditor('/editor?map=tc5&title=x');
     const r0 = (await waitFor(() => container.querySelector('[data-note-table-rowhandle="0"]'))) as HTMLElement;
     fireEvent.mouseDown(r0, { button: 0 });
-    fireEvent.mouseEnter(container.querySelector('[data-note-table-rowslot="1"]') as HTMLElement);
+    fireEvent.mouseEnter(container.querySelector('[data-note-table-rowslot="1"]') as HTMLElement, { buttons: 1 });
     fireEvent.mouseUp(document);
 
     const keys = container.querySelector('[data-note-table-keys]') as HTMLElement;
@@ -5688,5 +5688,71 @@ describe('공책 52판 — 복귀 스크롤 방어 · 이미지 배율 · 서식
     // 서식 한 벌이 함께 간다 — 굵게는 `<strong>`, 목록은 진짜 `<ul>`이다.
     expect(written[0]!.html).toContain('<strong>굵게</strong>');
     expect(written[0]!.html).toContain('<ul><li>항목</li></ul>');
+  });
+});
+
+describe('공책 53판 — 레일 끌기가 끝나면 **놓는다**(제보)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 4열 3행 — 레일을 끌 자리가 있어야 한다. */
+  const WIDE = {
+    ...NOTE,
+    pages: [{ id: 'p1', title: '장', blocks: [
+      { id: 'b4', kind: 'table', rows: Array.from({ length: 3 }, (_, r) => Array.from({ length: 4 }, (_, c) => [{ t: `${r}${c}`, b: false, c: null }])) },
+    ] }] };
+
+  const slot = (c: HTMLElement, axis: 'col' | 'row', i: number) => c.querySelector(`[data-note-table-${axis}slot="${i}"]`) as HTMLElement;
+
+  it('손을 뗀 뒤에는 **지나가기만 해서는** 범위가 따라오지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_r1', JSON.stringify(WIDE));
+    const { container } = renderEditor('/editor?map=r1&title=x');
+    const h0 = (await waitFor(() => container.querySelector('[data-note-table-colhandle="0"]'))) as HTMLElement;
+
+    fireEvent.mouseDown(h0, { button: 0 });
+    fireEvent.mouseEnter(slot(container, 'col', 1), { buttons: 1 });
+    expect(picked(container)).toHaveLength(6);
+    fireEvent.mouseUp(document);
+
+    // 누르지 않은 채 슬롯 위를 지나간다 — 예전에는 여기서 범위가 늘어났다.
+    fireEvent.mouseEnter(slot(container, 'col', 3), { buttons: 0 });
+    expect(picked(container)).toHaveLength(6);
+  });
+
+  it('창 밖에서 손을 떼 `mouseup`을 못 받아도 **다음 움직임에 놓는다**', async () => {
+    localStorage.setItem('mindflow_doc_r2', JSON.stringify(WIDE));
+    const { container } = renderEditor('/editor?map=r2&title=x');
+    const h0 = (await waitFor(() => container.querySelector('[data-note-table-colhandle="0"]'))) as HTMLElement;
+
+    fireEvent.mouseDown(h0, { button: 0 });
+    fireEvent.mouseEnter(slot(container, 'col', 1), { buttons: 1 });
+    expect(picked(container)).toHaveLength(6);
+
+    // `mouseup`은 오지 않았다. 단추가 안 눌린 움직임 하나가 표식을 지운다.
+    fireEvent.mouseEnter(slot(container, 'col', 2), { buttons: 0 });
+    expect(picked(container)).toHaveLength(6);
+    fireEvent.mouseEnter(slot(container, 'col', 3), { buttons: 0 });
+    expect(picked(container)).toHaveLength(6);
+  });
+
+  it('끌기가 끝나면 **다음 클릭은 정상**이다 — 표식은 한 번만 쓴다', async () => {
+    localStorage.setItem('mindflow_doc_r3', JSON.stringify(WIDE));
+    const { container } = renderEditor('/editor?map=r3&title=x');
+    const h0 = (await waitFor(() => container.querySelector('[data-note-table-colhandle="0"]'))) as HTMLElement;
+
+    fireEvent.mouseDown(h0, { button: 0 });
+    fireEvent.mouseEnter(slot(container, 'col', 2), { buttons: 1 });
+    fireEvent.mouseUp(document);
+    // 끌고 난 뒤의 click 하나는 건너뛴다(범위가 한 열로 되돌지 않는다).
+    fireEvent.click(h0);
+    expect(picked(container)).toHaveLength(9);
+
+    // 그 다음 클릭은 평소대로 한 열이다.
+    fireEvent.click(container.querySelector('[data-note-table-colhandle="3"]') as HTMLElement);
+    expect(picked(container)).toEqual(['0:3', '1:3', '2:3']);
   });
 });
