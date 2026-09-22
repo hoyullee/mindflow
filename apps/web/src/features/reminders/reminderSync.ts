@@ -43,11 +43,38 @@ let googlePrefs: GooglePrefs = undefined;
 /** 캘린더 거울을 이번 세션에 이미 만들었는가(같은 목록을 되풀이해 묻지 않게). */
 let calsDerived = false;
 
+type Listener = () => void;
+/** 계정 값이 도착했음을 기다리는 쪽(배경 훑기) — 마운트 순서에 기대지 않게. */
+const listeners = new Set<Listener>();
+
 /** 테스트용 — 모듈 상태를 비운다. */
 export function resetReminderSync(): void {
   synced = false;
   googlePrefs = undefined;
   calsDerived = false;
+}
+
+/**
+ * 계정이 **보여 준다고 고른** 구글 캘린더의 id — 공휴일은 뺀다.
+ *
+ * 회의실 거절을 배경에서 훑는 쪽(`useRoomConflictWatch`)이 이 값을 쓴다. 알림
+ * 스케줄러가 보는 **거울**(`readReminderCalendars`)을 쓰지 않는 이유는 그쪽이
+ * "구글 일정도 알림"을 켠 사람에게만 만들어지고(꺼 둔 사람에게는 왕복 0회가
+ * 의도다 — `reminderSync.test`가 그 자리를 못박는다) 만들 때 캘린더 목록 조회가
+ * 한 번 더 필요하기 때문이다. 우리는 **id만** 있으면 되므로 블롭의 값으로 충분하다.
+ */
+export function syncedGoogleCalendarIds(): string[] {
+  return (googlePrefs?.calendars ?? []).filter((id) => !isHolidayCalendarId(id));
+}
+
+/** 그 값이 도착하거나 바뀌면 부른다 — 반환값을 부르면 해제. */
+export function onSyncedGoogleCalendarsChange(fn: Listener): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function announce(): void {
+  for (const fn of [...listeners]) fn();
 }
 
 /**
@@ -63,7 +90,7 @@ export function resetReminderSync(): void {
  */
 async function deriveReminderCalendars(): Promise<void> {
   if (!googleRemindersEnabled()) return;
-  const ids = (googlePrefs?.calendars ?? []).filter((id) => !isHolidayCalendarId(id));
+  const ids = syncedGoogleCalendarIds();
   if (!ids.length) {
     storeReminderCalendars([]);
     calsDerived = true;
@@ -99,6 +126,7 @@ export function noteSyncedReminderPrefs(prefs: SyncedReminderPrefs | undefined, 
   googlePrefs = google;
   applySyncedReminderPrefs(prefs);
   maybeDeriveCalendars();
+  announce();
 }
 
 /**
@@ -113,6 +141,7 @@ export async function syncRemindersFromAccount(store: SpaceStore): Promise<void>
     googlePrefs = ws?.google;
     applySyncedReminderPrefs(ws?.reminders);
     maybeDeriveCalendars();
+    announce();
   } catch {
     // 조회 실패 — 이 기기의 캐시로 그대로 돈다(알림이 통째로 멎지 않게).
   }

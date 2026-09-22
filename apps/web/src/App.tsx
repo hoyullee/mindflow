@@ -14,6 +14,7 @@ import { UpdatePrompt } from './pwa/UpdatePrompt';
 import { DesktopTitleBar } from './platform/DesktopTitleBar';
 import { isDesktopShell } from './platform/desktopBridge';
 import { ReminderHost } from './features/reminders/ReminderHost';
+import { RoomConflictWatch } from './features/home/calendar/RoomConflictWatch';
 import { NotificationsProvider } from './features/home/components/NotificationsContext';
 import { DesktopBadgeHost } from './platform/DesktopBadgeHost';
 import { DesktopMentionNotifier } from './platform/DesktopMentionNotifier';
@@ -68,6 +69,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return (
     <NotificationsProvider>
       <ReminderHost />
+      {/* 회의실이 예약을 거절한 일정을 배경에서 훑어 알림 센터에 쌓는다(제보) —
+          일정 화면에만 있던 적재를 여기로 올렸다. 일정 알림과 같은 이유로 문지기
+          안이다: 맵을 편집하는 중에도 그 소식은 와야 한다. */}
+      <RoomConflictWatch />
       <DesktopBadgeHost />
       {/* 설치형 앱에서 창을 닫아 둬도 멘션이 배너로 뜨게 — 배지와 **같은 자리**에
           둔다(같은 이유다: 그때 열려 있는 화면이 에디터일 수 있다). 브라우저·PWA에서는
