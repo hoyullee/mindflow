@@ -589,14 +589,13 @@ describe('공책 4판 — 팝업이 잘리지 않고, 바깥을 누르면 닫힌
     await waitFor(() => expect(container.querySelector('[data-note-blocktype-menu]')).toBeNull());
   });
 
-  it('`/` 목록은 **누른 단추**를 기준으로 뜬다 — 본문 맨 아래가 아니라', async () => {
+  // 툴바의 `/` 키캡 단추는 **걷었다**(요청) — 본문에서 `/`를 치는 길만 남는다.
+  it('툴바에 `/` 단추가 없다(요청)', async () => {
     localStorage.setItem('mindflow_doc_ns32', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns32&title=x');
-    await waitFor(() => expect(container.querySelector('[data-note-slash-btn]')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
 
-    fireEvent.click(container.querySelector('[data-note-slash-btn]')!);
-    const pop = (await waitFor(() => container.querySelector('[data-note-slash] > div'))) as HTMLElement;
-    expect(pop.style.position).toBe('fixed');
+    expect(container.querySelector('[data-note-slash-btn]')).toBeNull();
   });
 
   it('태그를 안 고른 페이지는 목록에 **태그 없음**으로 선다', async () => {
@@ -1018,7 +1017,7 @@ describe('공책 8판 — 태그 색 고르기', () => {
     return menu;
   }
 
-  it('새 태그를 만들 때 **점 색을 고를 수 있고**, 고른 값이 문서에 남는다', async () => {
+  it('새 태그를 만들 때 **점 색을 고를 수 있고**, 고른 값이 태그 판에 남는다', async () => {
     localStorage.setItem('mindflow_doc_ns70', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns70&title=x');
     const menu = await openNewTag(container);
@@ -1035,7 +1034,8 @@ describe('공책 8판 — 태그 색 고르기', () => {
     saveNow();
 
     await waitFor(() => expect(saved('ns70').pages[0].tag).toBe('스프린트'));
-    expect(saved('ns70').tagColors).toEqual({ 스프린트: '#7C9BD8' });
+    // 이름과 색은 **공책 밖의 한 판**이 든다(요청 6) — 문서에는 페이지의 태그만 남는다.
+    expect(JSON.parse(localStorage.getItem('mf_note_tags') || '{}')).toMatchObject({ made: ['스프린트'], colors: { 스프린트: '#7C9BD8' } });
   });
 
   it('색을 고르지 않으면 이름에서 정해진다 — 문서에 칸이 생기지 않는다', async () => {
@@ -1158,9 +1158,11 @@ describe('공책 10판 — 태그·툴바·새 페이지', () => {
   it('`블록 넣기` 목록은 **바깥을 누르면 닫힌다**(제보)', async () => {
     localStorage.setItem('mindflow_doc_ns90', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns90&title=x');
-    await waitFor(() => expect(container.querySelector('[data-note-slash-btn]')).toBeTruthy());
-
-    fireEvent.click(container.querySelector('[data-note-slash-btn]')!);
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    // `/`는 **낱말의 시작**에서만 연다 — 글이 있는 줄이면 먼저 비운다.
+    type(line, '');
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/');
     await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeTruthy());
     fireEvent.pointerDown(document.body);
     await waitFor(() => expect(container.querySelector('[data-note-slash]')).toBeNull());
@@ -2622,8 +2624,11 @@ describe('공책 24판 — 고른 칸의 캐럿·잘라내기 가위·블록 이
   it('블록 이름 — `글머리 기호` · `번호 매기기`(요청)', async () => {
     localStorage.setItem('mindflow_doc_nz2', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=nz2&title=x');
-    await waitFor(() => expect(container.querySelector('[data-note-slash-btn]')).toBeTruthy());
-    fireEvent.click(container.querySelector('[data-note-slash-btn]')!);
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    // `/`는 **낱말의 시작**에서만 연다 — 글이 있는 줄이면 먼저 비운다.
+    type(line, '');
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/');
 
     const panel = (await waitFor(() => container.querySelector('[data-note-slash-panel]'))) as HTMLElement;
     expect(panel.querySelector('[data-note-slash-item="ul"]')?.textContent).toContain('글머리 기호');
@@ -4935,7 +4940,7 @@ describe('공책 45판 — 이미지 크기·확대 · 여러 줄 서식 · 칸�
     document.dispatchEvent(new Event('selectionchange'));
 
     const off = (sel: string): boolean => !!container.querySelector(sel)?.hasAttribute('disabled');
-    await waitFor(() => expect(off('[data-note-slash-btn]')).toBe(true));
+    await waitFor(() => expect(off('[data-note-insert="table"]')).toBe(true));
     for (const kind of ['ck', 'table', 'hr', 'img', 'link']) {
       expect(off(`[data-note-insert="${kind}"]`)).toBe(true);
     }
@@ -5358,9 +5363,8 @@ describe('공책 49판 — 친 주소·머리의 부피·제목 밑줄·태그 �
     fireEvent.change(input, { target: { value: '회의준비' } });
     fireEvent.click(container.querySelector('[data-note-tag-commit]') as HTMLElement);
 
-    // 공책이 기억한다.
-    saveNow();
-    await waitFor(() => expect(saved('n3').cover.tags).toContain('회의준비'));
+    // **태그 판**이 기억한다(요청 6에서 공책 밖으로 옮겼다 — 모든 공책이 같은 판을 본다).
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('mf_note_tags') || '{}').made).toContain('회의준비'));
 
     // 떼어도 고르개에 남아 있다.
     fireEvent.click(container.querySelector('[data-note-tag-pick]') as HTMLElement);
@@ -6509,17 +6513,134 @@ describe('공책 — 오브젝트 선택 · 이미지 판 · 태그 지우기 ·
     expect(pickedIds(c)).toContain('c');
   });
 
-  it('만든 태그는 목록에서 **지울 수 있다**(요청 3) — 기본 태그에는 그 단추가 없다', async () => {
+  it('태그는 목록에서 **지울 수 있다** — 기본 태그도(요청 6)', async () => {
     const c = await open('ob5');
     await waitFor(() => expect(c.querySelector('[data-note-tag-pick]')).toBeTruthy());
     fireEvent.click(c.querySelector('[data-note-tag-pick]') as HTMLElement);
     await waitFor(() => expect(c.querySelector('[data-note-tag-menu]')).toBeTruthy());
     const menu = c.querySelector('[data-note-tag-menu]') as HTMLElement;
 
+    // **모든 태그**를 지울 수 있다(요청 6) — 기본 여섯은 판이 가려 둔다.
     expect(menu.querySelector('[data-note-tag-del="내가만든태그"]')).toBeTruthy();
-    expect(menu.querySelector('[data-note-tag-del="회의록"]')).toBeNull();
+    expect(menu.querySelector('[data-note-tag-del="회의록"]')).toBeTruthy();
 
     fireEvent.click(menu.querySelector('[data-note-tag-del="내가만든태그"]')!);
     await waitFor(() => expect(c.querySelector('[data-note-tag-opt="내가만든태그"]')).toBeNull());
+
+    // 기본 태그도 지워지고, 그 자리는 판의 `hidden`에 남는다(새로고침해도 돌아오지 않는다).
+    fireEvent.click(menu.querySelector('[data-note-tag-del="회의록"]')!);
+    await waitFor(() => expect(c.querySelector('[data-note-tag-opt="회의록"]')).toBeNull());
+    expect(JSON.parse(localStorage.getItem('mf_note_tags') || '{}').hidden).toContain('회의록');
+  });
+});
+
+describe('공책 — 툴바 정리 · 코드 Shift+Enter · 목록 사이의 그림 · 태그 판', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'cd', kind: 'code', runs: [{ t: 'const a = 1;', b: false, c: null }] },
+          { id: 'ls', kind: 'ol', items: [
+            { id: 'i1', runs: [{ t: '11', b: false, c: null }] },
+            { id: 'i2', runs: [{ t: '22', b: false, c: null }] },
+          ] },
+          { id: 'im', kind: 'img', src: 'data:image/png;base64,iVBORw0KGgo=' },
+        ],
+        updatedAt: '2026-09-16T00:00:00.000Z',
+      },
+    ],
+  };
+
+  const open = async (id: string): Promise<HTMLElement> => {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(DOC));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-line="cd"]')).toBeTruthy());
+    return container;
+  };
+  const kinds = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll('[data-note-block]')].map((e) => e.getAttribute('data-note-kind'));
+
+  it('코드 블록의 Shift+Enter는 **판을 나가** 아래 줄로(요청 9)', async () => {
+    const c = await open('rz1');
+    const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
+    line.focus();
+    const r = document.createRange();
+    r.selectNodeContents(line);
+    r.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(r);
+    fireEvent.keyDown(line, { key: 'Enter', shiftKey: true });
+
+    // 블록 하나가 더 생기고 그것은 **본문**이다(코드가 하나 더 생기지 않는다).
+    await waitFor(() => expect(kinds(c)).toEqual(['code', 'p', 'ol', 'img']));
+    saveNow();
+    await waitFor(() => expect(runsOf(saved('rz1').pages[0].blocks[0])).toBe('const a = 1;'));
+  });
+
+  it('`/` 목록에 **인라인 코드**가 있다(요청 4) — 고르면 그 자리에 서식을 켠다', async () => {
+    const c = await open('rz2');
+    const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
+    type(line, '');
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/');
+
+    const panel = (await waitFor(() => {
+      const el = c.querySelector('[data-note-slash-panel]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    expect(panel.querySelector('[data-note-slash-item="inline-code"]')).toBeTruthy();
+  });
+
+  it('그림을 **목록의 항목 사이**로 끌어 놓으면 목록이 갈리고 번호는 이어진다(요청 3)', async () => {
+    const c = await open('rz3');
+    /**
+     * jsdom은 사각형이 전부 0이라(`probe-pitfalls` F1 계열) 떨어질 자리를 잴 수 없다.
+     * 그 판정이 보는 **세 줄의 사각형만** 세워 준다 — 나머지(끌기·커밋)는 진짜 코드다.
+     */
+    const rect = (top: number, height: number) => () =>
+      ({ top, bottom: top + height, height, left: 0, right: 600, width: 600, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    const wraps = [...c.querySelectorAll('[data-note-blockwrap]')] as HTMLElement[];
+    wraps[0]!.getBoundingClientRect = rect(0, 40);
+    wraps[1]!.getBoundingClientRect = rect(40, 60);
+    wraps[2]!.getBoundingClientRect = rect(100, 80);
+    const items = [...c.querySelectorAll('[data-note-item]')] as HTMLElement[];
+    expect(items.map((e) => e.getAttribute('data-note-item'))).toEqual(['ls:0', 'ls:1']);
+    items[0]!.getBoundingClientRect = rect(40, 30);
+    items[1]!.getBoundingClientRect = rect(70, 30);
+
+    // 「11」과 「22」 사이(y=72)로 끌어 놓는다.
+    fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 0, clientY: 72 }));
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 0, clientY: 72 }));
+
+    await waitFor(() => expect(kinds(c)).toEqual(['code', 'ol', 'img', 'ol']));
+    saveNow();
+    await waitFor(() => expect(saved('rz3').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['code', 'ol', 'img', 'ol']));
+    const [, head, , tail] = saved('rz3').pages[0].blocks;
+    const texts = (b: { items: { runs: { t: string }[] }[] }): string[] => b.items.map((it) => it.runs.map((r) => r.t).join(''));
+    expect(texts(head)).toEqual(['11']);
+    expect(texts(tail)).toEqual(['22']);
+    // 번호는 **이어 센다** — 사이에 그림이 끼어도 뒤쪽은 2번부터다.
+    expect(tail.start).toBe(2);
+  });
+
+  it('태그 판은 **공책 밖**에 있다 — 다른 공책에서 만든 태그도 목록에 있다(요청 6)', async () => {
+    localStorage.setItem('mf_note_tags', JSON.stringify({ made: ['다른공책태그'], colors: {}, hidden: [] }));
+    const c = await open('rz4');
+    await waitFor(() => expect(c.querySelector('[data-note-tag-pick]')).toBeTruthy());
+    fireEvent.click(c.querySelector('[data-note-tag-pick]') as HTMLElement);
+
+    await waitFor(() => expect(c.querySelector('[data-note-tag-opt="다른공책태그"]')).toBeTruthy());
   });
 });

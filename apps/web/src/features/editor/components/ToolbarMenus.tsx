@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { keyLabel } from '../shortcutLabels';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
 import { MenuRow } from '../../../components/Menu';
@@ -54,7 +55,7 @@ export function EditMenu({ controller, onDone, isMobile }: { controller: EditorC
         isMobile={isMobile}
         icon={<UndoIcon />}
         label="실행 취소"
-        hint="Ctrl+Z"
+        hint={keyLabel('⌘Z')}
         disabled={!controller.canUndo}
         onClick={() => {
           controller.undo();
@@ -66,7 +67,7 @@ export function EditMenu({ controller, onDone, isMobile }: { controller: EditorC
         isMobile={isMobile}
         icon={<RedoIcon />}
         label="다시 실행"
-        hint="Ctrl+Shift+Z"
+        hint={keyLabel('⌘⇧Z')}
         disabled={!controller.canRedo}
         onClick={() => {
           controller.redo();

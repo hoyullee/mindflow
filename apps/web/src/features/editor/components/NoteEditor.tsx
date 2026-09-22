@@ -13,7 +13,6 @@ import type { ClipLine, Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExpo
 import {
   NOTE_HIGHLIGHTS,
   NOTE_TAG_COLORS,
-  NOTE_TAGS,
   noteBlockShape,
   normalizeUrl,
   olStartAt,
@@ -22,7 +21,6 @@ import {
   parseDoc,
   noteCoverColor,
   noteHighlightColor,
-  noteTagColor,
   pageExcerpt,
   pageText,
   charsToRuns,
@@ -54,6 +52,8 @@ import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
+import { keyLabel } from '../shortcutLabels';
+import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, onNoteTagsChange, removeNoteTag } from '../noteTags';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 
 interface Props {
@@ -74,6 +74,16 @@ interface Props {
  * 하나"를 다시 물어(2026-09-21) **열하나로 확정**했다 — ②의 어긋남이 시안을 따르는
  * 값보다 크다고 봤다. 목록은 문단과 서로 오갈 수 있는 **줄의 종류**가 맞다.
  */
+/**
+ * `/` 목록이 고를 수 있는 것 — **블록 종류들 + 인라인 코드 하나**(요청 4).
+ *
+ * 인라인 코드는 블록이 아니라 **글자에 걸리는 서식**이라 종류 목록에 낄 자리가
+ * 아니었다. 그래도 여기 두는 이유는 사람이 찾는 자리가 여기이기 때문이다 — `/코드`를
+ * 치면 「코드 블록」만 나오고, 한 낱말만 코드로 만들고 싶은 사람은 갈 곳이 없었다
+ * (툴바의 `<>` 단추를 아는 사람만 썼다). 고르면 그 자리에 **서식을 켜 둔다**.
+ */
+type SlashKind = NoteBlockKind | 'inline-code';
+
 const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
   { kind: 'p', name: '본문', hint: '⌘⌥0', desc: '일반 글', group: '기본', inMenu: true, icon: <path d="M4 7h16M4 12h16M4 17h10" /> },
   { kind: 'h1', name: '제목 1', hint: '⌘⌥1', desc: '가장 큰 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M12 5v14M4 12h8" /><path d="M17 9.5 19.5 8V19" /></>) },
@@ -93,6 +103,12 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   // "다른 문서로 간다"만 말한다. 인라인 링크(주소)와는 **문서 모양**으로 갈린다.
   { kind: 'link', name: '문서 링크', hint: '', desc: '맵 · 보드 · 칸반 · 공책으로', group: '넣기', icon: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" /><path d="M14 3v5h5" /><path d="M10.5 14.5a2.2 2.2 0 0 0 3.2.2l1.3-1.3a2.2 2.2 0 0 0-3.1-3.1l-.6.6" /><path d="M13.5 12.5a2.2 2.2 0 0 0-3.2-.2L9 13.6a2.2 2.2 0 0 0 3.1 3.1l.6-.6" /></>) },
   { kind: 'hr', name: '구분선', hint: '', desc: '섹션 나누기', group: '넣기', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
+];
+
+/** `/` 목록이 보여 주는 것 — 블록들 + **인라인 코드**(요청 4). */
+const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
+  ...BLOCK_TYPES,
+  { kind: 'inline-code', name: '인라인 코드', hint: '', desc: '글 속의 코드 조각', group: '강조', icon: (<><path d="m9.5 9-3 3 3 3M14.5 9l3 3-3 3" /><path d="M4 12h1M19 12h1" opacity=".35" /></>) },
 ];
 
 /**
@@ -1573,7 +1589,24 @@ export function NoteEditor({ controller }: Props) {
     };
     remember();
     document.addEventListener('selectionchange', remember);
-    return () => document.removeEventListener('selectionchange', remember);
+    /**
+     * **글쇠를 누를 때도 적어 둔다**(제보: ⌘Z 뒤에 커서가 사라진다).
+     *
+     * 되돌리기는 본문을 통째로 다시 마운트하고(`docEpoch`), 그때 캐럿을 되살리는
+     * 근거가 이 기억이다. 그런데 기억은 **선택이 움직일 때만** 찍혔고 되살리는 쪽에는
+     * "1.5초 안"이라는 신선도 조건이 있어서 — 그 창은 옛 기억이 늦게 도착한 문서의
+     * 캐럿을 가로채지 않게 두는 것이다 — 글을 쓰고 잠시 멈췄다 ⌘Z를 누르면 기억이
+     * 이미 **낡은 것**으로 판정돼 커서가 `body`로 떨어졌다(실측: 2.2초 쉬면 재현).
+     *
+     * 글쇠는 "사용자가 지금 여기 있다"는 가장 확실한 신호이므로 그때마다 다시 찍는다.
+     * 캡처 단계에서 받는 이유는 그 키가 무엇이든(되돌리기든 글자든) **처리되기 전의**
+     * 자리를 적어야 하기 때문이다.
+     */
+    document.addEventListener('keydown', remember, true);
+    return () => {
+      document.removeEventListener('selectionchange', remember);
+      document.removeEventListener('keydown', remember, true);
+    };
   }, [docKey]);
 
   /**
@@ -1673,7 +1706,6 @@ export function NoteEditor({ controller }: Props) {
             boxRef={boxRef}
             rememberBox={rememberBox}
             onInserted={setFreshId}
-            openSlash={(id, from) => openSlashAt(id, from)}
             pickLinkDoc={setLinkPick}
             formatSelection={formatSelection}
             painted={textSel}
@@ -1997,6 +2029,38 @@ export function NoteEditor({ controller }: Props) {
                    * 않는 종류**(이미지·문서 링크·구분선)로 그 줄을 갈면 남은 글이
                    * 조용히 사라진다. 그때는 갈지 않고 **아래에 새로 만든다**.
                    */
+                  /**
+                   * **인라인 코드는 블록이 아니다**(요청 4) — 친 `/질의`만 걷어 내고 그
+                   * 자리에 **서식을 켜 둔다**. 다음에 치는 글자부터 코드가 된다
+                   * (툴바의 `<>` 단추와 같은 길 — `armCaretMark`).
+                   */
+                  if (kind === 'inline-code') {
+                    const at = slashAtChar;
+                    const key = slashFor ?? '';
+                    if (at !== null) dropSlashText(page, slashFor, at, slashQuery, controller);
+                    closeSlash();
+                    const go = (): void => {
+                      const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+                      if (!el) return;
+                      el.focus({ preventScroll: true });
+                      const len = lineLength(el);
+                      const spot = pointAt(el, at === null ? len : Math.max(0, Math.min(at, len)));
+                      try {
+                        const r = document.createRange();
+                        r.setStart(spot.node, spot.offset);
+                        r.collapse(true);
+                        const sel = window.getSelection();
+                        sel?.removeAllRanges();
+                        sel?.addRange(r);
+                      } catch {
+                        /* 캐럿을 못 놓아도 포커스는 갔다 */
+                      }
+                      armCaretMark(el, 'k');
+                    };
+                    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+                    else setTimeout(go, 0);
+                    return;
+                  }
                   const rest = slashSpan ? slashRest(page, slashFor, slashSpan) : noteLineText(page, slashFor);
                   // 본문에 친 `/질의`는 **지우고** 종류를 바꾼다(노션과 같은 결과).
                   if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
@@ -2009,7 +2073,9 @@ export function NoteEditor({ controller }: Props) {
                    * 있는 줄이면 그 **아래**에 넣는다(쓰던 글을 잃지 않는다).
                    */
                   if (kind === 'img') {
-                    controller.promptNoteImage(replaces ? { replace: id } : { after: id });
+                    // 목록의 **가운데 항목**에서 골랐으면 그 자리에서 가른다(요청 3).
+                    const gap = listGapOf(page, slashFor);
+                    controller.promptNoteImage(gap ? { after: gap.id, intoList: gap } : replaces ? { replace: id } : { after: id });
                     closeSlash();
                     return;
                   }
@@ -2830,7 +2896,7 @@ function PageList({ controller, collapsed, onQuery }: { controller: EditorContro
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                 {['전체', ...tags].map((name) => {
                   const on = tag === name;
-                  const dot = name === '전체' ? null : noteTagColor(name, controller.doc.tagColors);
+                  const dot = name === '전체' ? null : noteTagInk(name, controller.doc.tagColors);
                   return (
                     <button
                       key={name}
@@ -3145,8 +3211,8 @@ function PageRow({ controller, page, index, active, hit, find, cover }: { contro
             정했다"인지 "이 줄이 원래 없다"인지 말해 주지 않고, 행마다 높이도 달라진다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
             <span data-note-page-tag style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto' }}>
-              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: tag ? noteTagColor(tag, controller.doc.tagColors) : 'var(--mf-faint2)', display: 'block' }} />
-              <span style={{ fontSize: 10.5, fontWeight: tag ? 700 : 600, color: tag ? noteTagColor(tag, controller.doc.tagColors) : 'var(--mf-faint)' }}>{tag || '태그 없음'}</span>
+              <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: tag ? noteTagInk(tag, controller.doc.tagColors) : 'var(--mf-faint2)', display: 'block' }} />
+              <span style={{ fontSize: 10.5, fontWeight: tag ? 700 : 600, color: tag ? noteTagInk(tag, controller.doc.tagColors) : 'var(--mf-faint)' }}>{tag || '태그 없음'}</span>
             </span>
             {who && (
               <span style={{ minWidth: 0, fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{who} 님이 씀</span>
@@ -3192,7 +3258,7 @@ function PageRow({ controller, page, index, active, hit, find, cover }: { contro
             </svg>
             복제
             <span style={{ flex: 1 }} />
-            <span style={POP_KEY}>⌘D</span>
+            <span style={POP_KEY}>{keyLabel('⌘D')}</span>
           </button>
           <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '4px 4px' }} />
           {/* 순서 바꾸기 — 끌어 옮기기는 좁은 목록에서 정확히 놓기가 어렵다.
@@ -3436,34 +3502,43 @@ function TagPick({
   /** 새 태그에 고른 점 색 — `null`이면 이름에서 정해진다(고르지 않았다). */
   const [hue, setHue] = useState<string | null>(null);
   const tag = page.tag ?? null;
-  const inks = controller.doc.tagColors;
   const { ref, rect } = useAnchored(open, () => setOpen(() => false));
   /**
-   * 고를 수 있는 태그 — 기본 여섯 + **이 공책에서 만든 것**(`cover.tags`) + 지금 쓰이는 것.
-   *
-   * 가운데 것이 요청으로 들어온 자리다: 예전에는 "실제로 쓰이는 것"만 모았기 때문에
-   * 애써 만든 태그를 한 페이지에서 떼면 **그 태그가 목록에서도 사라졌다**. 이제
-   * 만든 순간 공책에 적히고, 어느 페이지도 쓰지 않아도 남는다.
+   * **태그 판**(요청 6) — 이름과 색은 이제 공책 밖의 한 판이 든다(`noteTags`).
+   * 판이 바뀌면(다른 화면·다른 탭에서 만들거나 지웠다) 다시 읽는다.
    */
-  const made = controller.doc.cover?.tags;
+  const [board, setBoard] = useState(noteTagBoard);
+  useEffect(() => onNoteTagsChange(() => setBoard(noteTagBoard())), []);
+  // 권마다 따로 살던 시절의 태그를 판으로 한 번 옮긴다(문서는 건드리지 않는다).
+  const madeInDoc = controller.doc.cover?.tags;
+  const docInks = controller.doc.tagColors;
+  useEffect(() => {
+    absorbDocTags(madeInDoc, docInks);
+    setBoard(noteTagBoard());
+  }, [madeInDoc, docInks]);
+  /** 색은 **판이 먼저**, 없으면 이 문서에 남아 있던 옛 값으로 물러선다. */
+  const inks = useMemo(() => ({ ...(docInks ?? {}), ...board.colors }), [docInks, board]);
+  /**
+   * 고를 수 있는 태그 — 판의 목록 + **지금 이 공책이 쓰고 있는 것**.
+   *
+   * 뒤쪽을 더하는 이유: 판은 이 기기의 것이라, 다른 기기에서 붙인 태그가 페이지에
+   * 남아 있을 수 있다. 목록에 없으면 그 페이지의 태그가 고르개에서 사라져 보인다.
+   */
   const options = useMemo(() => {
-    const out = [...NOTE_TAGS];
-    const add = (t: string | null | undefined): void => {
-      const n = t?.trim();
+    const out = noteTagOptions();
+    for (const pg of controller.notePages) {
+      const n = pg.tag?.trim();
       if (n && !out.includes(n)) out.push(n);
-    };
-    (made ?? []).forEach(add);
-    for (const pg of controller.notePages) add(pg.tag);
+    }
     return out;
-  }, [controller.notePages, made]);
+  }, [controller.notePages, board]);
 
   const commit = () => {
     const name = draft.trim();
     if (name) {
-      // 색을 **먼저** 적는다 — 태그가 먼저 붙으면 한 프레임 동안 기본색으로 그려진다.
-      if (hue) controller.setNoteTagColor(name, hue);
-      // 만든 태그는 **공책이 기억한다** — 떼어도 목록에 남는다(요청 4).
-      if (!NOTE_TAGS.includes(name) && !(made ?? []).includes(name)) controller.setNoteCover({ tags: [...(made ?? []), name] });
+      // 만든 태그는 **판이 기억한다** — 떼어도, 다른 공책에서도 남는다(요청 6).
+      addNoteTag(name, hue);
+      setBoard(noteTagBoard());
       controller.setNotePageTag(page.id, name);
     }
     setDraft('');
@@ -3477,7 +3552,7 @@ function TagPick({
     setAdding(false);
   };
   /** 지금 새 태그가 그려질 색 — 고른 값이 있으면 그것, 없으면 이름에서. */
-  const newInk = hue ?? noteTagColor(draft.trim() || '새', inks);
+  const newInk = hue ?? noteTagInk(draft.trim() || '새', inks);
 
   return (
     <>
@@ -3510,7 +3585,7 @@ function TagPick({
           whiteSpace: 'nowrap',
         }}
       >
-        <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: tag ? noteTagColor(tag, inks) : 'var(--mf-faint)', display: 'block' }} />
+        <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: tag ? noteTagInk(tag, inks) : 'var(--mf-faint)', display: 'block' }} />
         {tag || '태그 없음'}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />
@@ -3522,11 +3597,13 @@ function TagPick({
           {options.map((t) => {
             const on = tag === t;
             /**
-             * **지울 수 있는 태그인가**(요청 3) — 이 공책에서 **만든** 것만이다.
-             * 기본 여섯(`NOTE_TAGS`)은 코드에 박힌 목록이라 지워도 다음 렌더에
-             * 그대로 돌아온다 — 눌러도 아무 일이 없는 단추는 두지 않는다.
+             * **모든 태그를 지울 수 있다**(요청 6 — 예전에는 만든 것만이었다).
+             *
+             * 기본 여섯은 코드에 박힌 상수라 목록에서 뺄 수 없어 "지워도 돌아온다"는
+             * 이유로 단추를 감췄었다. 이제 판이 그것들을 **가려 둘** 수 있으므로
+             * (`noteTags`의 `hidden`) 같은 자리에서 같은 일을 한다.
              */
-            const erasable = !NOTE_TAGS.includes(t);
+            const erasable = true;
             return (
               // 줄은 **감싸는 칸**이 된다 — 단추 안에 단추를 넣을 수 없다(HTML).
               <div key={t} className="mf-note-tagrow" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -3540,7 +3617,7 @@ function TagPick({
                   }}
                   style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, ...(on ? { background: 'var(--mf-tag-on)' } : {}), ...(erasable ? { paddingRight: 34 } : {}) }}
                 >
-                  <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t, inks), display: 'block' }} />
+                  <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagInk(t, inks), display: 'block' }} />
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
                   {on && (
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3559,6 +3636,9 @@ function TagPick({
                     aria-label={`${t} 태그 지우기`}
                     onClick={(e) => {
                       e.stopPropagation();
+                      // 판에서 빼고(모든 공책에서 사라진다) 이 공책의 페이지에서도 뗀다.
+                      removeNoteTag(t);
+                      setBoard(noteTagBoard());
                       controller.removeNoteTag(t);
                     }}
                     style={{ position: 'absolute', right: 6, width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', color: 'var(--mf-faint)', cursor: 'pointer', padding: 0 }}
@@ -3762,7 +3842,6 @@ function FormatToolbar({
   boxRef,
   rememberBox,
   onInserted,
-  openSlash,
   pickLinkDoc,
   formatSelection,
   painted,
@@ -3793,8 +3872,6 @@ function FormatToolbar({
   painted: LineSel[] | null;
   /** 새로 만든 블록·항목으로 캐럿을 보낸다(루트의 `freshId`). */
   onInserted: (id: string | null) => void;
-  /** `/` 단추 — 지금 줄에서 블록 목록을 연다. `from`을 주면 그 요소를 기준으로 뜬다. */
-  openSlash: (blockId: string, from?: Element | null) => void;
   focus: boolean;
   setFocus: (fn: (v: boolean) => boolean) => void;
   /** 본문 단이 창 너비를 쓰는가(`cover.wide`) — 폭 단추의 켜짐 상태. */
@@ -4259,29 +4336,9 @@ function FormatToolbar({
         </button>
       ))}
       <span style={{ flex: 1 }} />
-      {/* `/` — 빈 줄에서 `/`를 치는 것과 같은 자리를 **버튼으로도** 연다. 그 규칙을
-          아는 사람만 쓸 수 있는 기능이 되지 않게(디자인 원본도 이 단추를 둔다).
-          디자인은 글리프가 아니라 **키캡**처럼 생긴 작은 면이다. */}
-      <button
-        type="button"
-        data-note-slash-btn
-        disabled={inCell}
-        data-tip={inCell ? '블록 넣기 — 표의 칸에는 넣을 수 없어요' : '블록 넣기 (/)'}
-        aria-label="블록 넣기"
-        className="btn mf-note-tb"
-        onMouseDown={stop}
-        onClick={(e) => {
-          const id = curBlockId();
-          // 기준은 **이 단추**다(요청) — 눌러서 연 목록이 화면 저 아래에 뜨면 어디서
-          // 나온 것인지 알 수 없다.
-          if (id) openSlash(id, e.currentTarget);
-        }}
-        style={{ ...TOOL_BTN, ...(inCell ? DISABLED_TOOL : {}) }}
-      >
-        {/* 키캡 — **정사각**이다(제보: 면이 너무 좁다). 좌우 여백만 주면 `/` 한 글자
-            폭에 맞춰 납작해져 옆의 30×30 단추들과 다른 리듬으로 보인다. */}
-        <span aria-hidden="true" style={{ width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, background: 'var(--mf-panel2)', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 700, color: 'var(--mf-subtext)', lineHeight: 1 }}>/</span>
-      </button>
+      {/* 한동안 여기 `/` 키캡 단추가 있었다 — **걷었다**(요청). 본문에서 `/`를 치는
+          길이 이미 있고, 단추로 여는 쪽은 기준(어느 줄에 넣을지)을 `curBlockId()`의
+          폴백에 기대야 해서 초점이 없을 때 엉뚱한 줄에 넣는 곁가지를 만들었다. */}
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
       {/* **본문 폭**(요청) — `가운데 정렬`(700px)과 `창 너비에 맞춤` 둘을 오간다.
           표가 넓거나 화면이 큰 사람에게는 700px 단이 답답하고, 글만 읽는 사람에게는
@@ -4456,7 +4513,7 @@ function BlockTypeMenu({ controller, rememberBox, boxRef, lineKey, disabled }: {
               </svg>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
               {/* 오른쪽 끝의 **키 힌트** — 고정폭이라 여러 줄이 세로로 맞는다(디자인). */}
-              <span style={POP_KEY}>{t.hint}</span>
+              <span style={POP_KEY}>{keyLabel(t.hint)}</span>
             </button>
             </Fragment>
           ))}
@@ -4695,6 +4752,21 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
 
   /** 코드 블록에서만 Enter가 줄바꿈이다 — 나머지는 새 블록(위 `enterBlock`). */
   const enterOrBreak = (at: number): boolean => (block.kind === 'code' ? softBreak(at) : enterBlock(at));
+
+  /**
+   * **코드 블록에서 나가는 길**(요청 9) — Shift+Enter면 판을 벗어나 아래 줄로.
+   *
+   * 코드 블록은 Enter가 블록 안의 줄바꿈이라(요청 60-①) **나갈 길이 ⌫뿐**이었다:
+   * 맨 앞까지 지워 문단으로 되돌리거나 아래 줄을 만들어 놓고 시작하는 수밖에 없었다.
+   * 다른 블록의 Shift+Enter가 "이 줄 안에서 한 칸"이라면, 코드에서는 그 반대가 비어
+   * 있으므로 그 키를 **나가는 문**으로 쓴다.
+   */
+  const softEnter = (at: number): boolean => {
+    if (block.kind !== 'code') return softBreak(at);
+    if (readOnly) return false;
+    setFreshId(controller.addNoteBlock('p', block.id));
+    return true;
+  };
 
   /** 맨 앞 백스페이스 — 빈 블록이면 지우고, 글이 있으면 문단으로 되돌린다. */
   /**
@@ -4991,7 +5063,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
     return (
       <div data-note-block={block.id} data-note-kind={block.kind} style={{ ...blockFlow(block), display: 'flex', flexDirection: 'column', gap: 8 }}>
         {items.map((item, j) => (
-          <div key={item.id} data-note-item-depth={item.indent ? String(item.indent) : undefined} data-note-mark={mdMark(j)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingLeft: (item.indent ?? 0) * 22 }}>
+          <div key={item.id} data-note-item={`${block.id}:${j}`} data-note-item-depth={item.indent ? String(item.indent) : undefined} data-note-mark={mdMark(j)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingLeft: (item.indent ?? 0) * 22 }}>
             {block.kind === 'ck' ? (
               <button
                 type="button"
@@ -5208,7 +5280,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
         controller.setNoteBlockRuns(block.id, runs);
       }}
       onEnter={enterOrBreak}
-      onSoftEnter={softBreak}
+      onSoftEnter={softEnter}
       codeBox={block.kind === 'code'}
       onBackspaceAtStart={backBlock}
       onArrowOut={moveNoteCaret}
@@ -7252,7 +7324,8 @@ function CtxItem({
       {swatch && <span aria-hidden="true" style={{ width: 13, height: 13, flex: '0 0 auto', borderRadius: 4, background: swatch, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.07)', display: 'block' }} />}
       {name}
       <span style={{ flex: 1 }} />
-      {hint && <span style={POP_KEY}>{hint}</span>}
+      {/* 단축키는 **그리는 자리에서** 그 기기의 표기로 바꾼다(요청 8 — `keyLabel`). */}
+      {hint && <span style={POP_KEY}>{keyLabel(hint)}</span>}
       {wing && (
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
           <path d="m9 6 6 6-6 6" />
@@ -7437,7 +7510,7 @@ function ImageBlock({ controller, block, picked, pickObject }: { controller: Edi
    */
   const dragRef = useRef<{ x: number; y: number; on: boolean } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [dropAt, setDropAt] = useState<{ index: number; y: number; left: number; width: number } | null>(null);
+  const [dropAt, setDropAt] = useState<DropSpot | null>(null);
   const onImgDown = (e: ReactPointerEvent<HTMLImageElement>): void => {
     if (e.button > 0) return;
     // 이 누름은 본문의 드래그 선택이 아니다 — 루트까지 올려 보내지 않는다.
@@ -7467,6 +7540,11 @@ function ImageBlock({ controller, block, picked, pickObject }: { controller: Edi
       if (!d?.on) return;
       const spot = blockDropSpot(ev.clientY);
       if (!spot) return;
+      // 목록 **안의** 틈이면 그 목록을 둘로 가르고 사이에 끼운다(한 커밋).
+      if (spot.list && spot.list.id && spot.list.id !== block.id) {
+        controller.moveNoteBlockIntoList(block.id, spot.list.id, spot.list.at);
+        return;
+      }
       const ids = (controller.notePage?.blocks ?? []).map((b) => b.id);
       const from = ids.indexOf(block.id);
       // 틈 번호는 **자기 자신이 아직 목록에 있는** 상태의 값이다 — 뺀 뒤의 자리로 옮긴다.
@@ -7647,7 +7725,7 @@ function ImageBlock({ controller, block, picked, pickObject }: { controller: Edi
  * 돌려주는 `index`는 **지금 목록 기준의 틈 번호**다(0 = 맨 위, n = 맨 아래).
  * 옮기는 쪽에서 자기 자신을 뺀 자리로 고쳐 쓴다.
  */
-function blockDropSpot(y: number): { index: number; y: number; left: number; width: number } | null {
+function blockDropSpot(y: number): DropSpot | null {
   if (typeof document === 'undefined') return null;
   const wraps = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-blockwrap]')];
   if (!wraps.length) return null;
@@ -7659,8 +7737,40 @@ function blockDropSpot(y: number): { index: number; y: number; left: number; wid
       break;
     }
   }
+  /**
+   * **목록의 항목 사이도 떨어질 자리다**(요청) — 목록은 블록 하나라 그 안에 다른
+   * 블록이 들어갈 자리가 없지만, 사람이 보는 것은 「1. 11」과 「2. 22」 **사이의 줄**이다.
+   * 그 틈을 가리켰으면 블록 틈 대신 그쪽을 돌려준다(놓을 때 목록을 둘로 가른다).
+   */
+  const inside = index > 0 ? wraps[index - 1] : null;
+  const items = inside ? [...inside.querySelectorAll<HTMLElement>('[data-note-item]')] : [];
+  if (inside && items.length > 1) {
+    const box = inside.getBoundingClientRect();
+    // 그 블록의 **안쪽**을 가리키고 있을 때만(경계는 블록 틈이 맡는다).
+    if (y > box.top && y < box.bottom) {
+      for (let k = 1; k < items.length; k += 1) {
+        const r = items[k]!.getBoundingClientRect();
+        if (y < r.top + r.height / 2) {
+          const key = items[k]!.getAttribute('data-note-item') ?? '';
+          const [listId] = key.split(':');
+          return { index, list: { id: listId ?? '', at: k }, y: r.top - 4, left: box.left, width: box.width };
+        }
+      }
+    }
+  }
   const ref = (index >= wraps.length ? wraps[wraps.length - 1] : wraps[index])!.getBoundingClientRect();
   return { index, y: index >= wraps.length ? ref.bottom : ref.top, left: ref.left, width: ref.width };
+}
+
+/** 끌고 있는 것이 떨어질 자리 — 블록 틈, 또는 **목록 항목 사이**. */
+interface DropSpot {
+  /** 블록 목록 기준의 틈 번호(0 = 맨 위, n = 맨 아래). */
+  index: number;
+  /** 목록 **안의** 틈이면 그 목록과 항목 번호 — 놓을 때 그 자리에서 가른다. */
+  list?: { id: string; at: number };
+  y: number;
+  left: number;
+  width: number;
 }
 
 /**
@@ -7691,7 +7801,9 @@ function ImagePicked({ controller, block, onZoom }: { controller: EditorControll
       data-note-image-pop
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={(e) => e.stopPropagation()}
-      style={{ position: 'absolute', left: 0, top: 'calc(100% + 7px)', zIndex: 30, display: 'inline-flex', alignItems: 'center', gap: 2, padding: 4, borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', boxShadow: '0 14px 30px -18px rgba(46,42,38,.5)', whiteSpace: 'nowrap' }}
+      // 판은 그림 **가운데**에 선다(요청 7) — 왼쪽 끝에 붙으면 가운데·오른쪽 정렬한
+      // 그림에서 판만 딴 데 가 있는 것처럼 보인다.
+      style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 'calc(100% + 7px)', zIndex: 30, display: 'inline-flex', alignItems: 'center', gap: 2, padding: 4, borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', boxShadow: '0 14px 30px -18px rgba(46,42,38,.5)', whiteSpace: 'nowrap' }}
     >
       <button type="button" data-note-image-big className="btn mf-note-tb" onClick={onZoom} style={btn}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -8312,7 +8424,7 @@ function LinkPopup({
               </svg>
             </span>
             <span style={{ flex: 1, minWidth: 0, fontWeight: 700 }}>{copied ? '복사했어요' : '주소 복사'}</span>
-            <span style={POP_KEY}>⌘⇧C</span>
+            <span style={POP_KEY}>{keyLabel('⌘⇧C')}</span>
           </button>
           {!readOnly && (
             <button type="button" data-note-linkpop-edit className="btn mf-note-item" onClick={() => setEditing(true)} style={row}>
@@ -8322,7 +8434,7 @@ function LinkPopup({
                 </svg>
               </span>
               <span style={{ flex: 1, minWidth: 0, fontWeight: 700 }}>주소 바꾸기</span>
-              <span style={POP_KEY}>⌘K</span>
+              <span style={POP_KEY}>{keyLabel('⌘K')}</span>
             </button>
           )}
           {!readOnly && (
@@ -8366,14 +8478,14 @@ function SlashMenu({
   query: string;
   /** 본문에서 `/`로 열렸는가 — 그때는 키보드가 본문에 있으므로 우리가 가로챈다. */
   inline: boolean;
-  onPick: (kind: NoteBlockKind) => void;
+  onPick: (kind: SlashKind) => void;
   onClose: () => void;
 }) {
   // 바깥을 누르면 닫힌다(제보) — 목록 안의 누름은 뿌리에서 막는다. **스크롤로는 닫지
   // 않는다**(제보: 본문을 굴리며 고르는 자리다 — 자리는 호출부가 다시 재 준다).
   useAnchored(true, onClose, { closeOnScroll: false });
   const q = query.trim().toLowerCase();
-  const hits = BLOCK_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
+  const hits = SLASH_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
   const groups = q ? [{ name: '', items: hits }] : ['기본', '목록', '강조', '넣기'].map((name) => ({ name, items: hits.filter((t) => t.group === name) }));
   const [cursor, setCursor] = useState(0);
@@ -8575,7 +8687,7 @@ function SlashMenu({
  */
 function pageAccent(controller: EditorController): string {
   const tag = controller.notePage?.tag?.trim();
-  return tag ? noteTagColor(tag, controller.doc.tagColors) : noteCoverColor(controller.doc.cover);
+  return tag ? noteTagInk(tag, controller.doc.tagColors) : noteCoverColor(controller.doc.cover);
 }
 
 /** 종류별 글자 모양 — 제목 셋이 크기·굵기로 갈리고 코드는 고정폭이다. */
@@ -9049,6 +9161,24 @@ function caretToLine(key: string, at: number | 'end' = 'end'): void {
   };
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
   else setTimeout(go, 0);
+}
+
+/**
+ * 그 줄이 **목록의 가운데 항목**인가 — 맞으면 「그 항목 **다음** 틈」을 돌려준다.
+ *
+ * 마지막 항목이면 `null`이다: 그때는 목록 **뒤**에 붙이는 예전 길이 곧 그 자리라
+ * 가를 이유가 없다(가르면 빈 꼬리 목록이 생긴다).
+ */
+function listGapOf(page: NotePage | null | undefined, key: string | null): { id: string; at: number } | null {
+  if (!page || !key) return null;
+  const [blockId, rest] = key.split(':');
+  if (!blockId || !rest) return null;
+  const block = page.blocks.find((b) => b.id === blockId);
+  const items = block?.items;
+  if (!items || noteBlockShape(block!.kind) !== 'items') return null;
+  const i = items.findIndex((it) => it.id === rest);
+  if (i < 0 || i + 1 >= items.length) return null;
+  return { id: blockId, at: i + 1 };
 }
 
 /** 편집 박스 키에서 블록 id만. */

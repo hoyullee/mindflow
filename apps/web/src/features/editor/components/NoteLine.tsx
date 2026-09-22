@@ -18,8 +18,8 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, disarmCaretMark, fireCaretMark } from '../noteRichDom';
-import { charOffset, lineLength, lineText, pointAt } from '../noteTextSelect';
+import { NOTE_EDIT_ATTR, armedCaretAt, armedCaretMark, disarmCaretMark, fireCaretMark } from '../noteRichDom';
+import { charOffset, lineLength, lineText, paintCode, pointAt, rangeOfChars } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
@@ -206,6 +206,25 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     } else {
       el.innerHTML = runsToHtml(value);
     }
+  };
+
+  /**
+   * **조합 중인 첫 글자도 코드로 보이게**(제보 5).
+   *
+   * 켜 둔 인라인 코드는 글자가 들어온 **뒤**에야 값에 걸린다(`armCaretMark` 머리말 —
+   * 폭 0인 빈 `<code>` 안에는 캐럿이 서지 못한다). 한글은 그 "뒤"가 음절을 **확정한**
+   * 다음이라, 조합하는 동안 글자가 평문으로 남아 브라우저의 조합 표시만 보였다 —
+   * 제보의 "텍스트를 선택한 듯한 배경"이 그것이다.
+   *
+   * 조합 중에는 `innerHTML`을 갈 수 없으므로(자모가 갈린다) **칠하기로 흉내만** 낸다.
+   * 확정되는 순간 진짜 `<code>`가 그 자리를 이어받고 칠은 걷힌다.
+   */
+  const paintArmedCode = (): void => {
+    const el = ref.current;
+    if (!el || armedCaretMark(el) !== 'k') return;
+    const at = armedCaretAt(el);
+    const now = at === null ? -1 : charOffset(el, window.getSelection()?.focusNode ?? el, window.getSelection()?.focusOffset ?? 0);
+    paintCode(at !== null && now > at ? rangeOfChars(el, at, now) : null);
   };
 
   /**
@@ -486,6 +505,8 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       data-placeholder={placeholder ?? ''}
       onInput={() => {
         dirty.current = true;
+        // 조합 중인 코드 조각은 **칠하기로** 흉내 낸다(아래 `paintArmedCode`).
+        if (composing.current) paintArmedCode();
         commit();
       }}
       // 고친 적이 없으면 읽지 않는다(`dirty` 머리말) — 커서만 지나가도 저장되던 자리.
@@ -493,6 +514,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         // 줄을 떠나면 켜 두었던 서식도 잊는다 — 그 자리는 이 줄의 좌표였다.
         const el = ref.current;
         if (el) disarmCaretMark(el);
+        paintCode(null);
         if (dirty.current) commit(true);
       }}
       onCompositionStart={() => {
@@ -501,6 +523,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       onCompositionEnd={() => {
         composing.current = false;
         dirty.current = true;
+        paintCode(null);
         commit();
       }}
       onKeyUp={() => {
