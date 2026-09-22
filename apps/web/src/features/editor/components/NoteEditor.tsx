@@ -412,6 +412,15 @@ export function NoteEditor({ controller }: Props) {
    * 첫 줄은 중간부터·마지막 줄은 중간까지 칠해져 메모장·업노트의 그 선택으로 보인다.
    */
   const [textSel, setTextSel] = useState<LineSel[] | null>(null);
+  /**
+   * **오브젝트로 고른 블록들**(요청 6) — 이미지·구분선·표·코드처럼 글자 구간으로는
+   * 고를 수 없는 것들.
+   *
+   * 글 선택(`textSel`)과 **따로 든다**: 그쪽은 "어느 줄의 몇 번째 글자부터"라는 구간
+   * 목록이라 글자가 없는 블록을 담을 칸이 없다. 둘이 동시에 서지는 않는다 — 하나를
+   * 세우면 다른 하나를 비운다(같은 ⌫가 무엇을 지울지 갈리지 않게).
+   */
+  const [objSel, setObjSel] = useState<string[]>([]);
   /** 드래그가 시작된 자리 — 편집 박스와 그 안의 캐럿 지점. */
   const dragFrom = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
   const colRef = useRef<HTMLDivElement | null>(null);
@@ -689,6 +698,13 @@ export function NoteEditor({ controller }: Props) {
       const sel = typeof window === 'undefined' ? null : window.getSelection();
       const nodeEl = (node: Node | null | undefined): HTMLElement | null =>
         node?.nodeType === 1 ? (node as HTMLElement) : (node?.parentElement ?? null);
+      /**
+       * **판 안에 초점이 있으면 손대지 않는다** — 「주소 바꾸기」의 입력칸으로 초점이
+       * 가는 순간 본문의 선택이 사라지고, 그러면 아래 판정이 "링크가 아니다"로 읽어
+       * 판을 닫는다(입력칸이 뜨자마자 사라진다 — jsdom에서 먼저 잡혔다).
+       */
+      const live = document.activeElement as HTMLElement | null;
+      if (live?.closest?.('[data-note-linkpop]')) return;
       const line = sel && sel.rangeCount > 0 ? ((nodeEl(sel.focusNode)?.closest?.('[data-note-line]') as HTMLElement | null) ?? null) : null;
       if (!sel || !line || !col?.contains(line) || !nodeEl(sel.anchorNode)?.closest?.('[data-note-line]')) {
         setLinkAt((cur) => (cur === null ? cur : null));
@@ -754,8 +770,130 @@ export function NoteEditor({ controller }: Props) {
     return () => paintSlash(null);
   }, [slashFor, slashSpan, page]);
 
-  /** 고른 줄들의 블록 id — 칠하기가 안 되는 브라우저에서 면으로 물러설 때 쓴다. */
-  const selectedIds = useMemo(() => (textSel ?? []).map((l) => blockIdOf(l.key)), [textSel]);
+  /**
+   * 고른 블록 id들 — 면(그리고 테두리)을 그릴 자리.
+   *
+   * 글 선택이 여러 줄에 걸쳐 있으면 **그 사이에 낀 블록도 함께** 든다(요청 6: 페이지의
+   * 모든 항목이 고를 수 있는 오브젝트다). 예전에는 글자가 있는 줄만 세어서, 문단 →
+   * 이미지 → 문단을 훑어도 가운데 그림은 고른 티가 나지 않았고 ⌫에도 살아남았다.
+   */
+  const selectedIds = useMemo(() => {
+    if (objSel.length) return objSel;
+    const keys = (textSel ?? []).map((l) => blockIdOf(l.key));
+    if (keys.length < 2) return keys;
+    const all = (page?.blocks ?? []).map((b) => b.id);
+    const lo = Math.min(...keys.map((id) => all.indexOf(id)).filter((i) => i >= 0));
+    const hi = Math.max(...keys.map((id) => all.indexOf(id)).filter((i) => i >= 0));
+    return lo <= hi ? all.slice(lo, hi + 1) : keys;
+  }, [textSel, objSel, page]);
+
+  /**
+   * **블록 하나를 오브젝트로 고른다**(요청 1·6) — 이미지·구분선·표처럼 글자 구간이
+   * 없는 것들, 그리고 코드 블록처럼 통째로 다루고 싶은 것들.
+   *
+   * `extend`면 지금 고른 것에서 **누른 블록까지** 잇는다(Shift+클릭) — 문서 순서로
+   * 사이의 블록이 전부 든다.
+   */
+  const pickObject = useCallback(
+    (id: string, extend = false): void => {
+      const all = (controller.notePage?.blocks ?? []).map((b) => b.id);
+      setTextSel(null);
+      clearSelectionPaint();
+      window.getSelection()?.removeAllRanges();
+      const live = document.activeElement as HTMLElement | null;
+      if (live?.hasAttribute?.('data-note-line')) live.blur();
+      setObjSel((cur) => {
+        if (!extend || !cur.length) return [id];
+        const idx = [...cur.map((x) => all.indexOf(x)), all.indexOf(id)].filter((i) => i >= 0);
+        if (!idx.length) return [id];
+        return all.slice(Math.min(...idx), Math.max(...idx) + 1);
+      });
+    },
+    [controller.notePage],
+  );
+
+  /**
+   * **고른 오브젝트를 키로 다룬다** — ⌫·Enter·Esc·방향키.
+   *
+   * 초점이 어느 편집 박스에도 없는 상태라(고를 때 거둔다) 문서에서 받는다. 글 선택
+   * (`textSel`)의 같은 손과 부딪히지 않는 이유는 둘이 **동시에 서지 않기** 때문이다.
+   */
+  useEffect(() => {
+    if (!objSel.length) return;
+    const blocks = controller.notePage?.blocks ?? [];
+    const onKey = (e: KeyboardEvent) => {
+      /**
+       * **이미 처리된 키는 건드리지 않는다**(실브라우저에서 잡은 자리).
+       *
+       * 방향키로 그림 위에 서는 순간 이 효과가 붙는데, 그 키의 **네이티브 이벤트는
+       * 아직 document로 올라오는 중**이다(리액트의 손은 루트 컨테이너에 있다). 그래서
+       * 방금 붙은 이 손이 같은 ArrowDown을 한 번 더 받아, 서자마자 다음 줄로
+       * 지나가 버렸다(실측: ↓ 한 번에 그림을 건너뛰고 `b`에 섬).
+       */
+      if (e.defaultPrevented) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setObjSel([]);
+        return;
+      }
+      if ((e.key === 'c' || e.key === 'C') && (e.metaKey || e.ctrlKey)) {
+        const lines = blocks.filter((b) => objSel.includes(b.id)).flatMap((b) => blockClipLines(b));
+        const text = lines.map((l) => l.text).join('\n');
+        e.preventDefault();
+        writeClipboard(linesClipboard(text, lines));
+        return;
+      }
+      if (readOnly) return;
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        // 지운 **바로 앞 줄**에 캐럿을 놓는다 — 없으면 뒤의 줄, 그것도 없으면 새 문단.
+        const first = blocks.findIndex((b) => objSel.includes(b.id));
+        const before = first > 0 ? blocks[first - 1] : null;
+        const after = blocks.slice(first).find((b) => !objSel.includes(b.id)) ?? null;
+        objSel.forEach((id) => controller.removeNoteBlock(id));
+        setObjSel([]);
+        const land = before ?? after;
+        if (land && holdsText(land.kind)) caretIntoBlock(land.id, before ? 'end' : 0);
+        else {
+          const made = controller.addNoteBlock('p', before?.id);
+          if (made) caretIntoBlock(made, 0);
+        }
+        return;
+      }
+      if (e.key === 'Enter') {
+        /**
+         * 고른 것 **아래**에 빈 문단 하나 — 그림 뒤에서 이어 쓰는 가장 흔한 동작이다.
+         * Shift+Enter면 **위**다(요청 2: 그림 앞에도 줄을 만들 수 있어야 한다 —
+         * 그림이 문서의 첫 블록이면 그 위에는 달리 갈 길이 없다).
+         */
+        e.preventDefault();
+        const i = blocks.findIndex((b) => objSel.includes(b.id));
+        const last = [...blocks].reverse().find((b) => objSel.includes(b.id));
+        const before = e.shiftKey;
+        // `addNoteBlock(kind, after)`는 `after`가 없으면 **맨 끝**에 붙인다 — 맨 위에
+        // 세워야 할 때는 만든 뒤 0번으로 옮긴다(그 한 걸음을 위한 API는 없다).
+        const at = before ? (i > 0 ? blocks[i - 1]?.id : undefined) : last?.id;
+        const made = controller.addNoteBlock('p', at);
+        if (made && before && i === 0) controller.moveNoteBlock(made, 0);
+        setObjSel([]);
+        if (made) caretIntoBlock(made, 0);
+        return;
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        const up = e.key === 'ArrowUp';
+        const edge = up ? blocks.findIndex((b) => objSel.includes(b.id)) : blocks.map((b) => objSel.includes(b.id)).lastIndexOf(true);
+        const near = up ? [...blocks.slice(0, edge)].reverse() : blocks.slice(edge + 1);
+        const land = near.find((b) => holdsText(b.kind) && noteBlockShape(b.kind) !== 'table');
+        e.preventDefault();
+        setObjSel([]);
+        if (land) caretIntoBlock(land.id, up ? 'end' : 0);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [objSel, controller, readOnly]);
 
   /**
    * **칠해 둔 여러 줄에 서식을 건다**(제보 3) — 걸었으면 `true`.
@@ -913,6 +1051,70 @@ export function NoteEditor({ controller }: Props) {
       /* 캐럿을 못 놓아도 그림은 남는다 */
     }
   }, []);
+
+  /**
+   * **Shift+클릭으로 여러 줄을 고른다**(요청 5).
+   *
+   * 예전에는 그 누름이 평범한 누름이라 **새 앵커**를 세웠다 — 1번 줄에 커서를 두고
+   * 3번 줄 끝을 Shift+클릭해도 브라우저가 그 줄 안에서만 늘려 1번 줄만 골라진 것처럼
+   * 보였다(편집 박스가 줄마다 따로라 브라우저의 선택은 그 상자를 넘지 못한다 —
+   * 이 화면이 `CSS.highlights`로 직접 칠하는 바로 그 이유다).
+   *
+   * 앵커는 셋 중에서 고른다: 이미 잡아 둔 앵커 → 칠해 둔 선택의 시작 → 지금 캐럿.
+   * 고른 결과가 **한 줄 안**이면 우리 칠을 걷고 브라우저에 맡긴다(그 안에서는 그쪽이
+   * 낫다 — Shift+위/아래가 이미 쓰는 규칙).
+   */
+  const shiftExtend = useCallback(
+    (x: number, y: number): boolean => {
+      const col = colRef.current;
+      if (!col) return false;
+      let anchor = selAnchor.current;
+      if (!anchor || !col.contains(anchor.el)) {
+        const painted = textSel?.[0];
+        const sel = window.getSelection();
+        const live = document.activeElement as HTMLElement | null;
+        if (painted) {
+          const spot = pointAt(painted.el, painted.from);
+          anchor = { el: painted.el, node: spot.node, offset: spot.offset };
+        } else if (live?.hasAttribute?.('data-note-line') && sel?.anchorNode && live.contains(sel.anchorNode)) {
+          anchor = { el: live, node: sel.anchorNode, offset: sel.anchorOffset };
+        } else {
+          anchor = null;
+        }
+      }
+      if (!anchor || !col.contains(anchor.el)) return false;
+      let under: HTMLElement | null = null;
+      try {
+        under = document.elementFromPoint(x, y) as HTMLElement | null;
+      } catch {
+        under = null; // 좌표 조회가 없는 환경(jsdom)
+      }
+      const overLine = under?.closest?.('[data-note-line]') as HTMLElement | null;
+      const near = overLine ? null : lineNear(col, x, y);
+      const line = overLine ?? near?.el ?? null;
+      if (!line) return false;
+      const at = overLine ? caretInLine(line, x, y) : { node: near!.node, offset: near!.offset };
+      const focus = { el: line, node: at.node, offset: at.offset };
+      selAnchor.current = anchor;
+      selFocus.current = focus;
+      setObjSel([]);
+      const built = buildSelection(col, anchor, focus);
+      if (!built) {
+        // 같은 줄 안으로 돌아왔다 — 그 안에서는 브라우저의 선택이 더 낫다.
+        setTextSel(null);
+        try {
+          anchor.el.focus({ preventScroll: true });
+          window.getSelection()?.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
+        } catch {
+          /* 선택을 못 세워도 포커스는 갔다 */
+        }
+        return true;
+      }
+      paintAndHold(built);
+      return true;
+    },
+    [textSel, paintAndHold],
+  );
 
   /**
    * 선택을 **한 줄 더** 늘린다(또는 줄인다) — Shift+위/아래.
@@ -1545,7 +1747,14 @@ export function NoteEditor({ controller }: Props) {
             // 오른쪽·가운데 버튼만 걷어 낸다(`> 0`) — 포인터 이벤트가 없는 환경에서는
             // `button`이 실려 오지 않아 `!== 0`으로 막으면 드래그가 통째로 죽는다.
             if (e.button > 0) return;
+            // **Shift+누름은 넓히는 일이다**(요청 5) — 새 앵커를 세우지 않는다.
+            if (e.shiftKey && shiftExtend(e.clientX, e.clientY)) {
+              e.preventDefault();
+              dragFrom.current = null;
+              return;
+            }
             setTextSel(null);
+            setObjSel([]);
             const col = colRef.current;
             const target = (e.target as HTMLElement | null) ?? null;
             const line = target?.closest?.('[data-note-line]') as HTMLElement | null;
@@ -1698,24 +1907,31 @@ export function NoteEditor({ controller }: Props) {
                 아래는 그 내용이다. 블록 간격(19px)만으로는 그 경계가 서지 않는다. */}
             {/* 간격은 **18px**이다(요청) — 단의 기본 틈이 9px이라 9를 더해 맞춘다. */}
             <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', marginTop: 9 }} />
-            {page.blocks.map((block, i) => (
+            {page.blocks.map((block, i) => {
+              const picked = selectedIds.includes(block.id);
+              /**
+               * 이 블록의 **글자**가 칠해져 있는가 — 그렇다면 면을 얹지 않는다
+               * (`CSS.highlights`가 글자에 직접 칠하므로 두 겹이 된다).
+               *
+               * 글자가 없는 블록(이미지·구분선·표)은 칠할 자리가 아예 없으므로
+               * **언제나 테두리로** 고른 티를 낸다(요청 6).
+               */
+              const inText = (textSel ?? []).some((l) => blockIdOf(l.key) === block.id);
+              const ring = picked && (!inText || !supportsHighlight());
+              return (
               // 선택 면은 **감싸는 칸**이 그린다 — 블록마다 뿌리가 달라서(표·이미지·
               // 콜아웃…) 각 뿌리에 면을 얹으면 같은 코드를 여덟 번 쓰게 된다. 이 칸은
               // 여백이 없어 평소 레이아웃에는 아무 영향이 없다.
               <div
                 key={block.id}
                 data-note-blockwrap={block.id}
-                data-selected={selectedIds.includes(block.id) ? '1' : undefined}
+                data-selected={picked ? '1' : undefined}
                 style={{
                   minWidth: 0,
                   borderRadius: 7,
                   // 제목 위에 숨을 더 둔다 — 간격을 9px로 좁히면서 구획이 뭉치지 않게.
                   marginTop: i > 0 && (block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3') ? 9 : 0,
-                  // 면은 **칠하기를 모르는 브라우저**에서만 — 아는 브라우저에서는 글자에
-                  // 직접 칠하므로(`CSS.highlights`) 면까지 깔면 두 겹이 된다.
-                  ...(!supportsHighlight() && selectedIds.includes(block.id)
-                    ? { background: 'var(--mf-accent-soft)', boxShadow: '0 0 0 3px var(--mf-accent-soft)' }
-                    : {}),
+                  ...(ring ? { background: 'var(--mf-accent-soft)', boxShadow: '0 0 0 3px var(--mf-accent-soft)' } : {}),
                 }}
               >
                 <BlockView
@@ -1733,9 +1949,12 @@ export function NoteEditor({ controller }: Props) {
                   rememberBox={rememberBox}
                   focusBox={focusBox}
                   openSlash={(id, at, tail) => openSlashAt(id, at, tail)}
+                  pickObject={pickObject}
+                  picked={picked}
                 />
               </div>
-            ))}
+              );
+            })}
             {ctxAt && !readOnly && <BlockMenu controller={controller} at={ctxAt} formatSelection={formatSelection} onClose={() => setCtxAt(null)} />}
             {linkPick && !readOnly && (
               <DocPickPopup
@@ -1748,58 +1967,21 @@ export function NoteEditor({ controller }: Props) {
                 }}
               />
             )}
-            {/* 링크 판(요청 3) — 주소 · 이동 · 삭제. 보기 전용에서는 이동만 준다. */}
+            {/* 링크 판 — 시안 3판(머리 + 주소 복사 · 주소 바꾸기 · 링크 삭제). */}
             {linkAt && (
-              <div
-                data-note-linkpop
-                // 누르는 순간 **선택을 잃지 않게** 막는다 — 잃으면 이 판이 먼저 닫혀
-                // 클릭이 도착하지 못한다(툴바의 다른 판들과 같은 처방).
-                onMouseDown={(e) => e.preventDefault()}
-                onPointerDown={(e) => e.stopPropagation()}
-                style={{ ...POP, ...anchoredStyle(linkAt.rect, 268, { maxHeight: 120 }), maxHeight: undefined, overflowY: undefined, padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}
-              >
-                <button
-                  type="button"
-                  data-note-linkpop-open
-                  className="btn mf-note-item"
-                  onClick={() => {
-                    window.open(linkAt.href, '_blank', 'noopener,noreferrer');
-                    setLinkAt(null);
-                  }}
-                  title={linkAt.href}
-                  style={{ ...MENU_ITEM, height: 30 }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
-                    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
-                    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
-                  </svg>
-                  {/* 주소는 **읽히는 꼴로** 줄인다(툴팁과 같은 함수) — 자리가 한 줄이다. */}
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--mf-link, var(--mf-accent-deep))' }}>{displayUrl(linkAt.href, 40)}</span>
-                  <span style={{ ...POP_KEY, flex: '0 0 auto' }}>이동</span>
-                </button>
-                {!readOnly && (
-                  <button
-                    type="button"
-                    data-note-linkpop-remove
-                    className="btn mf-note-item"
-                    onClick={() => {
-                      const el = document.querySelector<HTMLElement>(`[data-note-line="${linkAt.key}"]`);
-                      if (el) {
-                        const runs = applyNoteFormatRange(el, linkAt.a, linkAt.b, 'link', null);
-                        if (runs) commitLine(controller, linkAt.key, runs);
-                      }
-                      setLinkAt(null);
-                    }}
-                    style={{ ...MENU_ITEM, height: 30 }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
-                      <path d="M10 13a5 5 0 0 0 7.5.5l1.5-1.5M14 11a5 5 0 0 0-7.5-.5L5 12" />
-                      <path d="m4 4 16 16" />
-                    </svg>
-                    링크 삭제
-                  </button>
-                )}
-              </div>
+              <LinkPopup
+                at={linkAt}
+                readOnly={readOnly}
+                onClose={() => setLinkAt(null)}
+                onApply={(url) => {
+                  const el = document.querySelector<HTMLElement>(`[data-note-line="${linkAt.key}"]`);
+                  if (el) {
+                    const runs = applyNoteFormatRange(el, linkAt.a, linkAt.b, 'link', url);
+                    if (runs) commitLine(controller, linkAt.key, runs);
+                  }
+                  setLinkAt(null);
+                }}
+              />
             )}
             {slashFor && !readOnly && (
               <SlashMenu
@@ -3339,26 +3521,54 @@ function TagPick({
           <span style={POP_HEAD}>태그</span>
           {options.map((t) => {
             const on = tag === t;
+            /**
+             * **지울 수 있는 태그인가**(요청 3) — 이 공책에서 **만든** 것만이다.
+             * 기본 여섯(`NOTE_TAGS`)은 코드에 박힌 목록이라 지워도 다음 렌더에
+             * 그대로 돌아온다 — 눌러도 아무 일이 없는 단추는 두지 않는다.
+             */
+            const erasable = !NOTE_TAGS.includes(t);
             return (
-              <button
-                key={t}
-                type="button"
-                data-note-tag-opt={t}
-                className="btn mf-note-item"
-                onClick={() => {
-                  controller.setNotePageTag(page.id, on ? null : t);
-                  setOpen(() => false);
-                }}
-                style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, ...(on ? { background: 'var(--mf-tag-on)' } : {}) }}
-              >
-                <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t, inks), display: 'block' }} />
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
-                {on && (
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="m5 13 4.5 4.5L19 7" />
-                  </svg>
+              // 줄은 **감싸는 칸**이 된다 — 단추 안에 단추를 넣을 수 없다(HTML).
+              <div key={t} className="mf-note-tagrow" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  data-note-tag-opt={t}
+                  className="btn mf-note-item"
+                  onClick={() => {
+                    controller.setNotePageTag(page.id, on ? null : t);
+                    setOpen(() => false);
+                  }}
+                  style={{ ...MENU_ITEM, height: 30, gap: 8, fontWeight: on ? 800 : 600, ...(on ? { background: 'var(--mf-tag-on)' } : {}), ...(erasable ? { paddingRight: 34 } : {}) }}
+                >
+                  <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 999, background: noteTagColor(t, inks), display: 'block' }} />
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
+                  {on && (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m5 13 4.5 4.5L19 7" />
+                    </svg>
+                  )}
+                </button>
+                {erasable && (
+                  // 마우스를 얹은 줄에만 보인다(`editor.css` — 읽는 줄에 조작을 얹지
+                  // 않는다는 이 화면의 규칙). 터치 기기에서는 늘 보인다.
+                  <button
+                    type="button"
+                    data-note-tag-del={t}
+                    className="btn mf-note-tagdel"
+                    data-tip="태그 지우기"
+                    aria-label={`${t} 태그 지우기`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      controller.removeNoteTag(t);
+                    }}
+                    style={{ position: 'absolute', right: 6, width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', color: 'var(--mf-faint)', cursor: 'pointer', padding: 0 }}
+                  >
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
           {/* `태그 없음` — **목록의 마지막 줄**이다(요청). 태그를 고르는 자리에서 "안
@@ -4281,6 +4491,10 @@ interface BlockProps {
   /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
    * 칸에서도 열린다(그 줄의 글로 좁혀져야 하므로 블록 id로는 모자란다). */
   openSlash: (lineKey: string, at?: number, tail?: string) => void;
+  /** 이 블록을 **오브젝트로 고른다**(요청 1·6) — `extend`면 지금 고른 것에서 잇는다. */
+  pickObject: (id: string, extend?: boolean) => void;
+  /** 지금 고른 것에 이 블록이 들어 있는가 — 그림·표가 제 손잡이를 켤 때 본다. */
+  picked: boolean;
 }
 
 /**
@@ -4396,7 +4610,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, pickObject, picked }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -4610,6 +4824,11 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
           aria-label="구분선 — 지우려면 선택한 뒤 Backspace"
           tabIndex={0}
           onKeyDown={onHrKey}
+          // 누르면 **오브젝트로 골라진다**(요청 6) — 초점만으로는 이웃과 함께 고를 수 없다.
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            pickObject(block.id, e.shiftKey);
+          }}
           style={{ padding: '8px 0', borderRadius: 6, outline: 'none', cursor: 'pointer' }}
         >
           <hr style={{ border: 'none', borderTop: '1px solid var(--mf-border)', margin: 0 }} />
@@ -4619,7 +4838,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   }
 
   if (shape === 'img') {
-    return <ImageBlock controller={controller} block={block} />;
+    return <ImageBlock controller={controller} block={block} picked={picked} pickObject={pickObject} />;
   }
 
   if (shape === 'link') {
@@ -5016,6 +5235,16 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       data-note-block={block.id}
       data-note-kind={block.kind}
       onMouseUp={rememberBox}
+      /**
+       * **판의 여백을 누르면 그 블록이 통째로 골라진다**(요청 6) — 코드 블록·인용처럼
+       * 면을 가진 것들. 글 위를 누른 것은 편집이므로 건드리지 않는다(`data-note-line`).
+       */
+      onPointerDown={(e) => {
+        if (block.kind !== 'code' && block.kind !== 'q') return;
+        if ((e.target as HTMLElement | null)?.closest?.('[data-note-line]')) return;
+        e.stopPropagation();
+        pickObject(block.id, e.shiftKey);
+      }}
       style={{
         ...blockFlow(block),
         ...(heading ? { display: 'flex', alignItems: 'center', gap: 9, ...(headGap ? { marginTop: headGap } : {}) } : {}),
@@ -7183,7 +7412,7 @@ function blockFlow(block: NoteBlock): CSSProperties {
  * `attachImageFile` → 저장소 업로드 → `mfimg:…`). 저장소가 없으면 데이터 URL로
  * 물러서고, 그때는 문서가 무거워지므로 `noteIfInlined`가 이미 경고를 켠다.
  */
-function ImageBlock({ controller, block }: { controller: EditorController; block: NoteBlock }) {
+function ImageBlock({ controller, block, picked, pickObject }: { controller: EditorController; block: NoteBlock; picked: boolean; pickObject: (id: string, extend?: boolean) => void }) {
   const readOnly = controller.readOnly;
   const url = block.src ? (controller.imageUrls[block.src] ?? (block.src.startsWith('data:') ? block.src : '')) : '';
   /** 끄는 동안의 너비 — 손을 떼기 전에는 문서에 적지 않는다(표의 열 너비와 같은 결). */
@@ -7197,6 +7426,57 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
    * 감싸는 칸을 `fit-content`로 두어 그림이 제 크기를 지키게 한다.
    */
   const width = live ?? block.imgW ?? null;
+
+  /**
+   * **그림을 끌어 다른 줄로 옮긴다**(요청 1).
+   *
+   * 누르는 순간 고르고, 6px 넘게 움직이면 그때부터 이동이다 — 그래야 "고르려고
+   * 눌렀다 손이 살짝 떨린" 경우에 문서가 바뀌지 않는다. 떨어질 자리는 블록 사이의
+   * 틈이고, 그 자리에 가는 선을 하나 그린다(무엇이 어디로 가는지 보이지 않으면
+   * 끌기는 도박이 된다).
+   */
+  const dragRef = useRef<{ x: number; y: number; on: boolean } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dropAt, setDropAt] = useState<{ index: number; y: number; left: number; width: number } | null>(null);
+  const onImgDown = (e: ReactPointerEvent<HTMLImageElement>): void => {
+    if (e.button > 0) return;
+    // 이 누름은 본문의 드래그 선택이 아니다 — 루트까지 올려 보내지 않는다.
+    e.stopPropagation();
+    e.preventDefault();
+    pickObject(block.id, e.shiftKey);
+    if (readOnly) return;
+    dragRef.current = { x: e.clientX, y: e.clientY, on: false };
+    const move = (ev: PointerEvent): void => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (!d.on && Math.abs(ev.clientY - d.y) + Math.abs(ev.clientX - d.x) < 6) return;
+      if (!d.on) {
+        d.on = true;
+        setDragging(true);
+      }
+      setDropAt(blockDropSpot(ev.clientY));
+    };
+    const up = (ev: PointerEvent): void => {
+      const d = dragRef.current;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      dragRef.current = null;
+      setDragging(false);
+      setDropAt(null);
+      if (!d?.on) return;
+      const spot = blockDropSpot(ev.clientY);
+      if (!spot) return;
+      const ids = (controller.notePage?.blocks ?? []).map((b) => b.id);
+      const from = ids.indexOf(block.id);
+      // 틈 번호는 **자기 자신이 아직 목록에 있는** 상태의 값이다 — 뺀 뒤의 자리로 옮긴다.
+      const to = spot.index > from ? spot.index - 1 : spot.index;
+      if (from >= 0 && to !== from) controller.moveNoteBlock(block.id, to);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
 
   /**
    * 오른쪽 아래 손잡이로 **폭을 끈다**(요청 1).
@@ -7239,18 +7519,56 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
   };
 
   return (
-    <div data-note-block={block.id} data-note-kind="img" style={{ padding: '8px 0' }}>
+    <div data-note-block={block.id} data-note-kind="img" style={{ ...blockFlow(block), padding: '8px 0' }}>
       {url ? (
-        <div ref={wrapRef} style={{ position: 'relative', display: 'block', width: width ? Math.round(width) : 'fit-content', maxWidth: '100%' }}>
+        <div
+          ref={wrapRef}
+          data-note-image-wrap
+          style={{
+            position: 'relative',
+            display: 'block',
+            width: width ? Math.round(width) : 'fit-content',
+            maxWidth: '100%',
+            /**
+             * **가운데·오른쪽 정렬**(요청 4) — 이 칸은 `fit-content`라 `text-align`으로는
+             * 움직이지 않는다(그 속성은 칸 **안의** 줄을 정렬한다). 블록 자신을 옮기는
+             * 것은 좌우 마진이다: `auto`를 어느 쪽에 주느냐가 곧 정렬이다.
+             */
+            ...(block.align === 'center' ? { marginLeft: 'auto', marginRight: 'auto' } : {}),
+            ...(block.align === 'right' ? { marginLeft: 'auto', marginRight: 0 } : {}),
+          }}
+        >
           <img
             src={url}
             alt=""
             data-note-image
-            /* 누르면 **원본 크기로 볼 수 있는 판**이 뜬다(요청 1). */
-            onClick={() => setZoom(true)}
-            title="눌러서 크게 보기"
-            style={{ display: 'block', width: width ? '100%' : 'auto', maxWidth: '100%', borderRadius: 10, border: '1px solid var(--mf-border-soft)', cursor: 'zoom-in' }}
+            /**
+             * **방향키가 그림 위에 설 수 있다**(요청 2) — 그림도 줄 하나로 센다.
+             *
+             * 캐럿이 그림 **앞뒤**에 서는 것이 요청의 말인데, 그림은 글자가 아니라
+             * 그 안에 캐럿이 설 자리가 없다. 대신 그림 자신이 한 걸음이 되면 같은
+             * 일을 할 수 있다: ↓로 그림에 서고(고른 상태) 다시 ↓면 다음 줄, 그 자리에서
+             * Enter를 치면 **그림 아래에 새 줄**이 선다(구분선이 이미 그 길이다).
+             */
+            data-note-obj={block.id}
+            tabIndex={0}
+            // 누름은 `preventDefault`로 초점을 막으므로 여기 오는 것은 **방향키·탭**뿐이다.
+            onFocus={() => pickObject(block.id)}
+            draggable={false}
+            /**
+             * **첫 누름은 고르는 일이다**(요청 1 — 되돌린 결정).
+             *
+             * 한동안은 누르면 곧바로 확대 판이 떴다. 그런데 그림도 문서의 한 오브젝트라
+             * 지우거나 옮기거나 정렬을 바꾸려면 **먼저 고를 수 있어야** 했고, 그 자리가
+             * 없어서 "누르면 무조건 확대"가 유일한 동작이 됐다. 이제 누르면 고르고,
+             * 크게 보기는 함께 뜨는 판의 단추가 맡는다.
+             */
+            onPointerDown={onImgDown}
+            title="눌러서 고르기 · 끌어서 옮기기"
+            style={{ display: 'block', width: width ? '100%' : 'auto', maxWidth: '100%', borderRadius: 10, border: `1px solid ${picked ? 'var(--mf-accent)' : 'var(--mf-border-soft)'}`, boxShadow: picked ? '0 0 0 3px var(--mf-accent-soft)' : undefined, cursor: dragging ? 'grabbing' : 'pointer', userSelect: 'none', WebkitUserSelect: 'none' }}
           />
+          {/* 고른 그림의 판(요청 1·4) — 크게 보기 · 정렬 셋 · 삭제. */}
+          {picked && !dragging && <ImagePicked controller={controller} block={block} onZoom={() => setZoom(true)} />}
           {!readOnly && (
             <div
               data-note-image-grip
@@ -7312,6 +7630,108 @@ function ImageBlock({ controller, block }: { controller: EditorController; block
         </button>
       )}
       {zoom && url && <ImageZoom url={url} onClose={() => setZoom(false)} />}
+      {dropAt && (
+        <div
+          data-note-drop
+          aria-hidden="true"
+          style={{ position: 'fixed', left: dropAt.left, top: dropAt.y - 1, width: dropAt.width, height: 2, borderRadius: 2, background: 'var(--mf-accent)', zIndex: 45, pointerEvents: 'none' }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 끌고 있는 것이 **어느 틈에** 떨어질까 — 블록 칸들의 가운데를 기준으로 가른다.
+ *
+ * 돌려주는 `index`는 **지금 목록 기준의 틈 번호**다(0 = 맨 위, n = 맨 아래).
+ * 옮기는 쪽에서 자기 자신을 뺀 자리로 고쳐 쓴다.
+ */
+function blockDropSpot(y: number): { index: number; y: number; left: number; width: number } | null {
+  if (typeof document === 'undefined') return null;
+  const wraps = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-blockwrap]')];
+  if (!wraps.length) return null;
+  let index = wraps.length;
+  for (let i = 0; i < wraps.length; i += 1) {
+    const r = wraps[i]!.getBoundingClientRect();
+    if (y < r.top + r.height / 2) {
+      index = i;
+      break;
+    }
+  }
+  const ref = (index >= wraps.length ? wraps[wraps.length - 1] : wraps[index])!.getBoundingClientRect();
+  return { index, y: index >= wraps.length ? ref.bottom : ref.top, left: ref.left, width: ref.width };
+}
+
+/**
+ * 고른 그림의 판 — **크게 보기 · 정렬 셋 · 삭제**(요청 1·4).
+ *
+ * 그림 **아래에** 붙인다(위에 두면 본문 위쪽 줄을 가린다). 누를 때 선택을 잃지 않게
+ * `mousedown`을 막는다 — 잃으면 판이 먼저 사라져 클릭이 도착하지 못한다.
+ */
+function ImagePicked({ controller, block, onZoom }: { controller: EditorController; block: NoteBlock; onZoom: () => void }) {
+  const readOnly = controller.readOnly;
+  const btn: CSSProperties = {
+    height: 26,
+    padding: '0 9px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 8,
+    border: 0,
+    background: 'transparent',
+    color: 'var(--mf-subtext)',
+    fontFamily: 'inherit',
+    fontSize: 11.5,
+    fontWeight: 700,
+    cursor: 'pointer',
+  };
+  return (
+    <div
+      data-note-image-pop
+      onMouseDown={(e) => e.preventDefault()}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{ position: 'absolute', left: 0, top: 'calc(100% + 7px)', zIndex: 30, display: 'inline-flex', alignItems: 'center', gap: 2, padding: 4, borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', boxShadow: '0 14px 30px -18px rgba(46,42,38,.5)', whiteSpace: 'nowrap' }}
+    >
+      <button type="button" data-note-image-big className="btn mf-note-tb" onClick={onZoom} style={btn}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="6.5" />
+          <path d="M20 20l-4.4-4.4M11 8.5v5M8.5 11h5" />
+        </svg>
+        크게 보기
+      </button>
+      {!readOnly && (
+        <>
+          <span aria-hidden="true" style={{ width: 1, height: 16, background: 'var(--mf-hairline)', margin: '0 2px' }} />
+          {ALIGNS.map((t) => {
+            const on = (block.align ?? 'left') === t.align;
+            return (
+              <button
+                key={t.align}
+                type="button"
+                data-note-image-align={t.align}
+                aria-pressed={on}
+                data-tip={t.name}
+                aria-label={t.name}
+                className="btn mf-note-tb"
+                onClick={() => controller.setNoteBlockAlign(block.id, t.align)}
+                style={{ ...btn, width: 26, padding: 0, justifyContent: 'center', background: on ? TB_ON : 'transparent', color: on ? 'var(--mf-accent)' : 'var(--mf-subtext)' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                  {t.icon}
+                </svg>
+              </button>
+            );
+          })}
+          <span aria-hidden="true" style={{ width: 1, height: 16, background: 'var(--mf-hairline)', margin: '0 2px' }} />
+          <button type="button" data-note-image-del className="btn mf-note-tb" onClick={() => controller.removeNoteBlock(block.id)} style={{ ...btn, color: 'var(--mf-danger)' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" />
+            </svg>
+            삭제
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -7748,6 +8168,191 @@ function LinkBlock({ controller, block, pickLinkDoc }: { controller: EditorContr
  * 이 패널은 그것을 읽기만 한다. 그래서 취소하면 쓴 글이 그대로 남고, 조합 중인 한글을
  * 우리가 다시 그릴 일이 없다(그 순간 `안녕하세요`가 `안ㄴ녕ㅎ하세세요`가 된다).
  */
+/**
+ * 링크 판 — **누른 링크 하나를 다루는 자리**(시안 3판).
+ *
+ * 넷을 준다: 머리(어디로 가는가 + 「이동」) · 주소 복사 · 주소 바꾸기 · 링크 삭제.
+ * 머리가 호스트를 굵게, 전체 주소를 그 아래에 적는 이유는 **같은 도메인의 긴
+ * 주소들**을 한눈에 가르기 위해서다(줄임표만 있으면 어느 것인지 알 수 없다).
+ *
+ * 「링크 삭제」가 위험해 보이지 않게 오른쪽에 `글자는 남아요`를 적어 둔다 — 실제로
+ * 그 구간의 `href`만 지운다(글도 다른 서식도 그대로).
+ */
+function LinkPopup({
+  at,
+  readOnly,
+  onClose,
+  onApply,
+}: {
+  at: { key: string; a: number; b: number; href: string; rect: DOMRect };
+  readOnly: boolean;
+  onClose: () => void;
+  /** 주소를 바꾸거나(문자열) 링크를 뗀다(`null`). */
+  onApply: (url: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(at.href);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [copied, setCopied] = useState(false);
+  const open = () => {
+    window.open(at.href, '_blank', 'noopener,noreferrer');
+    onClose();
+  };
+  const copy = () => {
+    const esc = at.href.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    writeClipboard({ plain: at.href, html: `<a href="${esc}">${esc}</a>` });
+    setCopied(true);
+  };
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+  /**
+   * 단축키는 **이 판이 떠 있는 동안만** 듣는다 — 시안이 적어 둔 ⌘⇧C·⌘K가 그냥
+   * 장식이 되지 않게(적어 놓고 듣지 않으면 그게 더 나쁘다). 캡처 단계에서 받아
+   * 본문·전역 손이 같은 키를 또 잡지 않게 한다.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === 'c' && e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        copy();
+      } else if (k === 'k' && !e.shiftKey && !readOnly) {
+        e.preventDefault();
+        e.stopPropagation();
+        setEditing(true);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [at.href, readOnly]);
+  const row: CSSProperties = { ...MENU_ITEM, height: 40, gap: 11, padding: '0 8px' };
+  const tile = (accent: boolean): CSSProperties => ({
+    width: 30,
+    height: 30,
+    flex: '0 0 auto',
+    borderRadius: 9,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: accent ? LINK_TILE_ON : LINK_TILE,
+    color: accent ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
+  });
+  return (
+    <div
+      data-note-linkpop
+      // 누르는 순간 **선택을 잃지 않게** 막는다 — 잃으면 이 판이 먼저 닫혀 클릭이
+      // 도착하지 못한다(툴바의 다른 판들과 같은 처방). 입력칸은 초점을 받아야
+      // 하므로 거기서만 푼다.
+      onMouseDown={(e) => {
+        if (!(e.target as HTMLElement).closest('input')) e.preventDefault();
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{ ...POP, ...anchoredStyle(at.rect, 300, { maxHeight: 240 }), maxHeight: undefined, overflowY: undefined, padding: 7, display: 'flex', flexDirection: 'column', gap: 2 }}
+    >
+      {/* 머리 — 어디로 가는가. 누르면 그대로 열린다(오른쪽 「이동」과 같은 일). */}
+      <button type="button" data-note-linkpop-open className="btn mf-note-item" onClick={open} title={at.href} style={{ ...row, height: 46 }}>
+        <span aria-hidden="true" style={tile(true)}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+            <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+          </svg>
+        </span>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkHost(at.href)}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{at.href}</span>
+        </span>
+        <span style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11.5, color: 'var(--mf-faint)' }}>
+          이동
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M7 17 17 7M9 7h8v8" />
+          </svg>
+        </span>
+      </button>
+      <span aria-hidden="true" style={{ height: 1, background: 'var(--mf-border-soft)', display: 'block', margin: '3px 2px' }} />
+      {editing ? (
+        // 주소 바꾸기 — 자리를 새로 만들지 않고 **이 판 안에서** 받는다.
+        <form
+          data-note-linkpop-form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const url = draft.trim();
+            if (url) onApply(normalizeUrl(url));
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 2px 2px' }}
+        >
+          <input
+            ref={inputRef}
+            data-note-linkpop-url
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                setEditing(false);
+              }
+            }}
+            placeholder="https://"
+            style={{ flex: 1, minWidth: 0, height: 32, padding: '0 10px', borderRadius: 9, border: '1px solid var(--mf-border)', background: 'var(--mf-panel2)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, outline: 'none' }}
+          />
+          <button type="submit" data-note-linkpop-save className="btn" style={{ flex: '0 0 auto', height: 32, padding: '0 12px', borderRadius: 9, border: 0, background: 'var(--mf-accent)', color: '#fff', fontFamily: 'inherit', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+            바꾸기
+          </button>
+        </form>
+      ) : (
+        <>
+          <button type="button" data-note-linkpop-copy className="btn mf-note-item" onClick={copy} style={row}>
+            <span aria-hidden="true" style={tile(false)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="11" height="11" rx="2.5" />
+                <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+              </svg>
+            </span>
+            <span style={{ flex: 1, minWidth: 0, fontWeight: 700 }}>{copied ? '복사했어요' : '주소 복사'}</span>
+            <span style={POP_KEY}>⌘⇧C</span>
+          </button>
+          {!readOnly && (
+            <button type="button" data-note-linkpop-edit className="btn mf-note-item" onClick={() => setEditing(true)} style={row}>
+              <span aria-hidden="true" style={tile(false)}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
+                </svg>
+              </span>
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 700 }}>주소 바꾸기</span>
+              <span style={POP_KEY}>⌘K</span>
+            </button>
+          )}
+          {!readOnly && (
+            <button type="button" data-note-linkpop-remove className="btn mf-note-item" onClick={() => onApply(null)} style={row}>
+              <span aria-hidden="true" style={tile(true)}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.5.5l1.5-1.5M14 11a5 5 0 0 0-7.5-.5L5 12" />
+                  <path d="m4 4 16 16" />
+                </svg>
+              </span>
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: 'var(--mf-accent-deep)' }}>링크 삭제</span>
+              {/* 무엇이 사라지고 무엇이 남는지 — 누르기 전에 적어 둔다. */}
+              <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--mf-faint)' }}>글자는 남아요</span>
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** 주소의 **호스트**만 — 판의 머리에 굵게 적는 줄(`www.`는 뗀다). */
+function linkHost(href: string): string {
+  try {
+    return new URL(href).host.replace(/^www\./, '');
+  } catch {
+    return displayUrl(href, 32);
+  }
+}
+
 function SlashMenu({
   anchor,
   query,
@@ -8128,15 +8733,15 @@ function caretInActiveLine(): number {
 function moveNoteCaret(dir: -1 | 1, x?: number): boolean {
   if (typeof document === 'undefined') return false;
   const cur = document.activeElement as HTMLElement | null;
-  if (!cur?.hasAttribute?.('data-note-line') && !cur?.hasAttribute?.('data-note-hr')) return false;
-  // 구분선도 **줄 하나로 센다** — 방향키로 그 위를 지나가야 고를 수 있고(고르면
+  if (!cur?.hasAttribute?.('data-note-line') && !cur?.hasAttribute?.('data-note-hr') && !cur?.hasAttribute?.('data-note-obj')) return false;
+  // 구분선·그림도 **줄 하나로 센다** — 방향키로 그 위를 지나가야 고를 수 있고(고르면
   // 지울 수 있다), 지나갈 수만 있고 설 수 없으면 "여기 뭔가 있다"가 보이지 않는다.
-  const all = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-line], [data-note-page] [data-note-hr]')];
+  const all = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-line], [data-note-page] [data-note-hr], [data-note-page] [data-note-obj]')];
   const i = all.indexOf(cur);
   if (i < 0) return false;
   for (let j = i + dir; j >= 0 && j < all.length; j += dir) {
     const el = all[j]!;
-    if (el.hasAttribute('data-note-hr')) {
+    if (el.hasAttribute('data-note-hr') || el.hasAttribute('data-note-obj')) {
       el.focus({ preventScroll: false });
       return true;
     }
@@ -8493,6 +9098,10 @@ function itemIdOf(key: string): string | null {
  * 글의 색이 아니라 **도구의 상태**를 말하는 자리라 한 벌이어야 한다.
  */
 const TB_ON = '#FBF3EE';
+
+/** 링크 판의 아이콘 타일 — 보통 줄의 옅은 면과 강조 줄(머리·삭제)의 살굿빛(시안). */
+const LINK_TILE = '#F6EFE7';
+const LINK_TILE_ON = '#FBEDE6';
 
 const TOOL_BTN: CSSProperties = {
   height: 30,

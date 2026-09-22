@@ -53,6 +53,8 @@
 | 표의 크기 그립을 테스트에서 못 찾는다 | 재어서 그리는 부품은 jsdom에 없다 | [F9](#f9) |
 | ⌘S를 눌러도 저장본이 그대로다 | 폴링이 200ms 타이머를 매번 껐다 | [F10](#f10) |
 | jsdom은 통과인데 크롬에서 글자가 서식 **밖**에 떨어진다 | 폭 0인 인라인 요소 안의 캐럿은 브라우저가 앞으로 접는다 | [F11](#f11) |
+| `fireEvent.pointerDown(el, { shiftKey: true })`가 안 먹는다 | jsdom에는 `PointerEvent`가 없어 init이 통째로 버려진다 | [F12](#f12) |
+| 방향키 한 번에 두 칸을 간다(새로 붙인 손이 같은 키를 또 받는다) | 이벤트 중에 `document`에 붙인 리스너가 **그 이벤트**를 받는다 | [F13](#f13) |
 | 미커밋 구현이 사라졌다 | `git checkout <file>`로 "복구"했다 | [G1](#g1) |
 | 셸이 죽었다(exit 144) | `pkill -f`가 자기 자신을 물었다 | [G2](#g2) |
 | Electron이 창도 없이 바로 죽었다 | root라 `--no-sandbox`가 필요하다 | [G4](#g4) |
@@ -476,6 +478,34 @@ Object.assign(new LocalShareStore(), { list: vi.fn() })  // 좋음
 **규칙**: `saveNow()`는 **한 번** 부르고, 그 뒤에 값만 폴링한다. 그리고 폴링 조건은
 **바뀌는 값**으로 잡는다 — `runsOf(...)`처럼 옛 판에서도 참인 조건을 쓰면 그 자리가
 곧바로 통과해 다음 단정이 옛 값을 본다(F8과 같은 계열).
+
+<a id="f12"></a>
+### F12. jsdom에는 `PointerEvent`가 없다 — `fireEvent.pointerDown`의 init이 통째로 버려진다
+
+`fireEvent.pointerDown(el, { button: 0, shiftKey: true })`를 쏘고 핸들러에서 읽으면
+**둘 다 `undefined`**다(실측). testing-library는 `window[EventType]`을 찾는데 jsdom에는
+`PointerEvent`가 없어 밋밋한 `Event`로 떨어지고, 그 생성자는 마우스 필드를 모른다.
+`e.button > 0`류의 판정은 `undefined > 0`이 거짓이라 **우연히** 통과해 왔다 —
+그래서 이 구멍이 오래 보이지 않았다.
+
+**규칙**: 포인터 이벤트에 **수식 키·버튼을 실어야 하면** `MouseEvent`로 지어 같은 이름으로
+쏜다 — `fireEvent(el, new MouseEvent('pointerdown', { bubbles: true, cancelable: true, shiftKey: true }))`.
+(좌표가 필요한 것은 또 다른 문제다 — jsdom의 사각형은 전부 0이라 `elementFromPoint`가
+답하지 못한다. 그때는 그 조회만 테스트에서 세워 준다.)
+
+<a id="f13"></a>
+### F13. 이벤트 처리 **중에** `document`에 붙인 리스너가 바로 그 이벤트를 받는다
+
+방향키로 그림 위에 서게 만들었더니 서자마자 다음 줄로 지나가 버렸다(실측: ↓ 한 번에
+두 칸). 앱은 결백했다 — 순서가 이랬다: ① 리액트의 손(루트 컨테이너)이 ArrowDown을 받아
+그림에 초점을 준다 ② 상태가 바뀌어 `useEffect`가 돌고 **`document`에 새 keydown 손**을
+붙인다 ③ 그런데 그 **네이티브 이벤트는 아직 `document`까지 올라오는 중**이라, 방금 붙은
+손이 같은 ArrowDown을 한 번 더 받는다.
+
+**규칙**: 상태가 서는 순간 `document`에 붙는 손은 **`e.defaultPrevented`를 먼저 본다**
+(앞의 손이 처리했으면 그 키는 끝난 것이다). 이것은 프로브의 함정이 아니라 배선의
+함정이지만, **단위 테스트로는 잡히지 않는다** — jsdom에서는 리액트의 손도 `document`에
+붙어 순서가 달라진다.
 
 <a id="f11"></a>
 ### F11. **빈 인라인 요소 안의 캐럿**은 크롬이 그 앞으로 접는다 — jsdom은 잡지 못한다

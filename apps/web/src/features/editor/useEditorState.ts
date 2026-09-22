@@ -934,6 +934,11 @@ export interface EditorController {
   setNoteCover: (patch: Partial<NoteCover>) => void;
   setNotePageTag: (pageId: string, tag: string | null) => void;
   /**
+   * **태그를 아주 지운다**(요청) — 공책이 기억하던 목록에서 빼고, 그 태그를 달고 있던
+   * 페이지에서도 떼고, 골라 둔 점 색도 지운다. 한 커밋이라 되돌리기도 한 번이다.
+   */
+  removeNoteTag: (tag: string) => void;
+  /**
    * 태그 점 색을 **문서에 적는다**(`tagColors`) — 태그를 만들 때 고른 색.
    *
    * `null`이면 그 항목을 지워 이름에서 정해지는 기본색으로 되돌린다. 문서에 적히므로
@@ -8003,6 +8008,36 @@ export function useEditorState(): EditorController {
     [commitPage],
   );
 
+  /**
+   * 태그 하나를 문서에서 걷는다 — **세 자리를 한 커밋으로**(목록 · 쓰던 페이지 · 점 색).
+   *
+   * 페이지마다 `setNotePageTag`를 부르면 되돌리기 단계가 페이지 수만큼 쌓이고,
+   * 그 사이 상태(반쯤 지워진 태그)가 실제로 저장된다.
+   */
+  const removeNoteTag = useCallback(
+    (tag: string) => {
+      const name = tag.trim();
+      if (!name) return;
+      commitDoc((d) => {
+        const kept = (d.cover?.tags ?? []).filter((t) => t !== name);
+        const pages = (d.pages ?? []).map((pg) => (pg.tag === name ? { ...pg, tag: null } : pg));
+        const inks = { ...(d.tagColors ?? {}) };
+        delete inks[name];
+        const samePages = pages.every((pg, i) => pg === (d.pages ?? [])[i]);
+        const sameTags = kept.length === (d.cover?.tags ?? []).length;
+        const sameInks = Object.keys(inks).length === Object.keys(d.tagColors ?? {}).length;
+        if (samePages && sameTags && sameInks) return d;
+        return {
+          ...d,
+          ...(samePages ? {} : { pages }),
+          ...(sameTags ? {} : { cover: { ...(d.cover ?? {}), tags: kept } }),
+          ...(sameInks ? {} : { tagColors: Object.keys(inks).length ? inks : undefined }),
+        };
+      }, false);
+    },
+    [commitDoc],
+  );
+
   const setNoteTagColor = useCallback(
     (tag: string, color: string | null) => {
       const name = tag.trim();
@@ -8528,6 +8563,7 @@ export function useEditorState(): EditorController {
     duplicateNoteTableRow,
     setNoteCover,
     setNotePageTag,
+    removeNoteTag,
     setNoteTagColor,
     setNoteImage,
     insertNoteImage,
