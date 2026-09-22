@@ -2245,14 +2245,17 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     await waitFor(() => expect(saved('nq8').pages[0].blocks[0].kind).toBe('code'));
   });
 
-  it('푸터가 쓸 수 있는 키 셋을 적어 둔다(스펙 §7)', async () => {
+  // 한동안 이 판에는 키 안내 푸터(`↑↓ 고르기 · ↵ 넣기 · esc 닫기`)가 있었다 —
+  // 요청으로 걷었다(같은 말을 목록의 `↵` 표식이 이미 하고 있었다).
+  it('키 안내 푸터는 없다(요청 6)', async () => {
     const c = await openEmpty('nq9');
     slash(c, '/');
     const panel = (await waitFor(() => c.querySelector('[data-note-slash-panel]'))) as HTMLElement;
 
-    expect(panel.textContent).toContain('고르기');
-    expect(panel.textContent).toContain('넣기');
-    expect(panel.textContent).toContain('닫기');
+    expect(panel.textContent).not.toContain('고르기');
+    expect(panel.textContent).not.toContain('닫기');
+    // 목록 자체는 그대로다.
+    expect(panel.querySelector('[data-note-slash-item="code"]')).toBeTruthy();
   });
 });
 
@@ -6190,5 +6193,153 @@ describe('공책 — 링크 판과 넣기 뒤의 캐럿', () => {
     // 진짜로 움직이면 따라온다.
     fireEvent.mouseMove(items()[2]!);
     await waitFor(() => expect(activeAt()).toBe(2));
+  });
+});
+
+describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 그림', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'cd', kind: 'code', runs: [{ t: 'const a = 1;', b: false, c: null }] },
+          { id: 'qt', kind: 'q', runs: [{ t: '인용한 말', b: false, c: null }] },
+          { id: 'bl', kind: 'p', runs: [{ t: '', b: false, c: null }] },
+        ],
+      },
+    ],
+  };
+
+  /** 그 줄의 **글 끝**에 캐럿을 놓는다 — 사람이 이어 쓰려고 선 자리. */
+  function caretEnd(line: HTMLElement): void {
+    line.focus();
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  const open = async (id: string): Promise<HTMLElement> => {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(DOC));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-line="cd"]')).toBeTruthy());
+    return container;
+  };
+
+  const kinds = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll('[data-note-block]')].map((e) => e.getAttribute('data-note-kind'));
+
+  it('코드 블록의 Enter는 **그 블록 안에서** 줄을 바꾼다(제보 1)', async () => {
+    const c = await open('cb1');
+    const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
+    caretEnd(line);
+    fireEvent.keyDown(line, { key: 'Enter' });
+
+    // 블록이 늘지 않는다 — 예전에는 줄마다 코드 블록이 하나씩 생겼다.
+    expect(kinds(c)).toEqual(['code', 'q', 'p']);
+    // 값에는 줄바꿈 한 글자가 들어간다(화면에서는 `<br>`).
+    saveNow();
+    await waitFor(() => expect(runsOf(saved('cb1').pages[0].blocks[0])).toBe('const a = 1;\n'));
+  });
+
+  it('인용의 Enter는 **인용을 끝내고 본문 줄**로 간다(제보 8)', async () => {
+    const c = await open('cb2');
+    const line = c.querySelector('[data-note-line="qt"]') as HTMLElement;
+    caretEnd(line);
+    fireEvent.keyDown(line, { key: 'Enter' });
+
+    await waitFor(() => expect(kinds(c)).toEqual(['code', 'q', 'p', 'p']));
+  });
+
+  it('인용의 Shift+Enter는 **그 줄 안에서** 바꾼다(제보 8)', async () => {
+    const c = await open('cb3');
+    const line = c.querySelector('[data-note-line="qt"]') as HTMLElement;
+    caretEnd(line);
+    fireEvent.keyDown(line, { key: 'Enter', shiftKey: true });
+
+    expect(kinds(c)).toEqual(['code', 'q', 'p']);
+    saveNow();
+    await waitFor(() => expect(runsOf(saved('cb3').pages[0].blocks[1])).toBe('인용한 말\n'));
+  });
+
+  it('빈 줄에서 **인라인 코드**를 누르면 이어 치는 글자가 코드가 된다(제보 2)', async () => {
+    const c = await open('cb4');
+    const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
+    caretEnd(line);
+    document.dispatchEvent(new Event('selectionchange'));
+    const btn = (await waitFor(() => c.querySelector('[data-note-mark="k"]'))) as HTMLElement;
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+
+    // 누른 순간에는 걸 자리가 없다(글자가 없다) — **다음 글자**에 걸린다.
+    type(line, 'x');
+    await waitFor(() => expect(line.querySelector('code')?.textContent).toBe('x'));
+    saveNow();
+    await waitFor(() => expect(saved('cb4').pages[0].blocks[2].runs[0].k).toBe(true));
+  });
+
+  it('켜 두고 **딴 데** 치면 조용히 잊는다 — 엉뚱한 글에 걸지 않는다', async () => {
+    const c = await open('cb8');
+    const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
+    caretEnd(line);
+    document.dispatchEvent(new Event('selectionchange'));
+    const btn = (await waitFor(() => c.querySelector('[data-note-mark="k"]'))) as HTMLElement;
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+
+    // 다른 줄에서 친다 — 예약은 그 줄의 좌표였으므로 여기에는 걸리지 않는다.
+    const other = c.querySelector('[data-note-line="qt"]') as HTMLElement;
+    type(other, '덧말');
+    expect(other.querySelector('code')).toBeNull();
+  });
+
+  it('툴바의 켜진 단추는 **한 벌의 면 색**을 쓴다(요청 5)', async () => {
+    const c = await open('cb5');
+    const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
+    caretEnd(line);
+    // 「본문 폭」 단추는 문서 값으로 켜지므로 선택과 무관하게 눌러 볼 수 있다.
+    const wide = c.querySelector('[data-note-width]') as HTMLElement;
+    fireEvent.click(wide);
+    await waitFor(() => expect((c.querySelector('[data-note-width]') as HTMLElement).style.background).toBe('rgb(251, 243, 238)'));
+  });
+
+  it('`/` 목록이 **위로 뒤집힐 때는 그 줄의 윗선**에 매달린다(제보 4)', async () => {
+    const c = await open('cb6');
+    const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
+    // 그 줄이 화면 아래끝에 있는 것처럼 꾸민다 — 아래 여백이 없으면 위로 뒤집힌다.
+    line.getBoundingClientRect = () => ({ left: 40, top: 700, right: 400, bottom: 724, width: 360, height: 24, x: 40, y: 700, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/');
+
+    const wrap = (await waitFor(() => c.querySelector('[data-note-slash-anchor]'))) as HTMLElement;
+    const panel = wrap.querySelector('[data-note-slash-panel]') as HTMLElement;
+    // 위로 떴고(패널이 `bottom`으로 매달린다), 기준이 **윗선**이라 그 줄을 덮지 않는다.
+    expect(panel.style.bottom).toContain('100%');
+    expect(wrap.style.top).toBe('700px');
+  });
+
+  it('클립보드의 그림은 **이미지 블록**이 된다(요청 10)', async () => {
+    const c = await open('cb7');
+    const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
+    line.focus();
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(ev, 'clipboardData', { value: { items: [], files: [file], getData: () => '' } });
+    document.dispatchEvent(ev);
+
+    // 빈 문단이었으므로 **그 자리**가 그림이 된다(빈 줄을 남기지 않는다).
+    await waitFor(() => expect(kinds(c)).toEqual(['code', 'q', 'img']));
+    expect(ev.defaultPrevented).toBe(true);
   });
 });
