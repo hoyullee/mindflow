@@ -51,7 +51,7 @@ interface Props {
    * **낱말의 시작에서만** 부른다(줄 머리이거나 앞이 공백) — 그러지 않으면 주소를
    * 적다 `https://`의 `/`마다 메뉴가 끼어든다.
    */
-  onSlash?: (at: number) => void;
+  onSlash?: (at: number, tail: string) => void;
   /**
    * 위/아래 화살표로 블록 사이를 옮긴다(글의 첫 줄·마지막 줄에서만).
    *
@@ -310,7 +310,13 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         // 대신 전파만 끊어 전역 단축키 핸들러가 같은 키를 또 잡지 않게 한다(스펙 §3).
         e.stopPropagation();
         e.nativeEvent.stopImmediatePropagation();
-        onSlash(at);
+        /**
+         * **캐럿 뒤에 이미 있는 글**을 함께 넘긴다(요청) — 질의가 어디서 끝나는지
+         * 그 값으로 안다. 이미 쓰인 글 앞에서 `/`를 치면 뒤의 글이 줄에 그대로
+         * 남으므로, 이것이 없으면 질의가 그 글까지 삼켜 아무 항목도 맞지 않는다
+         * (`안녕하세요` 앞에서 `/제목`을 쳐도 목록이 비던 이유다).
+         */
+        onSlash(at, text.slice(at));
       }
     }
     if (e.key === 'Tab' && !e.nativeEvent.isComposing && onTab) {
