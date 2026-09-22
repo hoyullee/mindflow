@@ -675,33 +675,42 @@ export function NoteEditor({ controller }: Props) {
   /**
    * 링크 위의 캐럿·선택을 좇는다 — 선택이 바뀔 때마다 그 자리를 다시 잰다.
    *
-   * **앵커와 포커스가 모두 그 링크 안**일 때만 띄운다: 링크를 지나쳐 여러 글자를
-   * 고르는 중이라면 그 사람이 다루는 것은 링크가 아니라 글이다.
+   * 판단은 **글자 좌표**로 한다(노드가 아니라): 선택 구간이 그 링크의 구간 **안에
+   * 들어가 있으면** 띄운다. 노드로 보면 놓치는 자리가 있다 — 표의 고른 칸은 우리가
+   * 글자를 통째로 골라 두므로 앵커가 링크 스팬이 아니라 **줄**이다(제보 1의 그 칸).
+   * 캐럿 하나일 때는 **양 끝을 뺀 안쪽**이라야 한다: 링크 바로 뒤에서 이어 쓰는
+   * 중에 판이 끼어들면 그게 더 방해다.
    */
   useEffect(() => {
     const read = (): void => {
       const col = colRef.current;
       const sel = typeof window === 'undefined' ? null : window.getSelection();
-      const spanOf = (node: Node | null | undefined): HTMLElement | null => {
-        const el = node?.nodeType === 1 ? (node as HTMLElement) : (node?.parentElement ?? null);
-        return (el?.closest?.('[data-href]') as HTMLElement | null) ?? null;
-      };
-      const span = sel && sel.rangeCount > 0 ? spanOf(sel.focusNode) : null;
-      const line = span?.closest('[data-note-line]') as HTMLElement | null;
-      if (!span || !line || !col?.contains(line) || !sel || spanOf(sel.anchorNode) !== span) {
+      const nodeEl = (node: Node | null | undefined): HTMLElement | null =>
+        node?.nodeType === 1 ? (node as HTMLElement) : (node?.parentElement ?? null);
+      const line = sel && sel.rangeCount > 0 ? ((nodeEl(sel.focusNode)?.closest?.('[data-note-line]') as HTMLElement | null) ?? null) : null;
+      if (!sel || !line || !col?.contains(line) || !nodeEl(sel.anchorNode)?.closest?.('[data-note-line]')) {
         setLinkAt((cur) => (cur === null ? cur : null));
         return;
       }
-      const href = span.getAttribute('data-href') || '';
+      const s0 = charOffset(line, sel.anchorNode as Node, sel.anchorOffset);
+      const s1 = charOffset(line, sel.focusNode as Node, sel.focusOffset);
+      const lo = Math.min(s0, s1);
+      const hi = Math.max(s0, s1);
+      const hit = [...line.querySelectorAll<HTMLElement>('[data-href]')]
+        .map((el) => ({ el, a: charOffset(line, el, 0), b: charOffset(line, el, el.childNodes.length) }))
+        .find((r) => (lo === hi ? r.a < lo && lo < r.b : r.a <= lo && hi <= r.b));
+      const href = hit?.el.getAttribute('data-href') || '';
       const key = line.getAttribute('data-note-line') || '';
-      if (!href || !key) {
-        setLinkAt(null);
+      if (!hit || !href || !key) {
+        setLinkAt((cur) => (cur === null ? cur : null));
         return;
       }
-      const a = charOffset(line, span, 0);
-      const b = charOffset(line, span, span.childNodes.length);
-      const rect = span.getBoundingClientRect();
-      setLinkAt((cur) => (cur && cur.key === key && cur.a === a && cur.b === b && cur.href === href && cur.rect.top === rect.top && cur.rect.left === rect.left ? cur : { key, a, b, href, rect }));
+      const rect = hit.el.getBoundingClientRect();
+      setLinkAt((cur) =>
+        cur && cur.key === key && cur.a === hit.a && cur.b === hit.b && cur.href === href && cur.rect.top === rect.top && cur.rect.left === rect.left
+          ? cur
+          : { key, a: hit.a, b: hit.b, href, rect },
+      );
     };
     read();
     document.addEventListener('selectionchange', read);
@@ -6337,7 +6346,6 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           listKeys={editing}
                           // 고른 칸의 글자는 우리가 통째로 골라 둔다 — 링크를 누르면
                           // 열리게 그 사실을 줄 부품에도 알린다(제보 1).
-                          armed={armed}
                           /**
                            * Enter가 **편집을 연다**(요청) — 고른 칸에서 한 번 누르면
                            * 글을 고치는 자리가 되고, 고치는 중에 누르면 닫힌다
