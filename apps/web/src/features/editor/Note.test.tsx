@@ -4868,7 +4868,10 @@ describe('공책 45판 — 이미지 크기·확대 · 여러 줄 서식 · 칸�
     const { container } = renderEditor('/editor?map=g1&title=x');
     const img = (await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement;
 
-    fireEvent.click(img);
+    // 첫 누름은 **고르기**다(요청 1) — 확대는 그때 뜨는 판의 「크게 보기」가 연다.
+    fireEvent.pointerDown(img, { button: 0 });
+    await waitFor(() => expect(container.querySelector('[data-note-image-big]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-image-big]') as HTMLElement);
     const zoom = (await waitFor(() => container.querySelector('[data-note-image-zoom]'))) as HTMLElement;
     // 「화면에 맞춤 ↔ 원본 크기」 토글은 걷었다(요청 8) — 그 자리에 배율 막대가 선다.
     expect(zoom.querySelector('[data-note-image-full]')).toBeNull();
@@ -5692,7 +5695,9 @@ describe('공책 52판 — 복귀 스크롤 방어 · 이미지 배율 · 서식
     const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'im', kind: 'img', src: PIX }] }] };
     localStorage.setItem('mindflow_doc_s3', JSON.stringify(doc));
     const { container } = renderEditor('/editor?map=s3&title=x');
-    fireEvent.click((await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement);
+    fireEvent.pointerDown((await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement, { button: 0 });
+    await waitFor(() => expect(container.querySelector('[data-note-image-big]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-image-big]') as HTMLElement);
     const zoom = (await waitFor(() => container.querySelector('[data-note-image-zoom]'))) as HTMLElement;
     const pct = () => (zoom.querySelector('[data-note-image-pct]') as HTMLElement).textContent;
 
@@ -5712,7 +5717,9 @@ describe('공책 52판 — 복귀 스크롤 방어 · 이미지 배율 · 서식
     const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'im', kind: 'img', src: PIX }] }] };
     localStorage.setItem('mindflow_doc_s3b', JSON.stringify(doc));
     const { container } = renderEditor('/editor?map=s3b&title=x');
-    fireEvent.click((await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement);
+    fireEvent.pointerDown((await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement, { button: 0 });
+    await waitFor(() => expect(container.querySelector('[data-note-image-big]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-image-big]') as HTMLElement);
     const zoom = (await waitFor(() => container.querySelector('[data-note-image-zoom]'))) as HTMLElement;
     const pct = () => (zoom.querySelector('[data-note-image-pct]') as HTMLElement).textContent;
 
@@ -6160,6 +6167,43 @@ describe('공책 — 링크 판과 넣기 뒤의 캐럿', () => {
     expect(runsOf(saved('lp2').pages[0].blocks[0])).toBe('앞 링크글 뒤');
   });
 
+  it('판은 **머리 + 복사 · 바꾸기 · 삭제**다(시안 3판)', async () => {
+    localStorage.setItem('mindflow_doc_lp5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=lp5&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="lk"] [data-href]')).toBeTruthy());
+
+    selectLink(container);
+    const pop = (await waitFor(() => {
+      const el = container.querySelector('[data-note-linkpop]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    // 머리는 호스트를 굵게, 전체 주소를 그 아래에.
+    expect(pop.querySelector('[data-note-linkpop-open]')!.textContent).toContain('example.com');
+    for (const mark of ['open', 'copy', 'edit', 'remove']) {
+      expect(pop.querySelector(`[data-note-linkpop-${mark}]`)).toBeTruthy();
+    }
+    // 무엇이 남는지 적어 둔다 — 「링크 삭제」가 글까지 지우는 것으로 읽히지 않게.
+    expect(pop.querySelector('[data-note-linkpop-remove]')!.textContent).toContain('글자는 남아요');
+  });
+
+  it('「주소 바꾸기」는 그 자리에서 받아 **링크만** 갈아 끼운다', async () => {
+    localStorage.setItem('mindflow_doc_lp6', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=lp6&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="lk"] [data-href]')).toBeTruthy());
+
+    selectLink(container);
+    await waitFor(() => expect(container.querySelector('[data-note-linkpop-edit]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-linkpop-edit]') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-note-linkpop-url]')).toBeTruthy());
+    const input = container.querySelector('[data-note-linkpop-url]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://geurio.com/a' } });
+    fireEvent.submit(container.querySelector('[data-note-linkpop-form]') as HTMLElement);
+
+    await waitFor(() => expect((container.querySelector('[data-note-line="lk"] [data-href]') as HTMLElement).getAttribute('data-href')).toContain('geurio.com/a'));
+    expect((container.querySelector('[data-note-line="lk"]') as HTMLElement).textContent).toBe('앞 링크글 뒤');
+  });
+
   it('「이동」은 새 창으로 연다', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     localStorage.setItem('mindflow_doc_lp3', JSON.stringify(DOC));
@@ -6341,5 +6385,141 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     // 빈 문단이었으므로 **그 자리**가 그림이 된다(빈 줄을 남기지 않는다).
     await waitFor(() => expect(kinds(c)).toEqual(['code', 'q', 'img']));
     expect(ev.defaultPrevented).toBe(true);
+  });
+});
+
+describe('공책 — 오브젝트 선택 · 이미지 판 · 태그 지우기 · 링크 판', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...NOTE,
+    cover: { tag: '회의록', tags: ['내가만든태그'] },
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          { id: 'a', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+          { id: 'im', kind: 'img', src: 'data:image/png;base64,iVBORw0KGgo=' },
+          { id: 'b', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+          { id: 'hr', kind: 'hr' },
+          { id: 'c', kind: 'p', runs: [{ t: '셋째 줄', b: false, c: null }] },
+        ],
+        updatedAt: '2026-09-16T00:00:00.000Z',
+      },
+    ],
+  };
+
+  const open = async (id: string): Promise<HTMLElement> => {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(DOC));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-image]')).toBeTruthy());
+    return container;
+  };
+
+  const kinds = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll('[data-note-block]')].map((e) => e.getAttribute('data-note-kind'));
+  const pickedIds = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll('[data-note-blockwrap][data-selected="1"]')].map((e) => e.getAttribute('data-note-blockwrap'));
+
+  it('이미지를 누르면 **골라지고** 판이 뜬다 — 확대는 그 판의 단추다(요청 1)', async () => {
+    const c = await open('ob1');
+    fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
+
+    await waitFor(() => expect(c.querySelector('[data-note-image-pop]')).toBeTruthy());
+    expect(pickedIds(c)).toEqual(['im']);
+    // 판이 주는 것 — 크게 보기 · 정렬 셋 · 삭제.
+    const pop = c.querySelector('[data-note-image-pop]') as HTMLElement;
+    expect(pop.querySelector('[data-note-image-big]')).toBeTruthy();
+    expect(pop.querySelectorAll('[data-note-image-align]')).toHaveLength(3);
+    expect(pop.querySelector('[data-note-image-del]')).toBeTruthy();
+  });
+
+  it('고른 이미지를 **가운데로** 정렬한다(요청 4)', async () => {
+    const c = await open('ob2');
+    fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
+    await waitFor(() => expect(c.querySelector('[data-note-image-align="center"]')).toBeTruthy());
+    fireEvent.click(c.querySelector('[data-note-image-align="center"]') as HTMLElement);
+
+    // 칸 자신이 옮겨 가야 한다 — `text-align`은 `fit-content` 칸을 움직이지 못한다.
+    await waitFor(() => expect((c.querySelector('[data-note-image-wrap]') as HTMLElement).style.marginLeft).toBe('auto'));
+    expect((c.querySelector('[data-note-image-wrap]') as HTMLElement).style.marginRight).toBe('auto');
+    saveNow();
+    await waitFor(() => expect(saved('ob2').pages[0].blocks[1].align).toBe('center'));
+  });
+
+  it('고른 이미지는 ⌫로 지우고, Enter면 **아래에 새 줄**이 선다(요청 1·2)', async () => {
+    const c = await open('ob3');
+    fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
+    await waitFor(() => expect(pickedIds(c)).toEqual(['im']));
+
+    fireEvent.keyDown(document, { key: 'Enter' });
+    await waitFor(() => expect(kinds(c)).toEqual(['p', 'img', 'p', 'p', 'hr', 'p']));
+
+    fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
+    await waitFor(() => expect(pickedIds(c)).toEqual(['im']));
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    await waitFor(() => expect(c.querySelector('[data-note-image]')).toBeNull());
+  });
+
+  it('구분선도 오브젝트다 — Shift+누름이면 **사이의 블록까지** 함께 골라진다(요청 6)', async () => {
+    const c = await open('ob4');
+    fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
+    await waitFor(() => expect(pickedIds(c)).toEqual(['im']));
+
+    /**
+     * **jsdom에는 `PointerEvent`가 없다** — `fireEvent.pointerDown(el, { shiftKey })`는
+     * 그 값을 조용히 잃는다(실측: `button`·`shiftKey`가 둘 다 `undefined`).
+     * `MouseEvent`로 지어 같은 이름으로 쏘면 수식 키가 실린다(`probe-pitfalls` F12).
+     */
+    fireEvent(c.querySelector('[data-note-hr]')!, new MouseEvent('pointerdown', { bubbles: true, cancelable: true, shiftKey: true }));
+    await waitFor(() => expect(pickedIds(c)).toEqual(['im', 'b', 'hr']));
+  });
+
+  it('Shift+누름은 **앵커에서 누른 자리까지** 잇는다(요청 5)', async () => {
+    const c = await open('ob6');
+    // 첫째 줄에 캐럿을 둔다 — 그것이 앵커다.
+    const a = c.querySelector('[data-note-line="a"]') as HTMLElement;
+    a.focus();
+    const t = document.createTreeWalker(a, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const r = document.createRange();
+    r.setStart(t, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(r);
+
+    /**
+     * 셋째 줄을 Shift+누름. **jsdom에는 좌표가 없다** — 사각형이 전부 0이라
+     * `elementFromPoint`가 답하지 못하고(`probe-pitfalls` F1 계열), 그러면 "누른 줄"을
+     * 찾지 못해 앵커가 있던 줄로 되돌아간다. 그 조회만 이 테스트에서 세워 준다.
+     */
+    const lineC = c.querySelector('[data-note-line="c"]') as HTMLElement;
+    const from = document.elementFromPoint;
+    document.elementFromPoint = (() => lineC) as typeof document.elementFromPoint;
+    fireEvent(lineC, new MouseEvent('pointerdown', { bubbles: true, cancelable: true, shiftKey: true }));
+    document.elementFromPoint = from;
+
+    // 세 줄이 통째로 — 사이의 그림·구분선까지 고른 티가 난다(요청 6).
+    await waitFor(() => expect(pickedIds(c).length).toBeGreaterThan(1));
+    expect(pickedIds(c)).toContain('a');
+    expect(pickedIds(c)).toContain('c');
+  });
+
+  it('만든 태그는 목록에서 **지울 수 있다**(요청 3) — 기본 태그에는 그 단추가 없다', async () => {
+    const c = await open('ob5');
+    await waitFor(() => expect(c.querySelector('[data-note-tag-pick]')).toBeTruthy());
+    fireEvent.click(c.querySelector('[data-note-tag-pick]') as HTMLElement);
+    await waitFor(() => expect(c.querySelector('[data-note-tag-menu]')).toBeTruthy());
+    const menu = c.querySelector('[data-note-tag-menu]') as HTMLElement;
+
+    expect(menu.querySelector('[data-note-tag-del="내가만든태그"]')).toBeTruthy();
+    expect(menu.querySelector('[data-note-tag-del="회의록"]')).toBeNull();
+
+    fireEvent.click(menu.querySelector('[data-note-tag-del="내가만든태그"]')!);
+    await waitFor(() => expect(c.querySelector('[data-note-tag-opt="내가만든태그"]')).toBeNull());
   });
 });
