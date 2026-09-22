@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, NotePaste, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, indentListItems, noteBlockShape, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, retypeNoteLine as retypeNoteLineCore, runsText, textRuns } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, indentListItems, noteBlockShape, olStartAt, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, retypeNoteLine as retypeNoteLineCore, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -320,6 +320,19 @@ const GUIDE_TOL_PX = 8;
 
 function totalSelected(m: MultiSelection): number {
   return m.nodes.length + m.lines.length + m.floats.length + m.strokes.length;
+}
+
+/**
+ * 공책에 무언가를 **넣을 자리** — 그 블록 뒤 / 그 블록을 갈아치우기 / **목록의 항목 사이**.
+ *
+ * 셋째가 뒤늦게 온 자리다(요청): 목록은 블록 하나라 항목 사이에 다른 블록을 둘 수
+ * 없는데, 사람이 보는 것은 「1. 11」과 「2. 22」 **사이의 줄**이다. 그 자리를 주면
+ * 목록을 거기서 둘로 가르고 사이에 끼운다(`moveNoteBlockIntoList`).
+ */
+export interface NoteInsertAt {
+  after?: string;
+  replace?: string;
+  intoList?: { id: string; at: number };
 }
 
 export interface EditorController {
@@ -881,6 +894,14 @@ export interface EditorController {
   /** 문단을 목록으로 바꾸고 글을 비운다 — 본문의 `- ` · `3. ` 단축(요청). */
   noteListShortcut: (blockId: string, kind: 'ul' | 'ol', start?: number, rest?: RichRun[]) => string | null;
   moveNoteBlock: (blockId: string, index: number) => void;
+  /**
+   * **목록의 항목 사이로** 블록 하나를 옮긴다(요청: 「1. 11」 · 그림 · 「2. 22」).
+   *
+   * 목록은 블록 **하나**라 그 안에는 다른 블록이 들어갈 자리가 없다 — 그래서 목록을
+   * 그 자리에서 **둘로 가르고** 사이에 끼운다. 한 커밋이라 되돌리기도 한 번이고,
+   * 번호 매기기는 뒤쪽에 `start`를 적어 **이어 센다**.
+   */
+  moveNoteBlockIntoList: (blockId: string, listId: string, at: number) => void;
   setNoteBlockRuns: (blockId: string, runs: RichRun[]) => void;
   setNoteItemRuns: (blockId: string, itemId: string, runs: RichRun[]) => void;
   toggleNoteCheck: (blockId: string, itemId: string) => void;
@@ -952,13 +973,13 @@ export interface EditorController {
    * **파일 하나를 이미지 블록으로 바로 넣는다** — 고르개를 거치지 않는 길(요청 10:
    * 클립보드로 붙여넣은 그림도 단추로 고른 것과 같아야 한다).
    */
-  insertNoteImage: (file: File | Blob, at?: { after?: string; replace?: string }) => void;
+  insertNoteImage: (file: File | Blob, at?: NoteInsertAt) => void;
   /**
    * **이미지를 바로 넣는다**(요청) — 자리를 먼저 만들지 않고 파일 고르개부터 연다.
    * `replace`를 주면 그 블록을 이미지로 바꾸고, 아니면 `after` 뒤에 새로 만든다.
    * 고르지 않고 닫으면 아무 일도 없다(빈 자리가 남지 않는다).
    */
-  promptNoteImage: (at?: { after?: string; replace?: string }) => void;
+  promptNoteImage: (at?: NoteInsertAt) => void;
   setNoteLinkDoc: (blockId: string, docId: string) => void;
   /** 문서 링크 블록이 고를 수 있는 문서들(공책일 때만 채워진다). */
   linkTargets: LinkTarget[];
@@ -7429,6 +7450,38 @@ export function useEditorState(): EditorController {
   );
 
   /** 블록 순서 바꾸기. */
+  const moveNoteBlockIntoList = useCallback(
+    (blockId: string, listId: string, at: number) => {
+      if (readOnlyRef.current || !notePage || blockId === listId) return;
+      // 새 블록의 id는 **바깥에서** 빌린다 — 업데이터는 두 번 불릴 수 있다(StrictMode).
+      const tailId = emptyBlock('p').id;
+      commitPage(
+        notePage.id,
+        (pg) => {
+          const src = pg.blocks.find((b) => b.id === blockId);
+          const li = pg.blocks.findIndex((b) => b.id === listId);
+          const list = pg.blocks[li];
+          if (!src || li < 0 || !list?.items) return pg;
+          if (at <= 0 || at >= list.items.length) return pg;
+          const head: NoteBlock = { ...list, items: list.items.slice(0, at) };
+          const tail: NoteBlock = { ...list, id: tailId, items: list.items.slice(at) };
+          // 번호 매기기는 **이어 센다** — 사이에 그림이 끼면 `olStartAt`의 되짚기가
+          // 거기서 끊기므로(앞 블록이 `ol`이 아니다) 뒤쪽에 시작 번호를 적어 둔다.
+          if (list.kind === 'ol') {
+            const base = olStartAt(pg.blocks, li);
+            tail.start = base + head.items!.filter((it) => !(it.indent ?? 0)).length;
+          }
+          const rest = pg.blocks.filter((b) => b.id !== blockId);
+          const j = rest.findIndex((b) => b.id === listId);
+          if (j < 0) return pg;
+          return { ...pg, blocks: [...rest.slice(0, j), head, src, tail, ...rest.slice(j + 1)] };
+        },
+        false,
+      );
+    },
+    [commitPage, notePage],
+  );
+
   const moveNoteBlock = useCallback(
     (blockId: string, index: number) => {
       if (!notePage) return;
@@ -7870,18 +7923,20 @@ export function useEditorState(): EditorController {
    * 이미 이 길을 쓰고 있다(`promptNodeImage`).
    */
   const insertNoteImage = useCallback(
-    (file: File | Blob, at?: { after?: string; replace?: string }) => {
+    (file: File | Blob, at?: NoteInsertAt) => {
       if (readOnlyRef.current) return;
       const id = at?.replace ?? addNoteBlock('img', at?.after);
       if (!id) return;
       if (at?.replace) retypeNoteBlock(at.replace, 'img');
+      // 목록의 **항목 사이**로 넣으라면 그 자리에서 목록을 가른다(요청).
+      if (at?.intoList) moveNoteBlockIntoList(id, at.intoList.id, at.intoList.at);
       void setNoteImage(id, file);
     },
-    [addNoteBlock, retypeNoteBlock, setNoteImage],
+    [addNoteBlock, moveNoteBlockIntoList, retypeNoteBlock, setNoteImage],
   );
 
   const promptNoteImage = useCallback(
-    (at?: { after?: string; replace?: string }) => {
+    (at?: NoteInsertAt) => {
       if (readOnlyRef.current) return;
       const input = document.createElement('input');
       input.type = 'file';
@@ -8538,6 +8593,7 @@ export function useEditorState(): EditorController {
     splitNoteBlock,
     noteListShortcut,
     moveNoteBlock,
+    moveNoteBlockIntoList,
     setNoteBlockRuns,
     setNoteItemRuns,
     toggleNoteCheck,

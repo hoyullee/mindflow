@@ -300,6 +300,11 @@ export function armedCaretMark(el: HTMLElement | null): NoteFormatKind | null {
   return el && armed?.el === el ? armed.kind : null;
 }
 
+/** 예약이 걸린 **글자 자리** — 조합 중에 그 구간을 칠할 때 쓴다(`paintCode`). */
+export function armedCaretAt(el: HTMLElement | null): number | null {
+  return el && armed?.el === el ? armed.at : null;
+}
+
 /**
  * **방금 들어온 글자에** 예약한 서식을 건다 — 걸었으면 새 런, 아니면 `null`.
  *

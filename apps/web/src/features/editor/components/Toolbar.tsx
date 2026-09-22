@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { keyLabel } from '../shortcutLabels';
 import type { EditorController } from '../useEditorState';
 import { PresenceAvatars } from './PresenceAvatars';
 import { StyleMenu } from './StyleMenu';
@@ -264,7 +265,7 @@ export function Toolbar({ controller }: ToolbarProps) {
         type="button"
         className="mf-ed-btn"
         onClick={() => controller.setSearchOpen(!controller.searchOpen)}
-        title="맵에서 검색 (Ctrl+F)"
+        title={`맵에서 검색 (${keyLabel('⌘F')})`}
         aria-label="맵에서 검색"
         style={{
           display: 'flex',

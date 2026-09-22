@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { keyLabel } from '../editor/shortcutLabels';
 import { Link } from 'react-router-dom';
 import { useBackend } from '../../adapters/BackendContext';
 import { useUpdateGuard } from '../../pwa/updateGate';
@@ -201,7 +202,7 @@ function HeroWindow() {
 
         <div className="lp-window-foot">
           <span className="cap">{scene.caption}</span>
-          <span className="mono hint">{scene.hint}</span>
+          <span className="mono hint">{scene.hint.split(' · ').map((k) => keyLabel(k)).join(' · ')}</span>
         </div>
       </div>
     </div>

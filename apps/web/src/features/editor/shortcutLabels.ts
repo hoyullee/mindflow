@@ -37,3 +37,30 @@ export function enterKeyLabel(): string {
 export function renameKeyLabel(): string {
   return isMacLike() ? '↵' : 'F2';
 }
+
+/** 윈도·리눅스에서 수식 기호가 갖는 이름 — 표기 규칙은 그 OS의 관례를 따른다. */
+const WIN_MOD: Record<string, string> = { '⌘': 'Ctrl', '⌃': 'Ctrl', '⌥': 'Alt', '⇧': 'Shift' };
+
+/**
+ * **맥 표기를 그 기기의 표기로**(요청) — `⌘⌥C` → 맥은 그대로, 그 밖은 `Ctrl+Alt+C`.
+ *
+ * 화면에 적는 단축키를 **맥 기호 한 벌**로만 들고 다니다가 그리는 자리에서 바꾼다.
+ * 반대로(OS마다 문자열을 둘씩) 들면 하나를 고칠 때 다른 하나가 남아 조용히 어긋난다 —
+ * 실제로 공책의 메뉴·팝업이 윈도에서도 `⌘`를 그대로 보여 주고 있었다.
+ *
+ * 수식 기호가 하나도 없으면(`⌫`·`↵`·`F2`) 그대로 둔다 — 그 글리프는 두 OS에서
+ * 같은 키를 가리키거나, 이미 따로 고르는 함수가 있다(`deleteKeyLabel` 등).
+ */
+export function keyLabel(spec: string): string {
+  if (!spec || isMacLike()) return spec;
+  const mods: string[] = [];
+  let rest = spec;
+  while (rest && WIN_MOD[rest[0] as string]) {
+    const name = WIN_MOD[rest[0] as string] as string;
+    if (!mods.includes(name)) mods.push(name);
+    rest = rest.slice(1);
+  }
+  if (!mods.length) return spec;
+  // 글자 키는 대문자로(`Ctrl+C`), 기호·화살표는 생긴 그대로.
+  return [...mods, /^[a-z]$/.test(rest) ? rest.toUpperCase() : rest].filter(Boolean).join('+');
+}

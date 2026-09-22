@@ -50,6 +50,15 @@ const SLASH_NAME = 'mf-note-slash';
  * 한 이름에 몰아넣으면 나중에 칠한 쪽이 앞의 것을 지운다.
  */
 const FIND_NAME = 'mf-note-find';
+/**
+ * **조합 중인 인라인 코드**(제보) — 켜 둔 코드 서식은 글자가 들어온 **뒤**에야 값에
+ * 걸리는데(`armCaretMark`), 한글은 그 "뒤"가 음절을 확정한 다음이다. 그동안 글자는
+ * 평문이라 브라우저의 조합 표시만 보여 "선택한 것 같은 배경"으로 읽혔다.
+ *
+ * 조합 중에는 **DOM을 건드릴 수 없으므로**(`innerHTML`을 갈면 자모가 갈린다) 칠하기로
+ * 흉내만 낸다 — 확정되는 순간 진짜 `<code>`가 그 자리를 이어받는다.
+ */
+const CODE_NAME = 'mf-note-code';
 
 /** 이 브라우저가 `CSS.highlights`를 아는가 — 모르면 호출부가 블록 면으로 물러선다. */
 export function supportsHighlight(): boolean {
@@ -237,6 +246,16 @@ export function paintSlash(range: Range | null): void {
     return;
   }
   CSS.highlights.set(SLASH_NAME, new Highlight(range));
+}
+
+/** 조합 중인 코드 조각을 칠한다 — `null`이면 지운다(`::highlight(mf-note-code)`). */
+export function paintCode(range: Range | null): void {
+  if (!supportsHighlight()) return;
+  if (!range) {
+    CSS.highlights.delete(CODE_NAME);
+    return;
+  }
+  CSS.highlights.set(CODE_NAME, new Highlight(range));
 }
 
 /** 찾기에 걸린 구간들을 칠한다 — 빈 목록이면 지운다(`::highlight(mf-note-find)`). */

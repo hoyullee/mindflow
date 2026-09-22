@@ -938,3 +938,11 @@ input[type='search']::-webkit-search-results-decoration {
 [data-note-kind='code'] .mf-note-line:has(> br:only-child)::before {
   color: #8a7f72;
 }
+
+/* 조합 중인 인라인 코드 — 확정 전에도 코드로 보이게(제보). 진짜 `<code>`가 그리는
+   알약과 **같은 두 색**이다(테두리·여백은 칠하기로 줄 수 없다 — 확정되는 순간
+   그쪽이 이어받는다). */
+::highlight(mf-note-code) {
+  background: #f4ede4;
+  color: #c44b40;
+}

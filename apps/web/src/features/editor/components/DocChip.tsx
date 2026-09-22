@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { keyLabel } from '../shortcutLabels';
 import type { EditorController } from '../useEditorState';
 import { useOnline } from '../../../hooks/useOnline';
 import { CHIP_SHADOW, accentButton, glassCard } from '../chrome';
@@ -149,7 +150,7 @@ export function DocChip({ controller, inline = false }: DocChipProps) {
         type="button"
         className="mf-ed-btn"
         onClick={controller.saveNow}
-        title="저장 (Ctrl+S)"
+        title={`저장 (${keyLabel('⌘S')})`}
         style={{
           width: 34,
           height: 34,

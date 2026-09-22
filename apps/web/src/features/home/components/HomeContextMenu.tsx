@@ -10,7 +10,8 @@ import { docKindOf } from '../viewModel';
 import { dashWidgetKind, isCalItem, sizesFor } from '../dashboard/model';
 import { mapHref } from '../storage';
 import type { NoteSketch } from '@mindflow/mindmap-core';
-import { NOTE_COVERS, NOTE_TAGS, noteTagColor } from '@mindflow/mindmap-core';
+import { NOTE_COVERS } from '@mindflow/mindmap-core';
+import { noteTagInk, noteTagOptions } from '../../editor/noteTags';
 import {
   CSS_MENU_TONE,
   MENU_GLYPH_STYLE,
@@ -567,9 +568,10 @@ function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[
       icon: TagIcon,
       label: curTag ? `태그 · ${curTag}` : '태그 붙이기',
       submenu: [
-        ...NOTE_TAGS.map((t) => ({
+        // 목록도 색도 **태그 판**에서 온다(요청) — 공책 에디터의 고르개와 같은 한 벌.
+        ...noteTagOptions().map((t) => ({
           key: `note-tag-${t}`,
-          icon: <SpaceDot color={noteTagColor(t)} />,
+          icon: <SpaceDot color={noteTagInk(t)} />,
           label: t,
           onSelect: () => controller.setNoteTagFor(docId, curTag === t ? '' : t),
         })),
