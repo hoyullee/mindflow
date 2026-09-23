@@ -6583,6 +6583,19 @@ describe('공책 — 오브젝트 선택 · 이미지 판 · 태그 지우기 ·
     expect(pop.querySelector('[data-note-image-del]')).toBeTruthy();
   });
 
+  it('여러 개를 고르면 그림의 판은 **뜨지 않는다**(제보 1)', async () => {
+    const c = await open('ob-multi');
+    fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
+    await waitFor(() => expect(c.querySelector('[data-note-image-pop]')).toBeTruthy());
+    // 구분선을 Shift+누름으로 **둘째**를 더한다. jsdom에는 `PointerEvent`가 없어
+    // `fireEvent.pointerDown(el, { shiftKey })`의 init이 통째로 버려진다(`probe-pitfalls` F12).
+    fireEvent(c.querySelector('[data-note-hr]')!, new MouseEvent('pointerdown', { bubbles: true, cancelable: true, shiftKey: true }));
+    // 사이에 낀 블록까지 함께 골라진다(요청 5의 규칙) — 여기서 중요한 것은 **둘 이상**이다.
+    await waitFor(() => expect(pickedIds(c).length).toBeGreaterThan(1));
+    // 장마다 판이 하나씩 뜨면 화면이 판으로 덮이고 어느 판이 어느 그림의 것인지도 모른다.
+    expect(c.querySelector('[data-note-image-pop]')).toBeNull();
+  });
+
   it('고른 이미지를 **가운데로** 정렬한다(요청 4)', async () => {
     const c = await open('ob2');
     fireEvent.pointerDown(c.querySelector('[data-note-image]')!, { button: 0 });
