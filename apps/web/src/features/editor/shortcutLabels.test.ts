@@ -36,10 +36,19 @@ describe('단축키 표기', () => {
     expect(keyLabel('⌘\\')).toBe('Ctrl+\\');
   });
 
-  it('수식 기호가 없으면 손대지 않는다 — `F2`·`↵`는 두 OS에서 같은 키다', () => {
+  it('홀로 선 맥 글리프는 낱말로 — 윈도 글꼴에 `⌫`·`↵`가 없어 두부가 떴다(실측)', () => {
+    asPlatform('Win32');
+    expect(keyLabel('⌫')).toBe('Del');
+    expect(keyLabel('↵')).toBe('Enter');
+    // 맥에서는 그대로다.
+    asPlatform('MacIntel');
+    expect(keyLabel('⌫')).toBe('⌫');
+    expect(keyLabel('↵')).toBe('↵');
+  });
+
+  it('그 밖의 수식 없는 표기는 손대지 않는다', () => {
     asPlatform('Win32');
     expect(keyLabel('F2')).toBe('F2');
-    expect(keyLabel('↵')).toBe('↵');
     expect(keyLabel('')).toBe('');
   });
 

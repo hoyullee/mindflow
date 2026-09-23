@@ -948,7 +948,9 @@ export interface EditorController {
   /** 행을 위(`-1`)·아래(`+1`)로 한 칸. */
   moveNoteTableRow: (blockId: string, at: number, delta: number) => void;
   /** 열의 가로 정렬 — 왼쪽이면 칸을 비운다(기본값은 적지 않는다). */
-  setNoteTableAlign: (blockId: string, col: number, align: 'left' | 'center' | 'right') => void;
+  setNoteTableAlign: (blockId: string, col: number | 'all', align: 'left' | 'center' | 'right') => void;
+  /** 표 — **행별 가로 정렬**. 한 칸이 행·열 둘 다에 걸리면 행이 이긴다(모델 주석). */
+  setNoteTableRowAlign: (blockId: string, row: number, align: 'left' | 'center' | 'right') => void;
   /** 첫 행을 머리로 쓸지 — 켜짐이 기본이라 **끌 때만** 문서에 적힌다. */
   /**
    * 고른 칸들에 **색을 붓는다**(`null`이면 지운다) — 표 선택 칩의 `색 채우기`.
@@ -7808,18 +7810,48 @@ export function useEditorState(): EditorController {
   );
 
   const setNoteTableAlign = useCallback(
-    (blockId: string, col: number, align: 'left' | 'center' | 'right') => {
+    (blockId: string, col: number | 'all', align: 'left' | 'center' | 'right') => {
       if (!notePage) return;
       commitBlock(
         notePage.id,
         blockId,
         (b) => {
           const width = b.rows?.[0]?.length ?? 0;
-          if (col < 0 || col >= width) return b;
-          const next = Array.from({ length: width }, (_, i) => b.colAlign?.[i] ?? 'left');
-          next[col] = align;
+          if (col !== 'all' && (col < 0 || col >= width)) return b;
+          // `'all'` = 표 전체를 골랐을 때 — 열마다 따로 부르면 되돌리기 단계가 열 수만큼
+          // 쌓이고 그 사이의 반쯤 정렬된 표가 실제로 저장된다. 한 커밋으로 적는다.
+          const next = Array.from({ length: width }, (_, i) => (col === 'all' ? align : (b.colAlign?.[i] ?? 'left')));
+          if (col !== 'all') next[col] = align;
+          // 표 전체에 걸었으면 **행에 걸어 둔 예외도 함께 걷는다** — 행이 열을 이기므로
+          // 남겨 두면 "표를 전부 가운데로" 했는데 그 줄만 그대로인 화면이 된다.
+          const rowless = col === 'all' ? { ...b, rowAlign: undefined } : b;
           // 전부 왼쪽이면 칸 자체를 뺀다 — 기본값을 문서에 적지 않는다(블록 정렬과 같은 규칙).
-          return next.every((a) => a === 'left') ? { ...b, colAlign: undefined } : { ...b, colAlign: next };
+          return next.every((a) => a === 'left') ? { ...rowless, colAlign: undefined } : { ...rowless, colAlign: next };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  /**
+   * **행별 정렬**(제보) — 행을 골라 우클릭하면 정렬을 걸 수 있게 되면서 생겼다.
+   *
+   * 열 정렬과 같은 규칙으로 쓴다: 전부 왼쪽이면 칸 자체를 뺀다(기본값을 문서에 적지
+   * 않는다). 한 칸이 둘 다에 걸리면 **행이 이긴다** — 모델 주석에 그 이유가 있다.
+   */
+  const setNoteTableRowAlign = useCallback(
+    (blockId: string, row: number, align: 'left' | 'center' | 'right') => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const height = b.rows?.length ?? 0;
+          if (row < 0 || row >= height) return b;
+          const next = Array.from({ length: height }, (_, i) => b.rowAlign?.[i] ?? 'left');
+          next[row] = align;
+          return next.every((a) => a === 'left') ? { ...b, rowAlign: undefined } : { ...b, rowAlign: next };
         },
         false,
       );
@@ -8673,6 +8705,7 @@ export function useEditorState(): EditorController {
     moveNoteTableRow,
     moveNoteTableCol,
     setNoteTableAlign,
+    setNoteTableRowAlign,
     setNoteTableFill,
     setNoteTableSizes,
     duplicateNoteTableRow,

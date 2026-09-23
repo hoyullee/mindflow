@@ -100,7 +100,8 @@ const INLINE_CODE_ICON = (
     <path d="m19 6.2 2.4 1.9" />
     {/* 글자는 **글꼴이 그린다** — `a`를 path로 흉내 내면 굵기와 곡선이 화면의 글과
         어긋나고, 글꼴이 바뀌면 그 자리만 옛 모양으로 남는다. */}
-    <text x="12" y="19.1" textAnchor="middle" fontFamily="'JetBrains Mono', ui-monospace, monospace" fontSize="16.5" fontWeight="700" fill="currentColor" stroke="none">
+    {/* 글자만 한 호흡 키웠다(요청) — 백틱 두 개는 그대로라 `a`가 그 사이를 채운다. */}
+    <text x="12" y="19.4" textAnchor="middle" fontFamily="'JetBrains Mono', ui-monospace, monospace" fontSize="19" fontWeight="700" fill="currentColor" stroke="none">
       a
     </text>
   </>
@@ -159,6 +160,26 @@ const CUT_ICON = (
     <circle cx="18" cy="18" r="3" />
     <path d="M8.1 15.9 19 3" />
     <path d="M15.9 15.9 5 3" />
+  </>
+);
+
+/** 표 메뉴가 쓰는 조각 셋 — 행(가로 줄) · 열(세로 줄) · 삭제. */
+const ROW_ICON = (
+  <>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 10h18M3 15h18" />
+  </>
+);
+const COL_ICON = (
+  <>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M9 5v14M15 5v14" />
+  </>
+);
+const TRASH_ICON = (
+  <>
+    <path d="M4 7h16M10 11v6M14 11v6" />
+    <path d="M6 7l1 13h10l1-13M9 7V4h6v3" />
   </>
 );
 
@@ -335,7 +356,10 @@ const INDENTS: { delta: number; name: string; icon: JSX.Element }[] = [
 
 /** 글자색 — 스와치. 맵의 색 팔레트와 같은 값을 쓴다(한 앱에서 색이 두 벌이 되지 않게). */
 const INKS: [string, string][] = [
-  ['', '기본'],
+  // 첫 칸은 **색을 지우는 자리**(문서에 `c`를 적지 않는다)이고, 그 결과가 곧 본문
+  // 글자색이다 — 그래서 회색 바탕에 `A`를 얹는 대신 **그 색 그대로** 보여 준다
+  // (요청: 「기본」을 그냥 검은색으로). 테마를 바꾸면 이 칸도 그 테마의 글자색이 된다.
+  ['', '검정'],
   ['#d92626', '빨강'],
   ['#d98026', '주황'],
   ['#2f7d57', '초록'],
@@ -4380,10 +4404,8 @@ function FormatToolbar({
                 className="btn"
                 onMouseDown={stop}
                 onClick={() => apply('c', ink || null)}
-                style={{ ...SWATCH, background: ink || 'var(--mf-panel2)', color: 'var(--mf-text)', fontSize: 11 }}
-              >
-                {ink ? '' : 'A'}
-              </button>
+                style={{ ...SWATCH, background: ink || 'var(--mf-text)' }}
+              />
             ))}
           </div>
         )}
@@ -6137,7 +6159,11 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       e.preventDefault();
       e.stopPropagation();
       window.getSelection()?.removeAllRanges();
-      pick({ mode: 'range', r0: 0, c0: 0, r1: rows.length - 1, c1: width - 1, r: 0, c: 0 });
+      // **표 전체는 한 가지 표현으로**(`mode: 'all'`) — 예전에는 모든 칸을 덮는 구역
+      // (`range`)을 만들었는데, 그러면 "모든 칸을 골랐다"가 구역이자 전체라 메뉴가
+      // 어느 쪽인지 가릴 수 없었다(테두리도 네 모서리로 돌지 않았다). 지금은 손으로
+      // 끌어 전부를 덮어도 메뉴가 같은 판단을 하고(`wholeTable`), 키는 곧장 전체다.
+      pick({ mode: 'all' });
       focusKeys();
       return;
     }
@@ -6466,6 +6492,15 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       role="separator"
       aria-label={axis === 'col' ? `${i + 1}번째 열 너비 조절` : `${i + 1}번째 행 높이 조절`}
       title={axis === 'col' ? '끌어서 열 너비 조절' : '끌어서 행 높이 조절'}
+      /**
+       * **경계선에서도 표 메뉴가 뜬다**(제보).
+       *
+       * 그립은 경계 위에 얹힌 얇은 띠라 우클릭이 그대로 블록으로 올라갔고, 그러면
+       * 본문 블록 메뉴(잘라내기 · 문단 스타일 · 블록 삭제…)가 떴다 — 표 안을 눌렀는데
+       * 표와 상관없는 메뉴가 나오는 자리였다. 골라 둔 것이 있으면 **그 메뉴**를,
+       * 없으면 이 경계가 속한 행·열의 메뉴를 연다(레일 우클릭과 같은 규칙).
+       */
+      onContextMenu={(e) => handleContext(e, sel ?? (axis === 'col' ? { mode: 'col', c: i } : { mode: 'row', r: i }))}
       onMouseDown={(e) => {
         if (readOnly) return;
         e.preventDefault();
@@ -6797,7 +6832,9 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                      * 커서는 `cell` 그대로다 — 한 번의 누름은 여전히 "칸을 고르는 일"이다.
                      */
                     const armed = !editing && sel?.mode === 'cell' && sel.r === ri && sel.c === ci;
-                    const align = block.colAlign?.[ci] ?? 'left';
+                    // 행이 열을 이긴다 — 행 정렬은 "이 한 줄만"이라는 예외이고,
+                    // 열 정렬은 그 칸 전체의 성격이다(모델 주석에 같은 말이 있다).
+                    const align = block.rowAlign?.[ri] ?? block.colAlign?.[ci] ?? 'left';
                     const paint = fillAt(block.fills, ri, ci);
                     // 링은 **고른 구역의 바깥 경계에만** 그린다 — 네 이웃이 선택에
                     // 들었는지 보고 그쪽 변만 뺀다(스펙 3-3).
@@ -7019,11 +7056,6 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
           at={menu.at}
           rows={rows.length}
           cols={width}
-          onPick={(next) => {
-            pick(next);
-            setMenu(null);
-            focusFor(next);
-          }}
           onFill={(color) => {
             fill(fillTargetsOf(menu.sel), color);
             setMenu(null);
@@ -7039,25 +7071,24 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
 }
 
 /** 색 팔레트 여섯 + 지우기 — 칩과 메뉴가 같은 것을 쓴다. */
-/** 표를 CSV 한 덩이로 — 쉼표·따옴표·줄바꿈이 든 칸은 따옴표로 감싸고 `"`를 두 번 쓴다. */
-function tableCsv(rows: RichRun[][][]): string {
-  return rows
-    .map((r) =>
-      r
-        .map((c) => {
-          const t = runsText(c);
-          return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-        })
-        .join(','),
-    )
-    .join('\n');
-}
-
 /**
- * 표 우클릭 메뉴 — 스펙 §4 그대로.
+ * 표 우클릭 메뉴 — **고른 것에 대해 할 일만** 담는다(제보).
  *
- * 잘라내기·복사·붙여넣기 / **선택 ›**·**행 ›**·**열 ›**·**정렬 ›**·**색 채우기 ›** /
- * 머리글 행 사용 · 표 복제 · CSV로 복사 / 표 삭제.
+ * 예전에는 무엇을 골랐든 같은 12줄이 떴다(선택 › · 행 › · 열 › · 정렬 › · 색 채우기 ·
+ * 표 복제 · CSV로 복사 · 표 삭제). 「선택 ›」은 방금 손으로 고른 것을 메뉴로 다시
+ * 고르는 자리였고, 「표 복제」·「CSV로 복사」·「표 삭제」는 **칸 하나를 골랐을 때도**
+ * 표 전체를 건드리는 항목이라 잘못 누르기 쉬웠다. 지금은 이렇게 갈린다:
+ *
+ * | 고른 것 | 메뉴 |
+ * | --- | --- |
+ * | 칸·구역 | 복사 · 붙여넣기 / 정렬 › · 색 채우기 › |
+ * | 행 | 위에 행 추가 · 아래에 행 추가 · 행 위로 이동 · 행 삭제 / 정렬 › · 색 채우기 › |
+ * | 열 | 왼쪽/오른쪽에 열 추가 · 열 왼쪽/오른쪽으로 이동 · 열 삭제 / 정렬 › · 색 채우기 › |
+ * | 표 전체 | 색 채우기 › / 표 삭제 |
+ *
+ * **행·열의 일은 날개를 걷고 첫 판에 폈다**(요청) — 행을 고른 뒤 `행 ›`을 한 번 더
+ * 누르는 것은 이미 말한 것을 다시 말하는 일이다. 고르는 판(정렬 · 색 채우기)만 날개로
+ * 남는다: 서로 배타적인 값 목록이라 한 줄씩 펴 놓으면 명령처럼 읽힌다.
  *
  * **좌표를 글자로 내보내지 않는다**(스펙 §1). 예전에는 머리가 `표 · A 머리글`이고
  * 날개가 `열 B`였는데, 스프레드시트를 쓰지 않는 사람에게 `A`·`B`는 아무것도
@@ -7077,7 +7108,6 @@ function TableMenu({
   at,
   rows,
   cols,
-  onPick,
   onFill,
   onDone,
 }: {
@@ -7087,11 +7117,10 @@ function TableMenu({
   at: { x: number; y: number };
   rows: number;
   cols: number;
-  onPick: (sel: TableSel) => void;
   onFill: (color: string | null) => void;
   onDone: () => void;
 }) {
-  const [wing, setWing] = useState<'pick' | 'row' | 'col' | 'align' | 'fill' | null>(null);
+  const [wing, setWing] = useState<'align' | 'fill' | null>(null);
   const spot = selAnchor(sel);
   /** 고른 행·열의 범위 — 레일을 끌어 여럿을 골랐으면 그 전부가 삭제 대상이다. */
   const rowSpan = sel.mode === 'row' ? axisSpan(sel.r, sel.r1) : ([spot.r, spot.r] as [number, number]);
@@ -7099,22 +7128,32 @@ function TableMenu({
   /**
    * **고른 것에 뜻이 있는 항목만 그린다**(제보).
    *
-   * `selAnchor`가 없는 축을 0으로 메우기 때문에, 지금까지 행을 골라도 `열 ›`·`정렬 ›`이
-   * 함께 떠서 **언제나 1열**을 건드렸고 열을 골라도 `행 ›`이 떠서 **언제나 0행**을
-   * 건드렸다. 고른 것과 대상이 다른 항목은 메뉴에 있으면 안 된다.
+   * `selAnchor`가 없는 축을 0으로 메우기 때문에, 고른 것과 대상이 다른 항목을 그리면
+   * 행을 골라도 **언제나 1열**을, 열을 골라도 **언제나 0행**을 건드린다.
    *
-   * 클립보드 셋(잘라내기·복사·붙여넣기)도 칸 **하나**만 읽고 쓰므로 행·열·전체에서는
-   * 감춘다 — 그 자리의 표 전체 복사는 `CSV로 복사`가 맡는다.
+   * 클립보드 둘(복사·붙여넣기)도 칸 **하나**만 읽고 쓰므로 행·열·전체에서는 감춘다.
    */
-  const cellish = sel.mode === 'cell' || sel.mode === 'range';
-  const showRow = cellish || sel.mode === 'row';
-  const showCol = cellish || sel.mode === 'col';
-  // 정렬은 `colAlign[c]` — **열 단위 속성**이라 행 선택에는 대응하는 뜻이 없다.
-  const showAlign = showCol;
-  // 높이는 세어서 넘긴다(470은 12항목짜리 고정값이었다): 항목 33 + gap 1,
+  /**
+   * **모든 칸을 골랐나** — `⌘A`가 만드는 `all`이거나, 손으로 끌어 전부를 덮은 구역.
+   * 둘을 같게 보는 이유는 사용자에게 같은 일이기 때문이다(제보는 후자로 왔다).
+   */
+  const wholeTable =
+    sel.mode === 'all' ||
+    (sel.mode === 'range' &&
+      Math.min(sel.r0, sel.r1) === 0 &&
+      Math.min(sel.c0, sel.c1) === 0 &&
+      Math.max(sel.r0, sel.r1) === rows - 1 &&
+      Math.max(sel.c0, sel.c1) === cols - 1);
+  const cellish = (sel.mode === 'cell' || sel.mode === 'range') && !wholeTable;
+  const isRow = sel.mode === 'row';
+  const isCol = sel.mode === 'col';
+  const isAll = wholeTable;
+  /** 정렬은 어디서나 — 칸·구역은 그 열에, 행은 그 행에, 표 전체는 **모든 열**에 건다. */
+  const showAlign = true;
+  // 높이는 세어서 넘긴다(고정값이었다): 항목 33 + gap 1,
   // 구분선 1 + margin 8 + gap 1, 머리말 22 + 팝업 패딩 14.
-  const itemCount = (cellish ? 3 : 0) + 1 + (showRow ? 1 : 0) + (showCol ? 1 : 0) + (showAlign ? 1 : 0) + 1 + 2 + 1;
-  const ruleCount = cellish ? 3 : 2;
+  const itemCount = (cellish ? 2 : 0) + (isRow ? 4 : 0) + (isCol ? 5 : 0) + (showAlign ? 1 : 0) + 1 + (isAll ? 1 : 0);
+  const ruleCount = isAll ? 1 : 1;
   const { ref: menuRef, style: base } = useCursorPlacement(at, TABLE_MENU_W, 36 + itemCount * 34 + ruleCount * 10);
   const cell = block.rows?.[spot.r]?.[spot.c];
   const run = (fn: () => void) => () => {
@@ -7128,7 +7167,10 @@ function TableMenu({
       /* 클립보드를 막아 둔 환경 — ⌘C가 그대로 동작한다 */
     }
   };
-  const alignNow = block.colAlign?.[spot.c] ?? 'left';
+  /** 지금 걸려 있는 정렬 — 행을 골랐으면 그 행의 값, 아니면 그 열의 값. */
+  const alignNow = (isRow ? block.rowAlign?.[spot.r] : block.colAlign?.[spot.c]) ?? 'left';
+  /** 표 전체에서는 **모든 열이 같을 때만** 그 값을 켜 준다(섞여 있으면 아무것도 켜지 않는다). */
+  const alignAll = (block.colAlign ?? []).length && (block.colAlign ?? []).every((a) => a === block.colAlign?.[0]) ? block.colAlign?.[0] : null;
   const label = selLabel(sel, rows, cols);
   /** 색 날개의 머리 — 무엇에 칠하는지 그 자리에서 말한다(스펙 §4-7). */
   const fillTitle =
@@ -7146,97 +7188,88 @@ function TableMenu({
         <span style={{ ...POP_HEAD, textTransform: 'none', letterSpacing: 0 }}>표 · {label.name}</span>
         {cellish && (
           <>
-            <CtxItem mark="t-cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={run(() => { void write(runsText(cell ?? [])); controller.setNoteCell(block.id, spot.r, spot.c, textRuns('')); })} />
-        <CtxItem mark="t-copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={run(() => void write(runsText(cell ?? [])))} />
-        <CtxItem
-          mark="t-paste"
-          name="붙여넣기"
-          hint="⌘V"
-          icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>}
-          onClick={run(() => {
-            void navigator.clipboard
-              .readText()
-              .then((t) => t && controller.setNoteCell(block.id, spot.r, spot.c, textRuns(t.split('\n')[0]!)))
-              .catch(() => undefined);
-          })}
+            <CtxItem mark="t-copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={run(() => void write(runsText(cell ?? [])))} />
+            <CtxItem
+              mark="t-paste"
+              name="붙여넣기"
+              hint="⌘V"
+              icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>}
+              onClick={run(() => {
+                void navigator.clipboard
+                  .readText()
+                  .then((t) => t && controller.setNoteCell(block.id, spot.r, spot.c, textRuns(t.split('\n')[0]!)))
+                  .catch(() => undefined);
+              })}
             />
+            <CtxRule />
           </>
         )}
 
-        {cellish && <CtxRule />}
-        <CtxItem mark="t-pick" name="선택" wing on={wing === 'pick'} onClick={() => setWing((v) => (v === 'pick' ? null : 'pick'))} icon={<><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" /></>} />
-        {showRow && <CtxItem mark="t-row" name="행" wing on={wing === 'row'} onClick={() => setWing((v) => (v === 'row' ? null : 'row'))} icon={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M3 15h18" /></>} />}
-        {showCol && <CtxItem mark="t-col" name="열" wing on={wing === 'col'} onClick={() => setWing((v) => (v === 'col' ? null : 'col'))} icon={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M9 5v14M15 5v14" /></>} />}
+        {/* 행의 일 — 날개를 걷고 첫 판에 폈다(요청). */}
+        {isRow && (
+          <>
+            <CtxItem mark="row-above" name="위에 행 추가" hint="⌥↑" icon={ROW_ICON} onClick={run(() => controller.addNoteTableRow(block.id, spot.r))} />
+            <CtxItem mark="row-below" name="아래에 행 추가" hint="⌥↓" icon={ROW_ICON} onClick={run(() => controller.addNoteTableRow(block.id, spot.r + 1))} />
+            <CtxItem mark="row-up" name="행 위로 이동" icon={<><path d="M12 19V6" /><path d="m6 12 6-6 6 6" /></>} disabled={spot.r === 0} onClick={run(() => controller.moveNoteTableRow(block.id, spot.r, -1))} />
+            {/* 여러 행을 골라 두었으면 **그 전부**를 지운다(요청 10) — 메뉴로 가는 순간
+                한 행으로 좁아지면 "골라 놓고 지웠는데 하나만 사라진다"가 된다. */}
+            <CtxItem
+              mark="row-del"
+              name={rowSpan[1] > rowSpan[0] ? `행 ${rowSpan[1] - rowSpan[0] + 1}개 삭제` : '행 삭제'}
+              hint="⌫"
+              danger
+              icon={TRASH_ICON}
+              disabled={rows <= 1}
+              onClick={run(() => controller.removeNoteTableRow(block.id, rowSpan[0], rowSpan[1]))}
+            />
+            <CtxRule />
+          </>
+        )}
+
+        {/* 열의 일 — 같은 규칙. */}
+        {isCol && (
+          <>
+            <CtxItem mark="col-left" name="왼쪽에 열 추가" hint="⌥←" icon={COL_ICON} onClick={run(() => controller.addNoteTableCol(block.id, spot.c))} />
+            <CtxItem mark="col-right" name="오른쪽에 열 추가" hint="⌥→" icon={COL_ICON} onClick={run(() => controller.addNoteTableCol(block.id, spot.c + 1))} />
+            <CtxItem mark="col-left-move" name="열 왼쪽으로 이동" icon={<><path d="M19 12H6" /><path d="m12 6-6 6 6 6" /></>} disabled={spot.c === 0} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, -1))} />
+            <CtxItem mark="col-right-move" name="열 오른쪽으로 이동" icon={<><path d="M5 12h13" /><path d="m12 6 6 6-6 6" /></>} disabled={spot.c >= cols - 1} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, 1))} />
+            <CtxItem
+              mark="col-del"
+              name={colSpan[1] > colSpan[0] ? `열 ${colSpan[1] - colSpan[0] + 1}개 삭제` : '열 삭제'}
+              hint="⌫"
+              danger
+              icon={TRASH_ICON}
+              disabled={cols <= 1}
+              onClick={run(() => controller.removeNoteTableCol(block.id, colSpan[0], colSpan[1]))}
+            />
+            <CtxRule />
+          </>
+        )}
+
         {showAlign && <CtxItem mark="t-align" name="정렬" wing on={wing === 'align'} onClick={() => setWing((v) => (v === 'align' ? null : 'align'))} icon={<><path d="M4 6h16M4 12h10M4 18h16" /></>} />}
         <CtxItem mark="t-fill" name="색 채우기" wing on={wing === 'fill'} onClick={() => setWing((v) => (v === 'fill' ? null : 'fill'))} icon={<><path d="M19 11a7 7 0 1 1-7-7" /><path d="M12 4v7l5 4" /></>} />
 
-        <CtxRule />
-        <CtxItem mark="t-dup" name="표 복제" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={run(() => controller.duplicateNoteBlock(block.id))} />
-        <CtxItem
-          mark="t-csv"
-          name="CSV로 복사"
-          icon={<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>}
-          onClick={run(() => void write(tableCsv(block.rows ?? [])))}
-        />
-
-        <CtxRule />
-        <CtxItem mark="t-del" name="표 삭제" danger icon={<><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>} onClick={run(() => controller.removeNoteBlock(block.id))} />
+        {/* 표를 통째로 지우는 자리는 **표 전체를 골랐을 때만**(제보) — 칸 하나를 고른
+            메뉴에 있으면 「칸 삭제」로 읽고 누른다. */}
+        {isAll && (
+          <>
+            <CtxRule />
+            <CtxItem mark="t-del" name="표 삭제" danger icon={TRASH_ICON} onClick={run(() => controller.removeNoteBlock(block.id))} />
+          </>
+        )}
       </div>
 
-      {wing === 'pick' && (
-        <CtxWing anchor={base} title="선택">
-          <CtxItem mark="t-pick-cell" name="이 셀" on={sel.mode === 'cell'} onClick={() => onPick({ mode: 'cell', r: spot.r, c: spot.c })} dot={sel.mode === 'cell' ? 'var(--mf-accent)' : 'var(--mf-faint2)'} />
-          <CtxItem mark="t-pick-row" name="행 전체" on={sel.mode === 'row'} onClick={() => onPick({ mode: 'row', r: spot.r })} dot={sel.mode === 'row' ? 'var(--mf-accent)' : 'var(--mf-faint2)'} />
-          <CtxItem mark="t-pick-col" name="열 전체" on={sel.mode === 'col'} onClick={() => onPick({ mode: 'col', c: spot.c })} dot={sel.mode === 'col' ? 'var(--mf-accent)' : 'var(--mf-faint2)'} />
-          <CtxItem mark="t-pick-all" name="표 전체" on={sel.mode === 'all'} onClick={() => onPick({ mode: 'all' })} dot={sel.mode === 'all' ? 'var(--mf-accent)' : 'var(--mf-faint2)'} />
-        </CtxWing>
-      )}
-      {wing === 'row' && (
-        <CtxWing anchor={base} title="행">
-          <CtxItem mark="row-above" name="위에 행 추가" hint="⌥↑" onClick={run(() => controller.addNoteTableRow(block.id, spot.r))} />
-          <CtxItem mark="row-below" name="아래에 행 추가" hint="⌥↓" onClick={run(() => controller.addNoteTableRow(block.id, spot.r + 1))} />
-          <CtxItem mark="row-dup" name="행 복제" onClick={run(() => controller.duplicateNoteTableRow(block.id, spot.r))} />
-          <CtxItem mark="row-up" name="행 위로 이동" disabled={spot.r === 0} onClick={run(() => controller.moveNoteTableRow(block.id, spot.r, -1))} />
-          <CtxItem mark="row-down" name="행 아래로 이동" disabled={spot.r >= rows - 1} onClick={run(() => controller.moveNoteTableRow(block.id, spot.r, 1))} />
-          {/* 여러 행을 골라 두었으면 **그 전부**를 지운다(요청 10) — 메뉴로 가는 순간
-              한 행으로 좁아지면 "골라 놓고 지웠는데 하나만 사라진다"가 된다. */}
-          <CtxItem
-            mark="row-del"
-            name={rowSpan[1] > rowSpan[0] ? `행 ${rowSpan[1] - rowSpan[0] + 1}개 삭제` : '행 삭제'}
-            hint="⌫"
-            danger
-            disabled={rows <= 1}
-            onClick={run(() => controller.removeNoteTableRow(block.id, rowSpan[0], rowSpan[1]))}
-          />
-        </CtxWing>
-      )}
-      {wing === 'col' && (
-        <CtxWing anchor={base} title="열">
-          <CtxItem mark="col-left" name="왼쪽에 열 추가" hint="⌥←" onClick={run(() => controller.addNoteTableCol(block.id, spot.c))} />
-          <CtxItem mark="col-right" name="오른쪽에 열 추가" hint="⌥→" onClick={run(() => controller.addNoteTableCol(block.id, spot.c + 1))} />
-          <CtxItem mark="col-left-move" name="열 왼쪽으로 이동" disabled={spot.c === 0} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, -1))} />
-          <CtxItem mark="col-right-move" name="열 오른쪽으로 이동" disabled={spot.c >= cols - 1} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, 1))} />
-          <CtxItem
-            mark="col-del"
-            name={colSpan[1] > colSpan[0] ? `열 ${colSpan[1] - colSpan[0] + 1}개 삭제` : '열 삭제'}
-            hint="⌫"
-            danger
-            disabled={cols <= 1}
-            onClick={run(() => controller.removeNoteTableCol(block.id, colSpan[0], colSpan[1]))}
-          />
-        </CtxWing>
-      )}
       {wing === 'align' && (
-        <CtxWing anchor={base} title="정렬">
+        <CtxWing anchor={base} title={isRow ? '이 행 정렬' : isAll ? '표 전체 정렬' : '이 열 정렬'}>
           {(['left', 'center', 'right'] as const).map((a) => (
             <CtxItem
               key={a}
               mark={`align-${a}`}
               name={a === 'left' ? '왼쪽' : a === 'center' ? '가운데' : '오른쪽'}
-              on={alignNow === a}
-              hint={alignNow === a ? '현재' : undefined}
+              on={(isAll ? alignAll : alignNow) === a}
+              hint={(isAll ? alignAll : alignNow) === a ? '현재' : undefined}
               icon={a === 'left' ? <><path d="M4 6h16M4 12h10M4 18h13" /></> : a === 'center' ? <><path d="M4 6h16M7 12h10M6 18h12" /></> : <><path d="M4 6h16M10 12h10M7 18h13" /></>}
-              onClick={run(() => controller.setNoteTableAlign(block.id, spot.c, a))}
+              onClick={run(() => (isRow ? controller.setNoteTableRowAlign(block.id, spot.r, a) : controller.setNoteTableAlign(block.id, isAll ? 'all' : spot.c, a)))}
             />
           ))}
         </CtxWing>
@@ -7265,15 +7298,6 @@ interface BlockMenuAt {
   y: number;
 }
 
-/** 문단 스타일 — 디자인 세 번째 이미지의 다섯(색 점이 종류를 말한다). */
-const CTX_STYLES: { kind: NoteBlockKind; name: string; dot: string }[] = [
-  { kind: 'p', name: '본문', dot: 'var(--mf-faint2)' },
-  { kind: 'h2', name: '제목', dot: 'var(--mf-text)' },
-  { kind: 'q', name: '인용', dot: '#D8794F' },
-  { kind: 'ul', name: '글머리 기호', dot: '#7C9BD8' },
-  { kind: 'ck', name: '체크리스트', dot: '#69B08A' },
-];
-
 /** 글꼴 — 디자인 네 번째 이미지의 일곱. `hl`·`c`는 기본 색으로 건다(팔레트는 툴바에). */
 const CTX_FONTS: { kind: 'b' | 'i' | 'u' | 's' | 'hl' | 'c' | 'clear'; name: string; key: string; dot: string }[] = [
   { kind: 'b', name: '굵게', key: '⌘B', dot: 'var(--mf-text)' },
@@ -7296,7 +7320,7 @@ const CTX_FONTS: { kind: 'b' | 'i' | 'u' | 's' | 'hl' | 'c' | 'clear'; name: str
  * 선택을 지우지 않으므로, 고른 글이 있으면 그 글에, 없으면 캐럿 자리에 걸린다.
  */
 function BlockMenu({ controller, at, formatSelection, onClose }: { controller: EditorController; at: BlockMenuAt; formatSelection: (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null) => boolean; onClose: () => void }) {
-  const [wing, setWing] = useState<'style' | 'font' | 'todo' | null>(null);
+  const [wing, setWing] = useState<'font' | null>(null);
   useAnchored(true, onClose);
   const blocks = controller.notePage?.blocks ?? [];
   const block = blocks.find((b) => b.id === at.blockId) ?? null;
@@ -7391,14 +7415,6 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
 
       <CtxRule />
       <CtxItem
-        mark="style"
-        name="문단 스타일"
-        wing
-        on={wing === 'style'}
-        onClick={() => setWing((v) => (v === 'style' ? null : 'style'))}
-        icon={<><path d="M4 6h16M9 6v13M4 6V4h16v2" /></>}
-      />
-      <CtxItem
         mark="font"
         name="글꼴"
         wing
@@ -7426,16 +7442,7 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
       />
 
       <CtxRule />
-      <CtxItem mark="dup" name="블록 복제" hint="⌘D" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(() => controller.duplicateNoteBlock(at.blockId))} />
       <CtxItem mark="comment" name="댓글 달기" icon={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>} onClick={done(() => controller.openComments())} />
-      <CtxItem
-        mark="todo"
-        name="할 일로 보내기"
-        wing
-        on={wing === 'todo'}
-        icon={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M9 5v14M15 5v14" /></>}
-        onClick={() => setWing((v) => (v === 'todo' ? null : 'todo'))}
-      />
 
       <CtxRule />
       <CtxItem mark="hr" name="아래에 구분선" icon={<path d="M4 12h16" />} onClick={done(() => controller.addNoteBlock('hr', at.blockId))} />
@@ -7453,20 +7460,6 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
           `transform`이 컨테이닝 블록을 만들어 `fixed` 좌표가 메뉴 왼쪽 위에서
           다시 세어진다(실측: 왼쪽 708px만큼 밀려 화면 밖으로 나갔다). 페이지
           메뉴의 `다른 공책으로 이동`도 같은 이유로 비뚤어져 있었다. */}
-      {wing === 'style' && (
-        <CtxWing anchor={base} title="문단 스타일">
-          {CTX_STYLES.map((s) => (
-            <CtxItem
-              key={s.kind}
-              mark={`style-${s.kind}`}
-              name={s.name}
-              dot={s.dot}
-              on={block?.kind === s.kind}
-              onClick={done(() => controller.retypeNoteBlock(at.blockId, s.kind))}
-            />
-          ))}
-        </CtxWing>
-      )}
       {wing === 'font' && (
         <CtxWing anchor={base} title="글꼴">
           {CTX_FONTS.map((f) => (
@@ -7474,13 +7467,17 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
           ))}
         </CtxWing>
       )}
-      {wing === 'todo' && <TodoWing controller={controller} anchor={base} blockId={at.blockId} onDone={onClose} />}
     </>
   );
 }
 
-/** 우클릭 메뉴 너비 — 날개가 이 값만큼 옆으로 붙는다. */
-const CTX_MENU_W = 236;
+/**
+ * 우클릭 메뉴 너비 — 날개가 이 값만큼 옆으로 붙는다.
+ *
+ * 가장 넓은 줄은 `서식 없이 붙여넣기` + `Ctrl+Shift+V`(윈도 표기)다. 236px에서는 그
+ * 한 줄이 접혔다(제보) — 그 조합이 들어가는 값으로 올렸다.
+ */
+const CTX_MENU_W = 268;
 
 /** 메뉴 사이의 가는 선 — 묶음이 넷이라(잘라내기·서식·블록·지우기) 선이 없으면 한 덩어리로 읽힌다. */
 function CtxRule() {
@@ -7545,8 +7542,16 @@ function CtxItem({
       )}
       {dot && <span aria-hidden="true" style={{ width: 8, height: 8, flex: '0 0 auto', borderRadius: 999, background: dot, display: 'block' }} />}
       {swatch && <span aria-hidden="true" style={{ width: 13, height: 13, flex: '0 0 auto', borderRadius: 4, background: swatch, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.07)', display: 'block' }} />}
-      {name}
-      <span style={{ flex: 1 }} />
+      {/**
+        * **이름은 줄바꿈하지 않는다**(제보: 「서식 없이 붙여넣기」가 두 줄로 접혔다).
+        *
+        * 단축키 표기는 그 기기의 것으로 바뀌는데(`keyLabel`), 맥의 `⌘⇧V`가 윈도에서는
+        * `Ctrl+Shift+V`로 **세 배 넓어진다** — 그만큼 이름이 밀려 접혔다. 판을 넓히고
+        * (`CTX_MENU_W`) 이름은 한 줄로 못박는다: 접히면 항목 높이가 33px에서 벌어져
+        * 메뉴 전체의 줄 간격이 그 한 줄 때문에 무너진다.
+        */}
+      <span style={{ whiteSpace: 'nowrap' }}>{name}</span>
+      <span style={{ flex: 1, minWidth: 6 }} />
       {/* 단축키는 **그리는 자리에서** 그 기기의 표기로 바꾼다(요청 8 — `keyLabel`). */}
       {hint && <span style={POP_KEY}>{keyLabel(hint)}</span>}
       {wing && (
@@ -7592,103 +7597,6 @@ function CtxWing({ anchor, title, children }: { anchor: CSSProperties; title: st
       {children}
     </div>
   );
-}
-
-/**
- * `할 일로 보내기`의 날개 — 이 스페이스의 **칸반 보드들**.
- *
- * 고른 보드의 **첫 열 맨 끝**에 카드를 만든다(`sendNoteBlockToBoard`). 회의록에서
- * 정한 일을 보드로 옮기는 것이 이 메뉴가 있는 이유라, 보드를 열고 카드를 만들고
- * 글을 옮겨 적는 세 단계가 한 번으로 줄어든다.
- */
-function TodoWing({ controller, anchor, blockId, onDone }: { controller: EditorController; anchor: CSSProperties; blockId: string; onDone: () => void }) {
-  const { rows, loading } = useBoards(controller);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [sent, setSent] = useState<string | null>(null);
-  return (
-    <CtxWing anchor={anchor} title="할 일로 보내기">
-      {loading && <span style={{ padding: '8px 9px', fontSize: 12, color: 'var(--mf-faint)' }}>보드를 찾는 중…</span>}
-      {!loading && rows.length === 0 && <span style={{ padding: '8px 9px', fontSize: 12, color: 'var(--mf-faint)', lineHeight: 1.5, wordBreak: 'keep-all' }}>이 스페이스에 칸반 보드가 없어요</span>}
-      {rows.map((r) => (
-        <button
-          key={r.docId}
-          type="button"
-          data-note-todo-to={r.docId}
-          className="btn mf-note-item"
-          disabled={busy !== null}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            setBusy(r.docId);
-            setFailed(false);
-            void controller.sendNoteBlockToBoard(blockId, r.docId).then((ok) => {
-              setBusy(null);
-              if (!ok) {
-                setFailed(true);
-                return;
-              }
-              // 보냈다는 것을 **잠깐 보여 주고** 닫는다 — 곧바로 닫히면 무슨 일이
-              // 일어났는지 화면 어디에도 남지 않는다(보드는 다른 문서다).
-              setSent(r.docId);
-              window.setTimeout(onDone, 900);
-            });
-          }}
-          style={{ ...MENU_ITEM, height: 36 }}
-        >
-          <span aria-hidden="true" style={{ width: 8, height: 8, flex: '0 0 auto', borderRadius: 2, background: 'var(--mf-doc-kanban)', display: 'block' }} />
-          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
-          {busy === r.docId && <span style={{ flex: '0 0 auto', fontSize: 10.5, color: 'var(--mf-faint)' }}>보내는 중…</span>}
-          {sent === r.docId && <span style={{ flex: '0 0 auto', fontSize: 10.5, fontWeight: 800, color: 'var(--mf-accent-deep)' }}>보냄</span>}
-        </button>
-      ))}
-      {failed && (
-        <span data-note-todo-failed style={{ padding: '6px 9px', fontSize: 11, lineHeight: 1.5, color: 'var(--mf-danger)', wordBreak: 'keep-all' }}>
-          보내지 못했어요 — 그 보드를 다른 곳에서 고치는 중일 수 있어요.
-        </span>
-      )}
-    </CtxWing>
-  );
-}
-
-/** 이 스페이스의 **칸반 보드들** — `useNotebooks`와 같은 길(열릴 때 한 번만 읽는다). */
-function useBoards(controller: EditorController): { rows: { docId: string; title: string }[]; loading: boolean } {
-  const docStore = useDocStore();
-  const [rows, setRows] = useState<{ docId: string; title: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const metas = await docStore.list();
-        const byId = new Map(metas.map((m) => [m.id, m]));
-        const ids = controller.linkTargets.map((t) => t.docId);
-        const bodies = await Promise.allSettled(ids.map((id) => docStore.loadPreview(id, byId.get(id))));
-        if (!alive) return;
-        const out: { docId: string; title: string }[] = [];
-        bodies.forEach((r, i) => {
-          if (r.status !== 'fulfilled' || !r.value) return;
-          const id = ids[i]!;
-          let parsed: Doc | null = null;
-          try {
-            parsed = parseDoc(JSON.parse(r.value) as Record<string, unknown>);
-          } catch {
-            parsed = null;
-          }
-          if (!parsed || parsed.kind !== 'kanban') return;
-          out.push({ docId: id, title: byId.get(id)?.title || controller.linkTargets.find((t) => t.docId === id)?.title || '제목 없는 보드' });
-        });
-        setRows(out);
-      } catch {
-        /* 목록을 못 받아도 본문은 그대로 쓴다 */
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [docStore, controller.linkTargets]);
-  return { rows, loading };
 }
 
 /**
