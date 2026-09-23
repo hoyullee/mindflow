@@ -627,13 +627,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(title!.readOnly).toBe(false);
     // 삭제도 그 자리에서(구글로 보내는 링크는 그대로 남는다)
     expect(pop.querySelector('[data-event-delete]')).toBeTruthy();
-    // 요청 — 그 링크는 **발치의 취소 왼쪽**에 선다(본문 끝이 아니다: 스크롤을 내려야
-    // 보이면 "어디서 여는가"가 자리를 잃는다).
-    const open = pop.querySelector('[data-google-open]')!;
-    expect(open.getAttribute('href')).toBe('https://calendar.google.com/x');
-    const cancel = pop.querySelector('[data-event-cancel]')!;
-    expect(open.parentElement).toBe(cancel.parentElement);
-    expect(open.compareDocumentPosition(cancel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 발치의 `Google에서 열기`는 **없앴다**(요청) — 이 팝업에서 다 고칠 수 있게 된
+    // 뒤로는 "저쪽에서 여세요"가 길 안내가 아니라 군더더기다. 구글로 가는 길은
+    // 칩 우클릭 메뉴에 남아 있다(`CalendarContextMenu`).
+    expect(pop.querySelector('[data-google-open]')).toBeNull();
+    expect(pop.querySelector('[data-event-cancel]')).toBeTruthy();
     await user.clear(title!);
     await user.type(title!, '이름 바꿈');
     // 저장은 완료 버튼에서 한 번(요청) — 타이핑·blur만으로는 아무것도 보내지 않는다.
@@ -806,7 +804,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(within(pop).getByText(/쓸 권한이 없어요/)).toBeTruthy();
     expect(pop.querySelector('[data-event-delete]')).toBeNull();
     expect(pop.querySelector<HTMLTextAreaElement>('[data-event-title]')?.readOnly).toBe(true);
-    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/s');
+    expect(pop.querySelector('[data-google-open]')).toBeNull();
     // 우리 편집 팝업(칸반 카드)은 열리지 않는다
     expect(document.querySelector('[data-cal-detail]')).toBeNull();
   });
@@ -1370,6 +1368,15 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(pop.querySelector('[data-gf-guest="boss@example.com"]')).toBeNull();
     expect(pop.querySelector('[data-gf-guest="mate@example.com"]')).toBeTruthy();
     expect(pop.textContent).toContain('일정을 만든 사람 외 2명 초대');
+    // **거절한 사람은 명단에서 그렇게 말한다**(요청 3) — 이름에 줄을 긋고 `참석 거절`
+    // 칩을 단다. 아직 답하지 않은 사람(나)에는 아무 표시도 붙지 않는다: 셋을 모두
+    // 칩으로 만들면 정작 거절이 묻힌다.
+    const mate = pop.querySelector<HTMLElement>('[data-gf-guest="mate@example.com"]')!;
+    expect(mate.querySelector('[data-gf-guest-rsvp="declined"]')?.textContent).toBe('참석 거절');
+    expect([...mate.querySelectorAll<HTMLElement>('span')].some((e) => e.style.textDecoration === 'line-through')).toBe(true);
+    const meRow = pop.querySelector<HTMLElement>('[data-gf-guest="me@example.com"]')!;
+    expect(meRow.querySelector('[data-gf-guest-rsvp]')).toBeNull();
+    expect([...meRow.querySelectorAll<HTMLElement>('span')].some((e) => e.style.textDecoration === 'line-through')).toBe(false);
     // 아직 답하지 않았으면 **아무 칸도 켜지지 않는다** — 라벨 옆이 그렇게 말한다
     const rsvp = [...pop.querySelectorAll<HTMLElement>('[data-gf-rsvp]')];
     expect(rsvp.map((b) => b.textContent)).toEqual(['참석', '미정', '불참']);
@@ -1392,7 +1399,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
-  it('내가 만든 일정에는 참석 여부를 묻지 않는다 — 주최자 줄도 없다', async () => {
+  it('내가 만든 일정에는 참석 여부를 묻지 않는다 — 만든 사람 줄은 `나`로 선다', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -1411,8 +1418,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     const pop = await openGoogleChip(container, user, /내 회의/);
-    expect(pop.querySelector('[data-gf-invite]')).toBeNull();
+    // 초대 구획은 **만든 사람 줄 하나로** 남는다(요청 2) — 내가 만든 일정에 나를
+    // 부를 일은 없으니 참석 여부는 묻지 않는다.
+    expect(pop.querySelector('[data-gf-invite]')).toBeTruthy();
     expect(pop.querySelector('[data-gf-rsvp]')).toBeNull();
+    expect(pop.querySelector('[data-gf-organizer-me]')).toBeTruthy();
     // 나머지 구글 필드는 그대로 있다(참석자·공개 설정 등)
     expect(pop.querySelector('[data-google-fields]')).toBeTruthy();
   });
@@ -2642,8 +2652,12 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     const pop = await openGoogleChip(container, user, /내 회의/);
-    // 내가 만든 일정 — "일정을 만든 사람" 행은 없고 나는 참석자에서 빠지며, 그 사람만 남는다.
-    expect(pop.querySelector('[data-gf-organizer]')).toBeNull();
+    // 내가 만든 일정에도 "일정을 만든 사람" 행은 **있다**(요청 2) — 그 자리가 일정마다
+    // 사라지면 "누가 만들었나"를 찾는 곳이 매번 달라진다. 그것이 나임은 `나` 칩이 말한다.
+    const maker = pop.querySelector('[data-gf-organizer]')!;
+    expect(maker.textContent).toContain('me@example.com');
+    expect(maker.querySelector('[data-gf-organizer-me]')?.textContent).toBe('나');
+    // 나는 참석자 목록에서는 여전히 빠지고, 그 사람만 남는다.
     expect(pop.querySelector('[data-gf-guest="me@example.com"]')).toBeNull();
     const guest = pop.querySelector('[data-gf-guest="eunjin.yeo@example.com"]')!;
     // 예전에는 `eunjin.yeo`(로컬파트)였다 — 이제 다른 일정의 주최자 이름을 가져다 쓴다.
@@ -2695,9 +2709,12 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
 
-    // 내가 만든 일정에는 그 줄을 그리지 않는다 — 자기 이름을 한 줄 더 읽을 이유가 없다.
+    // 내가 만든 일정에도 그 줄은 그리되(요청 2) 말하는 사람은 **만든 사람인 나**다 —
+    // 주최자로 온 팀 캘린더가 아니다(그것이 이 테스트의 원래 제보였다).
     const mine = await openGoogleChip(container, user, /팀 회의/);
-    expect(mine.querySelector('[data-gf-organizer]')).toBeNull();
+    const mineMaker = mine.querySelector('[data-gf-organizer]')!;
+    expect(mineMaker.textContent).toContain('me@example.com');
+    expect(mineMaker.querySelector('[data-gf-organizer-me]')).toBeTruthy();
     expect(mine.textContent).not.toContain('팀 캘린더');
     await user.keyboard('{Escape}');
 
