@@ -27,6 +27,7 @@ import { knownName, knownNamesFor, rememberName } from './nameBook';
 import type { KeyboardEvent } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
 import { googleRemindersEnabled, notifyPermission, requestNotifyPermission } from '../../reminders/reminderPrefs';
+import { declinedRooms } from './googleCalendar';
 import type { GoogleRsvp, GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
 import { filterRooms, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { AnchoredList, listCard, rowDivider } from './AnchoredList';
@@ -60,6 +61,12 @@ export interface GoogleFieldsValue {
    * 그리는 데 쓴다. 파싱이 이미 전부 담아 두므로(`parseAttendees`) 화면이 고르기만 한다.
    */
   rsvps?: Record<string, GoogleRsvp>;
+  /**
+   * **나**(구글이 `self: true`로 표시한 참석자) — "다른 모든 참석자가 거부했다"를
+   * 셀 때 나를 빼기 위한 값이다. 내가 거절했는지는 그 문장과 무관하다(그건 내
+   * 참석 여부 칸이 이미 말한다).
+   */
+  selfEmail?: string;
 }
 
 /** 선택 스코프로 열리는 것들 — `useGoogleCalendar`가 이 모양으로 내준다. */
@@ -235,6 +242,26 @@ export function GoogleEventFields({
   const hiddenGuests = [orgEmail, ...(creator?.self ? [creator.email] : [])].filter(Boolean);
   const hiddenSet = new Set(hiddenGuests.map((e) => e.toLowerCase()));
   const guests = hiddenSet.size ? value.attendees.filter((e) => !hiddenSet.has(e.toLowerCase())) : value.attendees;
+  /**
+   * **다른 모든 참석자가 거부했다**(요청 4-B) — 구글 캘린더가 같은 자리에서 말해 주는
+   * 문장이다. 세는 대상은 **나를 뺀 모든 참석자**이고, 화면에 보이는 목록(`guests`)이
+   * 아니라 **원본 배열**(`value.attendees`)로 센다: 만든 사람은 목록에서만 빠져 있을
+   * 뿐 여전히 참석자이고, 그 사람이 참석으로 답했다면 "다른 **모두**가 거부"는 거짓이다
+   * (회의실은 애초에 이 배열에 없다 — `parseAttendees`가 갈라 둔다). 나를 빼는 이유는
+   * 내 답을 바로 위 참석 여부 칸이 이미 말하기 때문이다. 나 말고 아무도 없으면
+   * (혼자 쓰는 일정) 셀 것이 없으므로 아무 말도 하지 않는다.
+   *
+   * 명단이 잘려 온 일정(`attendeesLock`)에서는 **묻지 않는다** — 우리가 든 목록이
+   * 전부가 아니라 "모두"를 셀 수 없다(있는 것만으로 "모두 거부"라 말하면 거짓이다).
+   */
+  const others = value.attendees.filter((e) => e.toLowerCase() !== (value.selfEmail ?? '').toLowerCase());
+  const allDeclined = !attendeesLock && others.length > 0 && others.every((e) => value.rsvps?.[e] === 'declined');
+  /**
+   * 그때 **잡아 둔 회의실이 스스로 예약을 물렀는지** — 구글의 리소스 캘린더가 하는
+   * 일이고 우리가 시키는 것이 아니다. 다만 같은 사건의 뒷면이라 한자리에서 말한다
+   * (알림 센터에도 따로 쌓인다 — `roomConflictInbox`).
+   */
+  const droppedRooms = allDeclined ? declinedRooms({ rooms: value.rooms, ...(value.rsvps ? { rsvps: value.rsvps } : {}) }) : [];
 
   return (
     <div data-google-fields style={{ display: 'flex', flexDirection: 'column', gap: 19 }}>
@@ -340,6 +367,16 @@ export function GoogleEventFields({
           않는다(PATCH가 배열을 통째로 바꾸므로 빼고 보내면 주최자가 참석자에서
           떨어진다) — 화면에서만 가르고, 고칠 때 제자리에 되돌려 넣는다. */}
       <Field label="참석자" sub={attendeesLock ? undefined : guestSub(guests.length, showMaker)}>
+        {/* 회의실이 사용 중일 때의 알림 카드와 **같은 면**이다 — 한 팝업 안에서
+            "이건 문제다"가 두 모양이면 읽는 사람이 둘을 따로 배워야 한다. */}
+        {allDeclined ? (
+          <div data-gf-all-declined style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-danger-bg)', fontSize: 11.5, lineHeight: 1.5, minWidth: 0 }}>
+            <span style={{ fontWeight: 800, color: 'var(--mf-danger)' }}>다른 모든 참석자가 일정을 거부했습니다</span>
+            <span style={{ color: 'var(--mf-subtext)' }}>
+              {droppedRooms.length > 0 ? `${droppedRooms.map(roomName).join(' · ')} 예약도 함께 취소됐어요 · ` : ''}시간을 다시 정해 보세요.
+            </span>
+          </div>
+        ) : null}
         {attendeesLock ? (
           <span data-gf-guest-locked style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
             {attendeesLock === 'omitted'

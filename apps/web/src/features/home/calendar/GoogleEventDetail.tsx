@@ -193,6 +193,8 @@ export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
     // **모두의 응답**(요청 3) — 내 응답(`rsvp`)과 달리 참석자 줄이 "참석 거절"을
     // 말하려면 남의 답도 있어야 한다. 값은 파싱이 이미 들고 있다(`parseAttendees`).
     ...(g.rsvps ? { rsvps: g.rsvps } : {}),
+    // 나 — "다른 모든 참석자가 거부했다"를 셀 때 나를 빼기 위한 값(요청 4-B).
+    ...(g.selfEmail ? { selfEmail: g.selfEmail } : {}),
   };
 }
 

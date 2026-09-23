@@ -1376,6 +1376,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect([...mate.querySelectorAll<HTMLElement>('span')].some((e) => e.style.textDecoration === 'line-through')).toBe(true);
     const meRow = pop.querySelector<HTMLElement>('[data-gf-guest="me@example.com"]')!;
     expect(meRow.querySelector('[data-gf-guest-rsvp]')).toBeNull();
+    // 한 명만 거절한 일정에는 "모두 거부했다"를 말하지 않는다.
+    expect(pop.querySelector('[data-gf-all-declined]')).toBeNull();
     expect([...meRow.querySelectorAll<HTMLElement>('span')].some((e) => e.style.textDecoration === 'line-through')).toBe(false);
     // 아직 답하지 않았으면 **아무 칸도 켜지지 않는다** — 라벨 옆이 그렇게 말한다
     const rsvp = [...pop.querySelectorAll<HTMLElement>('[data-gf-rsvp]')];
@@ -1397,6 +1399,53 @@ describe('구글 캘린더 겹치기(PR5)', () => {
         { email: 'mate@example.com', responseStatus: 'declined' },
       ]);
     });
+  });
+
+  it('**다른 모든 참석자가 거부**하면 그 자리에서 말한다 — 물러난 회의실까지(요청 4)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'dead',
+              summary: '아무도 안 오는 회의',
+              start: { dateTime: `${day}T09:00:00+09:00` },
+              end: { dateTime: `${day}T10:00:00+09:00` },
+              organizer: { email: 'me@example.com', self: true },
+              creator: { email: 'me@example.com', self: true },
+              attendees: [
+                { email: 'me@example.com', self: true, organizer: true, responseStatus: 'accepted' },
+                { email: 'a@example.com', responseStatus: 'declined' },
+                { email: 'b@example.com', responseStatus: 'declined' },
+                // 전원이 거절하면 구글의 리소스 캘린더가 **스스로** 예약을 무른다.
+                { email: 'room-9@resource.calendar.google.com', resource: true, responseStatus: 'declined' },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /아무도 안 오는 회의/);
+    const notice = pop.querySelector<HTMLElement>('[data-gf-all-declined]')!;
+    expect(notice.textContent).toContain('다른 모든 참석자가 일정을 거부했습니다');
+    // 물러난 회의실은 **같은 사건의 뒷면**이라 한자리에서 말한다.
+    expect(notice.textContent).toContain('room-9@resource.calendar.google.com');
+    expect(notice.textContent).toContain('예약도 함께 취소됐어요');
+    // 두 사람 다 명단에서 거절로 보인다.
+    expect(pop.querySelector('[data-gf-guest="a@example.com"] [data-gf-guest-rsvp="declined"]')).toBeTruthy();
+    expect(pop.querySelector('[data-gf-guest="b@example.com"] [data-gf-guest-rsvp="declined"]')).toBeTruthy();
   });
 
   it('내가 만든 일정에는 참석 여부를 묻지 않는다 — 만든 사람 줄은 `나`로 선다', async () => {
