@@ -6441,6 +6441,22 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     await waitFor(() => expect(runsOf(saved('cb1').pages[0].blocks[0])).toBe('const a = 1;\n'));
   });
 
+  it('코드 블록에서 Enter를 누르고 붙여넣으면 **새 줄**에 들어간다(제보 3)', async () => {
+    const c = await open('cb1b');
+    const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
+    caretEnd(line);
+    fireEvent.keyDown(line, { key: 'Enter' });
+    // 줄바꿈 뒤(글 끝)에 캐럿을 두고 붙인다 — 사람이 Enter를 친 직후의 자리다.
+    caretEnd(line);
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(ev, 'clipboardData', { value: { getData: () => 'XYZ' }, configurable: true });
+    line.dispatchEvent(ev);
+
+    // 예전에는 `;XYZ` — 값에서 끝의 줄바꿈이 걷혀 붙일 자리가 한 칸 앞으로 밀렸다.
+    saveNow();
+    await waitFor(() => expect(runsOf(saved('cb1b').pages[0].blocks[0])).toBe('const a = 1;\nXYZ'));
+  });
+
   it('인용의 Enter는 **인용을 끝내고 본문 줄**로 간다(제보 8)', async () => {
     const c = await open('cb2');
     const line = c.querySelector('[data-note-line="qt"]') as HTMLElement;
@@ -6530,6 +6546,101 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     // 빈 문단이었으므로 **그 자리**가 그림이 된다(빈 줄을 남기지 않는다).
     await waitFor(() => expect(kinds(c)).toEqual(['code', 'q', 'img']));
     expect(ev.defaultPrevented).toBe(true);
+  });
+});
+
+describe('공책 — 목록 위의 그림 · 되돌리기 뒤의 캐럿', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...NOTE,
+    pages: [
+      {
+        id: 'p1',
+        title: '장',
+        blocks: [
+          {
+            id: 'bl',
+            kind: 'ul',
+            items: [
+              { id: 'i1', runs: [{ t: '첫째 항목', b: false, c: null }] },
+              { id: 'i2', runs: [{ t: '둘째 항목', b: false, c: null }] },
+              { id: 'i3', runs: [{ t: '셋째 항목', b: false, c: null }] },
+            ],
+          },
+          { id: 'im', kind: 'img', src: 'data:image/png;base64,iVBORw0KGgo=' },
+          { id: 'zz', kind: 'p', runs: [{ t: '끝줄', b: false, c: null }] },
+        ],
+        updatedAt: '2026-09-23T00:00:00.000Z',
+      },
+    ],
+  };
+
+  const open = async (id: string, doc: unknown = DOC): Promise<HTMLElement> => {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(doc));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-line="bl:i1"], [data-note-line="b2"]')).toBeTruthy());
+    return container;
+  };
+
+  it('그림에서 ↑는 **바로 위 항목**으로 간다 — 첫 항목이 아니라(제보 4)', async () => {
+    const c = await open('ob1');
+    // 그림을 고른 상태(아래 방향키로 내려온 자리와 같다 — 초점이 곧 선택이다).
+    (c.querySelector('[data-note-image]') as HTMLElement).focus();
+    await waitFor(() => expect(c.querySelector('[data-note-image]')).toBe(document.activeElement));
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+
+    // 예전에는 `bl:i1` — 블록 하나가 줄 하나이던 시절의 코드가 첫 박스를 집었다.
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('bl:i3'));
+  });
+
+  it('목록 글을 붙여넣고 되돌리면 **캐럿이 그 블록으로** 돌아온다(제보 2)', async () => {
+    const doc = {
+      ...NOTE,
+      pages: [
+        {
+          id: 'p1',
+          title: '장',
+          blocks: [
+            { id: 'b1', kind: 'p', runs: [{ t: '첫 문단', b: false, c: null }] },
+            { id: 'b2', kind: 'p', runs: [{ t: '', b: false, c: null }] },
+          ],
+          updatedAt: '2026-09-23T00:00:00.000Z',
+        },
+      ],
+    };
+    const c = await open('ob2', doc);
+    const caretIn = (el: HTMLElement): void => {
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+    };
+    caretIn(c.querySelector('[data-note-line="b2"]') as HTMLElement);
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(ev, 'clipboardData', { value: { getData: () => '- 하나\n- 둘\n- 셋' }, configurable: true });
+    (c.querySelector('[data-note-line="b2"]') as HTMLElement).dispatchEvent(ev);
+    // 붙인 뒤에는 **항목 키**(`b2:…`)에 캐럿이 선다 — 되돌리면 그 키가 통째로 사라진다.
+    const item = (await waitFor(() => {
+      const el = c.querySelector('[data-note-line^="b2:"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    caretIn(item);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    // 예전에는 초점이 `body`로 떨어져 글쇠가 어디로도 들어가지 않았다.
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2'));
   });
 });
 

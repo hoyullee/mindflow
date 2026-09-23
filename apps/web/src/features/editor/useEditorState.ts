@@ -7905,7 +7905,13 @@ export function useEditorState(): EditorController {
       const attached = await attachImageFile(file, imageUploadRef.current);
       if (!attached) return; // 이미지가 아니거나 디코드 실패 — 조용히 무시
       noteIfInlined(attached.src);
-      commitBlock(notePage.id, blockId, (b) => ({ ...b, src: attached.src }), false);
+      /**
+       * **가운데가 기본이다**(요청 1). 글은 왼쪽에서 시작하지만 그림은 단 안에서
+       * 홀로 서는 덩어리라, 왼쪽에 붙여 두면 오른쪽이 휑하게 비고 대부분 넣자마자
+       * 가운데로 옮기게 된다. 이미 정한 값이 있으면(`b.align`) 건드리지 않는다 —
+       * 이 커밋은 그림 파일이 도착할 때 한 번 도는 자리다.
+       */
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, src: attached.src, align: b.align ?? 'center' }), false);
     },
     [commitBlock, notePage],
   );
