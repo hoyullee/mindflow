@@ -2374,6 +2374,8 @@ interface SlashAnchor {
 }
 
 const SLASH_W = 306;
+/** 목록이 **온전히 펴졌을 때의** 높이 — 이만큼 못 담는 자리는 "작아지는 자리"다. */
+const SLASH_LIST_H = 288;
 
 function clampN(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -2415,8 +2417,20 @@ function measureSlash(el: Element | null): SlashAnchor | null {
   const CHROME = 58;
   const roomBelow = Math.min(vpBottom, ih) - below - CHROME;
   const roomAbove = above - Math.max(vpTop, 0) - CHROME;
-  const up = roomBelow < 110 && roomAbove > roomBelow;
-  return { gx, gy: up ? above : below, up, listH: clampN(up ? roomAbove : roomBelow, 72, 288) };
+  /**
+   * **작아져야 할 자리면 위로 연다**(제보).
+   *
+   * 예전 조건은 `roomBelow < 110`이었다 — 아래가 **아주** 모자랄 때만 뒤집는다는 뜻이라,
+   * 페이지 하단에서 아래 여백이 어중간하게(예: 200px) 남으면 목록이 그대로 아래로 열려
+   * **반토막 난 판**이 떴다(제보 이미지: 「본문·제목 1·2·3」까지만 보이고 잘렸다).
+   * 판이 작아지는 것은 본문이 짧아서가 아니라 **여백이 모자라서**이므로, 그 판단은
+   * "온전한 높이(`SLASH_LIST_H`)가 들어가는가"로 해야 한다.
+   *
+   * `+24`는 되돌림 방지다 — 위아래 여백이 엇비슷할 때(몇 px 차이) 뒤집으면 판이 캐럿
+   * 위아래로 오락가락한다. 위가 **눈에 띄게** 넓을 때만 옮긴다.
+   */
+  const up = roomBelow < SLASH_LIST_H && roomAbove > roomBelow + 24;
+  return { gx, gy: up ? above : below, up, listH: clampN(up ? roomAbove : roomBelow, 72, SLASH_LIST_H) };
 }
 
 /** 전환 팝업이 보여 주는 한 권. */
@@ -8757,7 +8771,7 @@ function SlashMenu({
               </span>
             )}
           </div>
-          <div ref={listRef} className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : 288, overflowY: 'auto' }}>
+          <div ref={listRef} className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : SLASH_LIST_H, overflowY: 'auto' }}>
             {groups.map((g) =>
               g.items.length === 0 ? null : (
                 <div key={g.name || 'hits'} style={{ display: 'contents' }}>

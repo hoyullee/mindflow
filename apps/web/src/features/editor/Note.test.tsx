@@ -6533,6 +6533,40 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     expect(wrap.style.top).toBe('700px');
   });
 
+  it('`/` 목록은 **작아져야 할 자리면** 위로 연다 — 아래가 어중간해도(제보)', async () => {
+    const c = await open('cb6b');
+    const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
+    /**
+     * 아래 여백이 **모자라지만 바닥은 아닌** 자리(jsdom의 `innerHeight`는 768).
+     * 아랫선 500 → 아래로 열면 목록이 210px밖에 못 펴져 반토막이 난다(제보 이미지).
+     * 위로는 442px이 남으므로 온전히 펴진다.
+     */
+    line.getBoundingClientRect = () => ({ left: 40, top: 476, right: 400, bottom: 500, width: 360, height: 24, x: 40, y: 476, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/');
+
+    const wrap = (await waitFor(() => c.querySelector('[data-note-slash-anchor]'))) as HTMLElement;
+    const panel = wrap.querySelector('[data-note-slash-panel]') as HTMLElement;
+    expect(panel.style.bottom).toContain('100%');
+    // 위로 떴으니 기준은 **윗선**이고, 목록은 온전한 높이로 펴진다.
+    expect(wrap.style.top).toBe('476px');
+    expect((panel.querySelector('.lnb-scroll') as HTMLElement).style.maxHeight).toBe('288px');
+  });
+
+  it('`/` 목록은 아래가 **온전히 담기면** 그대로 아래로 연다', async () => {
+    const c = await open('cb6c');
+    const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
+    // 아랫선 120 → 아래로 590px이 남는다(온전한 288을 담고도 남는다).
+    line.getBoundingClientRect = () => ({ left: 40, top: 96, right: 400, bottom: 120, width: 360, height: 24, x: 40, y: 96, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/');
+
+    const wrap = (await waitFor(() => c.querySelector('[data-note-slash-anchor]'))) as HTMLElement;
+    const panel = wrap.querySelector('[data-note-slash-panel]') as HTMLElement;
+    expect(panel.style.top).toContain('100%');
+    expect(wrap.style.top).toBe('119px');
+  });
+
   it('클립보드의 그림은 **이미지 블록**이 된다(요청 10)', async () => {
     const c = await open('cb7');
     const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
