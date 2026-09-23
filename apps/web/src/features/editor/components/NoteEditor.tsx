@@ -47,7 +47,7 @@ import { CODE_BG, CODE_INK, codeHtml } from '../noteCode';
 import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
-import { linesClipboard, selectionClipboard, writeClipboard } from '../noteClipboard';
+import { linesClipboard, selectionClipboard, writeClipboard, writeImageClipboard } from '../noteClipboard';
 import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
@@ -94,11 +94,11 @@ type SlashKind = NoteBlockKind | 'inline-code';
  */
 const INLINE_CODE_ICON = (
   <>
-    <path d="m3 7.3 2.2 1.7" />
-    <path d="m18.8 7.3 2.2 1.7" />
+    <path d="m2.6 6.2 2.4 1.9" />
+    <path d="m19 6.2 2.4 1.9" />
     {/* 글자는 **글꼴이 그린다** — `a`를 path로 흉내 내면 굵기와 곡선이 화면의 글과
         어긋나고, 글꼴이 바뀌면 그 자리만 옛 모양으로 남는다. */}
-    <text x="12" y="18.6" textAnchor="middle" fontFamily="'JetBrains Mono', ui-monospace, monospace" fontSize="14.5" fontWeight="700" fill="currentColor" stroke="none">
+    <text x="12" y="19.1" textAnchor="middle" fontFamily="'JetBrains Mono', ui-monospace, monospace" fontSize="16.5" fontWeight="700" fill="currentColor" stroke="none">
       a
     </text>
   </>
@@ -119,8 +119,12 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   { kind: 'h2', name: '제목 2', hint: '⌘⌥2', desc: '섹션 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 10a2 2 0 1 1 3.4 1.4L15.5 16H20" /></>) },
   { kind: 'h3', name: '제목 3', hint: '⌘⌥3', desc: '작은 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M11 5v14M4 12h7" /><path d="M15.5 9.5h4.5l-2.5 3a2.2 2.2 0 1 1-2 3.6" /></>) },
   { kind: 'ul', name: '글머리 기호', hint: '', desc: '점으로 나열', group: '목록', inMenu: true, sepBefore: true, icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></>) },
-  { kind: 'ol', name: '번호 매기기', hint: '', desc: '순서가 있는 나열', group: '목록', inMenu: true, icon: <path d="M10 6h10M10 12h10M10 18h10M4 5.5h1.5V9M4 9h3" /> },
-  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록', inMenu: true, icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><path d="M13 7.5h8M13 17.5h8" /></>) },
+  // 숫자 칸을 **제대로 그린다**(제보 2: 깨져 보인다) — 예전에는 `1`이 획 두 개짜리
+  // 부스러기라 15px에서 얼룩으로 읽혔다. 이제 `1`과 `2`를 나란히 세우고 줄은 오른쪽으로 민다.
+  { kind: 'ol', name: '번호 매기기', hint: '', desc: '순서가 있는 나열', group: '목록', inMenu: true, icon: (<><path d="M10.5 6.5h10M10.5 12h10M10.5 17.5h10" /><path d="M3.4 5.6 4.9 4.6v4.6" /><path d="M3.4 9.2h3" /><path d="M3.4 14.6a1.5 1.5 0 1 1 2.7 1L3.4 19.4h3" /></>) },
+  // 체크 **둘**과 줄 **둘**(제보 2) — 예전에는 네모 하나에 줄 둘이라 좌우가 어긋나
+  // "그리다 만" 모양이었다. 짝을 맞추면 작은 크기에서도 무엇인지 바로 읽힌다.
+  { kind: 'ck', name: '체크리스트', hint: '', desc: '할 일 · 결정 사항', group: '목록', inMenu: true, icon: (<><path d="m3 7.4 1.8 1.8 3.6-3.7" /><path d="m3 16.6 1.8 1.8 3.6-3.7" /><path d="M12.5 7.6h8.5M12.5 16.8h8.5" /></>) },
   { kind: 'q', name: '인용', hint: '⌘⇧.', desc: '다른 글이나 말을 인용', group: '강조', inMenu: true, sepBefore: true, icon: <path d="M7 7h4v5c0 2-1 3.5-3 4.5M14 7h4v5c0 2-1 3.5-3 4.5" /> },
   { kind: 'callout', name: '콜아웃', hint: '', desc: '주의 · 결정 · 질문', group: '강조', inMenu: true, icon: (<><rect x="3.5" y="5" width="17" height="14" rx="3" /><path d="M12 9v3.5M12 15.5h.01" /></>) },
   { kind: 'toggle', name: '접기', hint: '', desc: '긴 내용을 접어 두기', group: '강조', inMenu: true, icon: (<><path d="m8 6 6 6-6 6" /><path d="M4 21h16" opacity=".35" /></>) },
@@ -894,11 +898,35 @@ export function NoteEditor({ controller }: Props) {
         setObjSel([]);
         return;
       }
-      if ((e.key === 'c' || e.key === 'C') && (e.metaKey || e.ctrlKey)) {
-        const lines = blocks.filter((b) => objSel.includes(b.id)).flatMap((b) => blockClipLines(b));
-        const text = lines.map((l) => l.text).join('\n');
+      /**
+       * **복사·잘라내기**(제보 3) — 고른 것이 **그림 한 장**이면 그림 자체를, 아니면
+       * 그 블록들의 글을 싣는다.
+       *
+       * 예전에는 어느 쪽이든 글만 실었다. 그림 블록의 글은 **빈 문자열**이라, ⌘C가
+       * 클립보드를 조용히 **비우는** 일이었다("복사가 안 된다"의 정체다).
+       *
+       * 그림 쪽은 비동기다(받아서 PNG로 굽는다) — 그래서 잘라내기는 **쓰기가 끝난
+       * 뒤에** 지운다. 먼저 지우면 `<img>`가 사라져 주소를 잃는다.
+       */
+      const cut = e.key === 'x' || e.key === 'X';
+      if ((e.key === 'c' || e.key === 'C' || cut) && (e.metaKey || e.ctrlKey)) {
+        if (cut && readOnly) return;
         e.preventDefault();
-        writeClipboard(linesClipboard(text, lines));
+        const picked = blocks.filter((b) => objSel.includes(b.id));
+        const drop = (): void => {
+          picked.forEach((b) => controller.removeNoteBlock(b.id));
+          setObjSel([]);
+        };
+        const onlyImage = picked.length === 1 && picked[0]?.kind === 'img';
+        if (onlyImage) {
+          void writeImageClipboard(imageSrcOf(picked[0]!.id)).then((ok) => {
+            if (ok && cut) drop();
+          });
+          return;
+        }
+        const lines = picked.flatMap((b) => blockClipLines(b));
+        writeClipboard(linesClipboard(lines.map((l) => l.text).join('\n'), lines));
+        if (cut) drop();
         return;
       }
       if (readOnly) return;
@@ -2044,6 +2072,7 @@ export function NoteEditor({ controller }: Props) {
                   openSlash={(id, at, tail) => openSlashAt(id, at, tail)}
                   pickObject={pickObject}
                   picked={picked}
+                  onlyPicked={selectedIds.length === 1}
                 />
               </div>
               );
@@ -4645,6 +4674,8 @@ interface BlockProps {
   pickObject: (id: string, extend?: boolean) => void;
   /** 지금 고른 것에 이 블록이 들어 있는가 — 그림·표가 제 손잡이를 켤 때 본다. */
   picked: boolean;
+  /** 고른 것이 **이것 하나뿐인가** — 그림의 판을 낼지 가른다(제보 1). */
+  onlyPicked: boolean;
 }
 
 /**
@@ -4760,7 +4791,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, pickObject, picked }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, pickObject, picked, onlyPicked }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -5003,7 +5034,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   }
 
   if (shape === 'img') {
-    return <ImageBlock controller={controller} block={block} picked={picked} pickObject={pickObject} />;
+    return <ImageBlock controller={controller} block={block} picked={picked} onlyPicked={onlyPicked} pickObject={pickObject} />;
   }
 
   if (shape === 'link') {
@@ -7219,6 +7250,17 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
     writeClipboard(linesClipboard(text, blockClipLines(block)));
     return true;
   };
+  /**
+   * 그림 블록의 복사·잘라내기(제보 3) — 키보드(⌘C·⌘X)와 **같은 길**이다.
+   * 글이 없는 블록이라 위의 `copy()`로는 빈 문자열이 실려 클립보드가 비워졌다.
+   * 지우는 것은 쓰기가 **끝난 뒤**다(먼저 지우면 `<img>`가 사라져 주소를 잃는다).
+   */
+  const isImage = block?.kind === 'img';
+  const copyImage = (cut: boolean): void => {
+    void writeImageClipboard(imageSrcOf(at.blockId)).then((ok) => {
+      if (ok && cut) controller.removeNoteBlock(at.blockId);
+    });
+  };
   const paste = async (plain: boolean) => {
     let read = '';
     try {
@@ -7253,9 +7295,13 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
     >
       <span style={POP_HEAD}>블록</span>
       <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={done(() => {
+        if (isImage) {
+          copyImage(true);
+          return;
+        }
         if (copy()) controller.removeNoteBlock(at.blockId);
       })} />
-      <CtxItem mark="copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(copy)} />
+      <CtxItem mark="copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(() => (isImage ? copyImage(false) : void copy()))} />
       <CtxItem mark="paste" name="붙여넣기" hint="⌘V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>} onClick={done(() => void paste(false))} />
       <CtxItem mark="paste-plain" name="서식 없이 붙여넣기" hint="⌘⇧V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /><path d="M9 13h6" /></>} onClick={done(() => void paste(true))} />
 
@@ -7578,7 +7624,7 @@ function blockFlow(block: NoteBlock): CSSProperties {
  * `attachImageFile` → 저장소 업로드 → `mfimg:…`). 저장소가 없으면 데이터 URL로
  * 물러서고, 그때는 문서가 무거워지므로 `noteIfInlined`가 이미 경고를 켠다.
  */
-function ImageBlock({ controller, block, picked, pickObject }: { controller: EditorController; block: NoteBlock; picked: boolean; pickObject: (id: string, extend?: boolean) => void }) {
+function ImageBlock({ controller, block, picked, onlyPicked, pickObject }: { controller: EditorController; block: NoteBlock; picked: boolean; onlyPicked: boolean; pickObject: (id: string, extend?: boolean) => void }) {
   const readOnly = controller.readOnly;
   const url = block.src ? (controller.imageUrls[block.src] ?? (block.src.startsWith('data:') ? block.src : '')) : '';
   /** 끄는 동안의 너비 — 손을 떼기 전에는 문서에 적지 않는다(표의 열 너비와 같은 결). */
@@ -7738,8 +7784,15 @@ function ImageBlock({ controller, block, picked, pickObject }: { controller: Edi
             title="눌러서 고르기 · 끌어서 옮기기"
             style={{ display: 'block', width: width ? '100%' : 'auto', maxWidth: '100%', borderRadius: 10, border: `1px solid ${picked ? 'var(--mf-accent)' : 'var(--mf-border-soft)'}`, boxShadow: picked ? '0 0 0 3px var(--mf-accent-soft)' : undefined, cursor: dragging ? 'grabbing' : 'pointer', userSelect: 'none', WebkitUserSelect: 'none' }}
           />
-          {/* 고른 그림의 판(요청 1·4) — 크게 보기 · 정렬 셋 · 삭제. */}
-          {picked && !dragging && <ImagePicked controller={controller} block={block} onZoom={() => setZoom(true)} />}
+          {/*
+            고른 그림의 판(요청 1·4) — 크게 보기 · 정렬 셋 · 삭제.
+
+            **여러 장을 골랐으면 내지 않는다**(제보 1): 판은 "이 그림 하나에 무엇을
+            할까"를 묻는 자리라 장마다 하나씩 뜨면 화면이 판으로 덮이고, 어느 판이
+            어느 그림의 것인지도 알 수 없다. 여러 장을 고른 뒤 할 일(지우기·옮기기)은
+            키보드와 끌기가 이미 맡는다.
+          */}
+          {picked && onlyPicked && !dragging && <ImagePicked controller={controller} block={block} onZoom={() => setZoom(true)} />}
           {!readOnly && (
             <div
               data-note-image-grip
@@ -9330,6 +9383,16 @@ function listGapOf(page: NotePage | null | undefined, key: string | null): { id:
 /** 편집 박스 키에서 블록 id만. */
 function blockIdOf(key: string): string {
   return key.split(':')[0] ?? '';
+}
+
+/**
+ * 그 블록의 **그림 주소** — 화면에 그려진 `<img>`가 이미 풀어 둔 값을 그대로 쓴다
+ * (`mfimg:` 참조를 서명 주소로 바꾸는 일은 `imageUrls`가 이미 했다 — 두 번 하지 않는다).
+ */
+function imageSrcOf(blockId: string): string {
+  if (typeof document === 'undefined') return '';
+  const img = document.querySelector<HTMLImageElement>(`[data-note-block="${blockId}"] img[data-note-image]`);
+  return img?.currentSrc || img?.src || '';
 }
 
 /**

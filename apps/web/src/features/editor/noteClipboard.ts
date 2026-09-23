@@ -83,3 +83,53 @@ export function writeClipboard(payload: ClipPayload): void {
     plainOnly();
   }
 }
+
+/**
+ * 그림 한 장을 **PNG 덩어리**로 — 클립보드가 받는 그림 형식이 사실상 PNG 하나다.
+ *
+ * 우리가 올리는 파일은 WebP다(용량을 조이려고) — 그대로 실으면 크롬이 거절하므로
+ * 캔버스로 한 번 굽는다. `fetch`로 먼저 받는 이유는 **오염(taint)을 피하려는** 것이다:
+ * 다른 출처의 주소를 `<img>`로 캔버스에 그리면 `toBlob`이 보안 오류로 막히는데,
+ * 받아 온 덩어리는 출처가 우리 쪽이라 그 문제가 없다.
+ */
+export function imageToPng(src: string): Promise<Blob> {
+  return fetch(src)
+    .then((r) => r.blob())
+    .then(async (blob) => {
+      if (blob.type === 'image/png') return blob;
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('no 2d context');
+      ctx.drawImage(bitmap, 0, 0);
+      return await new Promise<Blob>((ok, no) => canvas.toBlob((b) => (b ? ok(b) : no(new Error('png failed'))), 'image/png'));
+    });
+}
+
+/**
+ * 그림을 **시스템 클립보드**로(요청 3) — 다른 앱에 그대로 붙여넣을 수 있게.
+ *
+ * 글 복사와 달리 여기서는 `text/plain`을 함께 싣지 않는다: 두 벌을 실으면 받는 쪽이
+ * 그림 대신 글자를 고르는 앱이 있어(메일·메신저) "붙였더니 주소만 들어왔다"가 된다.
+ *
+ * **약속을 그대로 넘긴다**(`new ClipboardItem({ 'image/png': <Promise> })`) — 사파리는
+ * 사용자 제스처가 살아 있는 동안에만 쓰기를 받아, 덩어리를 `await`한 뒤에 쓰면 늦는다.
+ * 클립보드를 막아 둔 환경(권한·옛 브라우저·테스트)에서는 `false`로 돌아선다.
+ */
+export async function writeImageClipboard(src: string): Promise<boolean> {
+  const nav = typeof navigator === 'undefined' ? null : navigator;
+  const Item = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+  if (!src || !nav?.clipboard?.write || !Item) return false;
+  const png = imageToPng(src);
+  // 클립보드가 거절하면 이 약속을 **아무도 읽지 않는다** — 떠도는 거부가 되어 콘솔을
+  // 채우므로(테스트에서는 실행 자체가 실패한다) 여기서 한 번 받아 둔다.
+  png.catch(() => undefined);
+  try {
+    await nav.clipboard.write([new Item({ 'image/png': png })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
