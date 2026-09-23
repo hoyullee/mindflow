@@ -213,6 +213,44 @@ export function caretMetrics(el: HTMLElement, sel: Selection): { x?: number; y?:
   }
 }
 
+/**
+ * 같은 줄(블록) **안**에서 한 행 더 간 자리 — 더 갈 행이 없으면 `null`.
+ *
+ * 감긴 문단을 Shift+위/아래로 **한 행씩** 고르기 위한 것이다(제보 5). 브라우저는
+ * 한 편집 박스 안에서만 이 일을 해 주는데, 우리가 칠하기 시작하면 그 박스에 초점이
+ * 없어(`paintAndHold`가 캐럿을 접어 둔다) 더는 해 주지 않는다.
+ */
+/**
+ * 이 줄(블록) **안에 그 방향으로 더 갈 행이 있는가** — 좌표만 본다(글자를 짚지 않는다).
+ *
+ * `rowStepInLine`이 빈손으로 오는 이유는 둘이다: ① 정말 더 갈 행이 없다 ② 행은 있는데
+ * **짚지 못했다**(화면 밖이면 `caretRangeFromPoint`가 답하지 않는다). 둘을 가르지 않으면
+ * 화면 아래로 이어지는 긴 문단에서 "다음 행" 대신 **다음 블록**으로 건너뛴다.
+ */
+export function hasRowBeyond(el: HTMLElement, dir: -1 | 1, y: number | undefined): boolean {
+  if (typeof y !== 'number') return false;
+  const box = el.getBoundingClientRect();
+  const lh = rowHeight(el);
+  if (!box.height || !lh) return false;
+  const ny = y + dir * lh;
+  return ny >= box.top && ny <= box.bottom;
+}
+
+export function rowStepInLine(el: HTMLElement, dir: -1 | 1, x: number | undefined, y: number | undefined, at: number): { node: Node; offset: number; y: number } | null {
+  if (typeof y !== 'number') return null;
+  const box = el.getBoundingClientRect();
+  const lh = rowHeight(el);
+  if (!box.height || !lh) return null;
+  const ny = y + dir * lh;
+  if (ny < box.top || ny > box.bottom) return null; // 이 블록에는 더 갈 행이 없다
+  const cx = Math.min(Math.max(x ?? box.left + 1, box.left + 1), Math.max(box.left + 1, box.right - 1));
+  const spot = caretAt(cx, ny);
+  if (!spot || !el.contains(spot.node)) return null;
+  // 제자리면 행이 아니라 **여백**을 짚은 것이다(위아래 패딩이 있는 블록) — 넘긴다.
+  if (charOffset(el, spot.node, spot.offset) === at) return null;
+  return { node: spot.node, offset: spot.offset, y: ny };
+}
+
 /** 본문의 편집 박스들 — 화면에 놓인 순서(= 문서 순서). */
 function linesIn(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('[data-note-line]')];

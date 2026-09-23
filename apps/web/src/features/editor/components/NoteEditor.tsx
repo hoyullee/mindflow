@@ -39,7 +39,7 @@ import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
-import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { firstImageFile } from '../imageAttach';
@@ -9128,28 +9128,6 @@ function rowEdgeY(el: HTMLElement, dir: -1 | 1): number | undefined {
   if (!box.height) return undefined;
   const lh = Math.min(rowHeight(el) || box.height, box.height);
   return dir === 1 ? box.top + lh / 2 : box.bottom - lh / 2;
-}
-
-/**
- * 같은 줄(블록) **안**에서 한 행 더 간 자리 — 더 갈 행이 없으면 `null`.
- *
- * 감긴 문단을 Shift+위/아래로 **한 행씩** 고르기 위한 것이다(제보 5). 브라우저는
- * 한 편집 박스 안에서만 이 일을 해 주는데, 우리가 칠하기 시작하면 그 박스에 초점이
- * 없어(`paintAndHold`가 캐럿을 접어 둔다) 더는 해 주지 않는다.
- */
-function rowStepInLine(el: HTMLElement, dir: -1 | 1, x: number | undefined, y: number | undefined, at: number): { node: Node; offset: number; y: number } | null {
-  if (typeof y !== 'number') return null;
-  const box = el.getBoundingClientRect();
-  const lh = rowHeight(el);
-  if (!box.height || !lh) return null;
-  const ny = y + dir * lh;
-  if (ny < box.top || ny > box.bottom) return null; // 이 블록에는 더 갈 행이 없다
-  const cx = Math.min(Math.max(x ?? box.left + 1, box.left + 1), Math.max(box.left + 1, box.right - 1));
-  const spot = caretAt(cx, ny);
-  if (!spot || !el.contains(spot.node)) return null;
-  // 제자리면 행이 아니라 **여백**을 짚은 것이다(위아래 패딩이 있는 블록) — 넘긴다.
-  if (charOffset(el, spot.node, spot.offset) === at) return null;
-  return { node: spot.node, offset: spot.offset, y: ny };
 }
 
 function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; offset: number } {

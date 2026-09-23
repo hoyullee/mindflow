@@ -19,7 +19,7 @@ import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@m
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
 import { NOTE_EDIT_ATTR, armedCaretAt, armedCaretMark, disarmCaretMark, fireCaretMark } from '../noteRichDom';
-import { caretMetrics, charOffset, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars } from '../noteTextSelect';
+import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
@@ -152,6 +152,12 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
+  /**
+   * **세로로 오르내리는 동안 지킬 목표 칸**(화면 좌표 x) — 브라우저의 "desired column"과
+   * 같은 것을 우리가 든다. 짧은 행을 지날 때 칸이 그 행의 끝으로 줄어들면 안 되기
+   * 때문이고, 세로가 아닌 키를 누르면 그 자리에서 잊는다.
+   */
+  const vertX = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const el = ref.current;
@@ -407,6 +413,8 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      */
     const plainArrow = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
     const composing = e.nativeEvent.isComposing;
+    // 세로 이동이 아닌 키를 누르면 **목표 칸을 잊는다**(다음 위·아래는 그 자리에서 다시 잡는다).
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') vertX.current = undefined;
     /**
      * **Home·End는 「지금 이 시각 행의 끝」으로 못박는다**(제보).
      *
@@ -442,16 +450,41 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      */
     if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onSelectOut) {
       const sel = window.getSelection();
-      if (sel) {
+      if (sel?.focusNode && el.contains(sel.focusNode) && sel.anchorNode) {
         const dir = e.key === 'ArrowUp' ? -1 : 1;
-        // 자리는 **화면 좌표**로 넘긴다(`caretMetrics`) — 세로줄과 지금 행의 높이.
-        // 받는 쪽이 감긴 문단을 한 행씩 넘으려면 그 둘이 다 필요하다(제보 5).
-        if (caretOnEdgeLine(el, sel, dir)) {
-          const m = caretMetrics(el, sel);
-          if (onSelectOut(dir, m.x, m.y)) {
-            e.preventDefault();
+        const m = caretMetrics(el, sel);
+        // **목표 칸을 지킨다** — 세로로 오르내리는 동안에는 처음 잡은 세로줄을 쓴다
+        // (짧은 행을 지날 때 칸이 그 행의 끝으로 줄어드는 것은 브라우저도 하지 않는다).
+        const wantX = vertX.current ?? m.x;
+        const at = charOffset(el, sel.focusNode, sel.focusOffset);
+        const step = rowStepInLine(el, dir, wantX, m.y, at);
+        if (step) {
+          // **이 블록 안에 다음 행이 있다 — 우리가 옮긴다.** 브라우저에 맡기지 않는
+          // 이유는 아래 `caretOnEdgeLine` 머리말의 반대쪽 이야기다: 맡기려면 먼저
+          // 「가장자리인가」를 물어야 하고, 그 물음이 `Selection.modify`로 선택을
+          // 움직였다 되돌리는 일이라 **브라우저가 기억하던 것**(affinity·목표 칸)이
+          // 그 자리에서 흔들린다. 한 행씩 늘어나는 것이 OS·판올림과 무관하게 같아야
+          // 한다는 요청이라(제보), 잴 수 있는 좌표로 우리가 직접 놓는다.
+          e.preventDefault();
+          try {
+            sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, step.node, step.offset);
+            vertX.current = wantX;
             return;
+          } catch {
+            /* 못 세우면 아래로 흘러 브라우저에 맡긴다 */
           }
+        }
+        /**
+         * 더 갈 행이 **없을 때만** 이웃 블록으로 넘긴다(칠하기는 에디터가 맡는다).
+         * 행은 있는데 짚지 못한 것(화면 밖이라 `caretRangeFromPoint`가 빈손)까지 넘기면
+         * 화면 아래로 이어지는 긴 문단에서 다음 행 대신 **다음 블록**이 골라진다 —
+         * 그때는 아무것도 하지 않고 브라우저의 기본 동작에 맡긴다(그쪽은 스크롤도 한다).
+         */
+        if (!step && hasRowBeyond(el, dir, m.y)) return;
+        if (!step && onSelectOut(dir, wantX, m.y)) {
+          vertX.current = wantX;
+          e.preventDefault();
+          return;
         }
       }
     }
