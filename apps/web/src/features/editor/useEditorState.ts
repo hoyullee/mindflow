@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, NotePaste, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TableFillTarget, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, docSyncsViaCrdt, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue, blockText, cellKey, rowKey, fillAt, applyFill, shiftFills, shiftSizes, emptyBlock, emptyItem, indentListItem, indentListItems, noteBlockShape, olStartAt, pasteNoteBlocks, moveBlock, movePage, newPage, noteId, normalizeRuns, removePage, retypeBlock, retypeNoteLine as retypeNoteLineCore, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
+import { EMBED_LARGE_MAX, mergeEmbed, type NoteEmbedPatch } from './noteEmbed';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
 import { recordVersion, versionDoc } from './versionHistory';
@@ -189,6 +190,14 @@ export interface LinkTarget {
   color: string;
   /** 그 문서가 있는 스페이스 이름 — 링크 카드가 `문서 · 일반 공간`으로 적는다. */
   spaceName: string;
+  /**
+   * 마지막 수정 시각(ISO) — 임베드 머리줄의 `업데이트 3분 전`.
+   *
+   * 본문(`Doc`)에는 이 값이 없다(서버가 행에 적는다). 목록을 한 번 더 받아 채우므로
+   * 못 받으면 `undefined`이고, 그때는 그 줄을 아예 적지 않는다(모르는 것을 지어내지
+   * 않는다 — "방금"이라고 적었다가 한 달 전 보드를 최신으로 보이게 하는 쪽이 나쁘다).
+   */
+  updatedAt?: string;
 }
 
 interface Snapshot {
@@ -981,6 +990,23 @@ export interface EditorController {
    */
   promptNoteImage: (at?: NoteInsertAt) => void;
   setNoteLinkDoc: (blockId: string, docId: string) => void;
+  /**
+   * 보드 임베드의 **보기 상태**를 문서에 적는다 — 크기(`sm`/`lg`)·고른 열·펼친 가지·프레임.
+   *
+   * 보드의 **내용**은 절대 여기 들어오지 않는다(그 순간 두 벌이 되어 어느 쪽이 정본인지
+   * 알 수 없어진다). 적히는 것은 "이 자리에서 그 보드를 어떻게 보고 있나"뿐이라,
+   * 같은 공책을 여는 사람은 모두 같은 화면을 본다(기기별 설정이 아니다).
+   */
+  setNoteEmbedView: (blockId: string, patch: NoteEmbedPatch) => void;
+  /**
+   * **지금 열고 있는 문서가 아닌 다른 문서**를 저장한다 — 임베드에서 허용하는 단 하나의
+   * 조작(칸반 카드의 열 이동)이 쓸 길이다.
+   *
+   * 얇은 껍데기다: 낙관적 잠금(`prevVersion`)을 그대로 넘기고 결과를 그대로 돌려준다.
+   * 부르는 쪽이 실패를 되돌릴 수 있어야 하므로 여기서 삼키지 않는다(`conflict`면 다시
+   * 읽어야 한다 — 그 사이 보드 쪽에서 누가 옮겼다는 뜻이다).
+   */
+  saveOtherDoc: (docId: string, doc: Doc, prevVersion: number) => Promise<SaveResult>;
   /** 문서 링크 블록이 고를 수 있는 문서들(공책일 때만 채워진다). */
   linkTargets: LinkTarget[];
   setNoteCalloutTone: (blockId: string, tone: NoteCalloutTone) => void;
@@ -7957,13 +7983,36 @@ export function useEditorState(): EditorController {
     [insertNoteImage],
   );
 
-  /** 보드 링크 블록이 가리킬 문서. */
+  /**
+   * 보드 링크 블록이 가리킬 문서.
+   *
+   * **여섯 번째부터는 작게 넣는다**(스펙 §9). 임베드 하나가 그 보드를 한 벌씩 받아
+   * 오므로, 한 페이지에 크게 편 것이 열 개면 열 벌이다 — 그래도 보고 싶으면 펼치기
+   * 한 번이면 된다(끈 것이 아니라 접어 둔 것이다).
+   */
   const setNoteLinkDoc = useCallback(
     (blockId: string, docId: string) => {
       if (!notePage) return;
-      commitBlock(notePage.id, blockId, (b) => ({ ...b, docId }), false);
+      const others = notePage.blocks.filter((b) => b.id !== blockId && b.kind === 'link' && b.docId).length;
+      const small = others >= EMBED_LARGE_MAX;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, docId, ...(small ? { embed: mergeEmbed(b.embed, { size: 'sm' }) } : {}) }), false);
     },
     [commitBlock, notePage],
+  );
+
+  /** 보드 임베드의 보기 상태 — 내용이 아니라 "어떻게 보고 있나"만 적는다. */
+  const setNoteEmbedView = useCallback(
+    (blockId: string, patch: NoteEmbedPatch) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => ({ ...b, embed: mergeEmbed(b.embed, patch) }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 임베드가 옮긴 카드를 **그 보드에** 쓴다(이 공책이 아니라). */
+  const saveOtherDoc = useCallback(
+    (docId: string, next: Doc, prevVersion: number): Promise<SaveResult> => docStore.save(docId, next, { prevVersion }),
+    [docStore],
   );
 
   /** 콜아웃 어조(주의·결정·질문). */
@@ -8031,8 +8080,11 @@ export function useEditorState(): EditorController {
     let alive = true;
     void (async () => {
       try {
-        const ws = await spaceStore.load();
+        // 워크스페이스(어느 스페이스의 무엇인가)와 문서 목록(언제 고쳐졌나)을 함께 받는다.
+        // 목록 쪽이 실패해도 링크 자체는 만들어져야 하므로 따로 삼킨다.
+        const [ws, metas] = await Promise.all([spaceStore.load(), docStore.list().catch(() => [])]);
         if (!alive || !ws) return;
+        const when = new Map(metas.map((m) => [m.id, m.updatedAt] as const));
         const out: LinkTarget[] = [];
         let mine = '';
         for (const raw of (ws.spaces ?? []) as { name?: unknown; maps?: { title?: unknown; docId?: unknown }[] }[]) {
@@ -8047,7 +8099,8 @@ export function useEditorState(): EditorController {
               mine = spaceName;
               continue;
             }
-            out.push({ docId: id, title: title || '제목 없음', href: `/editor?map=${encodeURIComponent(id)}`, kindName: '문서', color: 'var(--mf-doc-map)', spaceName });
+            const at = when.get(id);
+            out.push({ docId: id, title: title || '제목 없음', href: `/editor?map=${encodeURIComponent(id)}`, kindName: '문서', color: 'var(--mf-doc-map)', spaceName, ...(at ? { updatedAt: at } : {}) });
           }
         }
         setLinkTargets(out);
@@ -8059,7 +8112,7 @@ export function useEditorState(): EditorController {
     return () => {
       alive = false;
     };
-  }, [isNote, spaceStore, docStoreId]);
+  }, [isNote, spaceStore, docStore, docStoreId]);
 
   /** 페이지 태그(공책 태그와 별개 — 페이지마다 다를 수 있다). */
   const setNotePageTag = useCallback(
@@ -8631,6 +8684,8 @@ export function useEditorState(): EditorController {
     insertNoteImage,
     promptNoteImage,
     setNoteLinkDoc,
+    setNoteEmbedView,
+    saveOtherDoc,
     linkTargets,
     noteSpaceName,
     setNoteBlockAlign,

@@ -20,7 +20,7 @@ export const CORE_VERSION = '0.0.0';
 
 export type { TextMeasurer, Clock, IdGen } from './ports';
 
-export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind, Stroke, Reaction, KanbanColumn, KanbanCard, KanbanTag, CommentPin, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteListItem, NotePage, NoteSketch } from './model';
+export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind, Stroke, Reaction, KanbanColumn, KanbanCard, KanbanTag, CommentPin, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteCover, NoteEmbedView, NoteListItem, NotePage, NoteSketch } from './model';
 export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, DEFAULT_EDGE_STYLE, VOTE_EMOJI } from './model';
 
 export type { SerializableState } from './serialize';
