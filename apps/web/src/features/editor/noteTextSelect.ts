@@ -114,6 +114,105 @@ export function lineText(el: HTMLElement): string {
   return linearize(el, []).text;
 }
 
+/**
+ * 그 줄의 **시각 줄 높이**(px) — 감긴 문단의 한 행이다.
+ *
+ * `line-height`가 `normal`이면 숫자를 낼 수 없으므로 상자 높이로 물러선다(그러면
+ * 한 행짜리 줄과 같은 값이라, 행을 세는 쪽이 "더 갈 행이 없다"로 읽는다 — 안전한
+ * 방향이다).
+ */
+export function rowHeight(el: HTMLElement): number {
+  if (typeof getComputedStyle !== 'function') return 0;
+  const lh = parseFloat(getComputedStyle(el).lineHeight);
+  if (lh > 0) return lh;
+  const h = el.getBoundingClientRect().height;
+  return h > 0 ? h : 0;
+}
+
+/**
+ * 캐럿이 놓인 **시각 줄의 경계**(글자 자리) — 앞(`-1`)이면 그 행의 머리, 뒤(`1`)면 끝.
+ * 잴 수 없으면 `-1`.
+ *
+ * **브라우저에게 직접 묻는다**(`Selection.modify`). 사각형으로는 알 수 없기 때문이다:
+ * 감긴 줄의 랩 지점은 글자 수로는 한 자리인데 화면에는 둘이고(앞 행의 끝 · 뒷 행의
+ * 머리), `Range`의 사각형은 그 자리를 **늘 앞 행으로 접어** 돌려준다
+ * (`docs/probe-pitfalls.md` E12). 브라우저만이 캐럿이 둘 중 어느 쪽에 서 있는지
+ * (affinity) 안다.
+ *
+ * `modify`는 선택을 움직이므로 두 끝을 적어 두었다 되돌린다(`setBaseAndExtent`는
+ * 방향까지 지킨다 — Shift로 고르는 중에도 안전하다).
+ */
+export function lineBoundaryAt(el: HTMLElement, sel: Selection, dir: -1 | 1): number {
+  const probe = (sel as Selection & { modify?: (a: string, d: string, g: string) => void }).modify;
+  if (typeof probe !== 'function' || !sel.anchorNode || !sel.focusNode || !el.contains(sel.focusNode)) return -1;
+  const keep = { an: sel.anchorNode, ao: sel.anchorOffset, fn: sel.focusNode, fo: sel.focusOffset };
+  try {
+    probe.call(sel, 'move', dir === -1 ? 'backward' : 'forward', 'lineboundary');
+    const at = sel.focusNode && el.contains(sel.focusNode) ? charOffset(el, sel.focusNode, sel.focusOffset) : -1;
+    sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
+    return at;
+  } catch {
+    try {
+      sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
+    } catch {
+      /* 되돌리지 못해도 값은 그대로다 */
+    }
+    return -1;
+  }
+}
+
+/** 그 구간 글자들의 사각형 — 잴 수 없으면 `null`. */
+function charsRect(el: HTMLElement, from: number, to: number): DOMRect | null {
+  try {
+    const s = linearPoints(el, [from])[0];
+    const t = linearPoints(el, [to])[0];
+    if (!s || !t) return null;
+    const r = document.createRange();
+    r.setStart(s.node, s.offset);
+    r.setEnd(t.node, t.offset);
+    const box = r.getBoundingClientRect();
+    return box.height > 0 ? box : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 캐럿이 **화면에서** 놓인 자리 — 세로줄(`x`)과 그 행의 가운데 높이(`y`).
+ *
+ * 방향키로 줄을 넘을 때 지킬 값이다(요청: "무조건 사용자가 의도한대로 한 칸씩").
+ * 접힌 범위의 사각형을 그대로 쓰면 **랩 지점에서 틀린다** — 그 자리를 브라우저가 늘
+ * 앞 행으로 접어 주기 때문에(E12), 감긴 문단의 둘째 행 **머리**에 있는 캐럿이 첫 행의
+ * **끝**으로 읽혔다(제보 4: 아래로 내려가면 다음 줄의 둘째 행에 선다).
+ *
+ * 그래서 먼저 **어느 행에 서 있는지**를 브라우저에게 묻고(`lineBoundaryAt`), 그 행
+ * 쪽의 **이웃 글자 한 칸**을 재서 좌표를 얻는다: 행의 머리면 뒤 글자의 왼변,
+ * 그 밖에는 앞 글자의 오른변이다. 글자가 아예 없는 빈 줄은 상자의 글 시작 자리다
+ * (제보 2: 빈 줄에서 ↑를 누르면 윗줄 **끝**으로 갔다 — 잴 글자가 없어 좌표를 내주지
+ * 못했고, 좌표가 없으면 "위로 갈 때는 끝"이라는 옛 규칙이 남는다).
+ */
+export function caretMetrics(el: HTMLElement, sel: Selection): { x?: number; y?: number } {
+  try {
+    const node = sel.focusNode && el.contains(sel.focusNode) ? sel.focusNode : el;
+    const offset = node === sel.focusNode ? sel.focusOffset : 0;
+    const len = lineLength(el);
+    const box = el.getBoundingClientRect();
+    if (!len) {
+      if (!box.height) return {};
+      const cs = getComputedStyle(el);
+      const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0);
+      return { x: box.left + pad, y: box.top + Math.min(rowHeight(el) || box.height, box.height) / 2 };
+    }
+    const at = Math.max(0, Math.min(charOffset(el, node, offset), len));
+    const head = at <= 0 || lineBoundaryAt(el, sel, -1) === at;
+    const r = head && at < len ? charsRect(el, at, at + 1) : charsRect(el, Math.max(0, at - 1), Math.max(1, at));
+    if (!r) return {};
+    return { x: head && at < len ? r.left : r.right, y: r.top + r.height / 2 };
+  } catch {
+    return {};
+  }
+}
+
 /** 본문의 편집 박스들 — 화면에 놓인 순서(= 문서 순서). */
 function linesIn(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('[data-note-line]')];
