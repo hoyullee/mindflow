@@ -236,6 +236,21 @@ export class SupabaseAuth implements AuthProvider {
     return typeof v === 'string' && v.trim() ? v : null;
   }
 
+  /**
+   * `profiles.avatar_url` — `updateAvatar`가 적는 **바로 그 칸**이라 어느 기기에서
+   * 바꿔도 여기로 온다. 세션 메타데이터가 아니라 이 행을 읽는 이유: 메타데이터는
+   * 토큰에 실려 오므로 그 기기의 토큰이 갱신되기 전에는 옛 값이다.
+   */
+  async getProfileAvatar(): Promise<string | null | undefined> {
+    const uid = (await currentUser(this.client))?.id;
+    if (!uid) return undefined;
+    const { data, error } = await this.client.from('profiles').select('avatar_url').eq('id', uid).maybeSingle();
+    // 0031이 아직 안 간 서버에는 칼럼이 없다 — 그때는 "모른다"이지 "없다"가 아니다.
+    if (error) return undefined;
+    const v = (data as { avatar_url?: unknown } | null)?.avatar_url;
+    return typeof v === 'string' && v.trim() ? v : null;
+  }
+
   async setProfileName(name: string): Promise<{ error?: string }> {
     const uid = (await currentUser(this.client))?.id;
     if (!uid) return { error: 'not authenticated' };

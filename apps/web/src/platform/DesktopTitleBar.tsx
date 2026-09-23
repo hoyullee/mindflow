@@ -96,7 +96,6 @@ export function DesktopTitleBar() {
         // 흐름으로 더해도 신호등 아래로 들어가지 않게).
         paddingLeft: mac ? MAC_INSET : 12,
         background: `var(${BAR_BG_VAR})`,
-        borderBottom: '1px solid var(--mf-border-soft)',
         userSelect: 'none',
         WebkitUserSelect: 'none',
         ...dragRegion,
@@ -127,6 +126,22 @@ export function DesktopTitleBar() {
         </span>
         <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>Geurio</span>
       </span>
+      {/**
+       * 바의 아래 구분선 — **바 안이 아니라 바 밑 1px**에 그린다(제보 7: 최소화·
+       * 최대화·닫기 아래에서만 선이 끊긴다).
+       *
+       * Windows의 그 셋은 웹 내용 **위에** 그려지는 네이티브 판(`titleBarOverlay`)이라
+       * 그 구역의 우리 픽셀은 보이지 않는다. 바에 `border-bottom`을 두면 그 선은
+       * 바의 **마지막 줄**이므로 판 밑에 깔려 그 구간만 사라진다. 셸은 이미 판을
+       * 1px 낮게 잡아 그 줄을 비켜 주지만(`TITLEBAR_OVERLAY_HEIGHT`), 그 값은 창을
+       * 만들 때 정해지므로 **이미 깔린 옛 설치본에는 없다** — 웹만 고쳐서는 닿지
+       * 않는 자리였다. 선을 바 **바깥**(y = 높이)에 두면 판이 바와 같은 높이든 1px
+       * 낮든 언제나 그 아래라, 옛 설치본에서도 끝까지 이어진다.
+       */}
+      <span
+        aria-hidden="true"
+        style={{ position: 'fixed', top: height, left: 0, right: 0, height: 1, background: 'var(--mf-border-soft)', pointerEvents: 'none', zIndex: 3000 }}
+      />
     </div>
   );
 }

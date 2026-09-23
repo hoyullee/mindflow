@@ -220,6 +220,11 @@ export class LocalAuth implements AuthProvider {
     return {};
   }
 
+  /** 로컬 모드에는 서버가 없다 — **모른다**(세션에 담긴 사진을 그대로 둔다). */
+  async getProfileAvatar(): Promise<string | null | undefined> {
+    return undefined;
+  }
+
   /**
    * 프로필 이미지(데모) — 파일을 올릴 곳이 없으므로 **데이터 URL을 세션에** 담는다
    * (Supabase 짝과 같은 칸: `user.avatarUrl`). 로컬 모드에서도 설정 화면과 에디터

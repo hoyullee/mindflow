@@ -220,7 +220,7 @@ describe('Home', () => {
 
     await createBlankMap(user);
 
-    expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
+    expect(screen.getByText('잠시만 기다려 주세요')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
   });
 
@@ -1408,12 +1408,12 @@ describe('Home', () => {
     await createBlankMap(user);
 
     // 클릭 직후: 로더는 이미 떠 있고, 새 카드는 아직 추가되지 않았다
-    expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
+    expect(screen.getByText('잠시만 기다려 주세요')).toBeTruthy();
     expect(cardCount()).toBe(before);
 
     // 이후 프레임에서 카드가 등록된다 (로더 뒤에서)
     await waitFor(() => expect(cardCount()).toBeGreaterThan(before));
-    expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
+    expect(screen.getByText('잠시만 기다려 주세요')).toBeTruthy();
   });
 
   it('설정 모달에서 프로필 이미지를 바꾸면 아바타에 반영되고, 프로필명 변경도 여기 있다(요청)', async () => {
@@ -2529,13 +2529,13 @@ describe('Home', () => {
     fireEvent.doubleClick(card);
     // 열기는 로더를 거쳐 0.9초 뒤에 이동하므로, "안 열렸다"는 URL이 아니라 **로더가
     // 뜨지 않았다**로 본다(즉시 판정 + 대기 시간에 기대지 않는다).
-    expect(screen.queryByText('맵을 불러오고 있어요')).toBeNull();
+    expect(screen.queryByText('잠시만 기다려 주세요')).toBeNull();
 
     // 사용자가 진짜로 이 카드를 두 번 누르면 열린다.
     fireEvent.click(card);
     fireEvent.click(card);
     fireEvent.doubleClick(card);
-    expect(screen.getByText('맵을 불러오고 있어요')).toBeTruthy();
+    expect(screen.getByText('잠시만 기다려 주세요')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
   });
 
@@ -4374,8 +4374,17 @@ describe('홈 우클릭 메뉴', () => {
       expect((boardCard.querySelector('[data-board-badge] span') as HTMLElement).style.background).toContain('--mf-doc-board');
       expect((mapCard.querySelector('[data-board-badge] span') as HTMLElement).style.background).toContain('--mf-doc-map');
       expect(mapCard.style.border).toContain('--mf-border');
-      // 배지는 카드 오른쪽 끝에 붙는다(제보: 너무 떨어져 있다).
-      expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.right).toBe('10px');
+      // 배지는 카드의 **첫 줄 왼쪽 끝**이다(요청: 공책 카드와 같은 배치) — 그 줄의
+      // 오른쪽 끝은 ☆·⋯이 쓴다. 자리를 잡는 것은 그 줄(절대 배치)이고 배지는
+      // 그 안의 flex 항목이라, 배지 자신에게는 `right`가 없다.
+      const row = (boardCard.querySelector('[data-board-badge]') as HTMLElement).parentElement as HTMLElement;
+      expect(row.style.left).toBe('10px');
+      expect(row.style.right).toBe('10px');
+      expect(row.style.top).toBe('10px');
+      // 그 줄의 차례: 배지 → (빈 칸) → ☆ → ⋯
+      expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.order).toBe('0');
+      expect((row.querySelector('.fav-btn') as HTMLElement).style.order).toBe('2');
+      expect((row.querySelector('.menu-btn') as HTMLElement).style.order).toBe('3');
     });
 
     // 요청: 세 종류의 테두리 색이 서로 **명확히 구별**돼야 한다(예전엔 화이트보드와
@@ -4559,7 +4568,7 @@ describe('홈 우클릭 메뉴', () => {
       await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       await user.click(await screen.findByRole('button', { name: /브레인스토밍/ }));
 
-      expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
+      expect(screen.getByText('잠시만 기다려 주세요')).toBeTruthy();
       await waitFor(() => expect(newMapTitles()).toContain('브레인스토밍'));
       await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
     });
@@ -5540,8 +5549,14 @@ describe('홈 리디자인 계약', () => {
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
     const tray = css.slice(css.indexOf('.mf-recent-tray {'), css.indexOf('}', css.indexOf('.mf-recent-tray {')));
     expect(tray).toContain('background: var(--mf-bg)');
-    expect(tray).toContain('margin: -24px -32px 26px');
     expect(tray).toContain('padding: 24px 32px 26px');
+    // 전폭으로 빠지는 일은 **바깥 상자**가 한다(제보: 최근 항목 배경이 틀어진다) —
+    // 띠 자신이 음수 마진으로 빠지면 그 위의 접기 상자(`overflow: hidden`)가 잘라 낸다.
+    const bleed = css.slice(css.indexOf('.mf-recent-bleed {'), css.indexOf('}', css.indexOf('.mf-recent-bleed {')));
+    expect(bleed).toContain('margin: -24px -32px 0');
+    // 세로 flex의 자식이라 내용보다 작게 눌릴 수 있다 — 눌리지 않는다고 못박는다.
+    expect(bleed).toContain('flex: 0 0 auto');
+    expect(container.querySelector('.mf-recent-bleed .mf-recent-tray')).toBeTruthy();
   });
 
   it('카드 미리보기 틀 — 옅은 wash + 도트 격자 + 종류 배지(최근 항목도 같은 틀)', async () => {
@@ -5605,7 +5620,7 @@ describe('홈 디자인 후속 6건', () => {
     const chip = within(dialog).getByRole('radio', { name: '코랄 테마' });
     const preview = chip.querySelector('[data-theme-preview]') as HTMLElement;
     expect(preview.style.borderRadius).toBe('10px');
-    expect(preview.style.background).toBe('rgb(251, 246, 242)'); // = HOME_THEMES.coral.bg
+    expect(preview.style.background).toBe('rgb(252, 252, 251)');
     expect((preview.firstElementChild as HTMLElement).style.borderRadius).toBe('50%'); // 강조색 점
     expect(chip.querySelector('[data-theme-check]')).toBeTruthy(); // 고른 칸에만 체크
     expect(within(dialog).getByText('개인정보처리방침').getAttribute('href')).toBe('/privacy');

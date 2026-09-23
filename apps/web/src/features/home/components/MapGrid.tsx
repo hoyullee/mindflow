@@ -43,18 +43,22 @@ function SkeletonCard() {
 }
 
 /**
- * `공책 만들기` 타일 — 공책 구획의 마지막 칸(디자인의 점선 카드).
+ * 구획 끝의 **만드는 칸**(디자인의 점선 카드) — 공책과 보드가 같은 부품을 쓴다.
  *
- * 갤러리를 여는 **같은 길**이지만 공책 탭으로 바로 들어간다: 이 자리에서 누르는
- * 사람은 이미 "공책을 만들겠다"고 정했으므로, 종류를 다시 고르게 하면 한 걸음이
+ * 갤러리를 여는 **같은 길**이지만 그 구획의 종류로 바로 들어간다: 이 자리에서
+ * 누르는 사람은 이미 무엇을 만들지 정했으므로, 종류를 다시 고르게 하면 한 걸음이
  * 늘어난다(요청 4번 — 「새로 만들기」 버튼과 이 타일 둘 다로 만들 수 있다).
+ *
+ * **보드 칸도 함께 둔다**(요청): 공책 구획에만 이 칸이 있으면 "여기서 만들 수 있다"가
+ * 종류마다 갈려, 보드를 만들려면 위 툴바로 올라가야 한다. 보드 쪽은 종류가 셋
+ * (마인드맵·화이트보드·칸반)이라 탭을 정하지 않고 갤러리를 그대로 연다.
  */
-function NewNoteTile({ controller }: { controller: HomeController }) {
+function NewDocTile({ attr, label, desc, onClick }: { attr: 'note' | 'board'; label: string; desc: string; onClick: () => void }) {
   return (
     <button
       type="button"
-      data-new-note-tile
-      onClick={controller.openNoteTemplates}
+      {...(attr === 'note' ? { 'data-new-note-tile': true } : { 'data-new-board-tile': true })}
+      onClick={onClick}
       className="btn"
       style={{
         display: 'flex',
@@ -92,12 +96,20 @@ function NewNoteTile({ controller }: { controller: HomeController }) {
           <path d="M12 5v14M5 12h14" />
         </svg>
       </span>
-      <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>공책 만들기</span>
+      <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>{label}</span>
       <span style={{ maxWidth: 160, fontSize: 11.5, color: 'var(--mf-muted)', lineHeight: 1.6, textAlign: 'center', wordBreak: 'keep-all' }}>
-        빈 공책 또는 회의록·회고 템플릿에서
+        {desc}
       </span>
     </button>
   );
+}
+
+function NewNoteTile({ controller }: { controller: HomeController }) {
+  return <NewDocTile attr="note" label="공책 만들기" desc="빈 공책 또는 회의록·회고 템플릿에서" onClick={controller.openNoteTemplates} />;
+}
+
+function NewBoardTile({ controller }: { controller: HomeController }) {
+  return <NewDocTile attr="board" label="보드 만들기" desc="마인드맵 · 화이트보드 · 칸반 보드에서" onClick={controller.openTemplates} />;
 }
 
 /** Home.dc.html:209-329 — recent / folders / maps sections plus the three empty states. */
@@ -156,18 +168,29 @@ export function MapGrid({ view, controller }: Props) {
             {view.boardCards.map((c) => (
               <MapCard key={c.key} card={c} controller={controller} draggableEnabled={!view.isDriveSpace} />
             ))}
+            {/* 공책 구획과 **같은 자리에 같은 칸**(요청) — 목록 끝의 점선 타일이
+                "여기에 더 넣을 수 있다"를 말한다. */}
+            {!view.isDriveSpace && <NewBoardTile controller={controller} />}
           </div>
         </div>
       )}
 
-      {/* 공책이 아직 없는 스페이스에도 **만드는 길**은 있어야 한다 — 보드만 있으면
-          공책 구획 자체가 서지 않으므로(빈 구획 머리를 두지 않는다) 그 타일도 사라진다.
-          그래서 보드 구획 아래에 한 칸을 따로 둔다. */}
+      {/* 한쪽 종류가 아직 없는 스페이스에도 **만드는 길**은 있어야 한다 — 빈 구획의
+          머리를 두지 않으므로(디자인) 그 구획이 통째로 사라지면 그 타일도 함께
+          사라진다. 그래서 없는 쪽의 구획을 개수 0으로 세우고 타일 한 칸만 둔다. */}
       {!view.noteSectionVisible && view.boardSectionVisible && !view.isDriveSpace && (
         <div data-space-section="공책" style={{ marginTop: 30 }}>
           <SectionHead label="공책" count={0} />
           <div className="mf-map-grid" style={GRID_STYLE}>
             <NewNoteTile controller={controller} />
+          </div>
+        </div>
+      )}
+      {view.noteSectionVisible && !view.boardSectionVisible && !view.isDriveSpace && (
+        <div data-space-section="보드" style={{ marginTop: 30 }}>
+          <SectionHead label="보드" count={0} />
+          <div className="mf-map-grid" style={GRID_STYLE}>
+            <NewBoardTile controller={controller} />
           </div>
         </div>
       )}

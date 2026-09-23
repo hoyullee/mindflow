@@ -611,7 +611,7 @@ describe('일정 화면', () => {
     expect(within(detail()).getByText('칸반 카드')).toBeTruthy();
     // 발치 버튼이 그 칸반으로 보낸다(카드 열기와 같은 전체 화면 로더).
     fireEvent.click(within(detail()).getByText('이 칸반 열기'));
-    expect(document.body.textContent).toContain('불러오고');
+    expect(document.body.textContent).toContain('잠시만 기다려 주세요');
     await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
   });
 

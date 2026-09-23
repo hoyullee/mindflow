@@ -54,6 +54,7 @@ function ClockGlyph() {
 export function RecentStripSkeleton({ count }: { count: number }) {
   const n = Math.max(1, Math.min(count, 6));
   return (
+    <div className="mf-recent-bleed">
     <div className="mf-recent-tray" aria-busy="true" aria-label="최근 항목을 불러오는 중">
       {/* 실제 헤더와 동일한 고정 높이(16px + marginBottom 10) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, height: 16 }}>
@@ -80,6 +81,7 @@ export function RecentStripSkeleton({ count }: { count: number }) {
           </div>
         ))}
       </div>
+    </div>
     </div>
   );
 }

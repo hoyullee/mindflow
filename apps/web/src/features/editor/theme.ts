@@ -130,7 +130,13 @@ export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
 /** 시스템 크롬(GNB·메뉴·독칩·속성패널 틀·줌/미니맵 프레임 등)의 고정 테마.
  * 문서 테마(`doc.themeKey`)는 편집 영역 — 캔버스 배경·노드/커넥터 색·미니맵
  * 내용·내보내기 — 에만 적용되고, 크롬은 항상 이 팔레트로 그린다. */
-export const UI_THEME: Theme = THEMES.coral;
+/**
+ * 시스템 크롬의 **면**은 `#fcfcfb`다(요청) — 공책 본문(`--mf-note-body`)이 제보로
+ * 그 값이 된 뒤, 홈과 나머지 에디터가 반 톤 따뜻한 `#fbf6f2`로 남아 있어 화면을
+ * 옮길 때마다 바탕이 바뀌어 보였다. 문서 테마 `coral`의 `appBg`는 **건드리지
+ * 않는다**: 그쪽은 문서가 고른 색이고 이쪽은 앱의 껍데기다.
+ */
+export const UI_THEME: Theme = { ...THEMES.coral, appBg: '#fcfcfb' };
 
 /** Port of `Component#theme()` (MindFlow.dc.html:880) — falls back to coral for unknown keys. */
 export function themeOf(key: string | undefined | null): Theme {

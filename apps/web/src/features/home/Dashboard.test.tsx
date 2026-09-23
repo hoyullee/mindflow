@@ -481,7 +481,7 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     // 펼침 전환은 과하다는 판단으로 걷어냈다(요청) — 그 자국이 남지 않았는지도 본다.
     fireEvent.click(within(widget).getByRole('button', { name: '열기' }));
     expect(loader()).toBeTruthy();
-    expect(screen.getByText('맵을 불러오고 있어요')).toBeTruthy();
+    expect(screen.getByText('잠시만 기다려 주세요')).toBeTruthy();
     expect(document.querySelector('[data-dash-launch]')).toBeNull();
   });
 

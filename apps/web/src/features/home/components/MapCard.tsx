@@ -749,6 +749,94 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         <NoteCardBody card={card} controller={controller} selectMode={selectMode} />
       ) : (
         <>
+      {/**
+       * 보드 카드의 **첫 줄**(요청 3) — 왼쪽에 종류 칩, 오른쪽에 ☆·⋯다. 공책 카드가
+       * 이미 그 배치이므로(태그 · … · ★ ⋯) 두 카드가 한 벌로 읽힌다.
+       *
+       * 예전에는 셋이 제각각이었다: ☆는 미리보기 **왼쪽 위**, 종류 칩은 **오른쪽 위**,
+       * ⋯은 **맨 아랫줄의 끝**. 그래서 같은 조작을 찾는 눈이 카드 종류마다 다른 곳을
+       * 훑어야 했다.
+       *
+       * 줄 전체는 클릭을 받지 않는다(`pointerEvents: 'none'`) — 미리보기 위에 얹히는
+       * 띠라, 빈 구간이 카드 열기를 먹으면 안 된다. 칩·버튼만 되살린다.
+       */}
+      <div
+        style={{
+          position: 'absolute',
+          top: compact ? 7 : 10,
+          left: compact ? 7 : 10,
+          right: compact ? 7 : 10,
+          zIndex: 3,
+          display: 'flex',
+          alignItems: 'center',
+          gap: compact ? 4 : 6,
+          minWidth: 0,
+          pointerEvents: 'none',
+        }}
+      >
+      {/* 왼쪽 — 종류 칩(디자인 원본은 **모든 카드**에 종류를 적는다). Drive 배지가
+          있는 카드는 그 자리를 배지에 양보한다. */}
+      {!card.badge && card.openable !== false && (
+        <div
+          data-board-badge
+          title={card.isNote ? '공책' : card.isKanban ? '칸반 보드' : card.isBoard ? '화이트보드' : '마인드맵'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: compact ? 4 : 5,
+            height: compact ? 20 : 24,
+            padding: compact ? '0 7px' : '0 9px',
+            borderRadius: 999,
+            background: 'var(--mf-panel-veil)',
+            border: '1px solid var(--mf-border)',
+            color: 'var(--mf-subtext)',
+            fontSize: compact ? 9.5 : 10.5,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            backdropFilter: 'blur(6px)',
+            flexShrink: 0,
+            pointerEvents: 'auto',
+            // 좁은 최근 트레이 카드에서는 **예전 자리 그대로**(오른쪽) — 그 카드의
+            // 왼쪽 위는 공책 표지의 태그가 이미 쓰고 있어 겹친다. 요청은 스페이스
+            // 그리드의 보드 카드에 대한 것이므로 거기서만 자리를 바꾼다.
+            order: compact ? 3 : 0,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: compact ? 5 : 6,
+              height: compact ? 5 : 6,
+              borderRadius: 2,
+              background: docKindColor(card),
+              display: 'block',
+              flexShrink: 0,
+            }}
+          />
+          {card.isNote ? '공책' : card.isKanban ? (compact ? '칸반' : '칸반 보드') : card.isBoard ? (compact ? '보드' : '화이트보드') : '마인드맵'}
+        </div>
+      )}
+      {card.badge && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 8px',
+            borderRadius: 999,
+            background: card.openable ? 'rgba(52,168,83,.12)' : 'var(--mf-panel2)',
+            color: card.openable ? 'var(--mf-success-ink)' : 'var(--mf-faint)',
+            fontSize: 11,
+            fontWeight: 700,
+            flexShrink: 0,
+            pointerEvents: 'auto',
+            order: compact ? 3 : 0,
+          }}
+        >
+          {card.badge}
+        </div>
+      )}
+      <span style={{ flex: 1, minWidth: 0, order: 1 }} />
       <div
         className="fav-btn"
         role="button"
@@ -761,10 +849,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         title="즐겨찾기"
         aria-label={card.isFav ? '즐겨찾기 해제' : '즐겨찾기'}
         style={{
-          position: 'absolute',
-          top: compact ? 7 : 10,
-          left: compact ? 7 : 10,
-          zIndex: 3,
+          pointerEvents: 'auto',
+          flexShrink: 0,
+          order: compact ? 0 : 2,
           width: compact ? 24 : 28,
           height: compact ? 24 : 28,
           // 원이 아니라 **둥근 사각**이다(디자인 원본) — 미리보기 위에 얹히는 칩들
@@ -789,71 +876,56 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       >
         {card.isFav ? '★' : '☆'}
       </div>
-
-
-      {/* 종류 배지 — 디자인 원본은 **모든 카드**에 종류를 적는다(마인드맵도).
-          점 색은 카드 테두리와 같은 종류색이라 배지·테두리·바탕이 세 겹으로 같은
-          것을 가리킨다. Drive 배지(`card.badge`)가 있는 카드는 그 자리를 양보한다. */}
-      {!card.badge && card.openable !== false && (
+      {/* ⋯ — ☆ 바로 오른쪽. 예전에는 맨 아랫줄의 끝에 있었는데, 그 줄은 디자인에서
+          **읽는 줄**(제목 · 수정일)이라 조작을 끼우면 읽기가 끊긴다(공책 카드가 이미
+          같은 이유로 첫 줄에 뒀다). 선택 모드에서는 감춘다 — 여러 장을 골라 둔 채
+          한 장의 메뉴를 여는 것은 뜻이 어긋난다(그때의 메뉴는 선택 바의 ⋯이다). */}
+      {!compact && !selectMode && (
         <div
-          data-board-badge
-          title={card.isNote ? '공책' : card.isKanban ? '칸반 보드' : card.isBoard ? '화이트보드' : '마인드맵'}
+          className="menu-btn"
+          role="button"
+          tabIndex={-1}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // ☰과 우클릭은 같은 메뉴다 — 버튼 아래(왼쪽 정렬)에 띄운다.
+            const r = e.currentTarget.getBoundingClientRect();
+            controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: card.key });
+          }}
+          title="메뉴"
+          aria-label="메뉴"
           style={{
-            position: 'absolute',
-            top: compact ? 7 : 10,
-            right: compact ? 7 : 10,
-            zIndex: 2,
-            display: 'flex',
-            alignItems: 'center',
-            gap: compact ? 4 : 5,
-            height: compact ? 20 : 24,
-            padding: compact ? '0 7px' : '0 9px',
-            borderRadius: 999,
+            pointerEvents: 'auto',
+            flexShrink: 0,
+            order: 3,
+            width: 28,
+            height: 28,
+            // ☆와 같은 꼴 — 미리보기 위에 얹히므로 면이 있어야 글씨 위에서도 읽힌다
+            // (아랫줄에 있던 시절에는 카드 면 위라 점 셋만으로 충분했다).
+            borderRadius: 9,
             background: 'var(--mf-panel-veil)',
             border: '1px solid var(--mf-border)',
-            color: 'var(--mf-subtext)',
-            fontSize: compact ? 9.5 : 10.5,
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-            backdropFilter: 'blur(6px)',
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              width: compact ? 5 : 6,
-              height: compact ? 5 : 6,
-              borderRadius: 2,
-              background: docKindColor(card),
-              display: 'block',
-              flexShrink: 0,
-            }}
-          />
-          {card.isNote ? '공책' : card.isKanban ? (compact ? '칸반' : '칸반 보드') : card.isBoard ? (compact ? '보드' : '화이트보드') : '마인드맵'}
-        </div>
-      )}
-
-      {card.badge && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 12,
-            right: 46,
-            zIndex: 2,
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
-            padding: '3px 8px',
-            borderRadius: 999,
-            background: card.openable ? 'rgba(52,168,83,.12)' : 'var(--mf-panel2)',
-            color: card.openable ? 'var(--mf-success-ink)' : 'var(--mf-faint)',
-            fontSize: 11,
-            fontWeight: 700,
+            justifyContent: 'center',
+            color: 'var(--mf-subtext)',
+            cursor: 'pointer',
+            backdropFilter: 'blur(6px)',
+            // hover에서 나타난다(home.css) — 메뉴가 열려 있거나 카드를 골라 둔
+            // 동안에는 계속 보인다(hover가 없는 터치에서도 닿을 수 있게).
+            opacity: card.menuOpen || card.selected ? 1 : 0,
+            transition: 'opacity .18s ease, background .15s ease',
           }}
         >
-          {card.badge}
+          {/* 가로 점 셋 — 디자인 원본. ☰(세 줄)은 "메뉴 열기"보다 "목록"으로 읽힌다. */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.6" />
+            <circle cx="12" cy="12" r="1.6" />
+            <circle cx="19" cy="12" r="1.6" />
+          </svg>
         </div>
       )}
+      </div>
 
       {card.isNote ? (
         <NoteCompactCover card={card} grey={grey} />
@@ -999,52 +1071,8 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           </div>
         )}
         </div>
-        {/* 선택 모드에서는 카드의 ☰을 감춘다 — 여러 장을 골라 둔 채 한 장의 메뉴를
-            여는 것은 뜻이 어긋난다. 그때의 메뉴는 선택 바의 ⋯이다. */}
-        {!compact && !selectMode && (
-          <div
-            className="menu-btn"
-            role="button"
-            tabIndex={-1}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              // ☰과 우클릭은 같은 메뉴다 — 버튼 아래(왼쪽 정렬)에 띄운다.
-              const r = e.currentTarget.getBoundingClientRect();
-              controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: card.key });
-            }}
-            title="메뉴"
-            aria-label="메뉴"
-            style={{
-              flexShrink: 0,
-              // 심플하게 **점 셋만**(요청) — 면·테두리를 두르면 카드 안에서 버튼이
-              // 하나 더 있는 것처럼 무거워 보인다. hover에서 글자색만 짙어진다.
-              width: 28,
-              height: 28,
-              borderRadius: 9,
-              background: 'transparent',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--mf-subtext)',
-              cursor: 'pointer',
-              // Revealed on hover (see home.css), but also when the menu is open
-              // or the card is selected, so on touch (no hover) a selected map
-              // exposes its ⋯ menu button.
-              opacity: card.menuOpen || card.selected ? 1 : 0,
-              transform: card.menuOpen || card.selected ? 'translateY(0)' : 'translateY(2px)',
-              transition: 'opacity .18s ease, transform .18s ease, background .15s ease',
-            }}
-          >
-            {/* 가로 점 셋 — 디자인 원본. ☰(세 줄)은 "메뉴 열기"보다 "목록"으로 읽힌다. */}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="12" r="1.6" />
-              <circle cx="12" cy="12" r="1.6" />
-              <circle cx="19" cy="12" r="1.6" />
-            </svg>
-          </div>
-        )}
+        {/* ⋯은 **첫 줄**로 올라갔다(요청 3 — 공책 카드와 같은 자리). 이 아랫줄은
+            디자인에서 읽는 줄(제목 · 수정일)이라 조작을 두지 않는다. */}
       </div>
         </>
       )}
