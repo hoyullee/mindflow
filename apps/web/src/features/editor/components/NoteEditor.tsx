@@ -84,6 +84,35 @@ interface Props {
  */
 type SlashKind = NoteBlockKind | 'inline-code';
 
+/**
+ * **인라인 코드**와 **코드 블록**의 아이콘(시안) — 예전에는 둘 다 꺾쇠(`< >`)라
+ * 나란히 두면 구분되지 않았다(제보: "너무 같아서 새로 만들었어").
+ *
+ * 이제 하나는 **백틱으로 감싼 `a`**(글자 하나에 걸리는 서식), 다른 하나는 **터미널
+ * 창**(판 하나)이다 — 모양이 말하는 것이 서로 다르다. 세 자리가 같은 조각을 쓴다:
+ * 툴바의 서식 단추 · `/` 넣기 목록 · 블록 종류 메뉴.
+ */
+const INLINE_CODE_ICON = (
+  <>
+    <path d="m3 7.3 2.2 1.7" />
+    <path d="m18.8 7.3 2.2 1.7" />
+    {/* 글자는 **글꼴이 그린다** — `a`를 path로 흉내 내면 굵기와 곡선이 화면의 글과
+        어긋나고, 글꼴이 바뀌면 그 자리만 옛 모양으로 남는다. */}
+    <text x="12" y="18.6" textAnchor="middle" fontFamily="'JetBrains Mono', ui-monospace, monospace" fontSize="14.5" fontWeight="700" fill="currentColor" stroke="none">
+      a
+    </text>
+  </>
+);
+
+const CODE_BLOCK_ICON = (
+  <>
+    <rect x="3.3" y="4.6" width="17.4" height="14.8" rx="2.6" />
+    <path d="M3.3 9h17.4" />
+    <path d="m7.9 12.4 2.1 2.1-2.1 2.1" />
+    <path d="M13.1 16.6h3.9" />
+  </>
+);
+
 const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
   { kind: 'p', name: '본문', hint: '⌘⌥0', desc: '일반 글', group: '기본', inMenu: true, icon: <path d="M4 7h16M4 12h16M4 17h10" /> },
   { kind: 'h1', name: '제목 1', hint: '⌘⌥1', desc: '가장 큰 제목', group: '기본', inMenu: true, icon: (<><path d="M4 5v14M12 5v14M4 12h8" /><path d="M17 9.5 19.5 8V19" /></>) },
@@ -95,7 +124,7 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   { kind: 'q', name: '인용', hint: '⌘⇧.', desc: '다른 글이나 말을 인용', group: '강조', inMenu: true, sepBefore: true, icon: <path d="M7 7h4v5c0 2-1 3.5-3 4.5M14 7h4v5c0 2-1 3.5-3 4.5" /> },
   { kind: 'callout', name: '콜아웃', hint: '', desc: '주의 · 결정 · 질문', group: '강조', inMenu: true, icon: (<><rect x="3.5" y="5" width="17" height="14" rx="3" /><path d="M12 9v3.5M12 15.5h.01" /></>) },
   { kind: 'toggle', name: '접기', hint: '', desc: '긴 내용을 접어 두기', group: '강조', inMenu: true, icon: (<><path d="m8 6 6 6-6 6" /><path d="M4 21h16" opacity=".35" /></>) },
-  { kind: 'code', name: '코드 블록', hint: '⌘⌥C', desc: '고정폭 글꼴', group: '강조', inMenu: true, icon: <path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4" /> },
+  { kind: 'code', name: '코드 블록', hint: '⌘⌥C', desc: '고정폭 글꼴', group: '강조', inMenu: true, icon: CODE_BLOCK_ICON },
   { kind: 'table', name: '표', hint: '', desc: '행과 열', group: '넣기', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 10h17M9.5 10v9M15 10v9" /></>) },
   { kind: 'img', name: '이미지', hint: '', desc: '파일을 올려 본문에', group: '넣기', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5L14 17l3-3 3 3" /></>) },
   // 아이콘이 칸반 세 기둥이었는데, 이 블록은 **어떤 종류의 문서로든** 가는 링크다
@@ -108,7 +137,7 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
 /** `/` 목록이 보여 주는 것 — 블록들 + **인라인 코드**(요청 4). */
 const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
   ...BLOCK_TYPES,
-  { kind: 'inline-code', name: '인라인 코드', hint: '', desc: '글 속의 코드 조각', group: '강조', icon: (<><path d="m9.5 9-3 3 3 3M14.5 9l3 3-3 3" /><path d="M4 12h1M19 12h1" opacity=".35" /></>) },
+  { kind: 'inline-code', name: '인라인 코드', hint: '', desc: '글 속의 코드 조각', group: '강조', icon: INLINE_CODE_ICON },
 ];
 
 /**
@@ -135,12 +164,13 @@ const TONES: { tone: NoteCalloutTone; name: string; bg: string; ink: string }[] 
 ];
 
 /** 인라인 서식 — 코어 `applyPartialStyle`의 종류와 1:1. */
-const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; css: CSSProperties }[] = [
+const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; css: CSSProperties; icon?: JSX.Element }[] = [
   { kind: 'b', label: 'B', name: '굵게', css: { fontWeight: 800 } },
   { kind: 'i', label: 'I', name: '기울임', css: { fontStyle: 'italic' } },
   { kind: 's', label: 'S', name: '취소선', css: { textDecoration: 'line-through' } },
   { kind: 'u', label: 'U', name: '밑줄', css: { textDecoration: 'underline' } },
-  { kind: 'k', label: '<>', name: '인라인 코드', css: { fontFamily: 'ui-monospace, monospace', fontSize: 11 } },
+  // 글자(`<>`)가 아니라 **아이콘**이다 — 코드 블록과 한눈에 갈리게(시안).
+  { kind: 'k', label: '`a`', name: '인라인 코드', css: {}, icon: INLINE_CODE_ICON },
 ];
 
 /**
@@ -2463,7 +2493,16 @@ function NotebookSwitch({ controller }: { controller: EditorController }) {
                 data-note-book-item={r.docId}
                 href={here ? undefined : `/editor?map=${encodeURIComponent(r.docId)}`}
                 className="mf-note-item"
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box', padding: '8px 9px', borderRadius: 11, background: here ? 'var(--mf-accent-soft)' : 'transparent', textDecoration: 'none', color: 'inherit', cursor: here ? 'default' : 'pointer', minWidth: 0 }}
+                /**
+                 * **면은 고른 줄에만 인라인으로 준다**(요청 2·3).
+                 *
+                 * ② 보고 있는 공책의 면을 값(`TB_ON`)으로 못박았다 — `--mf-accent-soft`는
+                 * 페이지 강조색을 섞은 면이라 태그 색에 따라 자두·풀빛으로 바뀐다.
+                 * ③ 나머지 줄에 `transparent`를 **인라인으로 박으면** 클래스의 hover
+                 * (`.mf-note-item:hover`)를 덮어 마우스를 얹어도 아무 일이 없다(제보).
+                 * 기본 면은 그 클래스가 준다 — `MENU_ITEM`이 같은 이유로 비워 둔 자리다.
+                 */
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box', padding: '8px 9px', borderRadius: 11, ...(here ? { background: TB_ON } : {}), textDecoration: 'none', color: 'inherit', cursor: here ? 'default' : 'pointer', minWidth: 0 }}
               >
                 <BookTile cover={r.cover} size="md" />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
@@ -4174,7 +4213,13 @@ function FormatToolbar({
             ...m.css,
           }}
         >
-          {m.label}
+          {m.icon ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {m.icon}
+            </svg>
+          ) : (
+            m.label
+          )}
         </button>
       ))}
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />

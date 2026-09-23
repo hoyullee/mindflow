@@ -999,6 +999,34 @@ describe('공책 7판 — 본문 우클릭 메뉴', () => {
   });
 });
 
+describe('공책 — 인라인 코드·코드 블록 아이콘', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('툴바의 인라인 코드는 **글자(`<>`)가 아니라 아이콘**이고, 코드 블록과 모양이 다르다(요청 1)', async () => {
+    localStorage.setItem('mindflow_doc_nsicon', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nsicon&title=x');
+    const mark = (await waitFor(() => container.querySelector('[data-note-mark="k"]'))) as HTMLElement;
+    const inline = mark.querySelector('svg');
+    expect(inline).toBeTruthy();
+    expect(mark.textContent).not.toContain('<>');
+    // `a`를 감싼 백틱 둘 — 글자는 글꼴이 그린다(path로 흉내 내지 않는다).
+    expect(inline!.querySelector('text')?.textContent).toBe('a');
+    expect(inline!.querySelectorAll('path')).toHaveLength(2);
+
+    // 코드 블록은 **터미널 창**이다 — 예전처럼 둘 다 꺾쇠이면 구분되지 않는다.
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-blocktype]'))) as HTMLElement);
+    const row = (await waitFor(() => container.querySelector('[data-note-blocktype-item="code"]'))) as HTMLElement;
+    const block = row.querySelector('svg')!;
+    expect(block.querySelector('rect')).toBeTruthy();
+    expect(block.innerHTML).not.toBe(inline!.innerHTML);
+  });
+});
+
 describe('공책 — Home·End는 그 시각 행의 끝', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -2193,6 +2221,28 @@ describe('공책 14판 — 얹으면 반응하고, 목록은 이 스페이스의
     // 지금 보는 공책은 남고(`보는 중`), 다른 스페이스의 것은 오지 않는다.
     expect(menu.querySelector('[data-note-book-item="nh3"]')).toBeTruthy();
     expect(menu.querySelector('[data-note-book-item="nh5"]')).toBeNull();
+  });
+
+  it('보는 중인 줄만 면을 쓰고(#FBF3EE) 나머지는 **인라인 면이 없다** — hover가 살아 있게(요청 2·3)', async () => {
+    localStorage.setItem('mindflow_doc_nh6', JSON.stringify(NOTE));
+    localStorage.setItem('mindflow_doc_meta_nh6', JSON.stringify({ title: '지금 공책', kind: 'note' }));
+    localStorage.setItem('mindflow_doc_nh7', JSON.stringify(NOTE));
+    localStorage.setItem('mindflow_doc_meta_nh7', JSON.stringify({ title: '옆 공책', kind: 'note' }));
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ v: 1, spaces: [{ name: '한 스페이스', maps: [{ title: '지금 공책', docId: 'nh6' }, { title: '옆 공책', docId: 'nh7' }] }], mapFolders: {}, recent: [] }),
+    );
+    const { container } = renderEditor('/editor?map=nh6&title=x');
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-book-switch]'))) as HTMLElement);
+    const menu = (await waitFor(() => container.querySelector('[data-note-book-menu]'))) as HTMLElement;
+    const here = (await waitFor(() => menu.querySelector('[data-note-book-item="nh6"]'))) as HTMLElement;
+    const other = (await waitFor(() => menu.querySelector('[data-note-book-item="nh7"]'))) as HTMLElement;
+    // ② 값으로 못박은 면(테마 강조색을 섞은 `--mf-accent-soft`가 아니다).
+    expect(here.style.background).toBe('rgb(251, 243, 238)');
+    // ③ 나머지 줄은 인라인 면이 **비어 있어야** 한다 — 인라인 `transparent`가 박히면
+    //    클래스의 hover(`.mf-note-item:hover`)를 덮어 마우스를 얹어도 아무 일이 없다.
+    expect(other.style.background).toBe('');
+    expect(other.className).toContain('mf-note-item');
   });
 });
 
