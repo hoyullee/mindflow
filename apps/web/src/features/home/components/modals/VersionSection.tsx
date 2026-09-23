@@ -27,7 +27,6 @@ export function VersionSection() {
     wasChecking.current = status.checking;
   }, [status.checking]);
 
-  const bridge = desktopBridge();
   const build = buildLabel();
 
   // 껍데기(설치 파일)의 판은 **`UpdatePrompt`가 한 번 물어** 모듈에 올려 둔 것을
@@ -44,9 +43,19 @@ export function VersionSection() {
         <SectionLabel>현재 버전</SectionLabel>
       </div>
       <SettingsGroup>
-        {/* 화면(웹 번들)의 판 — 배포마다 바뀌는 값이고, 콘솔 스탬프와 같은 것이다.
-            버전 번호가 아니라 **빌드 시각**인 이유: 우리는 연속 배포라 사용자에게
-            뜻이 있는 눈금이 "언제 나간 판인가"다(같은 값이 피드백 meta에도 실린다). */}
+        {/**
+         * **버전은 한 줄이다**(요청 — 「앱 버전을 하나로 통일하고 싶다」).
+         *
+         * 예전에는 두 줄이었다: `앱 화면`(빌드 시각)과 `설치 앱`(셸 `package.json`).
+         * 둘은 **다른 것을 재고** 있었다 — 화면은 배포마다(하루에도 여러 번), 셸은
+         * 새 설치 파일을 낼 때만(몇 달에 한 번) 바뀐다. 설치형 앱은 `geurio.com`을
+         * 띄우는 창이라 **보이는 것은 100% 웹 배포**이므로, 사용자가 말할 번호는
+         * 화면 쪽 하나면 된다(CalVer — `vite.config.ts`의 `calver()`).
+         *
+         * 셸 번호를 버린 것은 아니다: **필요할 때만** 아래 「업데이트」 행이
+         * "지금 0.3.0 → 새 설치 버전 0.4.0"으로 말한다. 늘 보여 주면 웹이 매일
+         * 바뀌는 동안 몇 달째 멈춘 숫자가 나란히 있어 "최신인데 옛 번호"로 읽힌다.
+         */}
         <SettingsRow
           first
           attrs={{ 'data-version-build': '' }}
@@ -56,26 +65,10 @@ export function VersionSection() {
               <path d="M12 8v4l2.5 2" />
             </>
           }
-          title="앱 화면"
+          title="버전"
           sub={build.sub}
           right={<VersionValue>{build.label}</VersionValue>}
         />
-        {bridge && (
-          // 설치형 앱은 **껍데기**가 따로 있다(화면은 웹과 같은 판이다). 이 값은
-          // 스스로 갱신되지 않으므로(자동 업데이트 없음) 새 설치 파일이 필요하다.
-          <SettingsRow
-            attrs={{ 'data-version-shell': '' }}
-            icon={
-              <>
-                <rect x="3" y="4.5" width="18" height="13" rx="2.5" />
-                <path d="M8 20.5h8" />
-              </>
-            }
-            title="설치 앱"
-            sub={bridge.platform === 'darwin' ? 'macOS' : bridge.platform === 'win32' ? 'Windows' : bridge.platform}
-            right={<VersionValue>{bridge.version}</VersionValue>}
-          />
-        )}
       </SettingsGroup>
 
       <div style={{ marginTop: 18, marginBottom: 9 }}>
@@ -178,11 +171,16 @@ function UpdateRow({
         sub: '저장을 마치면 화면이 새로 열려요',
         right: <Spinner />,
       });
-    case 'shell':
+    case 'shell': {
+      // **지금 깔린 설치본 번호는 여기서만 말한다**(요청: 버전은 한 줄) — 「현재
+      // 버전」에 늘 세워 두면 웹이 매일 바뀌는 동안 몇 달째 멈춘 숫자가 나란히
+      // 있어 "최신인데 옛 번호"로 읽힌다. 새 설치본이 있을 때는 반대로, 무엇에서
+      // 무엇으로 가는지가 그 자리의 정보다.
+      const now = desktopBridge()?.version;
       return row({
         state: 'shell',
         iconColor: 'var(--mf-accent-strong)',
-        title: `새 설치 버전 ${merged.release?.version ?? ''}이 있어요`,
+        title: now ? `설치 버전 ${now} → ${merged.release?.version ?? ''}` : `새 설치 버전 ${merged.release?.version ?? ''}이 있어요`,
         // 웹 새 판이 함께 대기 중이면 **설치가 그것까지 해결한다** — 앱이 다시
         // 실행되면서 대기 중인 서비스 워커가 활성화된다.
         sub: merged.alsoWeb
@@ -194,6 +192,7 @@ function UpdateRow({
           </UpdateButton>
         ),
       });
+    }
     case 'ready':
       return row({
         state: 'ready',
@@ -267,20 +266,24 @@ function Spinner() {
   );
 }
 
-declare const __BUILD_AT__: string;
 declare const __BUILD_SHA__: string;
+declare const __APP_VERSION__: string;
 
 /**
  * 지금 돌고 있는 화면의 판 — 빌드 시각(로컬 시간)과 커밋 일곱 자리.
  * 개발 서버에서는 둘 다 없다(`dev`).
  */
+/**
+ * 화면에 적을 **버전 한 줄**. 값은 빌드가 굳혀 준다(`__APP_VERSION__`) — 여기서
+ * 시각을 다시 포매팅하면 보는 사람의 시계를 타므로 같은 빌드가 지역마다 다른
+ * 번호가 된다(`vite.config.ts`의 `calver()` 머리글).
+ *
+ * 부제는 **커밋 7자**다. 번호만으로는 "정확히 어느 커밋이 떠 있나"를 못 짚는데,
+ * 프리뷰는 커밋마다 주소가 따로라 옛 주소를 열어 둔 탭이 실제로 있었다.
+ */
 function buildLabel(): { label: string; sub: string } {
-  const at = typeof __BUILD_AT__ === 'string' ? __BUILD_AT__ : 'dev';
+  const version = typeof __APP_VERSION__ === 'string' && __APP_VERSION__ ? __APP_VERSION__ : '';
   const sha = typeof __BUILD_SHA__ === 'string' && __BUILD_SHA__ ? __BUILD_SHA__ : '';
-  if (at === 'dev') return { label: 'dev', sub: '개발 서버에서 돌고 있어요' };
-  const d = new Date(at);
-  const label = Number.isNaN(d.getTime())
-    ? at
-    : `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return { label, sub: sha ? `빌드 ${sha}` : '빌드 시각' };
+  if (!version) return { label: 'dev', sub: '개발 서버에서 돌고 있어요' };
+  return { label: version, sub: sha ? `빌드 ${sha}` : '최신 판으로 열려 있어요' };
 }
