@@ -55,6 +55,11 @@ export interface GoogleFieldsValue {
   rsvp?: GoogleRsvp;
   /** 구글이 알려 준 표시 이름(email → 이름) — 없는 사람만 디렉터리에 묻는다. */
   names?: Record<string, string>;
+  /**
+   * **참석자별 응답**(email → 답, 요청 3) — 내 답(`rsvp`)과 달리 "누가 거절했는가"를
+   * 그리는 데 쓴다. 파싱이 이미 전부 담아 두므로(`parseAttendees`) 화면이 고르기만 한다.
+   */
+  rsvps?: Record<string, GoogleRsvp>;
 }
 
 /** 선택 스코프로 열리는 것들 — `useGoogleCalendar`가 이 모양으로 내준다. */
@@ -190,12 +195,17 @@ export function GoogleEventFields({
    * 내가 만든 일정은 주최자가 그 캘린더이고 만든 사람이 나다. `organizer`만 보던 동안
    * 화면은 그 일정을 "일정을 만든 사람 · <팀 캘린더>"라고 말했다.
    *
-   * 내가 만든 일정에는 이 줄을 그리지 않는다(예전 결정 그대로 — 자기 이름을 한 줄 더
-   * 읽을 이유가 없다). `creator`가 없는 옛 응답에서는 예전처럼 `organizer`로 물러선다.
+   * **내가 만든 일정에도 그린다**(요청 2 — 예전에는 감췄다). 감춘 이유는 "자기 이름을
+   * 한 줄 더 읽을 이유가 없다"였는데, 그러면 같은 팝업이 일정마다 **다른 모양**이 되어
+   * "이 일정은 누가 만들었나"를 찾는 자리가 매번 달라진다. 늘 같은 자리에 두고, 그것이
+   * 나이면 이름 옆에 `나`를 붙여 한눈에 가른다.
+   *
+   * `creator`가 없는 옛 응답에서는 예전처럼 `organizer`로 물러선다.
    */
   const maker = creator ?? organizer;
   const makerEmail = maker?.email ?? '';
-  const showMaker = !!maker && !maker.self;
+  const showMaker = !!maker;
+  const makerIsMe = !!maker?.self;
   const orgKnown = maker?.name ?? value.names?.[makerEmail] ?? knownName(makerEmail) ?? '';
   const askOrg = directory?.canSearchPeople ? directory.searchPeople : undefined;
   useEffect(() => {
@@ -238,7 +248,12 @@ export function GoogleEventFields({
               <span data-gf-organizer style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
                 <Avatar label={orgLabel} i={0} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{orgLabel}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{orgLabel}</span>
+                    {makerIsMe ? (
+                      <span data-gf-organizer-me style={{ flex: '0 0 auto', height: 16, padding: '0 6px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center' }}>나</span>
+                    ) : null}
+                  </span>
                   <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{makerEmail}</span>
                 </span>
               </span>
@@ -332,7 +347,7 @@ export function GoogleEventFields({
               : '이 일정은 참석자끼리 명단을 볼 수 없어요. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'}
           </span>
         ) : (
-          <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, hiddenGuests, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+          <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, hiddenGuests, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(value.rsvps ? { rsvps: value.rsvps } : {})} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
         )}
       </Field>
 
@@ -622,18 +637,49 @@ function RoomsLoading() {
 }
 
 /**
+ * **참석을 거절한 사람의 이름에 긋는 줄**(요청 3).
+ *
+ * 회의실이 이미 쓰이고 있을 때 그 이름에 긋는 줄과 **같은 처방**이다
+ * (`data-gf-room-name`) — 한 팝업 안에서 "이 줄은 안 된다"가 두 모양이면
+ * 읽는 사람이 둘을 따로 배워야 한다. 답하지 않은 사람(`needsAction`)과
+ * 참석·미정은 그대로 둔다: 거절만이 명단에서 **빠진 것과 같은** 상태다.
+ */
+function declinedText(rsvp?: GoogleRsvp): { textDecoration?: string; textDecorationColor?: string; color?: string } {
+  return rsvp === 'declined' ? { textDecoration: 'line-through', textDecorationColor: 'var(--mf-danger)', color: 'var(--mf-faint)' } : {};
+}
+
+/**
+ * 거절한 사람 옆의 `참석 거절` 칩(요청 3) — 줄만으로는 **왜** 그어졌는지 말하지
+ * 않는다(취소된 일정인지, 지운 사람인지). 참석·미정·무응답에는 칩을 두지 않는다:
+ * 세 상태를 모두 칩으로 만들면 모든 줄에 배지가 붙어 정작 거절이 묻힌다.
+ */
+function DeclinedChip({ rsvp }: { rsvp?: GoogleRsvp }) {
+  if (rsvp !== 'declined') return null;
+  return (
+    <span
+      data-gf-guest-rsvp="declined"
+      title="참석 거절"
+      style={{ flex: '0 0 auto', padding: '2px 7px', borderRadius: 999, background: 'var(--mf-danger-bg)', border: '1px solid var(--mf-danger-line)', color: 'var(--mf-danger)', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}
+    >
+      참석 거절
+    </span>
+  );
+}
+
+/**
  * 초대된 한 사람 — 아바타 + **이름·이메일** + 제외(요청). 이름을 모르는 주소(직접
  * 적은 것)는 주소 한 줄이다 — 같은 값을 두 줄로 되풀이하지 않는다. 후보 목록과 같은
  * 꼴이라 "고른 그 사람"이 그대로 남은 것으로 읽힌다.
  */
-function GuestRow({ email, name, i, onRemove }: { email: string; name: string; i: number; onRemove: () => void }) {
+function GuestRow({ email, name, i, rsvp, onRemove }: { email: string; name: string; i: number; rsvp?: GoogleRsvp; onRemove: () => void }) {
   return (
     <span data-gf-guest={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
       <Avatar label={name} i={i} />
       <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedText(rsvp) }}>{name}</span>
         <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
       </span>
+      <DeclinedChip rsvp={rsvp} />
       <button type="button" aria-label={`${email} 초대 취소`} title="제외" className="mf-ctl" onClick={onRemove} style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
           <path d="M6 6l12 12M18 6 6 18" />
@@ -648,7 +694,7 @@ function GuestRow({ email, name, i, onRemove }: { email: string; name: string; i
  * 카드 행(두 줄까지, 나머지는 `외 N명` 툴팁). 이름 검색이 없으면(선택 스코프 미승인)
  * 이메일 직접 입력으로 남는다. 초대 메일은 구글이 보낸다.
  */
-function Attendees({ list, onChange, search, seedNames }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null>; seedNames?: Record<string, string> }) {
+function Attendees({ list, onChange, search, seedNames, rsvps }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null>; seedNames?: Record<string, string>; rsvps?: Record<string, GoogleRsvp> }) {
   const [draft, setDraft] = useState('');
   const [hits, setHits] = useState<DirectoryPerson[]>([]);
   const [active, setActive] = useState(0);
@@ -895,7 +941,7 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
         ? // 이름을 채우는 중 — 같은 크기의 자리만 둔다(글자가 하나씩 갈리는 것보다 낫다).
           shown.map((email) => <GuestSkeleton key={email} />)
         : shown.map((email, i) => (
-            <GuestRow key={email} email={email} name={label(email)} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
+            <GuestRow key={email} email={email} name={label(email)} i={i} {...(rsvps?.[email] ? { rsvp: rsvps[email] } : {})} onRemove={() => onChange(list.filter((e) => e !== email))} />
           ))}
       {rest.length > 0 && (
         <>
@@ -927,9 +973,10 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
                 <span key={email} data-gf-guest-item={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', minWidth: 0, ...rowDivider(i) }}>
                   <Avatar label={label(email)} i={i} />
                   <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label(email)}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedText(rsvps?.[email]) }}>{label(email)}</span>
                     <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
                   </span>
+                  <DeclinedChip {...(rsvps?.[email] ? { rsvp: rsvps[email] } : {})} />
                   <button
                     type="button"
                     aria-label={`${email} 초대 취소`}

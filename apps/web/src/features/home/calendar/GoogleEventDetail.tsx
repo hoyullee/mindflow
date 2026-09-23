@@ -190,6 +190,9 @@ export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
     ...(myRsvpOf(g) !== undefined ? { rsvp: myRsvpOf(g) } : {}),
     // 구글이 알려 준 표시 이름 — 참석자·주최자 행이 이메일 앞부분으로 떨어지지 않게(제보).
     ...(g.names ? { names: g.names } : {}),
+    // **모두의 응답**(요청 3) — 내 응답(`rsvp`)과 달리 참석자 줄이 "참석 거절"을
+    // 말하려면 남의 답도 있어야 한다. 값은 파싱이 이미 들고 있다(`parseAttendees`).
+    ...(g.rsvps ? { rsvps: g.rsvps } : {}),
   };
 }
 
@@ -293,25 +296,6 @@ export function GoogleEventDetail({
             ),
           }
         : {})}
-      footerLeft={
-        /* `Google에서 열기` — 발치의 취소 왼쪽(요청). 취소와 같은 높이로 서서
-           한 줄로 읽힌다. */
-        event.htmlLink ? (
-          <a
-            href={event.htmlLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            data-google-open
-            className="mf-ctl"
-            style={{ flex: '0 0 auto', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 6, height: isMobile ? 44 : 36, padding: '0 14px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M14 4h6v6M20 4 11 13M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-            </svg>
-            Google에서 열기
-          </a>
-        ) : null
-      }
     />
   );
 }
