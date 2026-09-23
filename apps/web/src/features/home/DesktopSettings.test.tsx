@@ -352,6 +352,10 @@ describe('설치형 앱 — 새 설치 버전 확인', () => {
     const row = dialog.querySelector('[data-update-row]') as HTMLElement;
     // 버전을 말한다 — "새 버전이 있어요"만으로는 무엇을 받는지 알 수 없다.
     expect(row.textContent).toContain('0.4.0');
+    // **지금 깔린 설치본 번호도 여기서 말한다**(요청: 버전은 한 줄) — 「현재 버전」
+    // 묶음에서 그 행을 없앴으므로, 무엇에서 무엇으로 가는지가 이 자리의 정보다.
+    expect(row.textContent).toContain('0.3.0');
+    expect(dialog.querySelector('[data-version-shell]')).toBeNull();
     // 웹 새 판이 없으므로 "화면까지"라 말하지 않는다.
     expect(row.textContent).toContain('설치하면 적용돼요');
 

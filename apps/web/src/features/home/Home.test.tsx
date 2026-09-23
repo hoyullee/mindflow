@@ -1594,12 +1594,13 @@ describe('Home', () => {
 
       // 헤더가 지금 화면을 말한다.
       expect(within(dialog).getByText('버전 확인')).toBeTruthy();
-      // 화면(웹 번들)의 판 — 버전 번호가 아니라 **빌드 시각**이다(연속 배포라
-      // 사용자에게 뜻이 있는 눈금이 "언제 나간 판인가"다). 값 자체는 빌드마다
-      // 달라지므로 **모양**을 고정한다.
-      expect((dialog.querySelector('[data-version-build] [data-version-value]') as HTMLElement).textContent).toMatch(/^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}$|^dev$/);
-      // 설치형 앱이 아니면 셸 버전 행은 없다(가리킬 것이 없다).
+      // **버전은 한 줄이다**(요청) — CalVer `년.월.일.시분`. 값 자체는 빌드마다
+      // 달라지므로 **모양**을 고정한다(`vite.config.ts`의 `calver()`가 굳혀 준다).
+      expect((dialog.querySelector('[data-version-build] [data-version-value]') as HTMLElement).textContent).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d{4}$|^dev$/);
+      // 「현재 버전」 묶음의 행은 **하나**다 — 셸 버전 행은 없앴다(설치형이든 아니든).
+      // 지금 깔린 설치본 번호는 새 설치본이 있을 때 「업데이트」 행이 말한다.
       expect(dialog.querySelector('[data-version-shell]')).toBeNull();
+      expect(dialog.querySelectorAll('[data-version-value]').length).toBe(1);
 
       // 아직 대기 중인 새 버전이 없다 → 확인 버튼.
       expect(dialog.querySelector('[data-update-row]')!.getAttribute('data-update-state')).toBe('latest');

@@ -96,6 +96,43 @@ function desktopVersionManifest(): Plugin {
 // scripts/generate-icons.mjs and src/index.css) so the app installs and works
 // offline without any external network request (CDN-blocked environments
 // included).
+/** 이 빌드의 시각 — 스탬프와 버전이 **같은 순간**을 가리키게 한 번만 잡는다. */
+const BUILD_AT = new Date();
+
+/**
+ * 제품 버전(CalVer) — `2026.09.23.1042`(년.월.일.시분).
+ *
+ * 왜 번호가 아니라 날짜인가: 우리는 연속 배포라 "몇 번째 기능 묶음인가"를 셀 눈금이
+ * 없다. 사용자에게 뜻이 있는 것은 **언제 나간 판인가**이고, 그 값은 저절로 커져
+ * 순서가 성립한다(문자열 비교로도 정렬된다).
+ *
+ * 왜 시·분까지: 하루에 여러 번 나가므로 날짜만으로는 두 판이 같은 번호가 된다 —
+ * "그 버전인데 그 증상이 없다"가 되는 자리다.
+ *
+ * 왜 **빌드 시점에** 굳히나: 보는 사람의 시계로 계산하면 같은 빌드가 지역마다 다른
+ * 번호로 보인다(예전 「빌드 시각」 표시가 그랬다 — 표시로는 괜찮지만 **버전**은
+ * 어디서 읽어도 같은 글자여야 한다). 기준 시간대는 `Asia/Seoul`이다: 이 번호를
+ * 읽고 말하는 사람들의 "오늘"이 그 날짜다.
+ */
+function calver(d: Date): string {
+  const at = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    // `hour12: false`는 ICU 판에 따라 자정을 `24`로 준다 — `h23`으로 못박는다.
+    hourCycle: 'h23',
+  })
+    .formatToParts(d)
+    .reduce<Record<string, string>>((acc, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+  return `${at.year}.${at.month}.${at.day}.${at.hour}${at.minute}`;
+}
+
 export default defineConfig({
   // 지금 떠 있는 페이지가 어느 빌드인지 알 수 있게. PWA는 에디터가 열려 있는 동안
   // 업데이트를 미루므로, "고쳤다는데 그대로예요" 제보의 절반은 이전 번들이었다 —
@@ -105,8 +142,12 @@ export default defineConfig({
   // 따로 있어서, 옛 주소를 열어 둔 탭은 영영 옛 빌드를 보여 준다. 배포 환경이 주는
   // 커밋 sha를 함께 박아 콘솔 한 줄로 대조할 수 있게 한다(로컬은 'dev').
   define: {
-    __BUILD_AT__: JSON.stringify(new Date().toISOString()),
+    __BUILD_AT__: JSON.stringify(BUILD_AT.toISOString()),
     __BUILD_SHA__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? '').slice(0, 7)),
+    // 제품 버전 — 사용자가 말할 **하나의 번호**(요청). 값을 여기서 굳히는 이유는
+    // `calver()` 머리글에 있다: 보는 사람의 시계로 계산하면 같은 빌드가 지역마다
+    // 다른 번호가 된다.
+    __APP_VERSION__: JSON.stringify(calver(BUILD_AT)),
   },
   plugins: [
     react(),
