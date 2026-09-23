@@ -667,7 +667,18 @@ function pasteRuns(
   redraw: (el: HTMLElement, value: { text: string; rich: RichRun[] | null }) => void,
 ): boolean {
   try {
-    const chars = runsToChars(domToRuns(el));
+    /**
+     * **끝의 줄바꿈을 지키며 읽는다**(`keepTrailing` — 제보 3: 코드 블록에서 Enter를
+     * 누르고 붙여넣으면 새 줄이 아니라 **이전 줄 끝**에 들어간다).
+     *
+     * 기본값(`false`)은 끝의 줄바꿈을 **전부** 걷어 낸다 — 커밋이 쓰는 규칙이다. 그런데
+     * 붙여넣을 자리(`from`)는 화면의 살아 있는 캐럿에서 잰 값이라 그 줄바꿈까지 세고
+     * 있어서, 값에서만 사라지면 `from`이 글자 수를 넘어간다: `slice(0, from)`이 전부를
+     * 집어 삼켜 **줄바꿈이 없어진 채** 글이 이어 붙었다. `true`는 보초 `<br>` 한 개만
+     * 걷으므로(`codeHtml`·`softBreak`이 그 한 개를 붙인다) 두 좌표가 다시 맞는다.
+     * 코드 블록뿐 아니라 Shift+Enter로 끝에 줄을 만든 문단도 같은 길이었다.
+     */
+    const chars = runsToChars(domToRuns(el, true));
     const next = [...chars.slice(0, from), ...[...text].map((ch) => ({ ch, b: false, c: null })), ...chars.slice(to)];
     const body = charsToRuns(next).filter((r) => r.t);
     const plain = { text: next.map((c) => c.ch).join(''), rich: body.length ? body : null };

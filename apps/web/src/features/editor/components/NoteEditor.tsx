@@ -1666,8 +1666,22 @@ export function NoteEditor({ controller }: Props) {
     const memo = caretMemo;
     const live = document.activeElement as HTMLElement | null;
     const idle = !live || live === document.body || !live.closest?.('input, textarea, [contenteditable="true"], button');
-    if (memo && memo.doc === docKey && idle && Date.now() - memo.when < 1500 && document.querySelector(`[data-note-line="${memo.key}"]`)) {
-      caretToLine(memo.key, memo.at);
+    if (memo && memo.doc === docKey && idle && Date.now() - memo.when < 1500) {
+      /**
+       * **그 줄이 사라졌으면 그 블록으로 물러선다**(제보 2: 목록 글을 붙여넣고 ⌘Z를
+       * 누르면 커서가 사라진다).
+       *
+       * 기억은 **줄 키**(`블록id` 또는 `블록id:항목id`)로 찍힌다. 목록 글을 붙여넣으면
+       * 그 문단이 목록으로 바뀌면서 항목이 새로 생기고(`b2` → `b2:i1…`), 캐럿은 마지막
+       * 항목에 선다. 되돌리면 그 **항목 키**가 통째로 없어지므로 "그 줄이 실제로 있을
+       * 때"라는 조건에 걸려 아무 데도 서지 못했다 — 초점이 `body`로 떨어져 글쇠가
+       * 어디로도 들어가지 않는다(실측으로 그랬다).
+       *
+       * 블록 id는 되돌려도 그대로다(같은 블록을 다시 칠할 뿐이다). 그래서 정확한 줄이
+       * 없으면 **그 블록의 마지막 줄**로 간다 — 붙여넣기 전의 그 자리다.
+       */
+      if (document.querySelector(`[data-note-line="${memo.key}"]`)) caretToLine(memo.key, memo.at);
+      else if (document.querySelector(`[data-note-block="${blockIdOf(memo.key)}"] [data-note-line]`)) caretIntoBlock(blockIdOf(memo.key), memo.at);
     }
     const remember = () => {
       const el = document.activeElement as HTMLElement | null;
@@ -9281,7 +9295,17 @@ function placeCaretInLine(el: HTMLElement, dir: -1 | 1, x?: number): void {
  */
 function caretIntoBlock(blockId: string, at: number | 'end' = 'end'): void {
   const go = (): void => {
-    const el = document.querySelector<HTMLElement>(`[data-note-block="${blockId}"] [data-note-line]`);
+    /**
+     * **`end`면 그 블록의 마지막 줄이다**(제보 4: 목록 아래 그림에서 ↑를 누르면 바로
+     * 위 항목이 아니라 **첫 항목**으로 갔다).
+     *
+     * 블록 하나가 줄 하나이던 시절의 코드다 — 목록은 **항목마다** 편집 박스라
+     * (`blockId:itemId`) 첫 박스를 집으면 세 항목짜리 목록에서 언제나 맨 위로 간다.
+     * `end`는 "아래에서 올라왔다"는 뜻이므로 마지막 줄의 끝이 맞는 자리이고,
+     * 숫자 자리(`0`)는 "위에서 내려왔다"라 첫 줄이 맞다.
+     */
+    const lines = document.querySelectorAll<HTMLElement>(`[data-note-block="${blockId}"] [data-note-line]`);
+    const el = at === 'end' ? lines[lines.length - 1] : lines[0];
     const key = el?.getAttribute('data-note-line');
     if (key) caretToLine(key, at);
   };
