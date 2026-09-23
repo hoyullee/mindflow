@@ -999,6 +999,77 @@ describe('공책 7판 — 본문 우클릭 메뉴', () => {
   });
 });
 
+describe('공책 — Home·End는 그 시각 행의 끝', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /**
+   * 브라우저 기본값이 **OS마다 다르다**: 윈도·리눅스는 감긴 **행**의 처음·끝인데
+   * macOS에서는 **편집 박스 전체**의 처음·끝이다(제보: 맥에서 Shift+Home을 누르면
+   * 문단이 통째로 골라지고, 이어지는 Shift+↑가 "한 행 더"가 아니게 된다).
+   * jsdom에는 레이아웃도 `Selection.modify`도 없으므로, **무엇을 시켰는가**로 잠근다.
+   */
+  function armModify(): string[][] {
+    const calls: string[][] = [];
+    const sel = window.getSelection() as (Selection & { modify?: (...a: string[]) => void }) | null;
+    if (sel) sel.modify = (...a: string[]) => void calls.push(a);
+    return calls;
+  }
+
+  function caretIn(line: HTMLElement, at: number): void {
+    line.focus();
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    const range = document.createRange();
+    const node = line.firstChild ?? line;
+    range.setStart(node, Math.min(at, node.textContent?.length ?? 0));
+    range.collapse(true);
+    sel.addRange(range);
+  }
+
+  it('Shift+Home은 **그 행의 머리까지** 늘린다(문단 전체가 아니다)', async () => {
+    localStorage.setItem('mindflow_doc_nshome', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nshome&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    caretIn(line, 5);
+    const calls = armModify();
+    const ev = createEvent.keyDown(line, { key: 'Home', shiftKey: true });
+    fireEvent(line, ev);
+    expect(calls).toEqual([['extend', 'backward', 'lineboundary']]);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('Home·End 혼자는 캐럿만 그 행의 두 끝으로', async () => {
+    localStorage.setItem('mindflow_doc_nshome2', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nshome2&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    caretIn(line, 5);
+    const calls = armModify();
+    fireEvent(line, createEvent.keyDown(line, { key: 'Home' }));
+    fireEvent(line, createEvent.keyDown(line, { key: 'End' }));
+    expect(calls).toEqual([
+      ['move', 'backward', 'lineboundary'],
+      ['move', 'forward', 'lineboundary'],
+    ]);
+  });
+
+  it('⌘·Ctrl이 붙은 Home은 **문서의 처음**이라는 다른 뜻 — 브라우저에 맡긴다', async () => {
+    localStorage.setItem('mindflow_doc_nshome3', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=nshome3&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    caretIn(line, 5);
+    const calls = armModify();
+    const ev = createEvent.keyDown(line, { key: 'Home', metaKey: true });
+    fireEvent(line, ev);
+    expect(calls).toEqual([]);
+    expect(ev.defaultPrevented).toBe(false);
+  });
+});
+
 describe('공책 8판 — 태그 색 고르기', () => {
   beforeEach(() => {
     localStorage.clear();
