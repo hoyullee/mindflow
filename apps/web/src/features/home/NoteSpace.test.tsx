@@ -160,6 +160,35 @@ describe('스페이스의 공책 구획', () => {
     expect(document.querySelector('[data-template="note-retro"]')).toBeTruthy();
   });
 
+  it('보드 구획 끝에도 **보드 만들기** 타일이 있다 — 누르면 갤러리가 열린다(요청 1)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-new-board-tile]')).toBeTruthy());
+    // 공책 구획의 타일과 **같은 자리**(그 구획의 마지막 칸)다.
+    expect(section(container, '보드')!.querySelector('[data-new-board-tile]')).toBeTruthy();
+    expect(section(container, '공책')!.querySelector('[data-new-note-tile]')).toBeTruthy();
+
+    await user.click(container.querySelector('[data-new-board-tile]') as HTMLElement);
+    // 종류가 셋(마인드맵·화이트보드·칸반)이라 탭을 정하지 않고 그대로 연다.
+    const tab = await waitFor(() => document.querySelector('[data-gallery-tab="마인드맵"]') as HTMLElement);
+    expect(tab.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('보드가 하나도 없는 스페이스에도 **보드 만들기** 칸은 선다(요청 1)', async () => {
+    localStorage.removeItem('mindflow_doc_mp1');
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '제품 회의록', when: '방금', hue: '#f0663f', docId: 'nb1' }], folders: [] }],
+        mapFolders: {},
+      }),
+    );
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-new-board-tile]')).toBeTruthy());
+    // 빈 구획의 머리는 개수 0으로 선다 — 그래야 만드는 칸이 설 자리가 있다.
+    expect(section(container, '보드')).toBeTruthy();
+  });
+
   it('공책 카드 메뉴에는 **태그·표지 꾸미기**가 있고, 그림 내보내기는 없다', async () => {
     const user = userEvent.setup();
     const { container } = renderHome();

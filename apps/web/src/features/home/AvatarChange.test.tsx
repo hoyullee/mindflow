@@ -96,6 +96,36 @@ describe('프로필 이미지 변경', () => {
     expect(JSON.parse(localStorage.getItem('mf_profile_avatars') || '{}')['me@example.com']).toBe('https://cdn.example.com/a.webp');
   });
 
+  it('**다른 기기에서 바꾼 사진**이 이 기기에도 온다 — 서버 값으로 맞춘다(제보 4)', async () => {
+    const auth = new LocalAuth();
+    // 이 기기의 세션·캐시는 옛 사진을 들고 있다(토큰 스냅샷).
+    localStorage.setItem('mf_profile_avatars', JSON.stringify({ 'me@example.com': 'https://cdn.example.com/old.webp' }));
+    vi.spyOn(auth, 'getProfileAvatar').mockResolvedValue('https://cdn.example.com/new.webp');
+    renderHome(auth);
+
+    await waitFor(() => expect(document.querySelectorAll('img[src="https://cdn.example.com/new.webp"]').length).toBeGreaterThan(0));
+    // 캐시도 함께 고친다 — 다음 방문의 첫 페인트가 그 값이다.
+    expect(JSON.parse(localStorage.getItem('mf_profile_avatars') || '{}')['me@example.com']).toBe('https://cdn.example.com/new.webp');
+  });
+
+  it('다른 기기에서 **지운** 사진이면 이 기기도 기본 얼굴로, **모르면** 건드리지 않는다(제보 4)', async () => {
+    const auth = new LocalAuth();
+    localStorage.setItem('mf_profile_avatars', JSON.stringify({ 'me@example.com': 'https://cdn.example.com/old.webp' }));
+    // `undefined` = 모른다(로컬 모드·조회 실패) — 있던 사진을 지우면 안 된다.
+    vi.spyOn(auth, 'getProfileAvatar').mockResolvedValue(undefined);
+    const first = renderHome(auth);
+    await waitFor(() => expect(document.querySelectorAll('img[src="https://cdn.example.com/old.webp"]').length).toBeGreaterThan(0));
+    expect(JSON.parse(localStorage.getItem('mf_profile_avatars') || '{}')['me@example.com']).toBe('https://cdn.example.com/old.webp');
+    first.unmount();
+
+    // `null` = 지웠다 — 그때는 기본 얼굴로 되돌리고 캐시도 비운다.
+    const auth2 = new LocalAuth();
+    vi.spyOn(auth2, 'getProfileAvatar').mockResolvedValue(null);
+    renderHome(auth2);
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('mf_profile_avatars') || '{}')['me@example.com']).toBeUndefined());
+    expect(document.querySelector('img[src="https://cdn.example.com/old.webp"]')).toBeNull();
+  });
+
   it('올리기가 실패하면 그 자리에 알리고 아바타는 그대로다', async () => {
     const user = userEvent.setup();
     const auth = new LocalAuth();

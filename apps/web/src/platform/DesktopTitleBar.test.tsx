@@ -54,6 +54,22 @@ describe('데스크톱 타이틀 바', () => {
     expect(document.documentElement.style.getPropertyValue('--mf-titlebar')).toBe('40px');
   });
 
+  it('아래 구분선은 **바 안이 아니라 바 밑**이다 — 창 컨트롤 판에 가리지 않게(제보 7)', () => {
+    shell({ titleBarHeight: 40 });
+    render(<DesktopTitleBar />);
+    const bar = document.querySelector('[data-titlebar]') as HTMLElement;
+    // 바 자신에게는 아래 테두리가 없다 — 있으면 바의 **마지막 줄**이라 Windows의
+    // 네이티브 창 컨트롤 판 밑에 깔려 그 구간만 사라진다(옛 설치본에서 재현).
+    expect(bar.style.borderBottom).toBe('');
+    const line = [...bar.querySelectorAll('span')].find((el) => (el as HTMLElement).style.height === '1px') as HTMLElement | undefined;
+    expect(line).toBeTruthy();
+    expect(line!.style.position).toBe('fixed');
+    expect(line!.style.top).toBe('40px'); // = 바의 높이, 즉 바 **바깥**
+    expect(line!.style.left).toBe('0px');
+    expect(line!.style.right).toBe('0px');
+    expect(line!.style.pointerEvents).toBe('none');
+  });
+
   it('macOS는 신호등 자리를 비우고 브랜드를 창 가운데 둔다', () => {
     // 제보: 신호등 바로 오른쪽에 붙어 있다. macOS는 창 제목을 가운데 두는 관례이고,
     // 그 가운데는 **남은 폭이 아니라 창**의 가운데라 흐름에서 빼내 배치한다.

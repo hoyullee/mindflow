@@ -172,6 +172,18 @@ export interface AuthProvider {
   /** Persist the signed-in user's display name. No-op (returns `{}`) in local mode. */
   setProfileName(name: string): Promise<{ error?: string }>;
   /**
+   * 서버가 아는 **프로필 이미지 주소**(제보: A PC에서 바꿔도 B PC에 안 온다).
+   *
+   * 이름(`getProfileName`)과 같은 이유로 필요하다 — 세션이 들고 오는 `avatarUrl`은
+   * 그 기기에 저장된 토큰의 **스냅샷**이라, 다른 기기에서 바꾼 사진은 그 토큰이
+   * 갱신될 때까지 오지 않는다(실측으로 그 사이가 한 시간까지 벌어진다).
+   *
+   * 세 값을 가른다: 주소 = 그 사진 · `null` = **지웠다**(기본 얼굴로) ·
+   * `undefined` = **모른다**(로컬 모드·조회 실패). `null`과 `undefined`를 합치면
+   * 오프라인에서 화면의 사진이 지워진다.
+   */
+  getProfileAvatar(): Promise<string | null | undefined>;
+  /**
    * 프로필 이미지를 바꾼다(요청). `blob`이 있으면 올리고, `null`이면 지운다.
    *
    * 성공하면 새 주소(또는 지웠으면 `null`)를 돌려준다 — 화면은 그 값을 바로 쓰고,

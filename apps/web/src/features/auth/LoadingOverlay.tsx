@@ -31,6 +31,9 @@ interface LoadingOverlayProps {
  * 가지" 마인드맵 애니메이션이었는데, 같은 앱 안에서 대시보드 런치·업데이트
  * 적용은 스피너라 로딩의 모양이 화면마다 갈렸다 — 사용자가 고른 쪽이 스피너다.
  */
+/** 모든 로딩 화면이 쓰는 한 문장 — 윗줄이 이 말이면 아랫줄은 그리지 않는다. */
+export const WAIT_LINE = '잠시만 기다려 주세요';
+
 export function LoadingOverlay({
   message,
   instant = false,
@@ -73,7 +76,10 @@ export function LoadingOverlay({
         }}
       />
       <div style={{ marginTop: 18, fontSize: 15, fontWeight: 700, color: ink }}>{message}</div>
-      <div style={{ marginTop: 6, fontSize: 12.5, color: subInk }}>잠시만 기다려 주세요</div>
+      {/* 아랫줄은 **윗줄이 다른 말을 할 때만** 둔다 — 에디터로 들어갈 때의 문구가
+          바로 이 문장이 된 뒤로(요청 2: 종류를 말하지 않는 한 문장), 그대로 두면
+          같은 말이 두 줄로 겹쳤다. */}
+      {message !== WAIT_LINE && <div style={{ marginTop: 6, fontSize: 12.5, color: subInk }}>{WAIT_LINE}</div>}
     </div>
   );
 }

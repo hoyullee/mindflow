@@ -609,11 +609,31 @@ export function useHomeController() {
       // null here, so it just keeps the cached value.
       try {
         const remote = await auth.getProfileName();
-        if (cancelled || !remote || !remote.trim()) return;
-        writeSavedProfileName(email, remote); // refresh the local cache
-        setState((prev) => (prev.userEmail === email ? { ...prev, userName: remote } : prev));
+        if (cancelled) return;
+        if (remote && remote.trim()) {
+          writeSavedProfileName(email, remote); // refresh the local cache
+          setState((prev) => (prev.userEmail === email ? { ...prev, userName: remote } : prev));
+        }
       } catch {
         /* offline / transient — keep the cached name */
+      }
+      /**
+       * **사진도 서버와 맞춘다**(제보 4: A PC에서 바꿔도 B PC에 안 온다).
+       *
+       * 이름은 이미 이 길을 지나는데 사진만 빠져 있었다 — 첫 페인트에 쓰는
+       * `session.user.avatarUrl`은 **그 기기에 저장된 토큰의 스냅샷**이라, 다른
+       * 기기에서 바꾼 사진은 그 토큰이 갱신될 때까지(최대 한 시간) 오지 않는다.
+       *
+       * `undefined`(모른다 — 로컬 모드·조회 실패)면 손대지 않고, `null`(지웠다)이면
+       * 기본 얼굴로 되돌린다. 캐시도 함께 고친다 — 다음 방문의 첫 페인트가 그 값이다.
+       */
+      try {
+        const avatar = await auth.getProfileAvatar();
+        if (cancelled || avatar === undefined) return;
+        writeSavedAvatar(email, avatar);
+        setState((prev) => (prev.userEmail === email ? { ...prev, userAvatar: avatar } : prev));
+      } catch {
+        /* offline / transient — keep what the session and the cache gave us */
       }
     }).catch(() => {
       // 세션 조회 실패 — 플레이스홀더라도 보여주도록 스켈레톤을 풀어준다.
@@ -2136,6 +2156,19 @@ export function useHomeController() {
   // nothing to uniquify against.
   const newMapHref = () => buildNewMapHref('새 마인드맵');
 
+  /**
+   * **에디터로 들어갈 때의 한 문장**(요청 2).
+   *
+   * 예전에는 자리마다 달랐다 — 열 때는 `맵을 불러오고 있어요`, 만들 때는 `새
+   * 마인드맵을 준비하고 있어요`. 문서 종류가 넷이 된 지금 그 말들은 **틀린 말**이다:
+   * 공책을 열어도 "맵", 칸반을 만들어도 "마인드맵"이라고 말한다. 종류마다 문구를
+   * 갈라 두는 길도 있지만, 0.9초 동안 스치는 글에 종류를 알려 줄 이유가 없다 —
+   * 사용자가 방금 누른 카드가 무엇인지는 사용자가 안다. 그래서 **무엇을 여는지
+   * 말하지 않고 기다려 달라고만** 한다(로그아웃·탈퇴처럼 종류가 하나뿐인 자리는
+   * 제 문구를 그대로 쓴다).
+   */
+  const ENTER_MSG = '잠시만 기다려 주세요';
+
   const navigateAfterLoader = (href: string, msg: string) => {
     patch({ creatingMap: true, loaderMsg: msg });
     clearTimeout(loaderTimer.current);
@@ -2149,7 +2182,7 @@ export function useHomeController() {
    *  썼는데, 과하다는 판단으로 걷어냈다 — 같은 동작이 같은 모양이어야 한다. */
   const openWithLoader = (href: string, title: string, docId?: string) => {
     recordRecent(title, docId);
-    navigateAfterLoader(href, '맵을 불러오고 있어요');
+    navigateAfterLoader(href, ENTER_MSG);
   };
 
   /**
@@ -2177,7 +2210,7 @@ export function useHomeController() {
     // 로더를 "먼저" 띄우고(같은 프레임에 카드가 함께 들어가면 로더가 완전히
     // 덮기 전에 새 카드가 배경에 번쩍인다 — 제보), 카드 등록은 로더가 실제로
     // 페인트된 다음 프레임에 수행한다. 로더는 `instant`라 첫 프레임부터 불투명.
-    navigateAfterLoader(href, '새 마인드맵을 준비하고 있어요');
+    navigateAfterLoader(href, ENTER_MSG);
 
     const registerCard = () => {
       try {

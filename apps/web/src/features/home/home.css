@@ -527,15 +527,34 @@ a:hover {
    제외). 흰 카드가 흰 배경에 묻히지 않게 하는 것이 그 예외의 이유다.
    본문 패딩(24/32)만큼 음수 마진으로 빼서 좌우 끝까지 닿게 하고 같은 값을 패딩으로
    되돌리므로 **카드 자리는 한 픽셀도 바뀌지 않는다**. */
+/* ⚠️ 전폭으로 빠지는 일은 **바깥 상자**(`.mf-recent-bleed`)가 한다 — 띠 자신이
+   음수 마진으로 빠지면 그 위의 접기 상자(`overflow: hidden` + `max-height`, 검색으로
+   들어갈 때의 전환)가 **삐져나온 면을 잘라 낸다**. 제보의 "최근 항목 배경이 틀어졌다"가
+   그것이었다: 왼쪽 32px·위 24px이 잘려 그 자리에 본문 바탕(점 격자)이 드러났다.
+   이제 잘라 내는 상자 자체가 전폭이라 면이 끝까지 닿는다. 오른쪽 끝의 좁은 띠는
+   스크롤바 자리다(`scrollbar-gutter: stable`) — 그 칸은 본문의 것이다. */
+.mf-recent-bleed {
+  margin: -24px -32px 0;
+  /* ⚠️ **줄어들지 않는다**(제보: 최근 항목이 찌그러진다). 본문(`.mf-home-main`)은
+     세로 flex라 자식들이 flex 항목이고, `overflow: hidden`인 항목은 **자동 최소
+     크기가 0**이 되어 내용보다 작게 눌린다 — 카드가 많아 본문이 화면을 넘는 순간
+     이 띠가 제일 먼저 눌려 카드와 면이 잘렸다(본문은 스크롤되면 그만인데도).
+     접기 전환(`max-height`)을 위해 `overflow: hidden`은 있어야 하므로, 눌리지
+     않는다고 못박는다. */
+  flex: 0 0 auto;
+}
 .mf-recent-tray {
   background: var(--mf-bg);
-  margin: -24px -32px 26px;
+  margin-bottom: 26px;
   padding: 24px 32px 26px;
   border-bottom: 1px solid var(--mf-border-soft);
 }
 @media (max-width: 767px) {
+  .mf-recent-bleed {
+    margin: -16px -14px 0;
+  }
   .mf-recent-tray {
-    margin: -16px -14px 18px;
+    margin-bottom: 18px;
     padding: 16px 14px 18px;
   }
 }

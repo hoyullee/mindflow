@@ -124,7 +124,7 @@ export function Home() {
       {/* `instant`: Home의 로더는 뒤 배경을 함께 바꾸는 동작(새로 만들기=카드 추가,
           로그아웃/탈퇴=목록 정리)에 쓰이므로, 페이드인 중 반투명 구간으로 그 변화가
           비쳐 깜빡이지 않도록 첫 프레임부터 화면을 덮는다. */}
-      {state.creatingMap && <LoadingOverlay message={state.loaderMsg || '새 마인드맵을 준비하고 있어요'} instant veil="var(--mf-overlay-veil)" ink="var(--mf-text)" subInk="var(--mf-muted)" accent="var(--mf-accent)" accentSoft="var(--mf-accent-soft)" />}
+      {state.creatingMap && <LoadingOverlay message={state.loaderMsg || '잠시만 기다려 주세요'} instant veil="var(--mf-overlay-veil)" ink="var(--mf-text)" subInk="var(--mf-muted)" accent="var(--mf-accent)" accentSoft="var(--mf-accent-soft)" />}
 
       <Sidebar state={state} view={view} controller={controller} isMobile={isMobile} isOpen={navOpen} onClose={() => setNavOpen(false)} />
 
@@ -219,6 +219,7 @@ export function Home() {
                 상태가 된다(pointer-events만으로는 못 막는 자리다). */}
             {view.recentSectionVisible && (
               <div
+                className="mf-recent-bleed"
                 data-recent-collapse={view.recentCollapsed ? '1' : '0'}
                 aria-hidden={view.recentCollapsed || undefined}
                 {...(view.recentCollapsed ? { inert: '' } : {})}
