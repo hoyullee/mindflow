@@ -5,10 +5,11 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NOTE_TAGS } from '@mindflow/mindmap-core';
-import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, removeNoteTag } from './noteTags';
+import { absorbDocTags, addNoteTag, detachNoteTagStore, noteTagBoard, noteTagInk, noteTagOptions, removeNoteTag } from './noteTags';
 
 beforeEach(() => {
   localStorage.clear();
+  detachNoteTagStore(); // 서버 저장소가 붙은 채로 넘어오지 않게(다른 파일이 붙였을 수 있다)
 });
 
 describe('태그 판', () => {

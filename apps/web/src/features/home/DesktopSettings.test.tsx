@@ -14,6 +14,7 @@ import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalTagStore } from '../../adapters/local/localTagStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
@@ -74,7 +75,7 @@ function renderHome(notificationStore: LocalNotificationStore = new LocalNotific
     docStore: new LocalDocStore(),
     spaceStore: new LocalSpaceStore(),
     shareStore: new LocalShareStore(),
-    feedbackStore: new LocalFeedbackStore(),
+    feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(),
     imageStore: new LocalImageStore(),
     commentStore: new LocalCommentStore(),
     notificationStore,

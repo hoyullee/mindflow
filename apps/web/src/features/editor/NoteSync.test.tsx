@@ -24,6 +24,7 @@ import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalTagStore } from '../../adapters/local/localTagStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
 import { LocalEventStore } from '../../adapters/local/localEventStore';
@@ -77,7 +78,7 @@ function makeBackend(initial: Doc) {
     rename: async () => undefined,
     save,
   } as unknown as DocStore;
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'local' };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'local' };
   /** 다른 기기가 저장했다 — 서버 판을 갈아 끼운다. */
   const serverSaves = (doc: Doc): void => {
     server.doc = doc;

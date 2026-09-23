@@ -10,6 +10,7 @@ import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalTagStore } from '../../adapters/local/localTagStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
 import { LocalEventStore } from '../../adapters/local/localEventStore';
@@ -53,7 +54,7 @@ function makeRecoveryAuth() {
 }
 
 function renderSupa(auth: LocalAuth) {
-  const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+  const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
   return render(
     <MemoryRouter>
       <BackendProvider backend={backend}>
@@ -195,7 +196,7 @@ describe('Login', () => {
     const user = userEvent.setup();
     const auth = new VerifyAuth();
     const verifySpy = vi.spyOn(auth, 'verifyOtp'); // LocalAuth base yields a session for any input
-    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
     render(
       <MemoryRouter>
         <BackendProvider backend={backend}>
@@ -221,7 +222,7 @@ describe('Login', () => {
   it('supabase mode: password reset runs the REAL recovery flow (verifyOtp recovery → updatePassword) and hides the demo code', async () => {
     const user = userEvent.setup();
     const { auth, verifySpy, updateSpy, resetSpy } = makeRecoveryAuth();
-    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
     render(
       <MemoryRouter>
         <BackendProvider backend={backend}>
@@ -254,7 +255,7 @@ describe('Login', () => {
   it('supabase mode: a wrong reset code surfaces an error and never updates the password', async () => {
     const user = userEvent.setup();
     const { auth, updateSpy } = makeRecoveryAuth();
-    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
     render(
       <MemoryRouter>
         <BackendProvider backend={backend}>
@@ -284,7 +285,7 @@ describe('Login', () => {
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       const { auth, resetSpy } = makeRecoveryAuth();
-      const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+      const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
       render(
         <MemoryRouter>
           <BackendProvider backend={backend}>
@@ -331,7 +332,7 @@ describe('Login', () => {
     const auth = new LocalAuth();
     vi.spyOn(auth, 'isEmailRegistered').mockResolvedValue(false); // 미가입
     const resetSpy = vi.spyOn(auth, 'sendPasswordReset');
-    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
     render(
       <MemoryRouter>
         <BackendProvider backend={backend}>
