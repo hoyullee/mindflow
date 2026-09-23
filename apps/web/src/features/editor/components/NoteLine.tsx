@@ -408,6 +408,33 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     const plainArrow = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
     const composing = e.nativeEvent.isComposing;
     /**
+     * **Home·End는 「지금 이 시각 행의 끝」으로 못박는다**(제보).
+     *
+     * 브라우저 기본값이 **OS마다 다르다**: 윈도·리눅스의 크로뮴에서 이 키는 감긴
+     * **행**의 처음·끝으로 가는데, macOS에서는 같은 키가 **편집 박스 전체**의
+     * 처음·끝으로 간다(맥의 관례는 ⌘←·⌘→가 행이고 Home·End는 문서다). 그래서
+     * 맥에서 문장 끝에 커서를 두고 Shift+Home을 누르면 감긴 문단이 **통째로**
+     * 골라졌고, 이어지는 Shift+↑는 "한 행 더"가 아니라 이미 다 골라진 상태에서
+     * 윗 블록으로 넘어갔다 — 제보의 그림이 정확히 이것이다.
+     *
+     * 그래서 어느 OS에서든 같게 만든다: 행의 끝은 **브라우저가 아는 그 자리**
+     * (`lineboundary`)로 옮기고, `Shift`면 그리로 **늘린다**. ⌘·Ctrl이 붙은 것은
+     * "문서의 처음·끝"이라는 다른 뜻이라 그대로 브라우저에 맡긴다.
+     */
+    if ((e.key === 'Home' || e.key === 'End') && !e.metaKey && !e.ctrlKey && !e.altKey && !composing) {
+      const sel = window.getSelection();
+      const modify = (sel as (Selection & { modify?: (a: string, d: string, g: string) => void }) | null)?.modify;
+      if (sel && typeof modify === 'function' && sel.focusNode && el.contains(sel.focusNode)) {
+        e.preventDefault();
+        try {
+          modify.call(sel, e.shiftKey ? 'extend' : 'move', e.key === 'Home' ? 'backward' : 'forward', 'lineboundary');
+        } catch {
+          /* 못 옮겨도 캐럿은 제자리다 */
+        }
+        return;
+      }
+    }
+    /**
      * **Shift+위/아래 = 줄을 넘는 선택**(제보: 여러 줄이 골라지지 않는다).
      *
      * 한 박스 **안**에서는 브라우저가 알아서 늘린다 — 우리는 그 박스의 가장자리 줄에
