@@ -43,6 +43,7 @@ const { BackendProvider } = await import('../../adapters/BackendContext');
 const { LocalAuth } = await import('../../adapters/local/localAuth');
 const { LocalSpaceStore } = await import('../../adapters/local/localSpaceStore');
 const { LocalFeedbackStore } = await import('../../adapters/local/localFeedbackStore');
+const { LocalTagStore } = await import('../../adapters/local/localTagStore');
 const { LocalCommentStore } = await import('../../adapters/local/localCommentStore');
 const { LocalNotificationStore } = await import('../../adapters/local/localNotificationStore');
 const { LocalEventStore } = await import('../../adapters/local/localEventStore');
@@ -89,7 +90,7 @@ function makeBackend(results: SaveResult[], rows: { email: string; role: 'edit' 
     save,
   } as unknown as DocStore;
   // mode 'supabase' — 협업 경고/멈춤은 실제로 붙을 대상이 있는 모드에서만 뜻이 있다.
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: shareStore(rows), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: shareStore(rows), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
   return { backend, save };
 }
 

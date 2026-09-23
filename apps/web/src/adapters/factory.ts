@@ -14,6 +14,7 @@ import { LocalDocStore } from './local/localDocStore';
 import { LocalSpaceStore } from './local/localSpaceStore';
 import { LocalShareStore } from './local/localShareStore';
 import { LocalFeedbackStore } from './local/localFeedbackStore';
+import { LocalTagStore } from './local/localTagStore';
 import { LocalCommentStore } from './local/localCommentStore';
 import { LocalEventStore } from './local/localEventStore';
 import { LocalNotificationStore } from './local/localNotificationStore';
@@ -24,6 +25,7 @@ import { SupabaseDocStore } from './supabase/supabaseDocStore';
 import { SupabaseSpaceStore } from './supabase/supabaseSpaceStore';
 import { SupabaseShareStore } from './supabase/supabaseShareStore';
 import { SupabaseFeedbackStore } from './supabase/supabaseFeedbackStore';
+import { SupabaseTagStore } from './supabase/supabaseTagStore';
 import { SupabaseCommentStore } from './supabase/supabaseCommentStore';
 import { SupabaseEventStore } from './supabase/supabaseEventStore';
 import { SupabaseNotificationStore } from './supabase/supabaseNotificationStore';
@@ -38,7 +40,7 @@ export function createBackend(envOverride?: BackendEnv): Backend {
   const env = envOverride ?? readViteEnv();
   if (isSupabaseConfigured(env)) {
     const client = getSupabaseClient(env.VITE_SUPABASE_URL!, env.VITE_SUPABASE_ANON_KEY!);
-    return { auth: new SupabaseAuth(client), docStore: new SupabaseDocStore(client), spaceStore: new SupabaseSpaceStore(client), shareStore: new SupabaseShareStore(client), feedbackStore: new SupabaseFeedbackStore(client), imageStore: new SupabaseImageStore(client), commentStore: new SupabaseCommentStore(client), notificationStore: new SupabaseNotificationStore(client), eventStore: new SupabaseEventStore(client), mode: 'supabase' };
+    return { auth: new SupabaseAuth(client), docStore: new SupabaseDocStore(client), spaceStore: new SupabaseSpaceStore(client), shareStore: new SupabaseShareStore(client), feedbackStore: new SupabaseFeedbackStore(client), tagStore: new SupabaseTagStore(client), imageStore: new SupabaseImageStore(client), commentStore: new SupabaseCommentStore(client), notificationStore: new SupabaseNotificationStore(client), eventStore: new SupabaseEventStore(client), mode: 'supabase' };
   }
-  return { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'local' };
+  return { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), tagStore: new LocalTagStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'local' };
 }

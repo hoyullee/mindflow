@@ -46,6 +46,10 @@ export function useFeedbackStore() {
   return useBackend().feedbackStore;
 }
 
+export function useTagStore() {
+  return useBackend().tagStore;
+}
+
 export function useImageStore() {
   return useBackend().imageStore;
 }

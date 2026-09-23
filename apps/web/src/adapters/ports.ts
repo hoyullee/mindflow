@@ -583,6 +583,37 @@ export interface FeedbackStore {
   submit(entry: FeedbackEntry): Promise<{ error?: string }>;
 }
 
+// ── Note tags ──────────────────────────────────────────────────────────────
+
+/**
+ * 공책 **태그 판** — 이름과 색을 공책 밖에서 한 벌로 든다(요청: "태그는 한판으로
+ * 관리됐으면 좋겠어"). 문서에는 "이 페이지가 어떤 태그인가"(`page.tag`)만 남는다.
+ */
+export interface NoteTagBoard {
+  /** 사용자가 만든 태그 이름들(만든 순서). */
+  made: string[];
+  /** 이름 → 점 색. 고르지 않은 태그는 이름 해시로 정해진다(코어 `noteTagColor`). */
+  colors: Record<string, string>;
+  /** 지운 태그들 — 기본 여섯은 코드 상수라 뺄 수 없어 **가린다**. 만든 태그도
+   * 여기에 남긴다(묘비): 다른 기기의 낡은 목록과 합칠 때 되살아나지 않게. */
+  hidden: string[];
+}
+
+/**
+ * 태그 판 저장소(0042) — **사용자당 한 벌**이라 기기가 바뀌어도 같은 판을 본다.
+ *
+ * 판은 통째로 읽고 통째로 쓴다(고르개를 그릴 때 늘 전부 필요하고, 한 번에 바뀌는
+ * 것은 한 항목뿐이라 경쟁이 없다). 화면은 이 포트를 직접 부르지 않는다 —
+ * `features/editor/noteTags.ts`가 기기 캐시(localStorage) 위에서 동기로 답하고
+ * 뒤에서 이 포트와 맞춘다(렌더 중에 색을 묻는 자리가 있어 비동기일 수 없다).
+ */
+export interface TagStore {
+  /** 서버에 있는 판. 아직 한 번도 저장한 적이 없으면 `null`. */
+  load(): Promise<NoteTagBoard | null>;
+  /** 판을 통째로 덮어쓴다(upsert). */
+  save(board: NoteTagBoard): Promise<void>;
+}
+
 // ── Comments ───────────────────────────────────────────────────────────────
 
 /** 멘션 대상 — 이메일이 (이후) 알림이 겨냥할 키, 이름은 본문의 "@이름" 표시용. */
@@ -851,6 +882,8 @@ export interface Backend {
   shareStore: ShareStore;
   /** 사용자 피드백 제출(쓰기 전용 우편함 — 0014). */
   feedbackStore: FeedbackStore;
+  /** 공책 태그 판(0042) — 사용자당 한 벌, 기기 사이에 같은 판. */
+  tagStore: TagStore;
   /** 첨부 이미지 실물 저장소(본문에는 참조만 — 0016). */
   imageStore: ImageStore;
   /** 주제에 붙는 댓글(0020). */

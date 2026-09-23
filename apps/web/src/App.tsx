@@ -14,6 +14,7 @@ import { UpdatePrompt } from './pwa/UpdatePrompt';
 import { DesktopTitleBar } from './platform/DesktopTitleBar';
 import { isDesktopShell } from './platform/desktopBridge';
 import { ReminderHost } from './features/reminders/ReminderHost';
+import { NoteTagsHost } from './features/editor/NoteTagsHost';
 import { RoomConflictWatch } from './features/home/calendar/RoomConflictWatch';
 import { NotificationsProvider } from './features/home/components/NotificationsContext';
 import { DesktopBadgeHost } from './platform/DesktopBadgeHost';
@@ -69,6 +70,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return (
     <NotificationsProvider>
       <ReminderHost />
+      {/* 공책 태그 판을 계정에 잇는다(0042) — 고르개는 에디터에, 태그 메뉴는 홈에
+          있어 화면마다 붙이면 둘이 어긋난다. 여기 한 번이면 둘 다 같은 판을 본다. */}
+      <NoteTagsHost />
       {/* 회의실이 예약을 거절한 일정을 배경에서 훑어 알림 센터에 쌓는다(제보) —
           일정 화면에만 있던 적재를 여기로 올렸다. 일정 알림과 같은 이유로 문지기
           안이다: 맵을 편집하는 중에도 그 소식은 와야 한다. */}
