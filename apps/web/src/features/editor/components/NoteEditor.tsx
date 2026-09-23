@@ -48,6 +48,8 @@ import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
 import { linesClipboard, selectionClipboard, writeClipboard, writeImageClipboard } from '../noteClipboard';
+import { NoteBoardEmbed } from './NoteBoardEmbed';
+import { boardDocIdFromUrl } from '../noteEmbed';
 import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
@@ -917,6 +919,20 @@ export function NoteEditor({ controller }: Props) {
           picked.forEach((b) => controller.removeNoteBlock(b.id));
           setObjSel([]);
         };
+        /**
+         * **보드 임베드 하나**를 고르고 ⌘C면 **그 보드의 주소**를 싣는다(스펙 §8) —
+         * 링크 블록의 글은 비어 있어서, 그림과 같은 이유로 클립보드가 조용히 비었다.
+         */
+        const onlyEmbed = picked.length === 1 && picked[0]?.kind === 'link' && picked[0]?.docId;
+        if (onlyEmbed) {
+          const href = controller.linkTargets.find((t) => t.docId === onlyEmbed)?.href ?? '';
+          if (href) {
+            const url = new URL(href, window.location.origin).href;
+            writeClipboard({ plain: url, html: `<a href="${url}">${url}</a>` });
+            if (cut) drop();
+            return;
+          }
+        }
         const onlyImage = picked.length === 1 && picked[0]?.kind === 'img';
         if (onlyImage) {
           void writeImageClipboard(imageSrcOf(picked[0]!.id)).then((ok) => {
@@ -947,6 +963,16 @@ export function NoteEditor({ controller }: Props) {
         return;
       }
       if (e.key === 'Enter') {
+        /** 임베드 하나를 골라 둔 채 Enter면 **그 보드를 연다**(스펙 §8). */
+        const one = objSel.length === 1 ? blocks.find((b) => b.id === objSel[0]) : undefined;
+        if (one?.kind === 'link' && one.docId && !e.shiftKey) {
+          const href = controller.linkTargets.find((t) => t.docId === one.docId)?.href;
+          if (href) {
+            e.preventDefault();
+            window.location.assign(href);
+            return;
+          }
+        }
         /**
          * 고른 것 **아래**에 빈 문단 하나 — 그림 뒤에서 이어 쓰는 가장 흔한 동작이다.
          * Shift+Enter면 **위**다(요청 2: 그림 앞에도 줄을 만들 수 있어야 한다 —
@@ -1291,6 +1317,24 @@ export function NoteEditor({ controller }: Props) {
   const pasteText = useCallback(
     (key: string, text: string, from: number, to: number): boolean => {
       if (readOnly) return false;
+      /**
+       * **보드 주소를 붙여넣으면 미리보기로 바꾼다**(스펙 §9).
+       *
+       * 단, **빈 문단에 통째로** 붙여넣었을 때만이다. 쓰던 글 가운데에 주소를 끼워
+       * 넣는 것은 "링크를 문장에 넣는" 일이고, 그 자리를 블록째 갈아엎으면 쓰던 문장이
+       * 사라진다 — 스펙의 「링크로 두기」 토스트가 하려던 되돌리기를, 우리는 **애초에
+       * 갈아엎지 않는 것**으로 대신한다(이 에디터에는 토스트 자리가 없다).
+       */
+      const linked = boardDocIdFromUrl(text, window.location.origin);
+      if (linked && controller.linkTargets.some((t) => t.docId === linked)) {
+        const id = blockIdOf(key);
+        const cur = controller.notePage?.blocks.find((b) => b.id === id);
+        if (cur && cur.kind === 'p' && blockText(cur) === '' && from === 0 && to === 0) {
+          controller.retypeNoteBlock(id, 'link');
+          controller.setNoteLinkDoc(id, linked);
+          return true;
+        }
+      }
       const lines = parseNoteText(text);
       if (lines.length <= 1 && !lines[0]?.kind) return false;
       const done = controller.pasteNoteText(key, from, to, text);
@@ -5052,7 +5096,19 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   }
 
   if (shape === 'link') {
-    return <LinkBlock controller={controller} block={block} pickLinkDoc={pickLinkDoc} />;
+    // 링크 한 줄이 아니라 **그 보드의 지금 상태**를 편다(보드 임베드). 아직 고르지
+    // 않았거나 공책을 가리키면 임베드 쪽이 알아서 한 줄 카드로 물러선다.
+    return (
+      <NoteBoardEmbed
+        controller={controller}
+        block={block}
+        target={controller.linkTargets.find((t) => t.docId === block.docId) ?? null}
+        pickLinkDoc={pickLinkDoc}
+        flow={blockFlow(block)}
+        picked={picked}
+        pickObject={pickObject}
+      />
+    );
   }
 
   if (block.kind === 'callout') {
@@ -8368,83 +8424,6 @@ function DocPickPopup({ controller, onPick, onClose }: { controller: EditorContr
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function LinkBlock({ controller, block, pickLinkDoc }: { controller: EditorController; block: NoteBlock; pickLinkDoc: (at: { after?: string; replace?: string }) => void }) {
-  const readOnly = controller.readOnly;
-  const targets = controller.linkTargets;
-  const target = targets.find((t) => t.docId === block.docId) ?? null;
-  return (
-    <div className="mf-note-link" data-note-block={block.id} data-note-kind="link" style={{ ...blockFlow(block), position: 'relative' }}>
-      {target ? (
-        /* 디자인의 링크 카드 — 종류 타일 · 이름 · `종류 · 스페이스` · 열기 표시.
-           예전에는 점 하나 + `문서` 한 낱말이라 무엇으로 가는 링크인지 알 수 없었다. */
-        <a
-          href={target.href}
-          data-note-link={target.docId}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '11px 13px',
-            borderRadius: 13,
-            border: '1px solid var(--mf-border-soft)',
-            background: 'var(--mf-card)',
-            color: 'inherit',
-            textDecoration: 'none',
-            minWidth: 0,
-          }}
-        >
-          <span aria-hidden="true" style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 10, background: `color-mix(in srgb, ${target.color} 16%, var(--mf-card))`, color: target.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 4h9a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7" />
-              <path d="M9 9h7M9 13h7M9 17h4" />
-            </svg>
-          </span>
-          <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{target.title}</span>
-            <span style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {target.kindName}
-              {target.spaceName ? ` · ${target.spaceName}` : ''}
-            </span>
-          </span>
-          {!readOnly && (
-            <button type="button" className="btn mf-note-linkact" onClick={(e) => { e.preventDefault(); pickLinkDoc({ replace: block.id }); }} style={{ ...GHOST_BTN, height: 22, flex: '0 0 auto' }}>
-              바꾸기
-            </button>
-          )}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
-            <path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-          </svg>
-        </a>
-      ) : (
-        <button
-          type="button"
-          data-note-link-pick
-          disabled={readOnly}
-          onClick={() => pickLinkDoc({ replace: block.id })}
-          className="btn"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            width: '100%',
-            height: 52,
-            borderRadius: 10,
-            border: '1.5px dashed var(--mf-border)',
-            background: 'transparent',
-            color: 'var(--mf-muted)',
-            fontFamily: 'inherit',
-            fontSize: 12.5,
-            cursor: readOnly ? 'default' : 'pointer',
-          }}
-        >
-          문서 고르기
-        </button>
-      )}
     </div>
   );
 }

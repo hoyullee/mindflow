@@ -334,6 +334,23 @@ export interface NoteListItem {
  * 종류 바꾸기가 타입 분기 덩어리가 되기 때문이다. 어느 칸을 보는지는
  * `noteBlockShape`가 한곳에서 답한다.
  */
+/**
+ * 본문에 편 보드의 **보기 상태**(`NoteBlock.embed`) — 종류마다 쓰는 칸이 다르다.
+ *
+ * 값이 통째로 없으면 기본은 **펼친 보기**(`lg`)다: 한 줄 링크로는 "그 보드의 지금
+ * 상태"를 알 수 없고, 본문에 붙이는 이유가 그것이기 때문이다(스펙 §1).
+ */
+export interface NoteEmbedView {
+  /** `lg` 펼침(기본) · `sm` 한 줄 카드. */
+  size?: 'sm' | 'lg';
+  /** 칸반 — 보고 있는 열의 차례(0부터)와 「내 카드만」. */
+  kanban?: { col: number; mine: boolean };
+  /** 마인드맵 — 개요/맵과 펼쳐 둔 가지의 차례들. */
+  mindmap?: { view: 'outline' | 'map'; open: number[] };
+  /** 화이트보드 — 고른 프레임의 차례(0 = 전체)와 창 높이. */
+  whiteboard?: { frame: number; height: 's' | 'm' | 'l' };
+}
+
 export interface NoteBlock {
   id: string;
   kind: NoteBlockKind;
@@ -381,6 +398,19 @@ export interface NoteBlock {
   fills?: Record<string, string>;
   /** `link` — 이 앱의 다른 문서 id(마인드맵·화이트보드·칸반). */
   docId?: string;
+  /**
+   * `link` — **본문에 편 보드의 보기 상태**(보드 임베드 스펙 §2).
+   *
+   * 왜 문서에 저장하나: 고른 열·펼친 가지·프레임은 "이 글이 무엇을 가리키는가"의
+   * 일부다 — 회의록에 칸반을 붙인 사람은 대개 **그 열**을 보여 주려고 붙인다.
+   * 그래서 다른 사람이 열어도 같은 보기가 되도록 블록에 남긴다.
+   *
+   * 반대로 **남기지 않는 것**: 화이트보드의 팬·줌 자리(세션 한정 — 문서에 적으면
+   * 남의 화면이 내가 굴린 자리로 끌려간다)와 드래그 중 상태.
+   *
+   * 보드의 **내용은 복사하지 않는다** — 언제나 원본을 다시 읽는다.
+   */
+  embed?: NoteEmbedView;
   /** `img` — 이미지 참조(`mfimg:<경로>` 또는 데이터 URL. 맵의 규칙과 같다). */
   src?: string;
   /**
