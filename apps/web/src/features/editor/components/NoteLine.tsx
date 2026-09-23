@@ -19,7 +19,7 @@ import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@m
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
 import { NOTE_EDIT_ATTR, armedCaretAt, armedCaretMark, disarmCaretMark, fireCaretMark } from '../noteRichDom';
-import { charOffset, lineLength, lineText, paintCode, pointAt, rangeOfChars } from '../noteTextSelect';
+import { caretMetrics, charOffset, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
@@ -78,7 +78,7 @@ interface Props {
    * **Shift+위/아래로 줄을 넘어 고른다** — 브라우저는 편집 박스 **밖으로** 선택을
    * 늘리지 못하므로(블록마다 박스가 따로다) 우리가 이어 그린다. 처리했으면 `true`.
    */
-  onSelectOut?: (dir: -1 | 1, x?: number) => boolean;
+  onSelectOut?: (dir: -1 | 1, x?: number, y?: number) => boolean;
   /**
    * **Shift+왼쪽/오른쪽으로 줄을 넘어 고른다**(제보: 문장의 끝·처음에 닿으면 거기서
    * 멈춘다). 브라우저의 선택은 이 편집 박스 안에 갇혀 있어 이웃 줄로 이어지지 않는다 —
@@ -417,9 +417,14 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       const sel = window.getSelection();
       if (sel) {
         const dir = e.key === 'ArrowUp' ? -1 : 1;
-        if (caretOnEdgeLine(el, sel, dir) && onSelectOut(dir, caretRect(el, sel)?.left)) {
-          e.preventDefault();
-          return;
+        // 자리는 **화면 좌표**로 넘긴다(`caretMetrics`) — 세로줄과 지금 행의 높이.
+        // 받는 쪽이 감긴 문단을 한 행씩 넘으려면 그 둘이 다 필요하다(제보 5).
+        if (caretOnEdgeLine(el, sel, dir)) {
+          const m = caretMetrics(el, sel);
+          if (onSelectOut(dir, m.x, m.y)) {
+            e.preventDefault();
+            return;
+          }
         }
       }
     }
@@ -432,7 +437,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       if (sel && (sel.isCollapsed || composing)) {
         const dir = e.key === 'ArrowUp' ? -1 : 1;
         if (caretOnEdgeLine(el, sel, dir)) {
-          const x = caretRect(el, sel)?.left;
+          const x = caretMetrics(el, sel).x;
           // 조합 중에는 **막지 않는다**(가로채면 조합이 끊긴 채 글자가 남는다) —
           // 브라우저가 조합을 끝낸 다음 차례에 건너뛴다. **다만 그때 가장자리에
           // 그대로 있는지 다시 본다**(제보 5) — 아래 `stillEdge` 머리말.
@@ -734,22 +739,8 @@ function caretOnEdgeLine(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean 
    * `modify`는 선택을 움직이므로 두 끝을 적어 두었다 되돌린다(`setBaseAndExtent`는
    * 방향까지 지킨다 — Shift로 고르는 중에도 안전하다).
    */
-  const probe = (sel as Selection & { modify?: (a: string, d: string, g: string) => void }).modify;
-  if (typeof probe === 'function' && sel.anchorNode && sel.focusNode && el.contains(sel.focusNode)) {
-    const keep = { an: sel.anchorNode, ao: sel.anchorOffset, fn: sel.focusNode, fo: sel.focusOffset };
-    try {
-      probe.call(sel, 'move', dir === -1 ? 'backward' : 'forward', 'lineboundary');
-      const at = sel.focusNode && el.contains(sel.focusNode) ? charOffset(el, sel.focusNode, sel.focusOffset) : -1;
-      sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
-      if (at >= 0) return dir === -1 ? at <= 0 : at >= lineLength(el);
-    } catch {
-      try {
-        sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
-      } catch {
-        /* 되돌리지 못해도 값은 그대로다 */
-      }
-    }
-  }
+  const edge = lineBoundaryAt(el, sel, dir);
+  if (edge >= 0) return dir === -1 ? edge <= 0 : edge >= lineLength(el);
   const c = caretRect(el, sel);
   const b = el.getBoundingClientRect();
   if (c && b.height > 0) {

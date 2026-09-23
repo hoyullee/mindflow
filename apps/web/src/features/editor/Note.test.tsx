@@ -10,7 +10,7 @@ import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
-import { NOTE_LIST_MAX_INDENT } from '@mindflow/mindmap-core';
+import { NOTE_LIST_MAX_INDENT, NOTE_TAG_COLORS } from '@mindflow/mindmap-core';
 import { linearize, setLinearSelection } from './richtextDom';
 import { applyNoteFormatRange } from './noteRichDom';
 
@@ -1017,6 +1017,26 @@ describe('공책 8판 — 태그 색 고르기', () => {
     return menu;
   }
 
+  it('이름을 쳐도 **점 색이 흔들리지 않는다**(제보 3) — 열 때 정해진 색 그대로', async () => {
+    localStorage.setItem('mindflow_doc_ns70d', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns70d&title=x');
+    const menu = await openNewTag(container);
+    const dot = () => (menu.querySelector('[data-note-tag-newdot]') as HTMLElement).style.background;
+    const first = dot();
+    expect(first).toBeTruthy();
+    const input = menu.querySelector('[data-note-tag-new]') as HTMLInputElement;
+    for (const v of ['스', '스프', '스프린', '스프린트']) {
+      fireEvent.change(input, { target: { value: v } });
+      expect(dot()).toBe(first);
+    }
+    // 미리 보인 그 색이 **그대로 만들어진다**(예전에는 이름 해시라 만든 뒤에야 정해졌다).
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('mf_note_tags') || '{}').made).toEqual(['스프린트']));
+    const ink = JSON.parse(localStorage.getItem('mf_note_tags') || '{}').colors['스프린트'] as string;
+    expect(ink).toBeTruthy();
+    expect(NOTE_TAG_COLORS.map(([c]) => c)).toContain(ink);
+  });
+
   it('새 태그를 만들 때 **점 색을 고를 수 있고**, 고른 값이 태그 판에 남는다', async () => {
     localStorage.setItem('mindflow_doc_ns70', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns70&title=x');
@@ -1038,7 +1058,7 @@ describe('공책 8판 — 태그 색 고르기', () => {
     expect(JSON.parse(localStorage.getItem('mf_note_tags') || '{}')).toMatchObject({ made: ['스프린트'], colors: { 스프린트: '#7C9BD8' } });
   });
 
-  it('색을 고르지 않으면 이름에서 정해진다 — 문서에 칸이 생기지 않는다', async () => {
+  it('팔레트를 건드리지 않아도 **문서에는 색 칸이 생기지 않는다**(색은 판이 든다)', async () => {
     localStorage.setItem('mindflow_doc_ns71', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ns71&title=x');
     const menu = await openNewTag(container);

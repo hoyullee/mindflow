@@ -39,7 +39,7 @@ import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
-import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
 import { firstImageFile } from '../imageAttach';
@@ -568,6 +568,16 @@ export function NoteEditor({ controller }: Props) {
   const selAnchor = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
   const selFocus = useRef<{ el: HTMLElement; node: Node; offset: number } | null>(null);
   const selX = useRef<number | undefined>(undefined);
+  /**
+   * 고르고 있는 **끝이 놓인 행의 높이**(화면 좌표) — 감긴 문단을 **한 행씩** 넘기 위한 값.
+   *
+   * 왜 필요한가(제보 5): 예전에는 Shift+위/아래가 우리 손에 들어오는 순간부터
+   * **블록 단위**로 움직였다(`lines[i + dir]`). 그래서 세 행으로 감긴 문단은 한 번에
+   * 통째로 먹혔다 — 사용자가 본 것은 "한 줄씩 골라지지 않는다"다. 이제 이 값에 한
+   * 행(`rowHeight`)을 더해 **같은 블록 안의 다음 행**을 먼저 찾고, 그 행이 없을 때만
+   * 이웃 블록으로 건너간다.
+   */
+  const selY = useRef<number | undefined>(undefined);
 
   // Escape로 닫는다 — 팝업이 열려 있는 동안 본문 타이핑은 그대로 이어진다.
   useEffect(() => {
@@ -1113,6 +1123,8 @@ export function NoteEditor({ controller }: Props) {
       const focus = { el: line, node: at.node, offset: at.offset };
       selAnchor.current = anchor;
       selFocus.current = focus;
+      selX.current = x;
+      selY.current = y;
       setObjSel([]);
       const built = buildSelection(col, anchor, focus);
       if (!built) {
@@ -1138,7 +1150,7 @@ export function NoteEditor({ controller }: Props) {
    * 앵커가 없으면 지금 캐럿이 앵커다. 늘린 결과가 **한 줄 안**으로 돌아오면 우리 그림을
    * 걷고 브라우저의 선택으로 되돌린다(그 안에서는 브라우저가 더 잘한다).
    */
-  const extendSelection = useCallback((dir: -1 | 1, x?: number): boolean => {
+  const extendSelection = useCallback((dir: -1 | 1, x?: number, y?: number): boolean => {
     const col = colRef.current;
     if (!col) return false;
     const lines = [...col.querySelectorAll<HTMLElement>('[data-note-line]')].filter((el) => el.getAttribute('contenteditable') === 'true');
@@ -1149,22 +1161,36 @@ export function NoteEditor({ controller }: Props) {
       selAnchor.current = { el: live, node: sel.anchorNode, offset: sel.anchorOffset };
       selFocus.current = { el: live, node: sel.focusNode ?? sel.anchorNode, offset: sel.focusOffset };
       selX.current = x;
+      selY.current = y;
     }
     const cur = selFocus.current;
     const i = lines.indexOf(cur.el);
     if (i < 0) return false;
-    const next = lines[i + dir];
-    if (!next) return false;
-    const spot = pointInLine(next, dir, selX.current ?? x);
-    selFocus.current = { el: next, node: spot.node, offset: spot.offset };
+    const gx = selX.current ?? x;
+    /**
+     * **같은 블록 안의 다음 행을 먼저 본다**(제보 5) — 감긴 문단은 한 행씩 넘는다.
+     * 그 행이 없으면(블록의 마지막·첫 행이면) 그때 이웃 블록으로 건너간다.
+     */
+    const step = rowStepInLine(cur.el, dir, gx, selY.current ?? focusRowY(cur.el, cur.node, cur.offset), charOffset(cur.el, cur.node, cur.offset));
+    if (step) {
+      selFocus.current = { el: cur.el, node: step.node, offset: step.offset };
+      selY.current = step.y;
+    } else {
+      const next = lines[i + dir];
+      if (!next) return false;
+      const spot = pointInLine(next, dir, gx);
+      selFocus.current = { el: next, node: spot.node, offset: spot.offset };
+      selY.current = rowEdgeY(next, dir);
+    }
     const built = buildSelection(col, selAnchor.current, selFocus.current);
     if (!built) {
       // 앵커가 있던 줄로 돌아왔다 — 우리 칠을 걷고 그 줄 안의 선택으로 되돌린다.
       setTextSel(null);
       const a = selAnchor.current;
+      const f = selFocus.current;
       try {
         a.el.focus({ preventScroll: true });
-        window.getSelection()?.setBaseAndExtent(a.node, a.offset, spot.node, spot.offset);
+        window.getSelection()?.setBaseAndExtent(a.node, a.offset, f.node, f.offset);
       } catch {
         /* 선택을 못 세워도 포커스는 갔다 */
       }
@@ -1192,6 +1218,7 @@ export function NoteEditor({ controller }: Props) {
     selAnchor.current = { el: first, node: a.node, offset: a.offset };
     selFocus.current = { el: last, node: b.node, offset: b.offset };
     selX.current = undefined;
+    selY.current = undefined;
     paintAndHold(built);
     return true;
   }, []);
@@ -1248,6 +1275,7 @@ export function NoteEditor({ controller }: Props) {
       selAnchor.current = { el: live, node: sel.anchorNode, offset: sel.anchorOffset };
       selFocus.current = { el: live, node: sel.focusNode ?? sel.anchorNode, offset: sel.focusOffset };
       selX.current = undefined;
+      selY.current = undefined;
     }
     const cur = selFocus.current;
     const len = lineLength(cur.el);
@@ -1272,6 +1300,8 @@ export function NoteEditor({ controller }: Props) {
      * 통째로 늘려 놓고 아래로 내려가도 한 글자만 골라지던 이유다.
      */
     selX.current = columnX(el, next);
+    // 가로로 움직였으면 행도 달라졌을 수 있다 — 다음 위·아래는 그 자리에서 다시 잰다.
+    selY.current = undefined;
     const built = buildSelection(col, selAnchor.current, selFocus.current);
     if (!built) {
       setTextSel(null);
@@ -1294,6 +1324,7 @@ export function NoteEditor({ controller }: Props) {
       selAnchor.current = null;
       selFocus.current = null;
       selX.current = undefined;
+      selY.current = undefined;
     }
   }, [textSel]);
 
@@ -3551,6 +3582,23 @@ function TagPick({
     setHue(null);
     setAdding(false);
   };
+  /**
+   * **만들기를 열 때 색을 하나 정하고 그대로 둔다**(제보 3).
+   *
+   * 예전에는 고르지 않은 동안 색이 **이름에서** 나왔다(`noteTagColor`의 해시) — 이름을
+   * 한 글자 칠 때마다 점 색이 바뀌어, 고르는 자리가 아니라 **흔들리는 자리**가 됐다.
+   * 게다가 만들고 나서야 최종 색이 정해지니 미리 본 색과 다를 수도 있었다.
+   *
+   * 그래서 열자마자 팔레트에서 하나를 집어 `hue`에 넣는다 — 미리 보이는 색이 곧
+   * 만들어질 색이고, 마음에 안 들면 아래 팔레트에서 고른다. 어느 것을 집을지는
+   * **지금 태그 수**로 정한다: 만들 때마다 팔레트를 한 칸씩 돌아 색이 한 벌로 겹치지
+   * 않고, 같은 화면에서는 늘 같은 답이라 예측할 수 있다.
+   */
+  const openAdd = (): void => {
+    const pick = NOTE_TAG_COLORS[options.length % NOTE_TAG_COLORS.length]?.[0];
+    setHue(pick ?? null);
+    setAdding(true);
+  };
   /** 지금 새 태그가 그려질 색 — 고른 값이 있으면 그것, 없으면 이름에서. */
   const newInk = hue ?? noteTagInk(draft.trim() || '새', inks);
 
@@ -3717,7 +3765,7 @@ function TagPick({
                       title={name}
                       aria-label={`${name} 색`}
                       aria-pressed={on}
-                      onClick={() => setHue((v) => (v === c ? null : c))}
+                      onClick={() => setHue(c)}
                       style={{
                         width: 22,
                         height: 22,
@@ -3740,7 +3788,7 @@ function TagPick({
               </div>
             </>
           ) : (
-            <button type="button" data-note-tag-add className="btn mf-note-item" onClick={() => setAdding(true)} style={{ ...MENU_ITEM, height: 30, gap: 8, color: 'var(--mf-accent)', fontWeight: 700 }}>
+            <button type="button" data-note-tag-add className="btn mf-note-item" onClick={openAdd} style={{ ...MENU_ITEM, height: 30, gap: 8, color: 'var(--mf-accent)', fontWeight: 700 }}>
               <span aria-hidden="true" style={{ width: 16, height: 16, flex: '0 0 auto', borderRadius: 999, border: '1.5px dashed var(--mf-accent-mute)', color: 'var(--mf-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
                   <path d="M12 5v14M5 12h14" />
@@ -4532,7 +4580,7 @@ interface BlockProps {
   freshId: string | null;
   setFreshId: (id: string | null) => void;
   /** Shift+방향키로 줄을 넘어 고르기 — 루트가 그림을 들고 있다. */
-  selectOut: (dir: -1 | 1, x?: number) => boolean;
+  selectOut: (dir: -1 | 1, x?: number, y?: number) => boolean;
   /** ⌘A 두 번째 — 본문 전체 고르기. */
   selectAll: () => boolean;
   /** Shift+왼쪽/오른쪽으로 줄을 넘어 고르기 — 루트가 그림을 들고 있다. */
@@ -7741,22 +7789,38 @@ function blockDropSpot(y: number): DropSpot | null {
    * **목록의 항목 사이도 떨어질 자리다**(요청) — 목록은 블록 하나라 그 안에 다른
    * 블록이 들어갈 자리가 없지만, 사람이 보는 것은 「1. 11」과 「2. 22」 **사이의 줄**이다.
    * 그 틈을 가리켰으면 블록 틈 대신 그쪽을 돌려준다(놓을 때 목록을 둘로 가른다).
+   *
+   * 어느 블록의 안인지는 **y가 그 상자 안에 들었는가**로 본다(제보 1). 예전에는 위에서
+   * 구한 틈 번호의 **앞 블록**(`wraps[index - 1]`)을 봤는데, 그 번호는 블록의 **가운데**를
+   * 기준으로 갈린 값이라 같은 블록이라도 **위쪽 절반**에서는 한 칸 앞 블록을 가리켰다.
+   * 그래서 제목 바로 밑에 목록이 있으면 첫·둘째 항목 사이의 틈이 영영 잡히지 않고
+   * 그림이 목록 **앞**으로 갔다(실측: 3항목 목록에서 1·2번 항목 아래로 넣을 수 없었다).
    */
-  const inside = index > 0 ? wraps[index - 1] : null;
+  const inside = wraps.find((w) => {
+    const r = w.getBoundingClientRect();
+    return y >= r.top && y <= r.bottom;
+  });
   const items = inside ? [...inside.querySelectorAll<HTMLElement>('[data-note-item]')] : [];
   if (inside && items.length > 1) {
     const box = inside.getBoundingClientRect();
-    // 그 블록의 **안쪽**을 가리키고 있을 때만(경계는 블록 틈이 맡는다).
-    if (y > box.top && y < box.bottom) {
-      for (let k = 1; k < items.length; k += 1) {
-        const r = items[k]!.getBoundingClientRect();
-        if (y < r.top + r.height / 2) {
-          const key = items[k]!.getAttribute('data-note-item') ?? '';
-          const [listId] = key.split(':');
-          return { index, list: { id: listId ?? '', at: k }, y: r.top - 4, left: box.left, width: box.width };
-        }
+    const at = wraps.indexOf(inside);
+    // 항목도 블록과 **같은 규칙**으로 가른다 — 가운데를 넘었으면 그 아래 틈이다.
+    let k = items.length;
+    for (let i = 0; i < items.length; i += 1) {
+      const r = items[i]!.getBoundingClientRect();
+      if (y < r.top + r.height / 2) {
+        k = i;
+        break;
       }
     }
+    // 0(첫 항목 위)·n(마지막 항목 아래)은 **블록 틈**이다 — 목록을 가르지 않는다.
+    if (k > 0 && k < items.length) {
+      const key = items[k]!.getAttribute('data-note-item') ?? '';
+      const [listId] = key.split(':');
+      return { index: at, list: { id: listId ?? '', at: k }, y: items[k]!.getBoundingClientRect().top - 4, left: box.left, width: box.width };
+    }
+    const edge = k <= 0 ? at : at + 1;
+    return { index: edge, y: k <= 0 ? box.top : box.bottom, left: box.left, width: box.width };
   }
   const ref = (index >= wraps.length ? wraps[wraps.length - 1] : wraps[index])!.getBoundingClientRect();
   return { index, y: index >= wraps.length ? ref.bottom : ref.top, left: ref.left, width: ref.width };
@@ -9027,6 +9091,65 @@ function columnX(el: HTMLElement, at: number): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * 그 지점이 놓인 **행의 가운데 높이**(화면 좌표) — 잴 수 없으면 `undefined`.
+ *
+ * 살아 있는 선택이 아니라 우리가 들고 있는 지점(칠해 둔 선택의 끝)을 재는 자리라
+ * affinity를 물을 수 없다 — 옆 글자 한 칸의 사각형으로 가늠한다. 랩 지점에서는 앞
+ * 행으로 접히지만(E12), 이 값은 **우리가 놓은** 자리를 다시 재는 폴백일 뿐이고
+ * 보통은 `selY`가 이미 들고 있다.
+ */
+function focusRowY(el: HTMLElement, node: Node, offset: number): number | undefined {
+  const box = el.getBoundingClientRect();
+  if (!box.height) return undefined;
+  const len = lineLength(el);
+  if (!len) return box.top + Math.min(rowHeight(el) || box.height, box.height) / 2;
+  const at = Math.max(0, Math.min(charOffset(el, node, offset), len));
+  const from = at > 0 ? at - 1 : 0;
+  try {
+    const a = pointAt(el, from);
+    const b = pointAt(el, Math.min(len, from + 1));
+    const r = document.createRange();
+    r.setStart(a.node, a.offset);
+    r.setEnd(b.node, b.offset);
+    const rect = r.getBoundingClientRect();
+    if (rect.height) return rect.top + rect.height / 2;
+  } catch {
+    /* 좌표를 못 재는 환경 */
+  }
+  return undefined;
+}
+
+/** 이웃 블록으로 건너가 서는 행의 가운데 높이 — 아래로 가면 첫 행, 위로 가면 마지막 행. */
+function rowEdgeY(el: HTMLElement, dir: -1 | 1): number | undefined {
+  const box = el.getBoundingClientRect();
+  if (!box.height) return undefined;
+  const lh = Math.min(rowHeight(el) || box.height, box.height);
+  return dir === 1 ? box.top + lh / 2 : box.bottom - lh / 2;
+}
+
+/**
+ * 같은 줄(블록) **안**에서 한 행 더 간 자리 — 더 갈 행이 없으면 `null`.
+ *
+ * 감긴 문단을 Shift+위/아래로 **한 행씩** 고르기 위한 것이다(제보 5). 브라우저는
+ * 한 편집 박스 안에서만 이 일을 해 주는데, 우리가 칠하기 시작하면 그 박스에 초점이
+ * 없어(`paintAndHold`가 캐럿을 접어 둔다) 더는 해 주지 않는다.
+ */
+function rowStepInLine(el: HTMLElement, dir: -1 | 1, x: number | undefined, y: number | undefined, at: number): { node: Node; offset: number; y: number } | null {
+  if (typeof y !== 'number') return null;
+  const box = el.getBoundingClientRect();
+  const lh = rowHeight(el);
+  if (!box.height || !lh) return null;
+  const ny = y + dir * lh;
+  if (ny < box.top || ny > box.bottom) return null; // 이 블록에는 더 갈 행이 없다
+  const cx = Math.min(Math.max(x ?? box.left + 1, box.left + 1), Math.max(box.left + 1, box.right - 1));
+  const spot = caretAt(cx, ny);
+  if (!spot || !el.contains(spot.node)) return null;
+  // 제자리면 행이 아니라 **여백**을 짚은 것이다(위아래 패딩이 있는 블록) — 넘긴다.
+  if (charOffset(el, spot.node, spot.offset) === at) return null;
+  return { node: spot.node, offset: spot.offset, y: ny };
 }
 
 function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; offset: number } {
