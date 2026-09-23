@@ -51,8 +51,19 @@ const WIN_MOD: Record<string, string> = { '⌘': 'Ctrl', '⌃': 'Ctrl', '⌥': '
  * 수식 기호가 하나도 없으면(`⌫`·`↵`·`F2`) 그대로 둔다 — 그 글리프는 두 OS에서
  * 같은 키를 가리키거나, 이미 따로 고르는 함수가 있다(`deleteKeyLabel` 등).
  */
+/** 수식 키가 붙지 않는 **홀로 선 글리프** — 윈도·리눅스에서는 낱말로 적는다. */
+const WIN_SOLO: Record<string, string> = { '⌫': 'Del', '↵': 'Enter' };
+
 export function keyLabel(spec: string): string {
   if (!spec || isMacLike()) return spec;
+  /**
+   * **홀로 선 맥 글리프도 바꾼다**(요청 8의 남은 자리 — 실브라우저 스크린샷에서 봤다).
+   *
+   * 예전에는 "수식 기호가 없으면 그대로 둔다"였다: `⌫`·`↵`는 두 OS에서 같은 키를
+   * 가리킨다고 봤기 때문인데, **윈도 글꼴에는 그 글리프가 없어** 메뉴에 두부(□)가
+   * 떴다. 같은 뜻을 가리켜도 읽히지 않으면 표기가 아니다.
+   */
+  if (WIN_SOLO[spec]) return WIN_SOLO[spec] as string;
   const mods: string[] = [];
   let rest = spec;
   while (rest && WIN_MOD[rest[0] as string]) {
