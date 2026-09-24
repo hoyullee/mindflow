@@ -7110,3 +7110,109 @@ describe('공책 54판 — 넓은 화면은 그대로다', () => {
     expect(container.querySelector('nav[aria-label="위치"]')).toBeTruthy();
   });
 });
+
+/**
+ * 손가락으로 쓰는 공책(제보 4건 — 안드로이드·삼성 인터넷) — 여기서 갈리는 것은
+ * 화면 폭이 아니라 **입력 방식**이다: 소프트 키보드는 화면 절반을 덮고, 두 번 터치와
+ * 길게 누르기는 브라우저마다 다른 이벤트로 온다.
+ */
+describe('공책 55판 — 손가락 규칙(제보: 키패드·두 번 터치)', () => {
+  let restore: () => void;
+  beforeEach(() => {
+    localStorage.clear();
+    restore = mockMatchMedia(true);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(() => {
+    restore();
+    cleanup();
+  });
+
+  async function open(id: string) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(NOTE));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  /**
+   * 손가락 한 번 누르기.
+   *
+   * jsdom에는 `PointerEvent`가 없어 `fireEvent.pointerUp(el, { pointerType })`의 init이
+   * 통째로 버려진다(프로브 함정 F12) — 그래서 mouse 이벤트에 종류를 직접 얹어 보낸다.
+   */
+  const tapCell = (c: Element, r: number, ci: number): void => {
+    const td = c.querySelector(`[data-note-table-cell="${r}:${ci}"]`) as HTMLElement;
+    fireEvent.mouseDown(td, { button: 0 });
+    fireEvent.mouseUp(td);
+    const up = new MouseEvent('pointerup', { bubbles: true, cancelable: true });
+    Object.defineProperty(up, 'pointerType', { value: 'touch' });
+    td.dispatchEvent(up);
+  };
+  const box = (c: Element, r: number, ci: number): HTMLElement => c.querySelector(`[data-note-line="b4:r${r}c${ci}"]`) as HTMLElement;
+
+  it('표의 칸을 **한 번 누르면 고르기만** 한다 — 글 상자가 아니라 키패드가 올라오지 않는다(제보)', async () => {
+    const c = await open('tc1');
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"]')).toBeTruthy());
+
+    tapCell(c, 0, 0);
+    // 골라지긴 한다 — 링·메뉴가 그것을 본다.
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"]')?.getAttribute('data-picked')).toBe('1'));
+    // 그러나 글 상자는 아니다(마우스에서는 여기서 `contentEditable`이 된다 — 한글 첫 글자 때문).
+    expect(box(c, 0, 0).getAttribute('contenteditable')).toBe('false');
+  });
+
+  it('**두 번 누르면** 그때 글을 고친다 — 키패드는 그 자리에서 올라온다(요청)', async () => {
+    const c = await open('tc2');
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"]')).toBeTruthy());
+
+    tapCell(c, 0, 0);
+    tapCell(c, 0, 0);
+    await waitFor(() => expect(box(c, 0, 0).getAttribute('contenteditable')).toBe('true'));
+  });
+
+  it('이미지 판은 **두 손가락으로 확대·축소**한다(제보: 핀치가 안 된다)', async () => {
+    const PIX = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'im', kind: 'img', src: PIX }] }] };
+    localStorage.setItem('mindflow_doc_pz1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=pz1&title=x');
+    fireEvent.pointerDown((await waitFor(() => container.querySelector('[data-note-image]'))) as HTMLElement, { button: 0 });
+    await waitFor(() => expect(container.querySelector('[data-note-image-big]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-image-big]') as HTMLElement);
+    const zoom = (await waitFor(() => container.querySelector('[data-note-image-zoom]'))) as HTMLElement;
+    const img = zoom.querySelector('[data-note-image-canvas]') as HTMLElement;
+    const pct = () => (zoom.querySelector('[data-note-image-pct]') as HTMLElement).textContent;
+    /** jsdom에는 `PointerEvent`가 없다(F12) — mouse 이벤트에 손가락 번호·종류를 얹는다. */
+    const finger = (type: string, id: number, x: number, y: number): void => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+      Object.defineProperty(e, 'pointerType', { value: 'touch' });
+      Object.defineProperty(e, 'pointerId', { value: id });
+      img.dispatchEvent(e);
+    };
+
+    // jsdom은 그림을 재지 못해(`naturalWidth`가 0) 맞춤이 1 = 100%다.
+    expect(pct()).toBe('100%');
+    // 두 손가락을 100px 간격으로 내려놓고 200px로 벌린다 → 두 배.
+    finger('pointerdown', 1, 100, 300);
+    finger('pointerdown', 2, 200, 300);
+    finger('pointermove', 2, 300, 300);
+    await waitFor(() => expect(pct()).toBe('200%'));
+    // 도로 좁히면 줄어든다(맞춤 아래로는 내려가지 않는다).
+    finger('pointermove', 2, 150, 300);
+    await waitFor(() => expect(pct()).toBe('100%'));
+    // 손가락 하나가 떨어지면 기준을 버린다 — 남은 손가락이 배율을 흔들지 않는다.
+    finger('pointerup', 2, 150, 300);
+    finger('pointermove', 1, 10, 300);
+    expect(pct()).toBe('100%');
+  });
+
+  it('두 번째 누르기가 **다른 칸**이면 열지 않는다 — 옆 칸을 골랐을 뿐이다', async () => {
+    const c = await open('tc3');
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"]')).toBeTruthy());
+
+    tapCell(c, 0, 0);
+    tapCell(c, 0, 1);
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:1"]')?.getAttribute('data-picked')).toBe('1'));
+    expect(box(c, 0, 1).getAttribute('contenteditable')).toBe('false');
+    expect(box(c, 0, 0).getAttribute('contenteditable')).toBe('false');
+  });
+});
