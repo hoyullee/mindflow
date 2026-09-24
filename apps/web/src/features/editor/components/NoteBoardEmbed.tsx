@@ -424,7 +424,14 @@ export function NoteBoardEmbed({
          * 누른 뒤 `null`이 됐다). 단추·링크는 `click`으로 동작하므로 이것으로 잃는
          * 것은 없고, 임베드 안에서 글이 드래그 선택되던 것도 함께 사라진다(의도).
          */
-        e.preventDefault();
+        /**
+         * **손가락은 예외다**(제보 7: 임베드 위에서 화면을 굴리면 판이 움직이거나
+         * 근처 줄에 커서가 간다). 여기서 기본 동작을 막는 것은 **캐럿을 지키려는
+         * 것**인데, 손가락에는 지킬 캐럿이 없고 대신 그 막음이 탭·스크롤의 흐름을
+         * 브라우저 기본과 다르게 만든다. 이동은 길게 누른 뒤에만 시작된다
+         * (`useBlockDrag`) — 그 전의 움직임은 스크롤로 흘려보낸다.
+         */
+        if (e.pointerType !== 'touch') e.preventDefault();
         if ((e.target as HTMLElement).closest('button,a,input,[data-embed-canvas],[data-embed-card-id]')) return;
         pickObject(block.id, e.shiftKey);
         if (!readOnly) drag.begin(e);

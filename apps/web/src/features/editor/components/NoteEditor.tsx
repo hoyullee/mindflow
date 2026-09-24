@@ -58,7 +58,7 @@ import { formatLastEdited } from '../../home/timeFormat';
 import { keyLabel } from '../shortcutLabels';
 import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, onNoteTagsChange, removeNoteTag } from '../noteTags';
 import { useIsMobile, useIsTouchDevice } from '../../../hooks/useMediaQuery';
-import { installTouchMenuGate } from '../noteTouchMenu';
+import { cancelTouchMenu, installTouchMenuGate, isTouchPointer, registerTouchMenuCloser } from '../noteTouchMenu';
 
 interface Props {
   controller: EditorController;
@@ -398,7 +398,12 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    */
   useEffect(() => {
     const gate = installTouchMenuGate();
-    return () => gate.stop();
+    // 끌기가 시작되면 열려 있던 우리 메뉴도 함께 닫는다(요청 5·6).
+    const off = registerTouchMenuCloser(() => setCtxAt(null));
+    return () => {
+      gate.stop();
+      off();
+    };
   }, []);
   /**
    * 서식 버튼을 누르면 포커스가 버튼으로 옮겨 가 선택이 풀린다. 그래서 **누르기
@@ -2022,12 +2027,28 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
               if (at && line.contains(at.node)) wordSel.current = wordAround(line, charOffset(line, at.node, at.offset));
             }
             if (t.closest('button, input, textarea, a, select, [role="button"], [data-note-line], [data-note-hr], [data-note-table-cell], [data-note-table-grip], [data-note-block][data-note-kind="img"]')) return;
+            // 손가락이 만든 합성 mousedown은 막지 않는다 — 막으면 그 탭의 포커스·
+            // 스크롤 흐름이 브라우저 기본과 달라진다(제보 8과 같은 계열).
+            if (isTouchPointer()) return;
             e.preventDefault();
           }}
           onPointerDown={(e) => {
             // 오른쪽·가운데 버튼만 걷어 낸다(`> 0`) — 포인터 이벤트가 없는 환경에서는
             // `button`이 실려 오지 않아 `!== 0`으로 막으면 드래그가 통째로 죽는다.
             if (e.button > 0) return;
+            /**
+             * **손가락에서는 우리가 글자를 고르지 않는다**(제보 8: 스크롤하면 글이
+             * 골라지고 키패드가 올라온다).
+             *
+             * 이 끌기는 마우스를 위한 것이다 — 누른 자리에 캐럿을 놓고(`focus`) 끄는
+             * 동안 칠한다. 손가락의 같은 동작은 **스크롤**이라, 화면을 굴릴 때마다
+             * 줄에 포커스가 가고(소프트 키보드가 올라온다) 지나간 줄이 칠해졌다.
+             * 손가락의 글자 고르기는 OS가 이미 한다(길게 누르기 + 양끝 손잡이).
+             */
+            if (e.pointerType === 'touch') {
+              dragFrom.current = null;
+              return;
+            }
             // **Shift+누름은 넓히는 일이다**(요청 5) — 새 앵커를 세우지 않는다.
             if (e.shiftKey && shiftExtend(e.clientX, e.clientY)) {
               e.preventDefault();
@@ -4679,6 +4700,16 @@ function FormatToolbar({
           className="btn mf-note-tb"
           onMouseDown={stop}
           onClick={() => {
+            /**
+             * **목록에서는 그 줄 하나만** 들여쓴다(제보: 목록 전체가 함께 움직인다).
+             *
+             * `setNoteBlockIndent`는 블록의 `indent`를 바꾼다 — 목록은 블록 하나에
+             * 항목 여럿이라 그 값이 **모든 줄**에 걸린다. Tab이 이미 쓰고 있는
+             * `indentNoteItems`가 항목 단위 길이므로 캐럿이 목록 안이면 그쪽으로
+             * 보낸다(키와 툴바가 같은 일을 하게 된다).
+             */
+            const key = boxRef.current?.getAttribute('data-note-line') || '';
+            if (key && controller.indentNoteItems([key], t.delta > 0 ? 1 : -1)) return;
             const id = curBlockId();
             if (id) controller.setNoteBlockIndent(id, t.delta);
           }}
@@ -5902,7 +5933,17 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   const [scrollX, setScrollX] = useState(0);
   /** 고른 시각 — 바깥 클릭으로 즉시 풀리는 것을 막는 가드(스펙 400ms). */
   const pickedAt = useRef(0);
-  const touch = useIsTouchDevice();
+  /**
+   * 손가락으로 쓰는 기기인가 — **미디어 질의와 실제 누름을 함께** 본다(제보 재발).
+   *
+   * `useIsTouchDevice`(`(hover: none) and (pointer: coarse)`)만으로는 모자랐다: S펜을
+   * 받는 삼성 기기는 그 질의가 **거짓**이라(스타일러스를 정밀 포인터로 센다) 지난
+   * 라운드의 수정이 그 기기에서만 먹지 않았다 — 칸을 한 번 눌렀을 뿐인데 소프트
+   * 키보드가 그대로 올라왔다. 그래서 **마지막 누름의 `pointerType`**을 함께 든다.
+   */
+  const [byTouch, setByTouch] = useState(false);
+  const touchDevice = useIsTouchDevice();
+  const touch = touchDevice || byTouch;
   /**
    * **키를 받는 숨은 상자**(제보) — 칸을 고른 채 글자를 치면 그 칸에 들어간다.
    *
@@ -5951,6 +5992,55 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   /** 경계선을 **길게 누르는 중** — 손가락으로 크기를 조절하려면 이만큼 기다린다(요청). */
   const holdRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const TOUCH_HOLD_MS = 420;
+  /**
+   * **칸을 길게 누른 뒤 끌면 여러 칸을 고른다**(요청) — 마우스의 `mouseenter` 구간
+   * 선택을 손가락으로 옮긴 것이다. 길게 누르기 전에는 손가락이 자유로워야 하므로
+   * (그 자리는 스크롤이다) 기다렸다가, 움직이기 시작하면 **메뉴를 거두고** 칠한다.
+   */
+  const cellHold = useRef<{ r: number; c: number; x: number; y: number; t: number; on: boolean } | null>(null);
+  // 끌기가 시작되면 표 메뉴도 함께 닫힌다(요청 6).
+  useEffect(() => registerTouchMenuCloser(() => setMenu(null)), []);
+  /** 레일 손잡이도 같다 — 길게 누른 뒤 끌면 여러 행·열(요청). */
+  const railHold = useRef<{ axis: 'row' | 'col'; i: number; x: number; y: number; t: number; on: boolean } | null>(null);
+  const railTouchDown = (axis: 'row' | 'col', i: number) => (e: ReactPointerEvent<HTMLElement>): void => {
+    if (e.pointerType === 'touch') setByTouch(true);
+    if (readOnly || e.pointerType !== 'touch') return;
+    railHold.current = { axis, i, x: e.clientX, y: e.clientY, t: Date.now(), on: false };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const railTouchMove = (e: ReactPointerEvent<HTMLElement>): void => {
+    const h = railHold.current;
+    if (!h || e.pointerType !== 'touch') return;
+    if (Math.abs(e.clientX - h.x) + Math.abs(e.clientY - h.y) <= 10) return;
+    // 길게 누르기 전의 움직임은 스크롤이다.
+    if (!h.on && Date.now() - h.t < TOUCH_HOLD_MS) {
+      railHold.current = null;
+      return;
+    }
+    if (!h.on) {
+      h.on = true;
+      cancelTouchMenu();
+      setMenu(null);
+    }
+    const attr = h.axis === 'row' ? 'data-note-table-rowhandle' : 'data-note-table-colhandle';
+    const el = document.elementFromPoint?.(e.clientX, e.clientY) as HTMLElement | null;
+    const j = Number(el?.closest?.(`[${attr}]`)?.getAttribute(attr));
+    if (!Number.isInteger(j)) return;
+    window.getSelection()?.removeAllRanges();
+    pick(h.axis === 'row' ? { mode: 'row', r: h.i, r1: j } : { mode: 'col', c: h.i, c1: j });
+  };
+  const railTouchUp = (): void => {
+    const h = railHold.current;
+    railHold.current = null;
+    // 끌고 나서 오는 click 하나를 건너뛴다(마우스 쪽과 같은 표식).
+    if (h?.on) railClick.current = true;
+  };
+  const railTouch = (axis: 'row' | 'col', i: number) => ({
+    onPointerDown: railTouchDown(axis, i),
+    onPointerMove: railTouchMove,
+    onPointerUp: railTouchUp,
+    onPointerCancel: railTouchUp,
+  });
   /**
    * **레일을 끄는 중**(요청 10) — 누른 손잡이가 기준이고, 다른 손잡이에 닿으면 여러 줄이 된다.
    *
@@ -6480,6 +6570,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
               data-note-table-colhandle={ci}
               aria-label={`${ci + 1}번째 열 선택`}
               title="열 선택 · 끌면 여러 열 · 우클릭하면 메뉴"
+              {...railTouch('col', ci)}
               onMouseDown={(e) => {
                 e.stopPropagation();
                 // 터치에는 끌기가 없다 — 여기서 고르면 "첫 탭=고르기 · 둘째 탭=메뉴"가 깨진다.
@@ -6553,6 +6644,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
               data-note-table-rowhandle={ri}
               aria-label={`${ri + 1}번째 행 선택`}
               title="행 선택 · 끌면 여러 행 · 우클릭하면 메뉴"
+              {...railTouch('row', ri)}
               onMouseDown={(e) => {
                 e.stopPropagation();
                 if (readOnly || touch || e.button !== 0) return;
@@ -7151,7 +7243,46 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           setEdit(null);
                           pick({ mode: 'cell', r: ri, c: ci });
                         }}
+                        onPointerDown={(e) => {
+                          // **실제로 손가락인가**를 여기서 적어 둔다(미디어 질의는 S펜 기기에서 거짓이다).
+                          if (e.pointerType === 'touch') setByTouch(true);
+                          if (readOnly || e.pointerType !== 'touch' || editing) return;
+                          cellHold.current = { r: ri, c: ci, x: e.clientX, y: e.clientY, t: Date.now(), on: false };
+                          e.currentTarget.setPointerCapture?.(e.pointerId);
+                        }}
+                        onPointerMove={(e) => {
+                          const h = cellHold.current;
+                          if (!h || e.pointerType !== 'touch') return;
+                          const moved = Math.abs(e.clientX - h.x) + Math.abs(e.clientY - h.y) > 10;
+                          if (!moved) return;
+                          // 길게 누르기 전에 움직였으면 그것은 **스크롤**이다 — 손을 뗀다.
+                          if (!h.on && Date.now() - h.t < TOUCH_HOLD_MS) {
+                            cellHold.current = null;
+                            return;
+                          }
+                          if (!h.on) {
+                            h.on = true;
+                            // 끌기가 시작됐으니 메뉴는 거둔다(요청).
+                            cancelTouchMenu();
+                            setMenu(null);
+                          }
+                          const el = document.elementFromPoint?.(e.clientX, e.clientY) as HTMLElement | null;
+                          const at = el?.closest?.('[data-note-table-cell]')?.getAttribute('data-note-table-cell') ?? '';
+                          const [rs, cs] = at.split(':');
+                          const r2 = Number(rs);
+                          const c2 = Number(cs);
+                          if (!Number.isInteger(r2) || !Number.isInteger(c2)) return;
+                          window.getSelection()?.removeAllRanges();
+                          pick(r2 === h.r && c2 === h.c ? { mode: 'cell', r: h.r, c: h.c } : { mode: 'range', r0: h.r, c0: h.c, r1: r2, c1: c2, r: h.r, c: h.c });
+                        }}
+                        onPointerCancel={() => {
+                          cellHold.current = null;
+                        }}
                         onPointerUp={(e) => {
+                          const held = cellHold.current;
+                          cellHold.current = null;
+                          // 끌어서 고른 뒤의 손 떼기는 그 선택을 지키는 일만 한다.
+                          if (held?.on) return;
                           // 손가락의 두 번 누르기 — 같은 칸을 짧은 사이로 다시 누르면 편집.
                           if (readOnly || e.pointerType !== 'touch') return;
                           const prev = tap.current;
@@ -7895,7 +8026,9 @@ function ImageBlock({ controller, block, picked, onlyPicked, pickObject }: { con
     if (e.button > 0) return;
     // 이 누름은 본문의 드래그 선택이 아니다 — 루트까지 올려 보내지 않는다.
     e.stopPropagation();
-    e.preventDefault();
+    // 손가락은 막지 않는다 — 막을 캐럿이 없고, 그림 위에서 화면을 굴리는 길을
+    // 끊는다(제보 7의 임베드와 같은 이유). 이동은 길게 누른 뒤에만 시작된다.
+    if (e.pointerType !== 'touch') e.preventDefault();
     pickObject(block.id, e.shiftKey);
     if (readOnly) return;
     begin(e);

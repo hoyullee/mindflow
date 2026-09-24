@@ -7216,3 +7216,122 @@ describe('공책 55판 — 손가락 규칙(제보: 키패드·두 번 터치)',
     expect(box(c, 0, 0).getAttribute('contenteditable')).toBe('false');
   });
 });
+
+/**
+ * 손가락 2판(제보 8건) — 지난 판이 실기기에서 덜 먹은 것 하나와, 길게 누르기 뒤의
+ * 움직임을 「메뉴」가 아니라 「끌기」로 읽는 규칙들.
+ */
+describe('공책 56판 — 손가락 2판(제보: 키패드 재발 · 길게 누른 뒤 이동)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    // **일부러 데스크톱 질의**로 둔다 — S펜 기기가 그렇게 답한다(제보의 실제 조건).
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, doc: unknown = NOTE) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(doc));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  /** jsdom에는 `PointerEvent`가 없다(F12) — mouse 이벤트에 종류를 얹어 보낸다. */
+  const touch = (el: Element, type: string, at: { x: number; y: number } = { x: 10, y: 10 }): void => {
+    const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: at.x, clientY: at.y });
+    Object.defineProperty(e, 'pointerType', { value: 'touch' });
+    el.dispatchEvent(e);
+  };
+
+  it('미디어 질의가 **데스크톱이라 답해도** 손가락 탭에는 글 상자를 열지 않는다(제보 재발)', async () => {
+    const c = await open('t2a');
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"]')).toBeTruthy());
+    const td = c.querySelector('[data-note-table-cell="0:0"]') as HTMLElement;
+
+    touch(td, 'pointerdown');
+    fireEvent.mouseDown(td, { button: 0 });
+    fireEvent.mouseUp(td);
+    touch(td, 'pointerup');
+
+    await waitFor(() => expect(td.getAttribute('data-picked')).toBe('1'));
+    // S펜 기기에서 이 값이 `true`였다 — 그래서 탭 한 번에 키패드가 올라왔다.
+    expect((c.querySelector('[data-note-line="b4:r0c0"]') as HTMLElement).getAttribute('contenteditable')).toBe('false');
+  });
+
+  it('칸을 **길게 누른 뒤 끌면** 여러 칸이 골라진다 — 메뉴가 아니라 선택이다(요청)', async () => {
+    const c = await open('t2b');
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"]')).toBeTruthy());
+    const from = c.querySelector('[data-note-table-cell="0:0"]') as HTMLElement;
+    const to = c.querySelector('[data-note-table-cell="1:1"]') as HTMLElement;
+    // 좌표 조회는 jsdom에 없다 — 끌려간 자리만 세워 준다(F17).
+    const doc = document as unknown as { elementFromPoint?: (x: number, y: number) => Element | null };
+    doc.elementFromPoint = () => to;
+    /**
+     * 시계는 **렌더가 끝난 뒤에만** 가짜로 바꾼다 — `waitFor`가 진짜 타이머를 쓰므로
+     * 가짜 시계 안에서 `await`하면 그대로 멈춘다(그 함정을 한 번 밟았다).
+     */
+    const now = Date.now;
+    try {
+      touch(from, 'pointerdown', { x: 10, y: 10 });
+      // 길게 누르기 **전에** 움직인 것은 스크롤이다 — 아무 일도 없다.
+      touch(from, 'pointermove', { x: 10, y: 80 });
+      // `pointermove`는 이어지는 이벤트라 리액트가 모아서 흘린다 — 한 박자 기다렸다 본다.
+      await new Promise((r) => setTimeout(r, 0));
+      expect(c.querySelector('[data-note-table-cell="1:1"]')?.getAttribute('data-picked')).toBeNull();
+
+      touch(from, 'pointerdown', { x: 10, y: 10 });
+      const t0 = now();
+      Date.now = () => t0 + 600;
+      touch(from, 'pointermove', { x: 60, y: 60 });
+    } finally {
+      Date.now = now;
+      // **반드시 걷는다** — 남겨 두면 뒤따르는 테스트의 좌표 조회가 이 칸을 답한다.
+      delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+    }
+    // `pointermove`는 이어지는 이벤트라 리액트가 **모아서** 흘린다 — 기다렸다 본다.
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="1:1"]')?.getAttribute('data-picked')).toBe('1'));
+    expect(c.querySelector('[data-note-table-cell="0:1"]')?.getAttribute('data-picked')).toBe('1');
+  });
+
+  it('툴바의 들여쓰기는 **그 줄 하나만** 옮긴다 — 목록 전체가 아니라(제보)', async () => {
+    const c = await open('t2c');
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b3:i1"]'))) as HTMLElement;
+    line.focus();
+    fireEvent.focus(line);
+
+    fireEvent.click(c.querySelector('[data-note-indent="in"]') as HTMLElement);
+    saveNow();
+    await waitFor(() => {
+      const block = saved('t2c').pages[0].blocks.find((b: { id: string }) => b.id === 'b3');
+      expect(block.items[0].indent).toBe(1);
+      // 두 번째 줄은 그대로다(예전에는 블록의 `indent`라 함께 움직였다).
+      expect(block.items[1].indent ?? 0).toBe(0);
+      expect(block.indent ?? 0).toBe(0);
+    });
+  });
+
+  it('**소프트 키보드의 `/`**로도 넣기 목록이 열린다(제보: 모바일에서 안 뜬다)', async () => {
+    const c = await open('t2d');
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    line.focus();
+    // 안드로이드 IME는 `keydown`에 글자를 싣지 않는다 — 글자는 `input`의 `data`로만 온다.
+    line.textContent = '/';
+    const e = new InputEvent('input', { bubbles: true, data: '/', inputType: 'insertText' });
+    line.dispatchEvent(e);
+
+    await waitFor(() => expect(c.querySelector('[data-note-slash-panel]')).toBeTruthy());
+  });
+
+  it('손가락으로 화면을 굴려도 **글이 골라지지 않는다** — 줄에 포커스도 가지 않는다(제보)', async () => {
+    const c = await open('t2e');
+    await waitFor(() => expect(c.querySelector('[data-note-line="b1"]')).toBeTruthy());
+    const col = c.querySelector('[data-note-page]') as HTMLElement;
+    const before = document.activeElement;
+
+    touch(col, 'pointerdown', { x: 5, y: 300 });
+    touch(col, 'pointermove', { x: 5, y: 120 });
+
+    expect(c.querySelector('[data-note-sel]')).toBeNull();
+    expect(document.activeElement).toBe(before);
+  });
+});

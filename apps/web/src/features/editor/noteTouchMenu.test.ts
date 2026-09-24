@@ -1,7 +1,7 @@
 // 손가락에서 우클릭 메뉴가 열리는 자리는 **길게 누르기** 하나다(제보: 두 번 터치에 떴다).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LONG_PRESS_MS, installTouchMenuGate } from './noteTouchMenu';
+import { LONG_PRESS_MS, cancelTouchMenu, installTouchMenuGate, isTouchPointer, registerTouchMenuCloser } from './noteTouchMenu';
 
 /** jsdom에는 `PointerEvent`가 없다(프로브 함정 F12) — mouse 이벤트에 종류만 얹는다. */
 function pointer(type: string, kind: 'touch' | 'mouse', at = { x: 10, y: 10 }): MouseEvent {
@@ -51,6 +51,64 @@ describe('손가락의 우클릭 메뉴는 길게 누르기에서만', () => {
     document.body.dispatchEvent(pointer('pointerdown', 'mouse'));
     expect(ctx().defaultPrevented).toBe(false);
     expect(gate.isTouch()).toBe(false);
+  });
+
+  it('길게 누르기로 메뉴가 열리면 **고른 글을 접는다** — OS 툴바와 겹치지 않게(제보)', () => {
+    document.body.innerHTML = '<p id="t">가나다라</p>';
+    const node = document.querySelector('#t')?.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, 3);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    expect(window.getSelection()?.isCollapsed).toBe(false);
+
+    document.body.dispatchEvent(pointer('pointerdown', 'touch'));
+    vi.advanceTimersByTime(LONG_PRESS_MS + 20);
+    expect(ctx().defaultPrevented).toBe(false);
+    // 접는 일은 이벤트가 지나간 **뒤에** 한다(메뉴가 자리를 잡고 나서).
+    vi.advanceTimersByTime(1);
+    expect(window.getSelection()?.isCollapsed).toBe(true);
+  });
+
+  it('막힌 메뉴(두 번 터치)에서는 고른 글을 건드리지 않는다', () => {
+    document.body.innerHTML = '<p id="t2">가나다라</p>';
+    const node = document.querySelector('#t2')?.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, 3);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    document.body.dispatchEvent(pointer('pointerdown', 'touch'));
+    expect(ctx().defaultPrevented).toBe(true);
+    vi.advanceTimersByTime(5);
+    expect(window.getSelection()?.isCollapsed).toBe(false);
+  });
+
+  it('**끌기가 시작되면** 열린 메뉴를 닫고 뒤늦은 메뉴도 막는다(요청)', () => {
+    let open = true;
+    const off = registerTouchMenuCloser(() => {
+      open = false;
+    });
+    document.body.dispatchEvent(pointer('pointerdown', 'touch'));
+    vi.advanceTimersByTime(LONG_PRESS_MS + 20);
+    expect(ctx().defaultPrevented).toBe(false);
+
+    cancelTouchMenu();
+    expect(open).toBe(false);
+    // 브라우저가 늦게 보낸 `contextmenu`도 이제 우리 것이 아니다.
+    expect(ctx().defaultPrevented).toBe(true);
+    off();
+  });
+
+  it('마지막 누름의 종류를 알려 준다 — 미디어 질의가 거짓말하는 기기가 있다(제보)', () => {
+    document.body.dispatchEvent(pointer('pointerdown', 'touch'));
+    expect(isTouchPointer()).toBe(true);
+    document.body.dispatchEvent(pointer('pointerdown', 'mouse'));
+    expect(isTouchPointer()).toBe(false);
   });
 
   it('걷어 내면 다시 아무것도 막지 않는다', () => {

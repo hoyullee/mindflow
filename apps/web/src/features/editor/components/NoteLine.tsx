@@ -255,6 +255,30 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
    * 됐다 풀렸다 하며 캐럿과 한글 조합이 흔들린다. 떠나는 순간이면 그 흔들림이 없고,
    * 비제어 박스라 화면도 우리가 함께 다시 그려야 링크가 보인다.
    */
+  /**
+   * `/` 넣기 목록을 **이 자리에서** 연다 — 키보드와 입력 이벤트가 함께 쓴다.
+   *
+   * @param back 캐럿이 `/` **뒤에** 서 있으면 1(`input`), 아직 넣기 전이면 0(`keydown`).
+   * @returns 열었으면 참(키보드 쪽은 그때만 전파를 끊는다).
+   */
+  const openSlashHere = (back = 0): boolean => {
+    const el = ref.current;
+    if (!el || !onSlash) return false;
+    const text = lineText(el);
+    const at = Math.max(0, caretOffset(el) - back);
+    const before = text.slice(0, at);
+    // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`에서 열리지 않게.
+    if (before && !/\s$/.test(before)) return false;
+    /**
+     * **캐럿 뒤에 이미 있는 글**을 함께 넘긴다(요청) — 질의가 어디서 끝나는지
+     * 그 값으로 안다. 이미 쓰인 글 앞에서 `/`를 치면 뒤의 글이 줄에 그대로
+     * 남으므로, 이것이 없으면 질의가 그 글까지 삼켜 아무 항목도 맞지 않는다
+     * (`안녕하세요` 앞에서 `/제목`을 쳐도 목록이 비던 이유다).
+     */
+    onSlash(at, text.slice(at + back));
+    return true;
+  };
+
   const commit = (final = false): void => {
     const el = ref.current;
     if (!el) return;
@@ -368,23 +392,12 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       }
     }
     if (e.key === '/' && !e.nativeEvent.isComposing && onSlash) {
-      // 글자는 막지 않는다 — 브라우저가 `/`를 넣고, 우리는 그 **자리**만 기억한다.
-      const text = lineText(el);
-      const at = caretOffset(el);
-      const before = text.slice(0, at);
-      // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`에서 열리지 않게.
-      if (!before || /\s$/.test(before)) {
-        // **글자는 막지 않는다**(`preventDefault` 금지 — `/`는 본문에 들어가야 한다).
-        // 대신 전파만 끊어 전역 단축키 핸들러가 같은 키를 또 잡지 않게 한다(스펙 §3).
+      // **글자는 막지 않는다**(`preventDefault` 금지 — `/`는 본문에 들어가야 한다).
+      // 대신 전파만 끊어 전역 단축키 핸들러가 같은 키를 또 잡지 않게 한다(스펙 §3).
+      // 이 시점의 캐럿은 `/`를 넣기 **전**이라 그 자리가 곧 `/`의 자리다.
+      if (openSlashHere(0)) {
         e.stopPropagation();
         e.nativeEvent.stopImmediatePropagation();
-        /**
-         * **캐럿 뒤에 이미 있는 글**을 함께 넘긴다(요청) — 질의가 어디서 끝나는지
-         * 그 값으로 안다. 이미 쓰인 글 앞에서 `/`를 치면 뒤의 글이 줄에 그대로
-         * 남으므로, 이것이 없으면 질의가 그 글까지 삼켜 아무 항목도 맞지 않는다
-         * (`안녕하세요` 앞에서 `/제목`을 쳐도 목록이 비던 이유다).
-         */
-        onSlash(at, text.slice(at));
       }
     }
     if (e.key === 'Tab' && !e.nativeEvent.isComposing && onTab) {
@@ -568,11 +581,24 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       // ("완료/이동"류를 고르면 그 키가 키보드를 내려 편집이 끝난다).
       enterKeyHint="enter"
       data-placeholder={placeholder ?? ''}
-      onInput={() => {
+      onInput={(e) => {
         dirty.current = true;
         // 조합 중인 코드 조각은 **칠하기로** 흉내 낸다(아래 `paintArmedCode`).
         if (composing.current) paintArmedCode();
         commit();
+        /**
+         * **소프트 키보드의 `/`는 여기서 잡는다**(제보: 모바일에서 넣기 목록이 안 뜬다).
+         *
+         * 안드로이드 IME는 `keydown`에 글자를 싣지 않는다(`key: 'Unidentified'` ·
+         * `keyCode: 229`) — 그래서 아래 `keydown`의 `e.key === '/'` 갈래가 손가락에서는
+         * **한 번도 참이 되지 않았다**. 실제로 들어온 글자는 `input` 이벤트의 `data`에
+         * 있으므로 그 값으로 같은 판정을 한 번 더 한다(마우스·하드웨어 키보드는 이미
+         * `keydown`에서 열렸으므로, 그쪽에서는 `slashFor`가 이미 서 있어 두 번 열리지
+         * 않는다 — 여는 쪽이 같은 자리를 다시 적을 뿐이다).
+         */
+        const data = (e.nativeEvent as InputEvent).data;
+        // 여기서는 `/`가 **이미 들어간** 뒤라 캐럿이 한 칸 앞서 있다.
+        if (data === '/' && !composing.current && onSlash) openSlashHere(1);
       }}
       // 고친 적이 없으면 읽지 않는다(`dirty` 머리말) — 커서만 지나가도 저장되던 자리.
       onBlur={() => {
