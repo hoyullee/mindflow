@@ -9,6 +9,7 @@
 import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { EditorController } from '../useEditorState';
+import { LONG_PRESS_MS, cancelTouchMenu } from '../noteTouchMenu';
 
 export interface DropSpot {
   /** 블록 목록 기준의 틈 번호(0 = 맨 위, n = 맨 아래). */
@@ -100,27 +101,62 @@ export function useBlockDrag(controller: EditorController, blockId: string): {
   dropAt: DropSpot | null;
   begin: (e: ReactPointerEvent<Element>) => void;
 } {
-  const dragRef = useRef<{ x: number; y: number; on: boolean } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; on: boolean; touch: boolean; t: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dropAt, setDropAt] = useState<DropSpot | null>(null);
 
   const begin = (e: ReactPointerEvent<Element>): void => {
-    dragRef.current = { x: e.clientX, y: e.clientY, on: false };
+    const touch = e.pointerType === 'touch';
+    dragRef.current = { x: e.clientX, y: e.clientY, on: false, touch, t: Date.now() };
+    /**
+     * 끄는 동안 **화면이 함께 굴러가지 않게** 한다(제보 7).
+     *
+     * `touch-action: none`을 미리 걸어 둘 수는 없다 — 그러면 그림·임베드 위에서는
+     * 영영 스크롤을 못 한다. 대신 끌기가 **성립한 순간**부터 `touchmove`의 기본
+     * 동작만 막는다(그때까지 손가락은 움직이지 않았으므로 스크롤은 아직 시작되지
+     * 않았고, 그래서 이 시점의 `preventDefault`가 먹는다).
+     */
+    let stopScroll: ((ev: TouchEvent) => void) | null = null;
     const move = (ev: PointerEvent): void => {
       const d = dragRef.current;
       if (!d) return;
       if (!d.on && Math.abs(ev.clientY - d.y) + Math.abs(ev.clientX - d.x) < 6) return;
+      /**
+       * **손가락은 길게 누른 뒤에만 끌린다**(요청 5·7).
+       *
+       * 그러지 않으면 그림·임베드 위에서 화면을 굴리려는 손짓이 그대로 블록 이동이
+       * 된다(제보: "삽입된 문서 영역을 스크롤하면 문서의 위치가 바뀐다"). 길게 누르기
+       * 전에 움직였으면 그것은 스크롤이므로 **이 끌기를 통째로 접는다**.
+       */
+      if (!d.on && d.touch && Date.now() - d.t < LONG_PRESS_MS) {
+        dragRef.current = null;
+        done();
+        return;
+      }
       if (!d.on) {
         d.on = true;
         setDragging(true);
+        // 길게 눌러 떠 있던 우클릭 메뉴는 여기서 거둔다 — 이제 이 동작은 이동이다(요청 5).
+        cancelTouchMenu();
+        if (d.touch) {
+          stopScroll = (te: TouchEvent): void => {
+            if (te.cancelable) te.preventDefault();
+          };
+          window.addEventListener('touchmove', stopScroll, { passive: false });
+        }
       }
       setDropAt(blockDropSpot(ev.clientY));
     };
-    const up = (ev: PointerEvent): void => {
-      const d = dragRef.current;
+    const done = (): void => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
+      if (stopScroll) window.removeEventListener('touchmove', stopScroll);
+      stopScroll = null;
+    };
+    const up = (ev: PointerEvent): void => {
+      const d = dragRef.current;
+      done();
       dragRef.current = null;
       setDragging(false);
       setDropAt(null);
