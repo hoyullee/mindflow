@@ -49,6 +49,7 @@ import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
 import { linesClipboard, selectionClipboard, writeClipboard, writeImageClipboard } from '../noteClipboard';
 import { NoteBoardEmbed } from './NoteBoardEmbed';
+import { DropLine, useBlockDrag } from './noteBlockDrag';
 import { boardDocIdFromUrl } from '../noteEmbed';
 import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
@@ -145,11 +146,15 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   { kind: 'hr', name: '구분선', hint: '', desc: '섹션 나누기', group: '넣기', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
 ];
 
-/** `/` 목록이 보여 주는 것 — 블록들 + **인라인 코드**(요청 4). */
-const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
-  ...BLOCK_TYPES,
-  { kind: 'inline-code', name: '인라인 코드', hint: '', desc: '글 속의 코드 조각', group: '강조', icon: INLINE_CODE_ICON },
-];
+/**
+ * `/` 목록이 보여 주는 것 — **블록들뿐**이다.
+ *
+ * 한동안 「인라인 코드」도 여기 있었다(요청 4). 걷은 이유는 그 서식이 이제
+ * **고른 글에만** 걸리기 때문이다(요청): `/`는 캐럿에서 치는 것이라 고른 글이
+ * 있을 수 없고, 남겨 두면 눌러도 아무 일이 없는 줄이 된다. 인라인 코드는 글을
+ * 고른 뒤 툴바의 `` `a` `` 단추로 건다.
+ */
+const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [...BLOCK_TYPES];
 
 /**
  * 잘라내기 — **맵·보드 에디터의 그 가위**다(제보: 다른 에디터와 다르다).
@@ -4344,11 +4349,15 @@ function FormatToolbar({
     const runs = applyNoteFormat(el, kind, val);
     if (!runs) {
       /**
-       * **고른 글이 없으면 캐럿에 건다**(제보 2: 빈 줄에서 인라인 코드를 눌러도
-       * 아무 일이 없다). 값은 아직 바뀌지 않는다 — 다음에 치는 글자가 그 서식으로
+       * 고른 글이 없으면 **캐럿에 걸어 둔다** — 다음에 치는 글자가 그 서식으로
        * 들어가고 그때의 커밋이 값에 싣는다(`openCaretMark`).
+       *
+       * **인라인 코드만 예외**다(요청): 고른 글이 없으면 아무 일도 하지 않는다.
+       * 굵게·기울임은 "이제부터 이렇게 쓴다"가 자연스럽지만, 코드 조각은 **이미
+       * 쓴 말의 한 덩이를 가리키는 표시**라 시작점만 켜 두면 어디서 끝나는지
+       * 알 수 없다 — 빈 줄에서 켜 두면 그 줄 전체가 코드가 돼 버렸다.
        */
-      if (armCaretMark(el, kind, val)) setOpen(null);
+      if (kind !== 'k' && armCaretMark(el, kind, val)) setOpen(null);
       return;
     }
     commitLine(controller, el.getAttribute('data-note-line') || '', runs);
@@ -7755,9 +7764,7 @@ function ImageBlock({ controller, block, picked, onlyPicked, pickObject }: { con
    * 틈이고, 그 자리에 가는 선을 하나 그린다(무엇이 어디로 가는지 보이지 않으면
    * 끌기는 도박이 된다).
    */
-  const dragRef = useRef<{ x: number; y: number; on: boolean } | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [dropAt, setDropAt] = useState<DropSpot | null>(null);
+  const { dragging, dropAt, begin } = useBlockDrag(controller, block.id);
   const onImgDown = (e: ReactPointerEvent<HTMLImageElement>): void => {
     if (e.button > 0) return;
     // 이 누름은 본문의 드래그 선택이 아니다 — 루트까지 올려 보내지 않는다.
@@ -7765,42 +7772,7 @@ function ImageBlock({ controller, block, picked, onlyPicked, pickObject }: { con
     e.preventDefault();
     pickObject(block.id, e.shiftKey);
     if (readOnly) return;
-    dragRef.current = { x: e.clientX, y: e.clientY, on: false };
-    const move = (ev: PointerEvent): void => {
-      const d = dragRef.current;
-      if (!d) return;
-      if (!d.on && Math.abs(ev.clientY - d.y) + Math.abs(ev.clientX - d.x) < 6) return;
-      if (!d.on) {
-        d.on = true;
-        setDragging(true);
-      }
-      setDropAt(blockDropSpot(ev.clientY));
-    };
-    const up = (ev: PointerEvent): void => {
-      const d = dragRef.current;
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-      dragRef.current = null;
-      setDragging(false);
-      setDropAt(null);
-      if (!d?.on) return;
-      const spot = blockDropSpot(ev.clientY);
-      if (!spot) return;
-      // 목록 **안의** 틈이면 그 목록을 둘로 가르고 사이에 끼운다(한 커밋).
-      if (spot.list && spot.list.id && spot.list.id !== block.id) {
-        controller.moveNoteBlockIntoList(block.id, spot.list.id, spot.list.at);
-        return;
-      }
-      const ids = (controller.notePage?.blocks ?? []).map((b) => b.id);
-      const from = ids.indexOf(block.id);
-      // 틈 번호는 **자기 자신이 아직 목록에 있는** 상태의 값이다 — 뺀 뒤의 자리로 옮긴다.
-      const to = spot.index > from ? spot.index - 1 : spot.index;
-      if (from >= 0 && to !== from) controller.moveNoteBlock(block.id, to);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
+    begin(e);
   };
 
   /**
@@ -7962,86 +7934,11 @@ function ImageBlock({ controller, block, picked, onlyPicked, pickObject }: { con
         </button>
       )}
       {zoom && url && <ImageZoom url={url} onClose={() => setZoom(false)} />}
-      {dropAt && (
-        <div
-          data-note-drop
-          aria-hidden="true"
-          style={{ position: 'fixed', left: dropAt.left, top: dropAt.y - 1, width: dropAt.width, height: 2, borderRadius: 2, background: 'var(--mf-accent)', zIndex: 45, pointerEvents: 'none' }}
-        />
-      )}
+      <DropLine spot={dropAt} />
     </div>
   );
 }
 
-/**
- * 끌고 있는 것이 **어느 틈에** 떨어질까 — 블록 칸들의 가운데를 기준으로 가른다.
- *
- * 돌려주는 `index`는 **지금 목록 기준의 틈 번호**다(0 = 맨 위, n = 맨 아래).
- * 옮기는 쪽에서 자기 자신을 뺀 자리로 고쳐 쓴다.
- */
-function blockDropSpot(y: number): DropSpot | null {
-  if (typeof document === 'undefined') return null;
-  const wraps = [...document.querySelectorAll<HTMLElement>('[data-note-page] [data-note-blockwrap]')];
-  if (!wraps.length) return null;
-  let index = wraps.length;
-  for (let i = 0; i < wraps.length; i += 1) {
-    const r = wraps[i]!.getBoundingClientRect();
-    if (y < r.top + r.height / 2) {
-      index = i;
-      break;
-    }
-  }
-  /**
-   * **목록의 항목 사이도 떨어질 자리다**(요청) — 목록은 블록 하나라 그 안에 다른
-   * 블록이 들어갈 자리가 없지만, 사람이 보는 것은 「1. 11」과 「2. 22」 **사이의 줄**이다.
-   * 그 틈을 가리켰으면 블록 틈 대신 그쪽을 돌려준다(놓을 때 목록을 둘로 가른다).
-   *
-   * 어느 블록의 안인지는 **y가 그 상자 안에 들었는가**로 본다(제보 1). 예전에는 위에서
-   * 구한 틈 번호의 **앞 블록**(`wraps[index - 1]`)을 봤는데, 그 번호는 블록의 **가운데**를
-   * 기준으로 갈린 값이라 같은 블록이라도 **위쪽 절반**에서는 한 칸 앞 블록을 가리켰다.
-   * 그래서 제목 바로 밑에 목록이 있으면 첫·둘째 항목 사이의 틈이 영영 잡히지 않고
-   * 그림이 목록 **앞**으로 갔다(실측: 3항목 목록에서 1·2번 항목 아래로 넣을 수 없었다).
-   */
-  const inside = wraps.find((w) => {
-    const r = w.getBoundingClientRect();
-    return y >= r.top && y <= r.bottom;
-  });
-  const items = inside ? [...inside.querySelectorAll<HTMLElement>('[data-note-item]')] : [];
-  if (inside && items.length > 1) {
-    const box = inside.getBoundingClientRect();
-    const at = wraps.indexOf(inside);
-    // 항목도 블록과 **같은 규칙**으로 가른다 — 가운데를 넘었으면 그 아래 틈이다.
-    let k = items.length;
-    for (let i = 0; i < items.length; i += 1) {
-      const r = items[i]!.getBoundingClientRect();
-      if (y < r.top + r.height / 2) {
-        k = i;
-        break;
-      }
-    }
-    // 0(첫 항목 위)·n(마지막 항목 아래)은 **블록 틈**이다 — 목록을 가르지 않는다.
-    if (k > 0 && k < items.length) {
-      const key = items[k]!.getAttribute('data-note-item') ?? '';
-      const [listId] = key.split(':');
-      return { index: at, list: { id: listId ?? '', at: k }, y: items[k]!.getBoundingClientRect().top - 4, left: box.left, width: box.width };
-    }
-    const edge = k <= 0 ? at : at + 1;
-    return { index: edge, y: k <= 0 ? box.top : box.bottom, left: box.left, width: box.width };
-  }
-  const ref = (index >= wraps.length ? wraps[wraps.length - 1] : wraps[index])!.getBoundingClientRect();
-  return { index, y: index >= wraps.length ? ref.bottom : ref.top, left: ref.left, width: ref.width };
-}
-
-/** 끌고 있는 것이 떨어질 자리 — 블록 틈, 또는 **목록 항목 사이**. */
-interface DropSpot {
-  /** 블록 목록 기준의 틈 번호(0 = 맨 위, n = 맨 아래). */
-  index: number;
-  /** 목록 **안의** 틈이면 그 목록과 항목 번호 — 놓을 때 그 자리에서 가른다. */
-  list?: { id: string; at: number };
-  y: number;
-  left: number;
-  width: number;
-}
 
 /**
  * 고른 그림의 판 — **크게 보기 · 정렬 셋 · 삭제**(요청 1·4).

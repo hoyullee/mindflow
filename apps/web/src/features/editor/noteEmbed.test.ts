@@ -121,13 +121,13 @@ describe('마인드맵 개요', () => {
       },
     }) as unknown as Doc;
 
-  it('뿌리와 1단계 가지, 2단계 자식까지 — 더 깊은 것은 수로만 말한다', () => {
+  it('뿌리와 가지, 그 아래 **자손 전부**를 깊이와 함께 준다(요청)', () => {
     const o = outlineOf(mapDoc());
     expect(o.root?.text).toBe('중심');
     expect(o.branches.map((b) => b.text)).toEqual(['가지 A', '가지 B']);
-    expect(o.branches[0]?.children.map((c) => c.text)).toEqual(['자식']);
+    // 펼치면 **아래 전부**를 준다(요청) — 손자까지, 깊이를 달고.
+    expect(o.branches[0]?.children.map((c) => `${c.depth}:${c.text}`)).toEqual(['1:자식', '2:손자']);
     expect(o.branches[0]?.count).toBe(2);
-    expect(o.branches[0]?.deep).toBe(1);
   });
 
   it('자유 노드는 줄기가 아니라 개요에 넣지 않는다', () => {

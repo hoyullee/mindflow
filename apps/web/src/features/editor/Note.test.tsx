@@ -6411,7 +6411,7 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     await waitFor(() => expect(runsOf(saved('cb3').pages[0].blocks[1])).toBe('인용한 말\n'));
   });
 
-  it('빈 줄에서 **인라인 코드**를 누르면 이어 치는 글자가 코드가 된다(제보 2)', async () => {
+  it('**고른 글이 없으면 인라인 코드는 걸리지 않는다**(요청)', async () => {
     const c = await open('cb4');
     const line = c.querySelector('[data-note-line="bl"]') as HTMLElement;
     caretEnd(line);
@@ -6420,11 +6420,14 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     fireEvent.mouseDown(btn);
     fireEvent.click(btn);
 
-    // 누른 순간에는 걸 자리가 없다(글자가 없다) — **다음 글자**에 걸린다.
+    // 이어 쳐도 코드가 아니다 — 코드 조각은 **이미 쓴 말의 한 덩이**를 가리키는
+    // 표시라, 시작점만 켜 두면 어디서 끝나는지 알 수 없다.
     type(line, 'x');
-    await waitFor(() => expect(line.querySelector('code')?.textContent).toBe('x'));
+    await waitFor(() => expect(line.textContent).toBe('x'));
+    expect(line.querySelector('code')).toBeNull();
     saveNow();
-    await waitFor(() => expect(saved('cb4').pages[0].blocks[2].runs[0].k).toBe(true));
+    await waitFor(() => expect(saved('cb4').pages[0].blocks[2].runs[0].t).toBe('x'));
+    expect(saved('cb4').pages[0].blocks[2].runs[0].k).toBeFalsy();
   });
 
   it('켜 두고 **딴 데** 치면 조용히 잊는다 — 엉뚱한 글에 걸지 않는다', async () => {
@@ -6820,7 +6823,7 @@ describe('공책 — 툴바 정리 · 코드 Shift+Enter · 목록 사이의 그
     await waitFor(() => expect(runsOf(saved('rz1').pages[0].blocks[0])).toBe('const a = 1;'));
   });
 
-  it('`/` 목록에 **인라인 코드**가 있다(요청 4) — 고르면 그 자리에 서식을 켠다', async () => {
+  it('`/` 목록에서 **인라인 코드를 걷었다**(요청) — 캐럿에는 걸 자리가 없다', async () => {
     const c = await open('rz2');
     const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
     type(line, '');
@@ -6832,7 +6835,10 @@ describe('공책 — 툴바 정리 · 코드 Shift+Enter · 목록 사이의 그
       expect(el).toBeTruthy();
       return el;
     })) as HTMLElement;
-    expect(panel.querySelector('[data-note-slash-item="inline-code"]')).toBeTruthy();
+    // 고른 글이 있을 수 없는 자리라, 남겨 두면 눌러도 아무 일이 없는 줄이 된다.
+    expect(panel.querySelector('[data-note-slash-item="inline-code"]')).toBeNull();
+    // 블록 종류들은 그대로 있다.
+    expect(panel.querySelector('[data-note-slash-item="h1"]')).toBeTruthy();
   });
 
   it('그림을 **목록의 항목 사이**로 끌어 놓으면 목록이 갈리고 번호는 이어진다(요청 3)', async () => {

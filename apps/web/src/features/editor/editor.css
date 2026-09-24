@@ -512,7 +512,7 @@ input[type='search']::-webkit-search-results-decoration {
   /* **줄 높이를 채우는 알약**(시안 2판) — 예전에는 글자에 딱 붙는 얇은 상자라
      본문 사이에서 눈에 걸리지 않았다. 세로 여백은 줄 상자를 바꾸지 못하므로
      **글자는 1px도 움직이지 않는다**(아래 음수 마진과 같은 계약). */
-  padding: 0.4em 0.45em;
+  padding: 0.4em 0.38em;
   border-radius: 5px;
   /* **붉은 잉크**(요청 — 지난 판의 색을 그대로 둔다). 면은 시안의 따뜻한 모래색으로
      바꿨다: 붉은 면 위의 붉은 글자는 대비가 모자라 작은 글이 흐려 보였다.
@@ -520,9 +520,14 @@ input[type='search']::-webkit-search-results-decoration {
   color: #c44b40;
   background: #f4ede4;
   border: 1px solid #efe4d9;
-  /* **칠은 번지되 글자는 제자리에**(제보: 배경을 걸면 글이 움직인다) — 아래 `.mf-hl`
-     머리말과 같은 이유이고, 이쪽이 더 심하다(한쪽에 0.45em + 테두리 1px). */
-  margin: 0 calc(-0.45em - 1px);
+  /* **여백은 자리를 차지한다**(제보: 코드 배경이 앞뒤 글자와 겹쳐 보인다).
+     예전에는 `margin: 0 calc(-0.45em - 1px)`로 가로 여백을 통째로 되돌렸다 —
+     "배경을 걸어도 글자가 1px도 움직이지 않는다"를 지키려던 것인데, 그러면 그
+     0.45em + 테두리만큼의 **면이 이웃 글자 위로 번진다**. 둘 중 하나만 가질 수
+     있고, 겹쳐 보이는 쪽이 훨씬 눈에 띈다(제보가 그 자리에서 왔다). 이제 여백이
+     제 자리를 차지하고, 옆 글자는 그만큼 밀린다(노션·깃허브와 같은 모양).
+     1px은 테두리가 이웃 글자에 닿지 않게 하는 숨 쉴 틈이다. */
+  margin: 0 1px;
 }
 /* 코드 **블록** 안의 인라인 코드는 칠하지 않는다 — 어두운 면 위의 붉은 조각은
    읽히지 않고, 애초에 그 안은 전부가 코드다. */
@@ -959,4 +964,18 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-tbscroll::-webkit-scrollbar {
   height: 0;
   display: none;
+}
+
+/* 임베드 내용이 떠오르며 들어온다(제보: 다시 불러오느라 깜빡임).
+   판의 높이는 마지막에 그려진 값으로 미리 잡아 두고(`noteEmbedSize`), 그 자리에
+   내용만 살짝 올라오며 나타난다 — 자리가 움직이지 않으니 읽던 줄이 밀리지 않는다. */
+@keyframes mf-embed-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.mf-embed-in {
+  animation: mf-embed-in 0.24s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-embed-in { animation: none; }
 }

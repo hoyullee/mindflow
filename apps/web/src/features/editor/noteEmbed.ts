@@ -195,18 +195,24 @@ export function moveKanbanCard(doc: Doc, cardId: string, toCol: number): Doc {
 export interface OutlineChild {
   id: string;
   text: string;
+  /** 가지에서 몇 단 아래인가(1 = 가지의 바로 아래). 화면이 이만큼 들여 쓴다. */
+  depth: number;
 }
 
 export interface OutlineBranch {
   id: string;
   text: string;
   color: string | null;
-  /** 2단계만 펼친다 — 3단계 이상은 `deep`의 수로만 말한다(스펙 §6.2 마지막 줄). */
+  /**
+   * 이 가지 아래의 **모든 자손**을 깊이 우선으로 편 목록(요청).
+   *
+   * 스펙은 2단계까지만 펴고 그 아래는 `+N`으로 접었는데, 펼치기를 눌러도 손자가
+   * 보이지 않아 "펼쳤는데 다 안 나온다"가 됐다(제보). 펼침은 **다 보여 주는 일**이니
+   * 깊이를 들여쓰기로 말하고 수는 접지 않는다.
+   */
   children: OutlineChild[];
   /** 이 가지 아래에 있는 **모든** 자손 수 — 행 끝의 회색 숫자. */
   count: number;
-  /** 2단계 아래에 더 있는 수 — `+N`. */
-  deep: number;
 }
 
 export interface Outline {
@@ -236,21 +242,28 @@ export function outlineOf(doc: Pick<Doc, 'nodes'>): Outline {
     if (!n) return 0;
     return (n.children ?? []).reduce((sum, c) => sum + 1 + countAll(c), 0);
   };
+  /** 그 가지 아래 전부 — 깊이 우선(문서의 자식 순서 그대로). */
+  const flatten = (id: string, depth: number, seen: Set<string>): OutlineChild[] => {
+    const n = kid(id);
+    // 사이클은 문서가 깨졌을 때만 나지만, 나면 여기서 무한히 돈다.
+    if (!n || seen.has(id)) return [];
+    seen.add(id);
+    return (n.children ?? []).flatMap((c) => {
+      const node = kid(c);
+      if (!node) return [];
+      return [{ id: node.id, text: nodeText(node), depth }, ...flatten(node.id, depth + 1, seen)];
+    });
+  };
   const branches = (root.children ?? [])
     .map((bid) => kid(bid))
     .filter((n): n is Node => !!n)
-    .map((b) => {
-      const kids = (b.children ?? []).map((c) => kid(c)).filter((n): n is Node => !!n);
-      const count = countAll(b.id);
-      return {
-        id: b.id,
-        text: nodeText(b),
-        color: b.color ?? null,
-        children: kids.map((c) => ({ id: c.id, text: nodeText(c) })),
-        count,
-        deep: Math.max(0, count - kids.length),
-      };
-    });
+    .map((b) => ({
+      id: b.id,
+      text: nodeText(b),
+      color: b.color ?? null,
+      children: flatten(b.id, 1, new Set<string>()),
+      count: countAll(b.id),
+    }));
   return { root: { id: root.id, text: nodeText(root) }, branches };
 }
 

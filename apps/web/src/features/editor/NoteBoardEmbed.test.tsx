@@ -98,8 +98,12 @@ describe('공책 본문 · 보드 임베드', () => {
     expect(tabs).toEqual(['할 일2', '진행 중1', '완료1']);
     // 기본으로 선 자리는 **두 번째 열**(진행 중)이다.
     expect(container.querySelector('[data-embed-col][aria-pressed="true"]')?.textContent).toBe('진행 중1');
-    expect(container.querySelector('[data-embed-done]')?.textContent).toBe('완료 1/4');
-    expect([...container.querySelectorAll('[data-embed-card-id]')].map((e) => e.textContent)).toContain('알림 분리');
+    // 진행률 글은 **원본 보드 머리의 그 글**이다(`boardProgress`) — 임베드가 따로
+    // 세던 때는 `완료 1/4`였는데 보드는 `완료 1/4 · 진행 1`이었다(제보).
+    expect(container.querySelector('[data-embed-done]')?.textContent).toBe('완료 1/4 · 진행 1');
+    // 카드는 **원본 보드의 그 카드 얼굴**이다(제보) — 글 아래에 기한·댓글 수·담당이
+    // 함께 온다(예전에는 임베드가 손으로 그린 네모라 글만 있었다).
+    expect([...container.querySelectorAll('[data-embed-card-id]')].map((e) => e.textContent)).toEqual(['알림 분리날짜 없음0']);
   });
 
   it('열을 바꾸고 「내 카드만」을 켜면 그 상태가 **문서에 남는다**', async () => {
@@ -115,7 +119,7 @@ describe('공책 본문 · 보드 임베드', () => {
     fireEvent.click(container.querySelector('[data-embed-mine]')!);
     // 「내 카드만」은 탭의 수만 거른다 — 진행률은 보드 전체 그대로다.
     await waitFor(() => expect(on()).toBe('할 일1'));
-    expect(container.querySelector('[data-embed-done]')?.textContent).toBe('완료 1/4');
+    expect(container.querySelector('[data-embed-done]')?.textContent).toBe('완료 1/4 · 진행 1');
 
     saveNow();
     await waitFor(() => expect(saved('nb2')?.pages?.[0]?.blocks?.[0]?.embed?.kanban).toEqual({ col: 0, mine: true }));
@@ -224,5 +228,118 @@ describe('공책 본문 · 보드 임베드', () => {
     fireEvent.click(container.querySelector('[data-note-link-option="m6"]')!);
     saveNow();
     await waitFor(() => expect(saved('nb6')?.pages?.[0]?.blocks?.[5]?.embed?.size).toBe('sm'));
+  });
+});
+
+/**
+ * 이번 라운드(제보 3·4·5·6·7) — 임베드가 **원본 보드와 같은 것**을 보여 주는가,
+ * 다시 들어왔을 때 **자리가 흔들리지 않는가**, 그리고 **끌어 옮길 수 있는가**.
+ */
+describe('공책 본문 · 보드 임베드 2판 — 원본 충실도 · 깜빡임 · 끌어 옮기기', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('카드의 **분류 색은 그 보드의 분류 색**이다 — 임베드가 강조색으로 칠하지 않는다(제보 3)', async () => {
+    const doc = {
+      ...KANBAN,
+      tags: [{ id: 't1', name: '디자인', color: '#2f7d68' }],
+      cards: [{ id: 'k1', col: 'c2', pos: 1, text: '표지 시안', tag: '디자인' }],
+    };
+    seedSpace([{ title: '색 보드', docId: 'kb9' }]);
+    localStorage.setItem('mindflow_doc_kb9', JSON.stringify(doc));
+    localStorage.setItem('mindflow_doc_nb9', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'kb9' }])));
+    const { container } = renderEditor('/editor?map=nb9&title=x');
+
+    const badge = (await waitFor(() => {
+      const el = container.querySelector('[data-card-tag="디자인"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    // 문서에 적힌 색(`#2f7d68` = rgb(47,125,104))이 배지의 바탕이다.
+    expect(badge.style.background).toContain('47, 125, 104');
+  });
+
+  it('카드가 놓이는 자리는 **그 보드의 면**이다 — 바닥 < 열 두 층(제보 3: 배경색이 다르다)', async () => {
+    seedSpace([{ title: '면 보드', docId: 'kb10' }]);
+    localStorage.setItem('mindflow_doc_kb10', JSON.stringify(KANBAN));
+    localStorage.setItem('mindflow_doc_nb10', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'kb10' }])));
+    const { container } = renderEditor('/editor?map=nb10&title=x');
+
+    await waitFor(() => expect(container.querySelector('[data-embed-field]')).toBeTruthy());
+    const field = container.querySelector('[data-embed-field]') as HTMLElement;
+    const cards = container.querySelector('[data-embed-cards]') as HTMLElement;
+    // 두 면은 서로 다르다 — 한 층이 빠지면 원본과 달라 보인다.
+    expect(field.style.background).toBeTruthy();
+    expect(cards.style.background).toBeTruthy();
+    expect(field.style.background).not.toBe(cards.style.background);
+  });
+
+  it('개요는 **자손을 전부** 편다 — `+n`으로 접지 않는다(제보 4)', async () => {
+    // 「알림」 아래로 두 단계를 더 판다 — 예전에는 손자부터 `+n`으로 접혔다.
+    const deep = {
+      ...MAP,
+      nodes: {
+        ...MAP.nodes,
+        a1: { id: 'a1', text: '웹 푸시', parent: 'a', children: ['a2'], x: 80, y: 0 },
+        a2: { id: 'a2', text: '조용한 시간', parent: 'a1', children: [], x: 120, y: 0 },
+      },
+    };
+    seedSpace([{ title: '릴리즈 맵', docId: 'mp9' }]);
+    localStorage.setItem('mindflow_doc_mp9', JSON.stringify(deep));
+    localStorage.setItem('mindflow_doc_nb11', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mp9' }])));
+    const { container } = renderEditor('/editor?map=nb11&title=x');
+
+    await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
+    // 가지(알림) 아래의 자식과 **손자**가 깊이를 달고 한 줄씩 서 있다.
+    const kids = [...container.querySelectorAll('[data-embed-depth]')].map((e) => `${e.getAttribute('data-embed-depth')}:${e.textContent}`);
+    expect(kids).toContain('1:웹 푸시');
+    expect(kids).toContain('2:조용한 시간');
+    // 접어 세던 `+n` 줄은 더 이상 없다.
+    expect(container.querySelector('[data-embed-outline]')?.textContent).not.toContain('+1');
+  });
+
+  it('내용은 **떠오르며** 들어온다 — 뼈대에서 내용으로 넘어가는 순간을 덮는다(제보 6)', async () => {
+    seedSpace([{ title: '릴리즈 맵', docId: 'mp10' }]);
+    localStorage.setItem('mindflow_doc_mp10', JSON.stringify(MAP));
+    localStorage.setItem('mindflow_doc_nb12', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mp10' }])));
+    const { container } = renderEditor('/editor?map=nb12&title=x');
+
+    await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
+    expect(container.querySelector('.mf-embed-in')).toBeTruthy();
+  });
+
+  it('임베드 판을 **끌어 다른 줄로** 옮긴다 — 그림과 같은 규칙이다(요청 7)', async () => {
+    seedSpace([{ title: '릴리즈 맵', docId: 'mp11' }]);
+    localStorage.setItem('mindflow_doc_mp11', JSON.stringify(MAP));
+    localStorage.setItem(
+      'mindflow_doc_nb13',
+      JSON.stringify(noteWith([
+        { id: 'b1', kind: 'link', docId: 'mp11' },
+        { id: 'b2', kind: 'p', runs: [{ t: '아래 문단' }] },
+      ])),
+    );
+    const { container } = renderEditor('/editor?map=nb13&title=x');
+    await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
+
+    // jsdom은 사각형이 전부 0이라 떨어질 자리를 잴 수 없다 — 두 블록의 상자만 세워 준다.
+    const rect = (top: number, height: number) => () =>
+      ({ top, bottom: top + height, height, left: 0, right: 600, width: 600, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    const wraps = [...container.querySelectorAll('[data-note-blockwrap]')] as HTMLElement[];
+    expect(wraps.length).toBe(2);
+    wraps[0]!.getBoundingClientRect = rect(0, 200);
+    wraps[1]!.getBoundingClientRect = rect(200, 40);
+
+    // 판의 빈 자리를 눌러 문단 아래(y=230)로 끈다.
+    const panel = container.querySelector('[data-embed-card]') as HTMLElement;
+    fireEvent.pointerDown(panel, { button: 0, clientX: 10, clientY: 10 });
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 10, clientY: 230 }));
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 10, clientY: 230 }));
+
+    saveNow();
+    await waitFor(() => expect(saved('nb13')?.pages?.[0]?.blocks?.map((b: { id: string }) => b.id)).toEqual(['b2', 'b1']));
   });
 });

@@ -23,10 +23,17 @@
 // 다른 색**이 되므로 우리 토큰을 쓰고, 면은 스펙과 같은 관계(16% 틴트)로 만든다.
 // 나머지 값(크기·간격·문구·동작)은 스펙 그대로다.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import type { Doc, KanbanCard, NoteBlock } from '@mindflow/mindmap-core';
+import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import type { Doc, KanbanCard, KanbanColumn, NoteBlock } from '@mindflow/mindmap-core';
 import { useBackend } from '../../../adapters/BackendContext';
 import { writeClipboard } from '../noteClipboard';
+import { realPreview } from '../../home/mapPreview';
+import { themeOf } from '../theme';
+import { boardProgress, boardSurface, columnBg, columnColor } from '../kanbanMeta';
+import { CardFace, cardBase } from './KanbanBoard';
+import { useParticipantAvatars } from '../useParticipantAvatars';
+import { readEmbedHeight, writeEmbedHeight } from '../noteEmbedSize';
+import { DropLine, useBlockDrag } from './noteBlockDrag';
 import type { EditorController, LinkTarget } from '../useEditorState';
 import {
   embedFrames,
@@ -154,6 +161,43 @@ function useMyEmail(): string {
   return me;
 }
 
+/* ───────────────────────────── 원본 그대로 그리기 ───────────────────────────── */
+
+/**
+ * 그 문서를 **홈 썸네일과 같은 렌더러**로 그린다(`realPreview`).
+ *
+ * 임베드가 손으로 흉내 내던 그림을 걷은 자리다(제보 두 건: 화이트보드의 형광펜·
+ * 색이 없고, 맵 미리보기가 원본과 딴판이다). 그 렌더러는 저장된 본문을 그대로
+ * 읽어 노드 레이아웃까지 다시 돌리므로 **에디터에서 보던 그림**이 나온다.
+ *
+ * 함께 돌려주는 `box`는 그 그림의 **보드 좌표 사각형**(svg `viewBox`)이다 —
+ * 화이트보드의 팬·줌이 그 좌표계 위에서 도므로, 우리가 따로 잰 상자가 아니라
+ * 그린 쪽이 쓴 값을 그대로 받아야 카메라가 어긋나지 않는다.
+ */
+function useDocPreview(doc: Doc): { el: JSX.Element | null; box: { x: number; y: number; w: number; h: number } | null } {
+  return useMemo(() => {
+    let raw: string;
+    try {
+      raw = JSON.stringify(doc);
+    } catch {
+      return { el: null, box: null };
+    }
+    const th = themeOf(doc.themeKey);
+    const made = realPreview(raw, th.accent);
+    if (!made) return { el: null, box: null };
+    const vb = typeof (made.props as { viewBox?: unknown }).viewBox === 'string' ? ((made.props as { viewBox: string }).viewBox.split(/\s+/).map(Number) as number[]) : null;
+    const box = vb && vb.length === 4 && vb.every((n) => Number.isFinite(n)) ? { x: vb[0] as number, y: vb[1] as number, w: vb[2] as number, h: vb[3] as number } : null;
+    // 그린 쪽은 카드 안에 여백을 두려고 `88%`로 줄여 둔다 — 임베드는 제 상자를
+    // 꽉 채우고 여백은 바깥(패딩)이 맡으므로 100%로 되돌린다.
+    return { el: cloneElement(made, { width: '100%', height: '100%' }), box };
+  }, [doc]);
+}
+
+/** 그 문서 테마의 **캔버스 색** — 에디터에서 보던 바탕과 같은 값(제보). */
+function docCanvasBg(doc: Doc): string {
+  return themeOf(doc.themeKey).canvasBg;
+}
+
 /* ───────────────────────────── 값 ───────────────────────────── */
 
 const KIND_TOKEN: Record<EmbedKind, string> = {
@@ -266,6 +310,24 @@ export function NoteBoardEmbed({
 }) {
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const { state, put, reload } = useEmbedDoc(block.docId, host);
+  /**
+   * **다시 들어왔을 때 자리를 미리 잡아 둔다**(제보: 깜빡임).
+   *
+   * 임베드는 본문과 달리 보드 문서를 따로 읽어 오므로 첫 프레임에는 내용이 없다.
+   * 예전에는 얇은 뼈대만 그려 놓고 내용이 오는 순간 판이 갑자기 커졌다 — 읽고 있던
+   * 줄이 아래로 밀려났다. 마지막에 그려졌던 높이를 기억해 그 자리를 비워 두면
+   * 내용이 와도 글이 움직이지 않는다(마운트 때 한 번만 읽는다 — 그려지는 동안
+   * 값이 바뀌어도 이번 진입의 자리는 흔들리지 않아야 한다).
+   */
+  const [keepH] = useState<number | null>(() => readEmbedHeight(block.id));
+  /** 그려진 판 — 높이를 재어 다음 진입을 위해 남긴다. */
+  const [card, setCard] = useState<HTMLDivElement | null>(null);
+  /**
+   * **판을 끌어 다른 줄로 옮긴다**(요청 7) — 그림과 같은 부품, 같은 규칙이다
+   * (6px 문턱 · 떨어질 틈에 가는 선 · 목록 안의 틈도 자리). 안쪽 조작(열 탭·카드·
+   * 캔버스·단추)은 아래에서 걸러 내므로 끌기는 **판의 빈 자리와 머리**에서만 시작한다.
+   */
+  const drag = useBlockDrag(controller, block.id);
   const me = useMyEmail();
   const readOnly = controller.readOnly;
   const size = embedSize(block);
@@ -278,6 +340,23 @@ export function NoteBoardEmbed({
     sayTimer.current = setTimeout(() => setSay(''), 2600);
   }, []);
   useEffect(() => () => clearTimeout(sayTimer.current), []);
+
+  /**
+   * 다 그려진 판의 높이를 남긴다 — 접힌 카드(`sm`)는 재지 않는다(그 높이를 기억하면
+   * 다음 진입에서 펼친 판이 한 줄 크기로 시작한다). 내용이 자라고 줄어드는 것도
+   * 따라가야 하므로 `ResizeObserver`로 본다.
+   */
+  useEffect(() => {
+    // 다 읽은 판만 잰다 — 뼈대(불러오는 중)의 높이를 기억하면 그 값이 다음 진입의
+    // 자리가 되어 깜빡임이 오히려 굳는다.
+    if (!card || state.kind !== 'ok') return;
+    const save = (): void => writeEmbedHeight(block.id, card.getBoundingClientRect().height);
+    save();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => save());
+    ro.observe(card);
+    return () => ro.disconnect();
+  }, [card, block.id, state.kind]);
 
   const kind = state.kind === 'ok' ? embedKindOf(state.doc) : 'map';
   const title = state.kind === 'ok' ? state.title || target?.title || '제목 없음' : target?.title || '제목 없음';
@@ -348,6 +427,7 @@ export function NoteBoardEmbed({
         e.preventDefault();
         if ((e.target as HTMLElement).closest('button,a,input,[data-embed-canvas],[data-embed-card-id]')) return;
         pickObject(block.id, e.shiftKey);
+        if (!readOnly) drag.begin(e);
       }}
       style={{
         ...flow,
@@ -355,8 +435,12 @@ export function NoteBoardEmbed({
         borderRadius: 15,
         outline: picked ? '2px solid var(--mf-accent)' : 'none',
         outlineOffset: 2,
+        // 끄는 동안은 옅게 — 손에 들려 있는 것과 아직 제자리에 있는 것을 가른다(그림과 같다).
+        opacity: drag.dragging ? 0.45 : 1,
+        cursor: drag.dragging ? 'grabbing' : undefined,
       }}
     >
+      <DropLine spot={drag.dropAt} />
       {small ? (
         <SmallCard
           target={target}
@@ -370,12 +454,17 @@ export function NoteBoardEmbed({
       ) : (
         <div
           data-embed-card
+          ref={setCard}
           style={{
             background: 'var(--mf-card)',
             border: '1px solid var(--mf-border)',
             borderRadius: 14,
             boxShadow: '0 12px 26px -24px rgba(46,42,38,.45)',
             overflow: 'hidden',
+            // 아직 못 읽었으면 **지난번 높이**로 자리를 잡아 둔다(제보: 깜빡임).
+            // 내용이 오면 `undefined`가 되어 제 높이를 되찾는다.
+            ...(state.kind === 'ok' ? {} : keepH ? { minHeight: keepH } : {}),
+            transition: 'min-height .2s ease',
           }}
         >
           <EmbedHead
@@ -388,11 +477,19 @@ export function NoteBoardEmbed({
             href={target.href}
             onCollapse={() => setView({ size: 'sm' })}
           />
-          <div style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {/* 내용은 **떠오르듯** 들어온다(요청) — 딱 나타나면 방금 판이 바뀐 것처럼
+              읽히고, 뼈대에서 내용으로 넘어가는 순간이 눈에 걸린다. 종류를 key로
+              두어 다시 읽어 왔을 때도 한 번 더 떠오른다. */}
+          <div
+            key={state.kind === 'ok' ? `ok:${kind}` : state.kind}
+            className="mf-embed-in"
+            style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 9 }}
+          >
             {state.kind === 'ok' && kind === 'kanban' && (
               <KanbanBody
                 block={block}
                 doc={state.doc}
+                docId={block.docId ?? ''}
                 me={me}
                 canEdit={canEdit}
                 href={target.href}
@@ -751,10 +848,13 @@ function KanbanBody({
   onSay,
   setView,
   onMove,
+  docId,
 }: {
   block: NoteBlock;
   doc: Doc;
   me: string;
+  /** 그 보드의 문서 id — 담당 얼굴(공유 참가자)을 그 문서에서 읽는다. */
+  docId: string;
   canEdit: boolean;
   href: string;
   say: string;
@@ -764,12 +864,29 @@ function KanbanBody({
 }) {
   const columns = doc.columns ?? [];
   const view = kanbanView(block, columns);
+  /**
+   * 담당 얼굴 — **그 보드의 공유 참가자**에서 읽는다(제보: 프로필 이미지가 다르다).
+   *
+   * 원본 보드가 쓰는 그 훅이라 같은 사진이 나온다. 읽지 못하면(권한·로컬 모드)
+   * 비어 있는 map이고, `CardFace`는 그때 이름 첫 글자로 물러선다 — 예전의 그 모양이
+   * 이제 **폴백**이 됐다.
+   */
+  const { byEmail: avatars } = useParticipantAvatars(docId);
   const stat = kanbanStats(doc, { mine: view.mine, me });
   const { cards, more } = kanbanCards(doc, { col: view.col, mine: view.mine, me });
   /** 지금 끌고 있는 카드와 올라가 있는 열 — 드래그 중 상태라 문서에 남기지 않는다. */
   const [drag, setDrag] = useState<{ id: string; over: number | null } | null>(null);
 
-  const colColor = (i: number): string => stat.cols[i]?.color || 'var(--mf-accent-mute)';
+  /**
+   * 색·진행·카드 모양은 **원본 칸반이 쓰는 그 함수들**이다(제보 넷).
+   *
+   * 임베드가 따로 계산하던 값들(열 색은 `col.color ?? 강조색 흐리게`, 진행 바는
+   * 모든 열을 왼→오로, 카드는 손으로 그린 네모)이 전부 원본과 달랐다. 같은 보드가
+   * 두 화면에서 다른 색으로 보이면 그것이 같은 보드인지 확인하게 된다.
+   */
+  const th = themeOf(doc.themeKey);
+  const progress = useMemo(() => boardProgress(doc.columns ?? [], doc.cards ?? [], th.palette), [doc.columns, doc.cards, th.palette]);
+  const colColor = (i: number): string => columnColor((doc.columns ?? [])[i] ?? ({ id: '', title: '' } as KanbanColumn), i, th.palette);
 
   const onCardDown = (card: KanbanCard) => (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!canEdit || e.button > 0) return;
@@ -798,19 +915,16 @@ function KanbanBody({
 
   return (
     <>
-      {/* 진행률 — 열 색 구간을 이어 붙인 막대 + `완료 n/m`(스펙 §5.1). */}
+      {/* 진행률 — **원본 보드 머리의 그 줄**이다(`boardProgress`): 첫 열은 빼고
+          완료부터 왼쪽으로 차오르며, 글도 `완료 n/m · 진행 k`로 같다(제보). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span data-embed-progress style={{ flex: 1, display: 'flex', height: 6, borderRadius: 999, background: 'var(--mf-panel2)', overflow: 'hidden' }}>
-          {stat.cols.map((c, i) => (
-            <span
-              key={c.id}
-              data-embed-seg={c.id}
-              style={{ width: `${stat.total ? (c.total / stat.total) * 100 : 0}%`, background: colColor(i), transition: 'width .3s ease' }}
-            />
+        <span data-embed-progress style={{ flex: 1, display: 'flex', height: 6, borderRadius: 999, background: th.border, overflow: 'hidden' }}>
+          {progress.segments.map((seg) => (
+            <span key={seg.id} data-embed-seg={seg.id} title={`${seg.title} ${seg.count}장`} style={{ width: `${seg.pct}%`, background: seg.color, display: 'block', transition: 'width .3s ease' }} />
           ))}
         </span>
         <span data-embed-done style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: 'var(--mf-subtext)', whiteSpace: 'nowrap' }}>
-          완료 {stat.done}/{stat.total}
+          {progress.label}
         </span>
       </div>
 
@@ -865,9 +979,33 @@ function KanbanBody({
         </button>
       </div>
 
-      {/* 카드 — 본문 폭에 따라 1~3열로 흐른다(스펙 §5.3). */}
+      {/* 카드 — 본문 폭에 따라 1~3열로 흐른다(스펙 §5.3).
+          바닥과 열의 **면 층은 그 보드의 테마**에서 가져온다(제보: 배경색이 원본과
+          다르다). 임베드 판 자체는 공책의 면이지만, 카드가 놓이는 자리만큼은
+          보드가 자기 색을 깔아야 같은 보드로 읽힌다 — `boardSurface` < `columnBg`
+          < `cardBase`로 원본 칸반과 같은 세 층이다. */}
       {cards.length ? (
-        <div data-embed-cards style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 7 }}>
+        <div
+          data-embed-field
+          style={{
+            background: boardSurface(th),
+            border: `1px solid ${th.border}`,
+            borderRadius: 12,
+            padding: 8,
+          }}
+        >
+        <div
+          data-embed-cards
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: 7,
+            background: columnBg(columns[view.col] ?? { bg: undefined }, th),
+            border: `1px solid ${th.border}`,
+            borderRadius: 10,
+            padding: 7,
+          }}
+        >
           {cards.map((c) => (
             <div
               key={c.id}
@@ -875,37 +1013,26 @@ function KanbanBody({
               onPointerDown={onCardDown(c)}
               onClick={() => onSay('카드 내용은 보드에서 고쳐요 — 「열기」로 가 보세요')}
               style={{
-                padding: '10px 11px',
-                borderRadius: 10,
-                background: 'var(--mf-card)',
-                border: '1px solid var(--mf-border-soft)',
-                boxShadow: '0 1px 0 rgba(46,42,38,.03)',
+                /**
+                 * 카드는 **원본 보드의 그 카드**다(`cardBase` + `CardFace`, 제보).
+                 *
+                 * 손으로 그리던 때는 분류 배지가 언제나 강조색이었고(원본은 이름에서
+                 * 정해지는 분류색), 담당은 첫 글자 동그라미였다(원본은 프로필 사진).
+                 * 그 둘이 같은 보드를 다른 보드처럼 보이게 했다 — 이제 한 부품을
+                 * 함께 쓰므로 원본이 바뀌면 임베드도 따라간다.
+                 */
+                ...cardBase(c, th, false),
                 cursor: canEdit ? 'grab' : 'default',
                 opacity: drag?.id === c.id ? 0.4 : 1,
                 minWidth: 0,
+                // 본문 안의 작은 창이라 글자만 한 단계 줄인다(자리는 그대로).
+                fontSize: 12.5,
               }}
             >
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)', lineHeight: 1.45, wordBreak: 'keep-all', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                {c.text || '제목 없음'}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, minWidth: 0 }}>
-                {c.tag && (
-                  <span style={{ height: 18, padding: '0 6px', borderRadius: 5, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-deep)', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-                    {c.tag}
-                  </span>
-                )}
-                <span style={{ flex: 1 }} />
-                {c.due && (
-                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: isOverdue(c.due) ? 'var(--mf-danger)' : 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{c.due.slice(5)}</span>
-                )}
-                {c.owner && (
-                  <span aria-hidden style={{ width: 18, height: 18, borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 9, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-                    {c.owner.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
-              </div>
+              <CardFace card={c} theme={th} comments={0} tags={doc.tags ?? []} done={view.col === (doc.columns ?? []).length - 1} avatars={avatars} />
             </div>
           ))}
+        </div>
         </div>
       ) : (
         <div data-embed-empty style={{ border: '1px dashed var(--mf-border)', borderRadius: 10, padding: '14px 10px', textAlign: 'center', fontSize: 12, color: 'var(--mf-faint)' }}>
@@ -928,12 +1055,6 @@ function KanbanBody({
   );
 }
 
-/** 오늘보다 앞선 기한인가 — 문자열 비교로 충분하다(`YYYY-MM-DD`는 사전순 = 시간순). */
-function isOverdue(due: string): boolean {
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  return due < today;
-}
 
 /* ───────────────────────────── 마인드맵 ───────────────────────────── */
 
@@ -1029,13 +1150,23 @@ function MindmapBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; setV
                   </button>
                   {open && b.children.length > 0 && (
                     <div style={{ borderLeft: '1.5px solid var(--mf-border-soft)', margin: '0 0 0 9px', paddingLeft: 14 }}>
+                      {/* 펼쳤으면 **아래 전부**를 보여 준다(요청) — 깊이는 들여쓰기가
+                          말하고, 세 단 아래부터는 점을 비워 줄기를 흐리게 둔다. */}
                       {b.children.map((c) => (
-                        <div key={c.id} data-embed-child={c.id} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 24, minWidth: 0 }}>
-                          <span aria-hidden style={{ width: 4, height: 4, borderRadius: 999, background: 'var(--mf-faint2)', flex: '0 0 auto' }} />
+                        <div key={c.id} data-embed-child={c.id} data-embed-depth={c.depth} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 24, minWidth: 0, paddingLeft: (c.depth - 1) * 13 }}>
+                          <span
+                            aria-hidden
+                            style={{
+                              width: 4,
+                              height: 4,
+                              borderRadius: 999,
+                              flex: '0 0 auto',
+                              ...(c.depth > 1 ? { border: '1px solid var(--mf-faint2)' } : { background: 'var(--mf-faint2)' }),
+                            }}
+                          />
                           <span style={{ fontSize: 12, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.text}</span>
                         </div>
                       ))}
-                      {b.deep > 0 && <div style={{ height: 24, display: 'flex', alignItems: 'center', paddingLeft: 11, fontSize: 11, color: 'var(--mf-faint)' }}>+{b.deep}</div>}
                     </div>
                   )}
                 </div>
@@ -1045,7 +1176,7 @@ function MindmapBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; setV
           </div>
         </div>
       ) : (
-        <MiniMap tree={tree} tone={tone} />
+        <MiniMap doc={doc} />
       )}
 
       <GuideRow icon="eye" text="보기 전용 · 주제를 고치려면 맵을 열어 주세요" />
@@ -1071,65 +1202,33 @@ const TEXT_BTN: CSSProperties = {
  * 읽히지 않는 크기로 떨어지기 일쑤다. 임베드가 보여 줄 것은 "이 맵이 어떤 모양인가"이지
  * 좌표 그 자체가 아니므로, 트리를 **다시 배치해** 언제나 읽히는 축소판을 만든다.
  */
-function MiniMap({ tree, tone }: { tree: ReturnType<typeof outlineOf>; tone: string }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [w, setW] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => setW(el.clientWidth);
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const scale = Math.min(1, (w || 640) / 640);
-  const branches = tree.branches.slice(0, 4);
+/**
+ * 축소 맵 — **홈 썸네일과 같은 렌더러**(`realPreview`)로 그린다(제보).
+ *
+ * 예전에는 개요에서 뽑은 가지 넷을 손으로 네모·곡선으로 흉내 냈다. 그러면 "맵이
+ * 있다"는 것만 알리고 **그 맵이 어떻게 생겼는지는 말하지 않는다** — 색·모양·배치가
+ * 전부 우리가 지어낸 값이라 원본과 닮은 구석이 없었다(제보: "미리보기 형태가
+ * 원본과 너무 다르다"). 홈 카드가 쓰는 그 렌더러는 저장된 문서를 그대로 그리므로
+ * (레이아웃까지 다시 돌린다) 여기서 쓰면 **한 벌만 고치면 두 자리가 함께 맞는다**.
+ */
+function MiniMap({ doc }: { doc: Doc }) {
+  const svg = useDocPreview(doc);
   return (
     <div
-      ref={ref}
       data-embed-minimap
       style={{
         position: 'relative',
-        height: 300 * scale,
+        height: 260,
         borderRadius: 10,
-        background: 'var(--mf-panel)',
-        backgroundImage: 'radial-gradient(var(--mf-note-bar-dot) 1px, transparent 1px)',
-        backgroundSize: '14px 14px',
+        // 배경은 **그 문서의 테마 캔버스 색**이다(제보: 배경색이 원본과 다르다).
+        background: docCanvasBg(doc),
         overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
-      <div style={{ position: 'absolute', inset: 0, transform: `scale(${scale})`, transformOrigin: '0 0', width: 640, height: 300 }}>
-        <svg width="640" height="300" style={{ position: 'absolute', inset: 0 }} aria-hidden="true">
-          {branches.map((b, i) => {
-            const by = 34 + i * 66 + 15;
-            return (
-              <g key={b.id}>
-                <path d={`M152 150 C 190 150, 190 ${by}, 228 ${by}`} fill="none" stroke="var(--mf-border)" strokeWidth="1.5" />
-                {b.children.slice(0, 3).map((c, j) => (
-                  <path key={c.id} d={`M${228 + 128} ${by} C ${370} ${by}, ${370} ${by - 21 + j * 21}, 392 ${by - 21 + j * 21}`} fill="none" stroke="var(--mf-border)" strokeWidth="1.5" />
-                ))}
-              </g>
-            );
-          })}
-        </svg>
-        <div style={{ position: 'absolute', left: 24, top: 132, width: 128, height: 36, borderRadius: 10, background: tone, color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-          {tree.root?.text ?? '빈 맵'}
-        </div>
-        {branches.map((b, i) => (
-          <div key={b.id}>
-            <div style={{ position: 'absolute', left: 228, top: 34 + i * 66, width: 128, height: 30, borderRadius: 9, background: 'var(--mf-card)', border: `1px solid ${b.color || tone}`, color: 'var(--mf-text)', fontSize: 12.5, fontWeight: 800, display: 'flex', alignItems: 'center', padding: '0 9px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {b.text}
-            </div>
-            {b.children.slice(0, 3).map((c, j) => (
-              <div key={c.id} style={{ position: 'absolute', left: 392, top: 34 + i * 66 + 4 + j * 21 - 21, width: 150, height: 22, borderRadius: 6, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                {c.text}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
+      {svg.el}
     </div>
   );
 }
@@ -1138,7 +1237,18 @@ function MiniMap({ tree, tone }: { tree: ReturnType<typeof outlineOf>; tone: str
 
 function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; setView: (patch: { whiteboard?: { frame?: number; height?: 's' | 'm' | 'l' } }) => void }) {
   const view = whiteboardView(block);
-  const frames = useMemo(() => embedFrames(doc), [doc]);
+  const preview = useDocPreview(doc);
+  /**
+   * 프레임 목록 — `전체`는 **그린 쪽의 상자**(`viewBox`)로 바꿔 끼운다.
+   *
+   * 우리가 따로 잰 상자(`embedFrames`)와 그 렌더러가 쓴 상자는 여백 규칙이 달라
+   * 몇 px 어긋난다. 「맞춤」이 그 차이만큼 잘라 먹지 않게 **그린 값**을 쓴다.
+   */
+  const frames = useMemo(() => {
+    const list = embedFrames(doc);
+    const b = preview.box;
+    return b && list[0] ? [{ ...list[0], ...b }, ...list.slice(1)] : list;
+  }, [doc, preview.box]);
   const frame = frames[Math.min(view.frame, frames.length - 1)] ?? frames[0] ?? ({ id: '', label: '전체', x: 0, y: 0, w: 800, h: 500 } as EmbedFrame);
   const height = WB_HEIGHT[view.height];
   const ref = useRef<HTMLDivElement | null>(null);
@@ -1241,7 +1351,9 @@ function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; s
           position: 'relative',
           height,
           borderRadius: 10,
-          background: 'var(--mf-panel)',
+          // 바탕은 **그 문서 테마의 캔버스 색**(제보) — 도트 격자는 에디터의 것과
+          // 같은 간격으로 그 위에 얹는다.
+          background: docCanvasBg(doc),
           backgroundImage: 'radial-gradient(var(--mf-note-bar-dot) 1px, transparent 1px)',
           backgroundSize: '14px 14px',
           overflow: 'hidden',
@@ -1250,53 +1362,49 @@ function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; s
           touchAction: 'none',
         }}
       >
+        {/**
+          * 내용은 **원본 그대로**다(제보: 형광펜도 색도 안 보이고 메모 글자와 영역
+          * 제목만 보인다). 손으로 그리던 네모 둘(영역·메모)을 걷고 홈 썸네일과 같은
+          * 렌더러를 쓴다 — 그리기 획·이미지·선·노드·반응이 전부 함께 온다.
+          *
+          * 그 그림은 제 `viewBox`(보드 좌표)를 들고 오므로, 팬·줌은 **그 좌표계 위에**
+          * 얹는다: 안쪽 판을 `viewBox`의 자리와 크기로 놓으면 1단위 = 1px이 되어
+          * `fitFrame`·`zoomAt`이 재던 값이 그대로 맞는다.
+          */}
         <div style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})` }}>
-          {(doc.zones ?? []).map((z) => (
-            <div key={z.id} style={{ position: 'absolute', left: z.x, top: z.y, width: z.w, height: z.h, borderRadius: 12, border: `1.5px dashed ${z.color || 'var(--mf-border)'}`, background: 'transparent' }}>
-              <span style={{ position: 'absolute', left: 8, top: -9, padding: '0 6px', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>{z.label}</span>
-            </div>
-          ))}
-          {(doc.floats ?? []).map((f) => (
-            <div
-              key={f.id}
-              style={{
-                position: 'absolute',
-                left: f.x,
-                top: f.y,
-                width: f.w,
-                minHeight: f.h ?? 0,
-                padding: '8px 10px',
-                borderRadius: 10,
-                background: f.bg || '#fff6cf',
-                color: f.textColor || '#3a352f',
-                fontSize: 12,
-                fontWeight: f.bold ? 800 : 500,
-                lineHeight: 1.5,
-                boxShadow: '0 1px 2px rgba(46,42,38,.12)',
-                overflow: 'hidden',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
-              {f.text}
-            </div>
-          ))}
+          {preview.el && preview.box && (
+            <div style={{ position: 'absolute', left: preview.box.x, top: preview.box.y, width: preview.box.w, height: preview.box.h }}>{preview.el}</div>
+          )}
         </div>
 
-        {/* 줌 컨트롤 — 여기서 누른 것은 팬으로 번지지 않는다(스펙 §7.3). */}
+        {/* 줌 컨트롤 — 창 오른쪽 아래(스펙 §7.3). 캔버스 위에 떠 있으므로 누름이
+            팬으로 새지 않게 여기서 멈춘다. */}
         <div
           data-embed-zoom
           onPointerDown={(e) => e.stopPropagation()}
-          style={{ position: 'absolute', right: 8, bottom: 8, display: 'flex', alignItems: 'center', gap: 2, padding: 2, borderRadius: 999, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', boxShadow: '0 4px 12px -6px rgba(46,42,38,.3)' }}
+          style={{
+            position: 'absolute',
+            right: 8,
+            bottom: 8,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 2,
+            height: 28,
+            padding: '0 4px',
+            borderRadius: 999,
+            background: 'var(--mf-card)',
+            border: '1px solid var(--mf-border-soft)',
+            boxShadow: '0 6px 16px -12px rgba(46,42,38,.5)',
+          }}
         >
           <button type="button" data-embed-zoom-out aria-label="축소" onClick={zoomBtn(0.9)} style={ZOOM_BTN}>
             −
           </button>
-          <span style={{ minWidth: 38, textAlign: 'center', fontFamily: MONO, fontSize: 10.5, color: 'var(--mf-subtext)' }}>{Math.round(cam.z * 100)}%</span>
+          <span style={{ minWidth: 34, textAlign: 'center', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, color: 'var(--mf-subtext)' }}>{Math.round(cam.z * 100)}%</span>
           <button type="button" data-embed-zoom-in aria-label="확대" onClick={zoomBtn(1.1)} style={ZOOM_BTN}>
             +
           </button>
-          <span aria-hidden style={{ width: 1, height: 14, background: 'var(--mf-border)' }} />
+          <span aria-hidden style={{ width: 1, height: 14, background: 'var(--mf-hairline)' }} />
           <button
             type="button"
             data-embed-fit
@@ -1304,7 +1412,7 @@ function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; s
               setCam(fitFrame(frame, box));
               setFitted(true);
             }}
-            style={{ ...ZOOM_BTN, width: 'auto', padding: '0 8px', fontSize: 11 }}
+            style={{ ...ZOOM_BTN, width: 'auto', padding: '0 7px', fontSize: 10.5, fontWeight: 800 }}
           >
             맞춤
           </button>
