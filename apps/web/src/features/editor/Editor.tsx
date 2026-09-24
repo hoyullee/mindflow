@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { CHIP_SHADOW, glassCard } from './chrome';
 import './editor.css';
 import { useEditorState } from './useEditorState';
@@ -46,6 +46,11 @@ export function Editor() {
   // 문서 테마는 편집 영역(Viewport/아웃라인/미니맵 내용)만 칠한다.
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
+  /**
+   * 공책의 페이지 목록 서랍 — **좁은 화면에서만** 쓰인다(넓은 화면에서는 목록이 늘
+   * 옆에 서 있다). 상단 바(☰)와 본문이 함께 보는 값이라 둘의 부모인 여기에 둔다.
+   */
+  const [notePagesOpen, setNotePagesOpen] = useState(false);
   // 가로로 돌린 폰 — 속성 시트가 바텀에서 사이드로 바뀐다(`panelWrapStyle`).
   const isShort = useIsShortScreen();
 
@@ -198,12 +203,12 @@ export function Editor() {
           <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--mf-panel)', ...noteTokens(th) }}>
             {/* 상단 바 — 디자인 원본은 공책을 [바 · 목록 · 본문]으로 짠다. 문서 칩이
                 여기 **줄 안에** 서므로(inline) 왼쪽 페이지 목록을 덮지 않는다. */}
-            <NoteTopBar controller={controller} />
+            <NoteTopBar controller={controller} pagesOpen={notePagesOpen} onTogglePages={() => setNotePagesOpen((v) => !v)} />
             <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
             {/* `key` — 서버 판을 채택하면 본문을 **다시 마운트**한다. 공책의 편집
                 박스는 비제어라(innerHTML을 마운트할 때 한 번만 심는다) 모델만 갈아
                 끼우면 화면의 글자가 옛것 그대로 남는다(`docEpoch` 참고). */}
-            <NoteEditor key={controller.docEpoch} controller={controller} />
+            <NoteEditor key={controller.docEpoch} controller={controller} pagesOpen={notePagesOpen} onClosePages={() => setNotePagesOpen(false)} />
             <PresenceBar controller={controller} />
             {/* 댓글 — **공책 한 권에 대한 논의**다(디자인: "이 공책에 댓글 남기기").
                 캔버스가 없어 핀을 꽂을 자리가 없으므로 대상은 문서 자신 하나뿐이고,
