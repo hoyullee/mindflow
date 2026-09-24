@@ -58,6 +58,7 @@ import { formatLastEdited } from '../../home/timeFormat';
 import { keyLabel } from '../shortcutLabels';
 import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, onNoteTagsChange, removeNoteTag } from '../noteTags';
 import { useIsMobile, useIsTouchDevice } from '../../../hooks/useMediaQuery';
+import { installTouchMenuGate } from '../noteTouchMenu';
 
 interface Props {
   controller: EditorController;
@@ -387,6 +388,18 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    * 손가락으로 써도 두 단이 편하다.
    */
   const mobile = useIsMobile();
+  /**
+   * **손가락에서는 길게 눌렀을 때만 우클릭 메뉴가 열린다**(제보: 두 번 터치에 떴다).
+   *
+   * 자리마다 가드를 심지 않고 문서에 캡처로 문을 하나 세운다 — 메뉴는 전부
+   * `contextmenu`에서 열리므로, 길게 누르기 뒤가 아닌 것을 여기서 버리면 어떤
+   * 메뉴도 열리지 않는다(새 메뉴가 생겨도 빠뜨릴 자리가 없다). 규칙과 이유는
+   * `noteTouchMenu.ts`에 있다.
+   */
+  useEffect(() => {
+    const gate = installTouchMenuGate();
+    return () => gate.stop();
+  }, []);
   /**
    * 서식 버튼을 누르면 포커스가 버튼으로 옮겨 가 선택이 풀린다. 그래서 **누르기
    * 전에**(mousedown) 지금 선택이 들어 있던 박스를 기억해 둔다.
@@ -5927,6 +5940,18 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   /** 끌어서 고르는 중 — 누른 칸이 기준이고, 다른 칸에 닿으면 구간이 된다. */
   const drag = useRef<{ r: number; c: number } | null>(null);
   /**
+   * 손가락의 **두 번 누르기**(제보) — 같은 칸을 이 시간 안에 다시 누르면 편집을 연다.
+   *
+   * 마우스의 `e.detail >= 2`에 기대지 않는 이유: 모바일 브라우저가 합성 mouse 이벤트를
+   * 보내는 규칙이 제각각이라(두 번째 탭에 `detail: 1`이 오는 조합이 있다) 그 길만 두면
+   * 손가락으로는 칸을 영영 열 수 없다 — 한 번 누르기가 선택만 하게 된 지금은 더 그렇다.
+   */
+  const tap = useRef<{ r: number; c: number; t: number } | null>(null);
+  const TAP_GAP = 420;
+  /** 경계선을 **길게 누르는 중** — 손가락으로 크기를 조절하려면 이만큼 기다린다(요청). */
+  const holdRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const TOUCH_HOLD_MS = 420;
+  /**
    * **레일을 끄는 중**(요청 10) — 누른 손잡이가 기준이고, 다른 손잡이에 닿으면 여러 줄이 된다.
    *
    * `moved`를 같은 덩이에 두는 이유: 끌고 제자리로 돌아와 떼면 뒤따르는 `click`이
@@ -6625,11 +6650,83 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
        * 표와 상관없는 메뉴가 나오는 자리였다. 골라 둔 것이 있으면 **그 메뉴**를,
        * 없으면 이 경계가 속한 행·열의 메뉴를 연다(레일 우클릭과 같은 규칙).
        */
-      onContextMenu={(e) => handleContext(e, sel ?? (axis === 'col' ? { mode: 'col', c: i } : { mode: 'row', r: i }))}
+      onContextMenu={(e) => {
+        /**
+         * **손가락에서는 경계선에 메뉴가 없다**(요청) — 그 자리를 길게 누르는 것은
+         * 「크기를 조절하겠다」는 뜻이다(아래 `onPointerDown`). 메뉴까지 함께 뜨면
+         * 조절을 시작한 손 위로 판이 덮인다.
+         */
+        if (touch) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        handleContext(e, sel ?? (axis === 'col' ? { mode: 'col', c: i } : { mode: 'row', r: i }));
+      }}
+      /**
+       * **손가락은 길게 눌러 잡는다**(요청) — 짧게 스치는 것은 스크롤이어야 하고,
+       * 6px짜리 띠를 손가락이 지나갈 때마다 표가 늘어나면 글을 읽을 수 없다.
+       *
+       * 마우스는 예전대로 `mousedown`이 곧 잡기다(아래) — 커서가 이미 `col-resize`로
+       * 바뀌어 "여기를 잡을 수 있다"를 말해 주므로 기다릴 이유가 없다.
+       */
+      onPointerDown={(e) => {
+        if (readOnly || e.pointerType !== 'touch') return;
+        const { clientX, clientY } = e;
+        const el = e.currentTarget;
+        const id = e.pointerId;
+        holdRef.current = {
+          x: clientX,
+          y: clientY,
+          t: window.setTimeout(() => {
+            holdRef.current = null;
+            el.setPointerCapture?.(id);
+            startSizing(axis, i, clientX, clientY);
+          }, TOUCH_HOLD_MS),
+        };
+      }}
+      onPointerMove={(e) => {
+        const h = holdRef.current;
+        if (!h) return;
+        // 문턱을 넘어 움직였으면 누르기가 아니라 스크롤이다 — 기다림을 접는다.
+        if (Math.abs(e.clientX - h.x) + Math.abs(e.clientY - h.y) > 12) {
+          window.clearTimeout(h.t);
+          holdRef.current = null;
+        }
+      }}
+      onPointerUp={() => {
+        if (!holdRef.current) return;
+        window.clearTimeout(holdRef.current.t);
+        holdRef.current = null;
+      }}
+      onPointerCancel={() => {
+        if (!holdRef.current) return;
+        window.clearTimeout(holdRef.current.t);
+        holdRef.current = null;
+      }}
       onMouseDown={(e) => {
         if (readOnly) return;
         e.preventDefault();
         e.stopPropagation();
+        startSizing(axis, i, e.clientX, e.clientY);
+      }}
+      // 열 그립이 행 그립 **위**에 온다. 둘은 경계가 만나는 자리에서 6×6으로 겹치는데,
+      // 행 그립은 표 너비를 통째로 덮으므로 순서만으로는 열을 잡을 수 없다(실측:
+      // 열 경계를 겨냥해도 `elementFromPoint`가 행 그립을 돌려줬다).
+      style={{
+        position: 'absolute',
+        zIndex: axis === 'col' ? 2 : 1,
+        // 이 띠 위의 손가락은 **우리 것**이다 — 길게 누르는 동안 판이 굴러가면
+        // 문턱을 넘어 기다림이 접힌다(즉 조절을 시작할 수 없다).
+        touchAction: 'none',
+        ...place,
+      }}
+    />
+  );
+
+  /** 잡는 순간 — 마우스는 곧바로, 손가락은 길게 누른 뒤 여기로 온다. */
+  function startSizing(axis: 'col' | 'row', i: number, clientX: number, clientY: number): void {
+    {
         // 재어 온 값은 소수점이 붙는다 — 문서에는 **정수**만 적는다
         // (`178.984375`가 저장본에 남으면 사람이 읽을 수 없고 diff도 시끄럽다).
         const raw = (axis === 'col' ? (colW ?? geom?.cols.map((c) => c.w) ?? []) : (rowH ?? geom?.rows.map((r) => r.h) ?? [])).slice();
@@ -6658,18 +6755,13 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             over -= cut;
           }
         }
-        sizing.current = { axis, i, from: axis === 'col' ? e.clientX : e.clientY, base: base.slice(), boxTop: boxRef.current?.getBoundingClientRect().top ?? 0 };
+        sizing.current = { axis, i, from: axis === 'col' ? clientX : clientY, base: base.slice(), boxTop: boxRef.current?.getBoundingClientRect().top ?? 0 };
         // 표 **윗변의 화면 자리**를 못박는다 — 끄는 동안 여기서 벗어나면 되돌린다.
         pin.current = { top: boxRef.current?.getBoundingClientRect().top ?? 0 };
         if (typeof requestAnimationFrame === 'function') pinRaf.current = requestAnimationFrame(keepTop);
         setLive({ axis, sizes: base.slice(), fit: fits });
-      }}
-      // 열 그립이 행 그립 **위**에 온다. 둘은 경계가 만나는 자리에서 6×6으로 겹치는데,
-      // 행 그립은 표 너비를 통째로 덮으므로 순서만으로는 열을 잡을 수 없다(실측:
-      // 열 경계를 겨냥해도 `elementFromPoint`가 행 그립을 돌려줬다).
-      style={{ position: 'absolute', zIndex: axis === 'col' ? 2 : 1, ...place }}
-    />
-  );
+    }
+  }
 
   /**
    * **끄는 동안 표의 윗변을 화면에 못박는다**(제보: 행을 늘리면 아래가 아니라 위로
@@ -6749,11 +6841,21 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       if (g && last) controller.setNoteTableSizes(block.id, g.axis, last.sizes);
       setLive(null);
     };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
+    /**
+     * **pointer로 듣는다** — 마우스와 손가락을 한 쌍으로 받으려고(요청 4).
+     *
+     * 예전에는 `mousemove`/`mouseup`이었는데, 손가락에서는 합성 mouse 이벤트가
+     * **손을 뗀 뒤에** 한 번 올 뿐이라 끄는 동안 크기가 전혀 따라오지 않았다.
+     * 마우스도 pointer 이벤트를 함께 내므로 한 쌍이면 둘 다 산다(그립이 손가락을
+     * 잡아 두므로 — `setPointerCapture` — 표 밖으로 나가도 계속 온다).
+     */
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
     return () => {
-      document.removeEventListener('mousemove', move);
-      document.removeEventListener('mouseup', up);
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', up);
       if (sc) sc.style.overflowAnchor = hadAnchor;
     };
   }, [live, block.id, controller]);
@@ -6957,6 +7059,18 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                      * 커서는 `cell` 그대로다 — 한 번의 누름은 여전히 "칸을 고르는 일"이다.
                      */
                     const armed = !editing && sel?.mode === 'cell' && sel.r === ri && sel.c === ci;
+                    /**
+                     * **손가락에서는 고른 칸을 편집 박스로 만들지 않는다**(제보: 한 번
+                     * 터치만 해도 키패드가 올라온다).
+                     *
+                     * 고른 칸이 `contentEditable`인 것은 **하드웨어 키보드의 한글 첫
+                     * 글자**를 받기 위한 장치다(아래 포커스 효과의 주석). 손가락에는
+                     * 그 키보드가 없고, 대신 탭하는 순간 브라우저가 그 상자에 포커스를
+                     * 줘 소프트 키보드가 화면 절반을 덮는다 — 칸을 고르기만 하려던
+                     * 사람에게는 방해다. 그래서 터치에서는 **두 번 눌러 편집을 열었을
+                     * 때만** 글 상자가 된다(아래 `onPointerUp`의 두 번 누르기).
+                     */
+                    const typeable = editing || (armed && !touch);
                     // 행이 열을 이긴다 — 행 정렬은 "이 한 줄만"이라는 예외이고,
                     // 열 정렬은 그 칸 전체의 성격이다(모델 주석에 같은 말이 있다).
                     const align = block.rowAlign?.[ri] ?? block.colAlign?.[ci] ?? 'left';
@@ -7037,6 +7151,18 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           setEdit(null);
                           pick({ mode: 'cell', r: ri, c: ci });
                         }}
+                        onPointerUp={(e) => {
+                          // 손가락의 두 번 누르기 — 같은 칸을 짧은 사이로 다시 누르면 편집.
+                          if (readOnly || e.pointerType !== 'touch') return;
+                          const prev = tap.current;
+                          const now = Date.now();
+                          if (prev && prev.r === ri && prev.c === ci && now - prev.t < TAP_GAP) {
+                            tap.current = null;
+                            openEdit(ri, ci);
+                            return;
+                          }
+                          tap.current = { r: ri, c: ci, t: now };
+                        }}
                         onMouseEnter={() => {
                           setHoverAt({ r: ri, c: ci });
                           const from = drag.current;
@@ -7103,14 +7229,14 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           cursor: editing ? 'text' : 'cell',
                           // 고르려고 끄는 동안 글자가 함께 잡히면 둘 다 엉킨다.
                           // 고른 칸만 예외다 — 그 칸의 글자를 통째로 골라 두기 때문이다.
-                          userSelect: editing || armed ? 'text' : 'none',
+                          userSelect: typeable ? 'text' : 'none',
                         }}
                       >
                         <NoteLine
                           onFocusLine={focusBox}
                           lineKey={`${block.id}:r${ri}c${ci}`}
                           runs={cell}
-                          readOnly={readOnly || !(editing || armed)}
+                          readOnly={readOnly || !typeable}
                           placeholder=""
                           listBox
                           listKeys={editing}
@@ -8053,6 +8179,18 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
   const [scale, setScale] = useState<number | null>(null);
   const [off, setOff] = useState({ x: 0, y: 0 });
   const pan = useRef<{ x: number; y: number; ox: number; oy: number; id: number } | null>(null);
+  /**
+   * **두 손가락 확대·축소**(제보: 모바일에서 핀치가 안 된다).
+   *
+   * 판에 `touch-action: none`을 걸어 두었기 때문에(본문이 뒤에서 굴러가지 않게)
+   * 브라우저의 기본 핀치도 함께 사라져 있었다 — 그러니 **우리가 그려야** 한다.
+   * 지금 닿아 있는 손가락을 모두 들고, 둘이 되는 순간의 간격·중점·배율·이동을
+   * 기준으로 삼아 그 뒤의 변화를 그대로 옮긴다(휠의 `zoomAt`과 같은 수학이라
+   * 잡은 그 점이 화면에서 움직이지 않는다). 중점이 함께 움직이면 그만큼 끌린다 —
+   * 확대하면서 자리를 옮기는 것이 한 동작이다.
+   */
+  const pts = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ d: number; cx: number; cy: number; scale: number; off: { x: number; y: number } } | null>(null);
 
   /** 판에 들어가는 배율 — 좌우 24px 여백을 뺀 자리에 맞춘다(예전 값 그대로). */
   const fit = nat && box.w && box.h ? Math.min(1, (box.w - 48) / nat.w, (box.h - 48) / nat.h) : 1;
@@ -8093,6 +8231,51 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
     },
     [fit, box.w, box.h, clampOff],
   );
+
+  /** 손가락 하나가 닿았다 — 둘이 되면 그 순간을 기준으로 잡는다. */
+  const touchDown = useCallback(
+    (e: ReactPointerEvent<Element>): void => {
+      if (e.pointerType !== 'touch') return;
+      pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.current.size !== 2) return;
+      const [a, b] = [...pts.current.values()];
+      if (!a || !b) return;
+      // 핀치가 시작되면 한 손가락 끌기는 접는다 — 한 동작에 두 규칙이 겹치면 튄다.
+      pan.current = null;
+      pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, scale: cur, off: { ...off } };
+    },
+    [cur, off],
+  );
+  /** 두 손가락이 움직였다 — 간격은 배율로, 중점은 이동으로. */
+  const touchMove = useCallback(
+    (e: ReactPointerEvent<Element>): boolean => {
+      if (e.pointerType !== 'touch' || !pts.current.has(e.pointerId)) return false;
+      pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const base = pinch.current;
+      if (!base || pts.current.size !== 2) return false;
+      const [a, b] = [...pts.current.values()];
+      if (!a || !b) return false;
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const to = Math.max(fit, Math.min(IMG_ZOOM_MAX, base.scale * (d / base.d)));
+      // 잡은 점을 붙든다(휠과 같은 식) — 그 뒤에 중점이 움직인 만큼 함께 끈다.
+      const ax = base.cx - box.w / 2;
+      const ay = base.cy - box.h / 2;
+      const x = ax - ((ax - base.off.x) * to) / base.scale + (mx - base.cx);
+      const y = ay - ((ay - base.off.y) * to) / base.scale + (my - base.cy);
+      setScale(to);
+      setOff(clampOff({ x, y }, to));
+      return true;
+    },
+    [fit, box.w, box.h, clampOff],
+  );
+  /** 손가락이 떨어졌다 — 하나만 남으면 기준을 버린다(남은 손가락으로 다시 잡지 않는다). */
+  const touchUp = useCallback((e: ReactPointerEvent<Element>): void => {
+    if (e.pointerType !== 'touch') return;
+    pts.current.delete(e.pointerId);
+    if (pts.current.size < 2) pinch.current = null;
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -8174,11 +8357,21 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
        */
       onPointerDown={(e) => {
         e.stopPropagation();
-        if (e.target !== e.currentTarget) return;
+        touchDown(e);
+        // 두 번째 손가락이 그림 **밖**에 내려앉는 것은 흔하다 — 그때 판이 닫히면
+        // 핀치를 시작할 수가 없다. 닿아 있는 손가락이 있으면 닫기는 없다.
+        if (e.target !== e.currentTarget || pts.current.size > 1) return;
         onClose();
       }}
-      onPointerMove={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
+      onPointerMove={(e) => {
+        e.stopPropagation();
+        touchMove(e);
+      }}
+      onPointerUp={(e) => {
+        e.stopPropagation();
+        touchUp(e);
+      }}
+      onPointerCancel={touchUp}
       style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(24,20,17,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', touchAction: 'none' }}
     >
       <img
@@ -8189,6 +8382,9 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
         ref={readNat}
         onPointerDown={(e) => {
           e.stopPropagation();
+          // 손가락은 **먼저 세어 둔다** — 맞춤 배율에서도 둘이 되면 핀치가 시작된다
+          // (아래의 "끌 자리가 없다" 갈래보다 앞이어야 한다).
+          touchDown(e);
           if (e.button !== 0) return;
           // 맞춤 배율에서는 끌 자리가 없다 — 그때는 누름이 곧 닫기다(예전과 같은 결).
           if (cur <= fit + 0.001) return;
@@ -8196,11 +8392,18 @@ function ImageZoom({ url, onClose }: { url: string; onClose: () => void }) {
           pan.current = { x: e.clientX, y: e.clientY, ox: off.x, oy: off.y, id: e.pointerId };
         }}
         onPointerMove={(e) => {
+          // 두 손가락이면 그쪽이 먹는다 — 한 손가락 끌기는 그동안 쉰다.
+          if (touchMove(e)) return;
           const p = pan.current;
           if (!p || p.id !== e.pointerId) return;
           setOff(clampOff({ x: p.ox + (e.clientX - p.x), y: p.oy + (e.clientY - p.y) }, cur));
         }}
         onPointerUp={(e) => {
+          touchUp(e);
+          if (pan.current?.id === e.pointerId) pan.current = null;
+        }}
+        onPointerCancel={(e) => {
+          touchUp(e);
           if (pan.current?.id === e.pointerId) pan.current = null;
         }}
         onDoubleClick={(e) => {
