@@ -946,3 +946,17 @@ input[type='search']::-webkit-search-results-decoration {
   background: #f4ede4;
   color: #c44b40;
 }
+
+/* 공책 서식 툴바 — **좁은 화면에서만** 가로로 굴린다(제보: 폰에서 툴바가 여덟 줄로
+   접혀 화면의 절반을 먹었다). 막대는 보이지 않게 둔다: 손가락으로 미는 자리이고,
+   9px짜리 막대가 40px 단추 줄 아래에 붙으면 툴바가 두 겹처럼 보인다.
+   ⚠️ `scrollbar-width`는 쓰지 않는다 — 크롬 121+는 그 속성이 붙은 요소에서
+   `::-webkit-scrollbar` 커스텀을 통째로 무시한다(#391). */
+.mf-note-tbscroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.mf-note-tbscroll::-webkit-scrollbar {
+  height: 0;
+  display: none;
+}

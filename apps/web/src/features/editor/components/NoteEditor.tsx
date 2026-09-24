@@ -56,10 +56,14 @@ import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
 import { keyLabel } from '../shortcutLabels';
 import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, onNoteTagsChange, removeNoteTag } from '../noteTags';
-import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
+import { useIsMobile, useIsTouchDevice } from '../../../hooks/useMediaQuery';
 
 interface Props {
   controller: EditorController;
+  /** 좁은 화면에서 페이지 목록 서랍이 열려 있나 — 상단 바의 ☰가 켜고 끈다. */
+  pagesOpen?: boolean;
+  /** 그 서랍을 닫는다(덮개를 누르거나 페이지를 고르면). */
+  onClosePages?: () => void;
 }
 
 /** 블록 종류 메뉴 — 이름과 아이콘(디자인의 `BLOCKS`). 2판에서 붙는 종류는 없다. */
@@ -367,9 +371,17 @@ const INKS: [string, string][] = [
   ['#8e5a80', '자두'],
 ];
 
-export function NoteEditor({ controller }: Props) {
+export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Props) {
   const page = controller.notePage;
   const readOnly = controller.readOnly;
+  /**
+   * **좁은 화면인가** — 폭으로 묻는다(`useIsTouchDevice`가 아니라).
+   *
+   * 여기서 갈리는 것은 "두 단이 들어가는가"이지 손가락으로 쓰는가가 아니다.
+   * 마우스가 달린 작은 창에서도 292 + 본문은 들어가지 않고, 넓은 태블릿에서는
+   * 손가락으로 써도 두 단이 편하다.
+   */
+  const mobile = useIsMobile();
   /**
    * 서식 버튼을 누르면 포커스가 버튼으로 옮겨 가 선택이 풀린다. 그래서 **누르기
    * 전에**(mousedown) 지금 선택이 들어 있던 박스를 기억해 둔다.
@@ -1865,11 +1877,59 @@ export function NoteEditor({ controller }: Props) {
       // 우리가 선택을 칠할 수 있는 브라우저인가 — CSS가 이 표식을 보고 본문 줄의
       // 브라우저 칠을 끈다(모르는 브라우저에서 끄면 선택이 아예 보이지 않는다).
       data-note-hl={supportsHighlight() ? '1' : undefined}
-      style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', background: 'var(--mf-note-body)', overflow: 'hidden' }}
+      data-note-narrow={mobile ? '1' : undefined}
+      style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', position: 'relative', background: 'var(--mf-note-body)', overflow: 'hidden' }}
     >
       {/* 툴바 이름·링크 주소 툴팁 — 위임 리스너 하나가 이 안의 `[data-tip]`·`[data-href]`를 맡는다. */}
       <NoteTips />
-      <PageList controller={controller} collapsed={focus} onQuery={setFindQ} />
+      {/**
+        * **좁은 화면에서 목록은 본문 위로 미끄러져 나온다**(제보: 폰에서 화면이 틀어진다).
+        *
+        * 데스크톱은 [목록 292 | 본문]의 두 단인데, 412px짜리 폰에서는 그 292가 먼저
+        * 자리를 가져가 본문에 120px밖에 남지 않았다 — 툴바가 두 줄씩 접히고 글은
+        * 화면 밖으로 밀렸다(실측). 폭을 줄여 두 단을 유지하면 어느 쪽도 쓸 수 없으므로,
+        * 좁을 때는 목록을 **덮개(서랍)**로 돌리고 본문이 화면을 통째로 쓴다.
+        */}
+      {mobile && pagesOpen && (
+        <div
+          data-note-pages-scrim
+          onPointerDown={(e) => {
+            e.preventDefault();
+            onClosePages?.();
+          }}
+          style={{ position: 'absolute', inset: 0, zIndex: 29, background: 'rgba(46,42,38,.34)' }}
+        />
+      )}
+      <div
+        data-note-pages-slot
+        style={
+          mobile
+            ? {
+                position: 'absolute',
+                zIndex: 30,
+                top: 0,
+                bottom: 0,
+                left: 0,
+                display: 'flex',
+                /**
+                 * 폭을 **여기서** 못박는다 — 안쪽 목록이 이 값을 채운다(`narrow`).
+                 *
+                 * 서랍은 화면보다 좁아야 한다: 옆의 빈자리가 곧 "눌러서 닫는 곳"이다.
+                 * 그런데 폭을 `max-width`로만 주면 안쪽의 292px 고정 단이 그대로 남아
+                 * **넘친 만큼이 닫힌 뒤에도 화면에 보인다**(실측: 320px 화면에서 6px).
+                 */
+                width: 'min(292px, 86vw)',
+                // 닫을 때는 **제 폭만큼** 물러난다 — 폭을 0으로 접으면 안쪽 글이
+                // 찌그러졌다 펴지며 튄다(데스크톱의 집중 모드와 같은 처방).
+                transform: pagesOpen ? 'translateX(0)' : 'translateX(-100%)',
+                boxShadow: pagesOpen ? '0 18px 44px -24px rgba(46,42,38,.55)' : 'none',
+                transition: 'transform .24s cubic-bezier(.2,.9,.3,1)',
+              }
+            : { display: 'contents' }
+        }
+      >
+        <PageList controller={controller} collapsed={!mobile && focus} onQuery={setFindQ} narrow={mobile} onPick={mobile ? onClosePages : undefined} />
+      </div>
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!readOnly && (
           <FormatToolbar
@@ -2083,7 +2143,17 @@ export function NoteEditor({ controller }: Props) {
            * 자리를 늘 잡아 두어 판의 폭이 변하지 않는다. 대신 스크롤이 없는 짧은
            * 페이지에서도 그 폭이 비어 있다(문서 편집기가 흔히 택하는 맞바꿈이다).
            */
-          style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', padding: '26px 0 56px', background: 'var(--mf-note-body)' }}
+          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            // 좁은 화면에서는 **막대 자리를 비워 두지 않는다**(모바일 막대는 겹쳐 뜬다)
+            // — 412px에서 그 15px은 한 줄에 글자 한 개 차이다.
+            ...(mobile ? {} : { scrollbarGutter: 'stable' as const }),
+            padding: mobile ? '18px 0 44px' : '26px 0 56px',
+            background: 'var(--mf-note-body)',
+          }}
         >
           {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 **9px**이다(요청: 너무 넓다) —
               19px이던 값의 절반. 제목만 위쪽에 숨을 더 둬서(아래 `headGap`) 문단은
@@ -2103,7 +2173,7 @@ export function NoteEditor({ controller }: Props) {
             }}
             // 폭은 **공책 한 권의 읽기 설정**이다(요청·`cover.wide`) — 가운데 정렬
             // (700px)이 기본이고, `창 너비에 맞춤`이면 단이 화면을 가득 쓴다.
-            style={{ ...(wide ? {} : { maxWidth: 700 }), margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}
+            style={{ ...(wide ? {} : { maxWidth: 700 }), margin: '0 auto', padding: mobile ? '0 16px' : '0 30px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}
           >
             <PageHead controller={controller} page={page} />
             {/* 머리와 본문 사이의 선(요청) — 위는 이 장이 무엇인지(제목·태그·사람),
@@ -2697,7 +2767,8 @@ function BookTile({ cover, size }: { cover: string; size: 'sm' | 'md' }) {
  * "배경 패턴"). 문서 칩은 이 알약이 대신한다 — 지름·모서리·그림자가 전부 다르고,
  * 캔버스용 칩을 억지로 맞추는 것보다 여기서 그리는 편이 정확하다.
  */
-export function NoteTopBar({ controller }: { controller: EditorController }) {
+export function NoteTopBar({ controller, pagesOpen = false, onTogglePages }: { controller: EditorController; pagesOpen?: boolean; onTogglePages?: () => void }) {
+  const mobile = useIsMobile();
   const page = controller.notePage;
   const space = controller.noteSpaceName;
   const readOnly = controller.readOnly;
@@ -2734,16 +2805,21 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 9,
+          gap: mobile ? 6 : 9,
           height: '100%',
-          padding: '0 10px 0 8px',
-          flex: '0 0 292px',
+          /**
+           * 좁은 화면에서는 **고정 292를 놓는다**(제보).
+           *
+           * 이 폭의 근거는 "아래 페이지 목록과 같은 폭"인데, 목록이 서랍으로 물러난
+           * 좁은 화면에는 맞출 상대가 없다. 412px짜리 폰에서 292를 그대로 두면 남는
+           * 120px에 경로·공유·댓글·기록이 전부 들어가야 해서 바깥으로 밀려났다
+           * (실측: `댓글·기록`이 x=413 — 화면 밖).
+           */
+          ...(mobile
+            ? { flex: '1 1 auto', padding: '0 4px 0 2px' }
+            : { flex: '0 0 292px', padding: '0 10px 0 8px', background: 'var(--mf-panel)', borderRight: '1px solid var(--mf-border-soft)' }),
           boxSizing: 'border-box',
           minWidth: 0,
-          // 면은 **아래 목록과 같은 종이**(#FBF7F1 = `--mf-panel`, 요청) — 한 칸이
-          // 위아래로 이어져 보이고, 오른쪽의 경로·툴바와도 선 하나로 갈린다.
-          background: 'var(--mf-panel)',
-          borderRight: '1px solid var(--mf-border-soft)',
         }}
       >
         <button
@@ -2758,6 +2834,24 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
             <path d="M19 12H5M11 18l-6-6 6-6" />
           </svg>
         </button>
+        {/* 페이지 목록 — 좁은 화면에서만. 넓은 화면에서는 목록이 늘 옆에 서 있어
+            켜고 끌 것이 없다(집중 모드는 툴바 쪽의 제 단추가 맡는다). */}
+        {mobile && (
+          <button
+            type="button"
+            data-note-pages-toggle
+            aria-expanded={pagesOpen}
+            className="mf-note-tb"
+            onClick={onTogglePages}
+            title="페이지 목록"
+            aria-label="페이지 목록"
+            style={{ width: 30, height: 30, flex: '0 0 auto', borderRadius: 9, border: 0, background: pagesOpen ? 'var(--mf-accent-soft)' : 'transparent', color: pagesOpen ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
+        )}
         {/* 표지 색 띠 — 시안이 이름 앞에 세워 둔 3px 막대. 어느 공책을 보고 있는지가
             이름을 읽기 전에 색으로 먼저 온다(목록의 고른 줄과 같은 표식). */}
         <span aria-hidden="true" style={{ width: 3, height: 24, flex: '0 0 auto', borderRadius: 999, background: cover, display: 'block' }} />
@@ -2839,7 +2933,10 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
         )}
       </span>
 
-      {/* 경로 — `스페이스 › ● 공책 › 페이지`. */}
+      {/* 경로 — `스페이스 › ● 공책 › 페이지`. 좁은 화면에서는 **감춘다**: 공책 이름은
+          왼쪽 칸에, 페이지 이름은 본문 머리에 이미 있어 셋 중 둘이 겹치는데,
+          그 줄이 공유·댓글·기록을 화면 밖으로 밀어냈다(제보). */}
+      {!mobile && (
       <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, height: '100%', padding: '0 10px', boxSizing: 'border-box', overflow: 'hidden' }}>
         {space && (
           <>
@@ -2855,11 +2952,12 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
           {page?.title?.trim() || '제목 없는 페이지'}
         </span>
       </nav>
+      )}
 
       {/* 오른쪽 — **공유는 맨몸으로**(얼굴들과 한 덩이), 댓글·기록만 카드 안에(시안).
           예전에는 셋이 한 알약 안에 있어 "지금 이 문서를 누가 보나"(공유·얼굴)와
           "무엇을 펼까"(댓글·기록)가 한 묶음으로 읽혔다. */}
-      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px 0 0', minWidth: 0 }}>
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: mobile ? 4 : 8, padding: mobile ? '0 6px 0 0' : '0 14px 0 0', minWidth: 0 }}>
         <button
           type="button"
           className="mf-note-crumb"
@@ -2869,13 +2967,14 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
           // 얼굴이 단추 **안**에 서므로 이름을 못박는다 — 그러지 않으면 접근성
           // 이름이 `공유 나` 처럼 얼굴의 첫 글자를 물고 들어온다.
           aria-label="공유"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 30, padding: '0 10px', borderRadius: 9, border: 0, color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: mobile ? 5 : 7, height: 30, padding: mobile ? '0 6px' : '0 10px', borderRadius: 9, border: 0, color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="9" cy="8" r="3" />
             <path d="M3 19a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M21 19a5 5 0 0 0-4-4.9" />
           </svg>
-          공유
+          {/* 좁은 화면에서는 아이콘과 얼굴만 — 낱말 하나가 밀어낼 자리가 없다. */}
+          {!mobile && '공유'}
           {/* 함께 보고 있는 얼굴들 — 겹쳐 놓는다(시안). **혼자여도 내 얼굴은 선다**
               (요청): "누가 보고 있나"의 답에 나를 빼면 빈자리가 "아무도 없다"로
               읽히고, 남이 들어온 순간에만 무언가 나타나 자리가 출렁인다.
@@ -2895,7 +2994,7 @@ export function NoteTopBar({ controller }: { controller: EditorController }) {
                 title={t.name}
                 style={{
                   height: 30,
-                  padding: '0 13px',
+                  padding: mobile ? '0 9px' : '0 13px',
                   borderRadius: 9,
                   border: 0,
                   color: t.on ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
@@ -2929,7 +3028,7 @@ function Caret() {
 /** 목록 정렬 둘 — 디자인 원본의 `noteSorts`. */
 type PageSort = 'edited' | 'title';
 
-function PageList({ controller, collapsed, onQuery }: { controller: EditorController; collapsed: boolean; onQuery: (q: string) => void }) {
+function PageList({ controller, collapsed, onQuery, narrow = false, onPick }: { controller: EditorController; collapsed: boolean; onQuery: (q: string) => void; /** 서랍으로 서 있나 — 그때는 폭을 바깥(슬롯)이 정한다. */ narrow?: boolean; /** 페이지를 고른 뒤 할 일 — 좁은 화면에서는 서랍을 닫는다. */ onPick?: (() => void) | undefined }) {
   const pages = controller.notePages;
   const curId = controller.notePage?.id ?? null;
   const cover = noteCoverColor(controller.doc.cover);
@@ -2989,10 +3088,11 @@ function PageList({ controller, collapsed, onQuery }: { controller: EditorContro
       style={{
         // 집중 모드에서 **왼쪽으로 스르륵 들어간다**(요청) — 폭을 0으로 줄이면서
         // 동시에 밀어 내야 안쪽 글이 찌그러지지 않고 미끄러져 나간다.
-        width: collapsed ? 0 : 292,
+        // 서랍일 때는 슬롯이 정한 폭을 그대로 쓴다(`min(292px, 86vw)`).
+        width: narrow ? '100%' : collapsed ? 0 : 292,
         minWidth: 0,
-        flex: '0 0 auto',
-        borderRight: collapsed ? 'none' : '1px solid var(--mf-border-soft)',
+        flex: narrow ? '1 1 auto' : '0 0 auto',
+        borderRight: narrow || collapsed ? 'none' : '1px solid var(--mf-border-soft)',
         background: 'var(--mf-panel)',
         display: 'flex',
         flexDirection: 'column',
@@ -3009,7 +3109,7 @@ function PageList({ controller, collapsed, onQuery }: { controller: EditorContro
         transition: 'width .26s cubic-bezier(.2,.9,.3,1), transform .26s cubic-bezier(.2,.9,.3,1), opacity .18s ease',
       }}
     >
-      <div style={{ width: 292, minWidth: 292, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+      <div style={{ width: narrow ? '100%' : 292, minWidth: narrow ? 0 : 292, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
       {/* 머리 — 검색 + 새 페이지가 **한 줄**이다(디자인). 예전에는 검색이 가운데,
           새 페이지가 목록 맨 아래에 따로 있어 둘이 한 벌로 읽히지 않았다. */}
       <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px' }}>
@@ -3172,7 +3272,7 @@ function PageList({ controller, collapsed, onQuery }: { controller: EditorContro
 
       <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 8px 14px', display: 'flex', flexDirection: 'column', gap: 3 }}>
         {shown.map(({ pg, hit }) => (
-          <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} find={query} cover={cover} />
+          <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} find={query} cover={cover} onPick={onPick} />
         ))}
 
         {shown.length === 0 && (
@@ -3246,7 +3346,7 @@ function useCursorPlacement(at: { x: number; y: number }, width: number, estimat
 /** 페이지 우클릭 메뉴의 너비 — 날개(`다른 공책으로 이동`)가 이 값만큼 옆으로 붙는다. */
 const PAGE_MENU_W = 212;
 
-function PageRow({ controller, page, index, active, hit, find, cover }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null; find?: string; cover: string }) {
+function PageRow({ controller, page, index, active, hit, find, cover, onPick }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null; find?: string; cover: string; onPick?: (() => void) | undefined }) {
   // 검색 중이면 **걸린 줄**을 보여 준다 — 첫 줄은 왜 걸렸는지를 말해 주지 못한다.
   const excerpt = hit ?? pageExcerpt(page, 90);
   const tag = page.tag ?? null;
@@ -3286,7 +3386,12 @@ function PageRow({ controller, page, index, active, hit, find, cover }: { contro
       className="mf-note-row"
       data-note-page-row={page.id}
       data-active={active ? '1' : undefined}
-      onClick={() => controller.setNotePageId(page.id)}
+      onClick={() => {
+        controller.setNotePageId(page.id);
+        // 좁은 화면에서는 고른 순간 서랍이 닫힌다 — 고르고 나서 덮개를 한 번 더
+        // 눌러야 글이 보이면 목록이 문이 아니라 벽이 된다.
+        onPick?.();
+      }}
       onContextMenu={(e) => {
         if (controller.readOnly) return;
         e.preventDefault();
@@ -4089,6 +4194,7 @@ function FormatToolbar({
   /** 본문 단이 창 너비를 쓰는가(`cover.wide`) — 폭 단추의 켜짐 상태. */
   wide: boolean;
 }) {
+  const mobile = useIsMobile();
   const [open, setOpen] = useState<'hl' | 'ink' | null>(null);
   /** 링크 판 — 열 때의 선택 구간을 함께 든다(입력칸에 초점이 가면 선택이 사라진다). */
   const [linkOpen, setLinkOpen] = useState(false);
@@ -4304,13 +4410,23 @@ function FormatToolbar({
   return (
     <div
       data-note-toolbar
+      data-note-narrow={mobile ? '1' : undefined}
+      className={mobile ? 'mf-note-tbscroll' : undefined}
       style={{
         flex: '0 0 auto',
         display: 'flex',
         alignItems: 'center',
         gap: 4,
-        flexWrap: 'wrap',
-        padding: '9px 20px',
+        /**
+         * 좁은 화면에서는 **접지 않고 가로로 굴린다**(제보).
+         *
+         * `wrap`이면 412px 폰에서 서른 남짓한 단추가 여덟 줄로 접혀 툴바 하나가
+         * 화면의 절반을 먹는다(실측: 491px). 한 줄로 두고 옆으로 밀면 본문이 제
+         * 높이를 지키고, 자주 쓰는 앞쪽(종류·굵게·기울임)이 늘 보인다.
+         */
+        ...(mobile
+          ? { flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', padding: '7px 10px' }
+          : { flexWrap: 'wrap', padding: '9px 20px' }),
         borderBottom: '1px solid var(--mf-border-soft)',
         background: 'var(--mf-card)',
       }}

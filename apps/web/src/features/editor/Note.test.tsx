@@ -6996,3 +6996,111 @@ describe('공책 20판 — 인라인 코드 아이콘과 글자색 첫 칸', () 
     expect(container.querySelector('[aria-label="기본"]')).toBeNull();
   });
 });
+
+/**
+ * 좁은 화면(폰)의 공책 — 제보: "모바일 웹에서 공책 진입 시 페이지가 틀어져 노출된다".
+ *
+ * 데스크톱은 [목록 292 | 본문]의 두 단인데 412px 폰에서는 그 292가 먼저 자리를
+ * 가져가 본문에 120px밖에 남지 않았다. 좁을 때는 목록을 **서랍**으로 돌리고
+ * 툴바는 접는 대신 가로로 굴린다.
+ */
+describe('공책 54판 — 좁은 화면 배치(제보: 모바일에서 틀어짐)', () => {
+  let restore: () => void;
+  beforeEach(() => {
+    localStorage.clear();
+    restore = mockMatchMedia(true);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(() => {
+    restore();
+    cleanup();
+  });
+
+  async function open(id: string) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(NOTE));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  it('페이지 목록은 **서랍**이다 — 본문을 밀지 않고 덮는다', async () => {
+    const c = await open('mb1');
+    const slot = c.querySelector('[data-note-pages-slot]') as HTMLElement;
+
+    expect(slot.style.position).toBe('absolute');
+    // 닫힌 채로 선다 — 제 폭만큼 물러나 화면에 남지 않는다.
+    expect(slot.style.transform).toBe('translateX(-100%)');
+    expect(slot.style.width).toBe('min(292px, 86vw)');
+    expect(c.querySelector('[data-note-pages-scrim]')).toBeNull();
+    // 안쪽 목록은 292 고정이 아니라 슬롯을 채운다(작은 폰에서 넘치지 않게).
+    expect((c.querySelector('[data-note-pages]') as HTMLElement).style.width).toBe('100%');
+  });
+
+  it('☰로 열고 덮개를 눌러 닫는다', async () => {
+    const c = await open('mb2');
+    const toggle = (await waitFor(() => c.querySelector('[data-note-pages-toggle]'))) as HTMLElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(c.querySelector('[data-note-pages-scrim]')).toBeTruthy());
+    expect((c.querySelector('[data-note-pages-slot]') as HTMLElement).style.transform).toBe('translateX(0)');
+
+    fireEvent.pointerDown(c.querySelector('[data-note-pages-scrim]')!);
+    await waitFor(() => expect(c.querySelector('[data-note-pages-scrim]')).toBeNull());
+    expect((c.querySelector('[data-note-pages-slot]') as HTMLElement).style.transform).toBe('translateX(-100%)');
+  });
+
+  it('페이지를 고르면 서랍이 **스스로 닫힌다** — 고른 글이 바로 보여야 한다', async () => {
+    const c = await open('mb3');
+    fireEvent.click((await waitFor(() => c.querySelector('[data-note-pages-toggle]'))) as HTMLElement);
+    await waitFor(() => expect(c.querySelector('[data-note-pages-scrim]')).toBeTruthy());
+
+    fireEvent.click(c.querySelector('[data-note-page-row="p2"]')!);
+    await waitFor(() => expect(c.querySelector('[data-note-pages-scrim]')).toBeNull());
+    expect((c.querySelector('[data-note-title]') as HTMLInputElement).value).toBe('주간 회고');
+  });
+
+  it('툴바는 **접지 않고 가로로 굴린다** — 여덟 줄로 접혀 화면 절반을 먹던 자리', async () => {
+    const c = await open('mb4');
+    const tb = (await waitFor(() => c.querySelector('[data-note-toolbar]'))) as HTMLElement;
+
+    expect(tb.style.flexWrap).toBe('nowrap');
+    expect(tb.style.overflowX).toBe('auto');
+    expect(tb.getAttribute('data-note-narrow')).toBe('1');
+  });
+
+  it('상단 바 — 경로를 감추고 문서 칸의 고정 292를 놓는다', async () => {
+    const c = await open('mb5');
+    await waitFor(() => expect(c.querySelector('[data-doc-chip]')).toBeTruthy());
+
+    // 경로(`스페이스 › 공책 › 페이지`)는 좁은 화면에서 뜨지 않는다 — 셋 중 둘이 겹친다.
+    expect(c.querySelector('nav[aria-label="위치"]')).toBeNull();
+    // 292가 아니라 남는 만큼 — 공유·댓글·기록이 화면 밖으로 밀리지 않게.
+    expect((c.querySelector('[data-doc-chip]') as HTMLElement).style.flex).toBe('1 1 auto');
+    // 「공유」라는 낱말은 빼고 아이콘과 얼굴만 남긴다.
+    expect(c.querySelector('[data-note-share]')?.textContent).not.toContain('공유');
+  });
+});
+
+describe('공책 54판 — 넓은 화면은 그대로다', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('목록은 옆에 서고 ☰는 없다 — 서랍은 좁은 화면만의 것이다', async () => {
+    localStorage.setItem('mindflow_doc_mw1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=mw1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+
+    expect(container.querySelector('[data-note-pages-toggle]')).toBeNull();
+    expect(container.querySelector('[data-note-pages-scrim]')).toBeNull();
+    // 슬롯은 자리만 차지하지 않는다(`display: contents`) — 두 단 배치가 그대로다.
+    expect((container.querySelector('[data-note-pages-slot]') as HTMLElement).style.display).toBe('contents');
+    expect((container.querySelector('[data-note-pages]') as HTMLElement).style.width).toBe('292px');
+    expect((container.querySelector('[data-note-toolbar]') as HTMLElement).style.flexWrap).toBe('wrap');
+    expect(container.querySelector('nav[aria-label="위치"]')).toBeTruthy();
+  });
+});
