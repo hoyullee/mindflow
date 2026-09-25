@@ -41,7 +41,12 @@ import type { Theme } from '../theme';
 import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
-import { runsToHtml } from '../richtextDom';
+import { runsToHtml, setLinearSelection } from '../richtextDom';
+import { useCommentParticipants } from './CommentPanel';
+import { dateChipLabel, mentionInitial, mentionTone } from '../mentionChip';
+import { dateHits, wantsCalendarRow } from '../noteDateQuery';
+import { DOW, addDays, isoOf, partsOf, todayISO } from '../../home/calendar/model';
+import { insertChip } from '../noteChipInsert';
 import { firstImageFile } from '../imageAttach';
 import { CODE_BG, CODE_INK, codeHtml } from '../noteCode';
 import { downloadFile } from '../download';
@@ -490,6 +495,102 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     setSlashAtChar(null);
     setSlashTail('');
   }, []);
+
+  /**
+   * `@` 허브 — 사람·날짜·페이지를 한 메뉴에서 부른다(스펙 4절).
+   *
+   * 상태를 `/`와 **따로** 든 이유: 둘은 동시에 열릴 수 있는 자리가 아니지만(한
+   * 캐럿에 한 메뉴), 닫는 규칙이 다르다 — `/`는 이름이 길어지면 접고 `@`는 공백
+   * 두 칸이나 24자에서 접는다. 한 상태로 묶으면 그 규칙이 섞인다.
+   *
+   * `dateOnly`는 `/날짜`로 연 경우다 — 그때는 사람·페이지를 숨기고 달력을 함께 편다.
+   */
+  const [atFor, setAtFor] = useState<string | null>(null);
+  const [atAnchor, setAtAnchor] = useState<SlashAnchor | null>(null);
+  const [atAtChar, setAtAtChar] = useState<number | null>(null);
+  const [atTail, setAtTail] = useState('');
+  const [atDateOnly, setAtDateOnly] = useState(false);
+  const closeMention = useCallback(() => {
+    setAtFor(null);
+    setAtAtChar(null);
+    setAtTail('');
+    setAtDateOnly(false);
+  }, []);
+  const openMentionAt = (lineKey: string, from?: number | null, tail = '', dateOnly = false) => {
+    const el = document.querySelector(`[data-note-line="${lineKey}"]`);
+    setAtAnchor(measureSlash(el));
+    setAtFor(lineKey);
+    setAtAtChar(typeof from === 'number' ? from : null);
+    setAtTail(tail);
+    setAtDateOnly(dateOnly);
+    // 두 메뉴가 한 캐럿에 겹쳐 뜨지 않게 — `/`로 열고 `날짜`를 고르는 길이 있다.
+    closeSlash();
+  };
+  /**
+   * 허브가 부를 수 있는 사람들 — **댓글이 쓰는 그 명단**이다(`useCommentParticipants`).
+   *
+   * 따로 만들지 않은 이유: 부를 수 있는 사람의 정의는 "이 문서에 초대된 사람"
+   * 하나여야 한다. 두 벌이 되면 댓글에서는 보이는데 본문에서는 안 보이는 사람이
+   * 생긴다. 이 훅은 나를 이미 빼고 준다(스펙 4-4).
+   *
+   * 허브가 열려 있을 때만 묻는다 — 공책을 열어 두기만 해도 왕복이 돌 이유가 없다.
+   */
+  const hubPeople = useCommentParticipants(controller.docId, atFor !== null).map((p) => ({ email: p.email, name: p.displayName || p.email }));
+  /** 이 공책의 **다른** 페이지들 — 지금 보는 페이지는 뺀다(자기 자신을 가리키지 않게). */
+  const hubPages = (controller.doc.pages ?? []).filter((pg) => pg.id !== page?.id).map((pg) => ({ id: pg.id, title: pg.title || '제목 없음' }));
+
+  /**
+   * 허브에서 고른 것을 **본문에 칩으로 박는다**(스펙 4-6).
+   *
+   * 지우는 구간이 둘로 갈린다: `@`로 열었으면 `@질의` 전체이고, `/날짜`로 열었으면
+   * 지울 것이 없다(`/질의`는 목록 쪽이 이미 걷었다) — 그때는 **지금 캐럿 자리**에
+   * 넣는다. 그래서 자리를 상태가 아니라 그 순간의 DOM에서 다시 읽는다.
+   *
+   * 모델을 고친 뒤 **DOM도 우리가 다시 그린다**: 편집 박스는 비제어라(마운트할 때
+   * 한 번만 그린다) 모델만 바꾸면 화면에는 `@질의`가 그대로 남는다.
+   */
+  const pickMention = (pick: HubPick): void => {
+    const key = atFor;
+    if (!page || !key) return;
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+    const text = noteLineText(page, key);
+    const runs = noteLineRuns(page, key);
+    // `/날짜`로 열었으면 지울 것이 없다 — **지금 캐럿 자리**에 넣는다(접혀 있을 때만).
+    const span = el ? noteCaretSpan(el) : null;
+    const from = atAtChar ?? (span && span.a === span.b ? span.a : text.length);
+    const cut = atAtChar === null ? 0 : 1 + atQuery.length;
+    const label = pick.kind === 'person' ? `@${pick.name}` : pick.kind === 'date' ? dateChipLabel(pick.iso) : pick.title;
+    const mark = pick.kind === 'person' ? { m: pick.email } : pick.kind === 'date' ? { dt: pick.iso } : { pg: `${controller.docId}:${pick.id}` };
+    const out = insertChip(text, runs, from, cut, label, mark);
+    commitLine(controller, key, out.runs);
+    closeMention();
+    if (el) {
+      el.innerHTML = runsToHtml({ text: out.text, rich: out.runs });
+      el.focus();
+      setLinearSelection(el, out.caret, out.caret);
+    }
+    /**
+     * 스펙은 여기서 토스트를 띄우라고 하지만(`{이름}님을 멘션했어요…`) **이 앱에는
+     * 토스트 체계가 없다** — 프로토타입에만 있던 부품이다. 칩이 그 자리에 박히는
+     * 것이 이미 "됐다"는 신호라, 없는 체계를 이 한 줄 때문에 세우지 않는다.
+     * (알림이 실제로 나가는 것은 저장 시점이고, 그 확인은 알림 센터의 몫이다.)
+     */
+  };
+
+  // 본문을 굴려도 따라간다 — `/` 목록과 같은 이유·같은 방법.
+  useEffect(() => {
+    if (atFor === null) return;
+    const follow = () => {
+      const el = document.querySelector(`[data-note-line="${atFor}"]`);
+      if (el) setAtAnchor(measureSlash(el));
+    };
+    document.addEventListener('scroll', follow, true);
+    window.addEventListener('resize', follow);
+    return () => {
+      document.removeEventListener('scroll', follow, true);
+      window.removeEventListener('resize', follow);
+    };
+  }, [atFor]);
   /**
    * 집중 모드 — **페이지 목록을 왼쪽으로 밀어 넣는다**(요청).
    *
@@ -792,6 +893,35 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     const bare = slashQuery.replace(/\s/g, '');
     if (/\s/.test(slashQuery) && bare.length >= 7) closeSlash();
   }, [slashFor, slashAtChar, slashQuery, page, closeSlash]);
+
+  /** `@` 뒤에 친 글자 — 규칙은 `slashQuery`와 같다(꼬리를 접미로 뗀다). */
+  const atQuery = useMemo(() => {
+    if (atFor === null || atAtChar === null || !page) return '';
+    const text = noteLineText(page, atFor);
+    if (text[atAtChar] !== '@') return '';
+    const rest = text.slice(atAtChar + 1);
+    return atTail && rest.endsWith(atTail) ? rest.slice(0, rest.length - atTail.length) : rest;
+  }, [atFor, atAtChar, atTail, page]);
+  /** `@`를 본 적이 있나 — 여는 순간에는 모델이 아직 그 글자를 모른다(`slashSeen`과 같다). */
+  const atSeen = useRef(false);
+  useEffect(() => {
+    if (atFor === null || atAtChar === null) atSeen.current = false;
+  }, [atFor, atAtChar]);
+  useEffect(() => {
+    // `/날짜`로 연 허브에는 `@`가 없다 — 글자를 근거로 닫으면 열자마자 닫힌다.
+    if (atFor === null || atAtChar === null || !page || atDateOnly) return;
+    const text = noteLineText(page, atFor);
+    if (text[atAtChar] === '@') atSeen.current = true;
+    else if (atSeen.current) {
+      closeMention(); // `@`를 지웠다(스펙 4-2)
+      return;
+    } else return;
+    /**
+     * **글을 쓰는 중으로 넘어갔을 때** 접는다(스펙 4-2) — 연속 공백·줄바꿈·24자.
+     * 어느 쪽이든 **친 글자는 그대로 둔다**: 지우는 것은 고른 경우뿐이다.
+     */
+    if (/\s\s|\n/.test(atQuery) || atQuery.length > 24) closeMention();
+  }, [atFor, atAtChar, atQuery, page, atDateOnly, closeMention]);
 
   /**
    * **읽고 있는 글자를 회색으로**(요청) — `/질의`에 색만 얹는다.
@@ -2261,6 +2391,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   rememberBox={rememberBox}
                   focusBox={focusBox}
                   openSlash={(id, at, tail) => openSlashAt(id, at, tail)}
+                  openMention={(id, at, tail) => openMentionAt(id, at, tail)}
                   pickObject={pickObject}
                   picked={picked}
                   onlyPicked={selectedIds.length === 1}
@@ -2294,6 +2425,18 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   }
                   setLinkAt(null);
                 }}
+              />
+            )}
+            {atFor && !readOnly && (
+              <NoteMentionHub
+                anchor={atAnchor}
+                query={atQuery}
+                today={todayISO()}
+                people={hubPeople}
+                pages={hubPages}
+                dateOnly={atDateOnly}
+                onPick={pickMention}
+                onClose={closeMention}
               />
             )}
             {slashFor && !readOnly && (
@@ -4946,6 +5089,8 @@ interface BlockProps {
   /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
    * 칸에서도 열린다(그 줄의 글로 좁혀져야 하므로 블록 id로는 모자란다). */
   openSlash: (lineKey: string, at?: number, tail?: string) => void;
+  /** `@` 허브를 이 줄에서 연다 — `openSlash`와 같은 배선. */
+  openMention: (lineKey: string, at?: number, tail?: string) => void;
   /** 이 블록을 **오브젝트로 고른다**(요청 1·6) — `extend`면 지금 고른 것에서 잇는다. */
   pickObject: (id: string, extend?: boolean) => void;
   /** 지금 고른 것에 이 블록이 들어 있는가 — 그림·표가 제 손잡이를 켤 때 본다. */
@@ -5067,7 +5212,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, pickObject, picked, onlyPicked }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, openMention, pickObject, picked, onlyPicked }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -5493,6 +5638,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 if (readOnly) return;
                 openSlash(`${block.id}:body`, at, tail);
               }}
+              onMention={(at, tail) => {
+                if (readOnly) return;
+                openMention(`${block.id}:body`, at, tail);
+              }}
               />
           </div>
         )}
@@ -5588,6 +5737,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               onSlash={(at, tail) => {
                 if (readOnly) return;
                 openSlash(`${block.id}:${item.id}`, at, tail);
+              }}
+              onMention={(at, tail) => {
+                if (readOnly) return;
+                openMention(`${block.id}:${item.id}`, at, tail);
               }}
               onEnter={(at) => {
                 if (readOnly) return false;
@@ -5758,6 +5911,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSlash={(at, tail) => {
         if (readOnly) return;
         openSlash(block.id, at, tail);
+      }}
+      onMention={(at, tail) => {
+        if (readOnly) return;
+        openMention(block.id, at, tail);
       }}
       /**
        * 제목의 편집 박스는 **딱 한 줄 높이**다 — 기본값 `minHeight: 1.6em`은 제목의
@@ -9021,6 +9178,359 @@ function linkHost(href: string): string {
   } catch {
     return displayUrl(href, 32);
   }
+}
+
+/* ── `@` 멘션 허브 — 사람 · 날짜 · 페이지 (스펙 4절) ───────────────────────── */
+
+/** 허브에서 고른 것. 본문에 무엇을 박을지는 호출부가 정한다(`pickMention`). */
+type HubPick =
+  | { kind: 'person'; email: string; name: string }
+  | { kind: 'date'; iso: string; label: string }
+  | { kind: 'page'; id: string; title: string };
+
+/**
+ * 허브가 그리는 한 줄.
+ *
+ * 그룹(사람·날짜·페이지)은 **머리글만** 나누고 키보드는 이 평평한 목록을 돈다 —
+ * 그룹마다 커서를 따로 들면 "아래로 계속 누르면 어디로 가는가"가 흔들린다.
+ * 보일 글자를 줄에 함께 담는 이유도 같다: 그리는 쪽이 원본을 다시 뒤지지 않는다.
+ */
+interface HubRow {
+  /** `calendar`는 「다른 날짜 고르기…」 — 고르는 것이 아니라 달력을 여는 줄이다. */
+  kind: 'person' | 'date' | 'page' | 'calendar';
+  key: string;
+  label: string;
+  /** 오른쪽에 흐리게 붙는 글자 — 이메일 · `8.27 목` · `달력 열기`. */
+  sub: string;
+  /** 사람 줄의 아바타 색(그 사람의 표식). */
+  tone?: string;
+  pick?: HubPick;
+}
+
+const HUB_W = 276;
+
+/** 그 달의 1일~말일 안에서 멈춘다 — 방향키로 달을 넘기지 않는다(스펙 4-5). */
+function clampToMonth(iso: string, anchorIso: string): string {
+  const a = partsOf(anchorIso);
+  const p = partsOf(iso);
+  if (!a || !p) return anchorIso;
+  if (p.y === a.y && p.m === a.m) return iso;
+  return anchorIso;
+}
+
+/**
+ * `@` 하나로 사람·날짜·페이지를 부른다 — `SlashMenu`의 형제다.
+ *
+ * 같은 규칙을 그대로 따른다: **포커스를 뺏지 않고**(캐럿이 본문에 있어야 이어서 칠
+ * 수 있다) 키보드만 캡처 단계에서 가로챈다. 그래서 이 판에는 `tabIndex`도
+ * `autoFocus`도 없고, 누르는 것도 `onPointerDown`에서 전파를 끊어 본문 선택이
+ * 풀리지 않게 한다.
+ *
+ * 날짜 해석은 `noteDateQuery`가 한다(순수·테스트됨) — 여기서는 그 결과를 줄로 펴고
+ * 달력을 그릴 뿐이다.
+ */
+function NoteMentionHub({
+  anchor,
+  query,
+  today,
+  people,
+  pages,
+  dateOnly = false,
+  onPick,
+  onClose,
+}: {
+  anchor: SlashAnchor | null;
+  /** `@` 뒤에 친 글자. `/날짜`로 열었으면 언제나 빈 문자열이다. */
+  query: string;
+  /** 기준 날짜 `YYYY-MM-DD` — 화면이 정해 넘긴다(순수 계산이 시계를 읽지 않게). */
+  today: string;
+  people: { email: string; name: string }[];
+  pages: { id: string; title: string }[];
+  /** `/날짜`로 열렸나 — 사람·페이지를 숨기고 달력을 **함께** 편다. */
+  dateOnly?: boolean;
+  onPick: (pick: HubPick) => void;
+  onClose: () => void;
+}) {
+  useAnchored(true, onClose, { closeOnScroll: false });
+  const q = query.trim();
+  const ql = q.toLowerCase();
+
+  /** 달력을 펴 두었나 — `/날짜`는 처음부터 펴져 있다(스펙 4-5). */
+  const [calOpen, setCalOpen] = useState(dateOnly);
+  /** 달력에서 **키보드가 짚고 있는 날**. `null`이면 아직 달력을 만지지 않았다. */
+  const [calAt, setCalAt] = useState<string | null>(null);
+  const [cursor, setCursor] = useState(0);
+  useEffect(() => setCursor(0), [ql]);
+
+  const dates = useMemo(() => dateHits(q, today), [q, today]);
+  const rows: HubRow[] = useMemo(() => {
+    const out: HubRow[] = [];
+    if (!dateOnly) {
+      // 검색어가 비면 앞의 셋, 있으면 이름·이메일에 걸리는 넷(스펙 4-4).
+      const persons = ql ? people.filter((p) => `${p.name}${p.email}`.toLowerCase().includes(ql)).slice(0, 4) : people.slice(0, 3);
+      persons.forEach((p) =>
+        out.push({ kind: 'person', key: `p:${p.email}`, label: p.name, sub: p.email, tone: mentionTone(p.email), pick: { kind: 'person', email: p.email, name: p.name } }),
+      );
+    }
+    dates.forEach((d) => out.push({ kind: 'date', key: `d:${d.iso}`, label: d.label, sub: d.sub, pick: { kind: 'date', iso: d.iso, label: d.label } }));
+    // 달력을 이미 펴 두었으면 그 줄은 할 일이 없다.
+    if (!calOpen && wantsCalendarRow(q)) out.push({ kind: 'calendar', key: 'cal', label: '다른 날짜 고르기…', sub: '달력 열기' });
+    if (!dateOnly && ql) {
+      // 페이지는 **검색어가 있을 때만** — 첫 화면을 짧게 두려는 규칙이다.
+      pages
+        .filter((pg) => pg.title.toLowerCase().includes(ql))
+        .slice(0, 3)
+        .forEach((pg) => out.push({ kind: 'page', key: `g:${pg.id}`, label: pg.title, sub: '', pick: { kind: 'page', id: pg.id, title: pg.title } }));
+    }
+    return out;
+  }, [people, pages, dates, ql, q, calOpen, dateOnly]);
+
+  /** 달력 모드에서는 목록을 숨긴다 — 창이 두 배로 길어지지 않게(스펙 4-5). */
+  const listShown = !calOpen || dateOnly;
+
+  const take = useCallback(
+    (row: HubRow | undefined): void => {
+      if (!row) return;
+      if (row.kind === 'calendar') {
+        setCalOpen(true);
+        setCalAt(today);
+        return;
+      }
+      if (row.pick) onPick(row.pick);
+    },
+    [onPick, today],
+  );
+
+  /**
+   * 키보드는 **본문에 있다** — Enter·↑↓·←→·Esc만 캡처 단계에서 가로챈다.
+   * 가로채지 않으면 Enter가 줄을 바꾸면서 동시에 항목을 고른다.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const stop = (): void => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      };
+      if (e.key === 'Escape') {
+        stop();
+        // 커서와 친 글자는 그대로 둔다(스펙 4-2) — 접는 것은 판뿐이다.
+        onClose();
+        return;
+      }
+      // 한글을 **확정하는** Enter는 가로채지 않는다.
+      const composing = e.isComposing || e.keyCode === 229;
+      if (e.key === 'Enter' && !composing) {
+        // 달력을 한 번이라도 만졌으면 Enter는 **그 날**이다(스펙 4-5의 `/날짜` 규칙).
+        if (calOpen && calAt) {
+          stop();
+          onPick({ kind: 'date', iso: calAt, label: calAt });
+          return;
+        }
+        if (listShown && rows.length) {
+          stop();
+          take(rows[Math.min(cursor, rows.length - 1)]);
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const dn = e.key === 'ArrowDown';
+        if (calOpen && !dateOnly) {
+          // 달력만 보일 때 ↑↓는 **주 단위**다.
+          stop();
+          setCalAt((c) => clampToMonth(addDays(c ?? today, dn ? 7 : -7), c ?? today));
+          return;
+        }
+        if (!listShown || !rows.length) return;
+        stop();
+        setCursor((c) => (c + (dn ? 1 : rows.length - 1)) % rows.length);
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (!calOpen) {
+          // 캐럿을 옮기는 것은 고르는 일이 아니다 — 판만 접는다(`SlashMenu`와 같다).
+          onClose();
+          return;
+        }
+        stop();
+        const step = e.key === 'ArrowRight' ? 1 : -1;
+        setCalAt((c) => clampToMonth(addDays(c ?? today, step), c ?? today));
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [rows, cursor, calOpen, calAt, dateOnly, listShown, today, take, onPick, onClose]);
+
+  const up = anchor?.up ?? false;
+  const head = calOpen && !dateOnly ? '날짜 고르기' : dateOnly ? '날짜 넣기' : q ? `'@${q}'` : '멘션';
+
+  return (
+    <div data-note-hub onPointerDown={(e) => e.stopPropagation()}>
+      <div style={{ position: 'fixed', left: anchor ? anchor.gx : -9999, top: anchor ? anchor.gy : -9999, zIndex: 40, height: 20, pointerEvents: 'none' }}>
+        <div
+          data-note-hub-panel
+          style={{
+            position: 'absolute',
+            left: 0,
+            ...(up ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
+            width: HUB_W,
+            boxSizing: 'border-box',
+            borderRadius: 14,
+            background: 'var(--mf-card)',
+            border: '1px solid var(--mf-border)',
+            boxShadow: '0 24px 48px -22px rgba(46,42,38,.5)',
+            animation: 'mf-note-pop .13s ease both',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
+            <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>{head}</span>
+            <span style={{ marginLeft: 'auto', flex: '0 0 auto', fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{calOpen ? '←→↑↓ 날짜 이동 · Enter' : '↑↓ 이동 · Enter'}</span>
+          </div>
+          {/* 안내는 **아무것도 치지 않았을 때만** — 무엇으로 찾을 수 있는지가 답이다. */}
+          {!q && !calOpen && (
+            <span style={{ padding: '6px 11px 0', fontSize: 11, color: 'var(--mf-faint)', wordBreak: 'keep-all' }}>이름 · 27 · 8.27 · 금요일 · 페이지 제목으로 찾기</span>
+          )}
+          {listShown && (
+            <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : 300, overflowY: 'auto', overflowX: 'hidden' }}>
+              {rows.length === 0 && (
+                <span style={{ padding: '10px 8px', fontSize: 12, color: 'var(--mf-faint)', textAlign: 'center', wordBreak: 'keep-all' }}>
+                  {`'${q}'와 맞는 사람·날짜·페이지가 없어요`}
+                </span>
+              )}
+              {rows.map((row, i) => {
+                const first = rows.findIndex((r) => r.kind === row.kind || (row.kind === 'calendar' && r.kind === 'date')) === i;
+                const groupName = row.kind === 'person' ? '사람' : row.kind === 'date' ? '날짜' : row.kind === 'page' ? '페이지' : '';
+                return (
+                  <div key={row.key} style={{ display: 'contents' }}>
+                    {first && groupName && <span style={POP_HEAD}>{groupName}</span>}
+                    <button
+                      type="button"
+                      data-hub-row={String(i)}
+                      data-hub-kind={row.kind}
+                      onMouseEnter={() => setCursor(i)}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => take(row)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        width: '100%',
+                        padding: '6px 8px',
+                        borderRadius: 8,
+                        border: 0,
+                        background: i === cursor ? 'var(--mf-wash)' : 'transparent',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        minWidth: 0,
+                      }}
+                    >
+                      <HubGlyph row={row} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</span>
+                      {row.sub && (
+                        <span style={{ flex: '0 0 auto', maxWidth: 120, fontSize: 11, color: row.kind === 'calendar' ? 'var(--mf-accent)' : 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.sub}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {calOpen && <HubCalendar focus={calAt ?? today} today={today} onBack={dateOnly ? undefined : () => setCalOpen(false)} onPick={(iso) => onPick({ kind: 'date', iso, label: iso })} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 줄 앞의 22px 표식 — 사람은 머리글자 원, 날짜는 코랄 달력, 페이지는 문서. */
+function HubGlyph({ row }: { row: HubRow }) {
+  const box = { width: 22, height: 22, flex: '0 0 auto', borderRadius: row.kind === 'person' ? 999 : 7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } as const;
+  if (row.kind === 'person')
+    return (
+      <span style={{ ...box, background: row.tone ?? 'var(--mf-faint)', color: '#fff', fontSize: 10.5, fontWeight: 800 }}>{mentionInitial(row.label)}</span>
+    );
+  const cal = row.kind === 'date' || row.kind === 'calendar';
+  return (
+    <span style={{ ...box, background: cal ? 'var(--mf-accent-soft)' : 'var(--mf-panel2)', color: cal ? 'var(--mf-accent)' : 'var(--mf-muted)' }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {cal ? <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" /></> : <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>}
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * 미니 달력 — **한 달만** 그린다.
+ *
+ * 달을 넘기는 단추를 두지 않은 이유: 이 달력은 "가까운 날을 고르는" 자리다(먼 날은
+ * `8.27`처럼 쳐서 찾는 편이 빠르다). 단추를 두면 판이 커지고 키보드 규칙도 한 겹
+ * 늘어난다 — 방향키가 달의 끝에서 멈추는 것(`clampToMonth`)과 같은 결정이다.
+ */
+function HubCalendar({ focus, today, onBack, onPick }: { focus: string; today: string; onBack?: () => void; onPick: (iso: string) => void }) {
+  const p = partsOf(focus);
+  if (!p) return null;
+  const first = new Date(Date.UTC(p.y, p.m - 1, 1));
+  const lead = first.getUTCDay();
+  const days = new Date(Date.UTC(p.y, p.m, 0)).getUTCDate();
+  const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => isoOf(p.y, p.m, i + 1))];
+  return (
+    <div style={{ borderTop: '1px solid var(--mf-border-soft)', background: 'var(--mf-panel2)', padding: '9px 11px 11px' }}>
+      {onBack && (
+        <button
+          type="button"
+          data-hub-back
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onBack}
+          style={{ display: 'block', width: '100%', padding: '4px 6px', marginBottom: 6, borderRadius: 7, border: 0, background: 'transparent', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: 700, textAlign: 'left', cursor: 'pointer' }}
+        >
+          ‹ 사람·날짜 목록으로
+        </button>
+      )}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 5 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>{`${p.y}년 ${p.m}월`}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: 'var(--mf-accent)', whiteSpace: 'nowrap' }}>{dateChipLabel(focus)}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+        {DOW.map((d) => (
+          <span key={d} style={{ height: 16, fontSize: 9.5, fontWeight: 700, color: 'var(--mf-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {d}
+          </span>
+        ))}
+        {cells.map((iso, i) =>
+          iso === null ? (
+            <span key={`b${i}`} style={{ height: 24 }} />
+          ) : (
+            <button
+              key={iso}
+              type="button"
+              data-hub-day={iso}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onPick(iso)}
+              style={{
+                height: 24,
+                borderRadius: 7,
+                border: 0,
+                cursor: 'pointer',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 11,
+                background: iso === focus ? (iso === today ? 'var(--mf-accent)' : 'var(--mf-text)') : 'transparent',
+                color: iso === focus ? 'var(--mf-card)' : iso === today ? 'var(--mf-accent)' : 'var(--mf-subtext)',
+                fontWeight: iso === today || iso === focus ? 800 : 500,
+              }}
+            >
+              {partsOf(iso)?.d ?? ''}
+            </button>
+          ),
+        )}
+      </div>
+    </div>
+  );
 }
 
 function SlashMenu({

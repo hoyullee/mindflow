@@ -48,7 +48,9 @@ export function runsToClipHtml(runs: RichRun[] | null | undefined, text = '', pr
       if (r.i) out = `<em>${out}</em>`;
       if (r.s) out = `<s>${out}</s>`;
       if (r.u) out = `<u>${out}</u>`;
-      // 멘션은 **메일 링크가 아니다** — 우리 안에서만 뜻이 있는 표식이라 글자로 내보낸다.
+      // 멘션·날짜 칩·페이지 링크는 **우리 안에서만 뜻이 있는 표식**이라 글자로
+      // 내보낸다(`@김서연` · `8월 27일 목`). 밖으로 나가는 클립보드에 `geurio://`
+      // 같은 주소를 실으면 붙여넣은 쪽에서 열 수 없는 죽은 링크가 된다.
       const href = r.href ? normalizeUrl(r.href) : null;
       if (href) out = `<a href="${attr(href)}">${out}</a>`;
       return out;

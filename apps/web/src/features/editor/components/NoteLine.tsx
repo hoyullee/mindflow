@@ -55,6 +55,17 @@ interface Props {
    */
   onSlash?: (at: number, tail: string) => void;
   /**
+   * `@`를 친 자리 — 사람·날짜·페이지를 한 메뉴에서 부른다(스펙 4절).
+   *
+   * 인자·규칙은 `onSlash`와 **같다**: 낱말의 시작에서만 열고, 캐럿 뒤에 이미 있던
+   * 글을 함께 넘겨 질의가 어디서 끝나는지 알린다.
+   *
+   * **낱말의 시작**이라는 조건을 여기에도 두는 이유가 따로 있다 — 주소(`a@b.com`)를
+   * 적을 때마다 메뉴가 끼어들면 그 자리에서 Enter가 삼켜진다. 스펙은 "`@`를 입력하면"
+   * 이라고만 적었지만, `/`에서 이미 같은 오탐을 겪고 세운 규칙이라 그대로 따른다.
+   */
+  onMention?: (at: number, tail: string) => void;
+  /**
    * 위/아래 화살표로 블록 사이를 옮긴다(글의 첫 줄·마지막 줄에서만).
    *
    * `x`는 캐럿의 **가로 자리**(화면 좌표)다 — 이웃 줄에서도 그 자리에 가장 가까운
@@ -148,7 +159,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onMention, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -261,13 +272,20 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
    * @param back 캐럿이 `/` **뒤에** 서 있으면 1(`input`), 아직 넣기 전이면 0(`keydown`).
    * @returns 열었으면 참(키보드 쪽은 그때만 전파를 끊는다).
    */
-  const openSlashHere = (back = 0): boolean => {
+  const openSlashHere = (back = 0): boolean => openTriggerHere(onSlash, back);
+  /** `@` 허브를 이 자리에서 — `/`와 같은 규칙이다(위 `onMention` 머리말). */
+  const openMentionHere = (back = 0): boolean => openTriggerHere(onMention, back);
+  /**
+   * `/`와 `@`가 **한 함수를 나눠 쓴다** — 여는 조건이 같기 때문이다(낱말의 시작,
+   * 캐럿 뒤의 글을 꼬리로 넘김). 둘을 따로 쓰면 한쪽만 고쳐지는 날이 온다.
+   */
+  const openTriggerHere = (cb: ((at: number, tail: string) => void) | undefined, back = 0): boolean => {
     const el = ref.current;
-    if (!el || !onSlash) return false;
+    if (!el || !cb) return false;
     const text = lineText(el);
     const at = Math.max(0, caretOffset(el) - back);
     const before = text.slice(0, at);
-    // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`에서 열리지 않게.
+    // 낱말의 시작에서만(줄 머리이거나 앞이 공백) — `https://`·`a@b.com`에서 열리지 않게.
     if (before && !/\s$/.test(before)) return false;
     /**
      * **캐럿 뒤에 이미 있는 글**을 함께 넘긴다(요청) — 질의가 어디서 끝나는지
@@ -275,7 +293,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      * 남으므로, 이것이 없으면 질의가 그 글까지 삼켜 아무 항목도 맞지 않는다
      * (`안녕하세요` 앞에서 `/제목`을 쳐도 목록이 비던 이유다).
      */
-    onSlash(at, text.slice(at + back));
+    cb(at, text.slice(at + back));
     return true;
   };
 
@@ -396,6 +414,13 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       // 대신 전파만 끊어 전역 단축키 핸들러가 같은 키를 또 잡지 않게 한다(스펙 §3).
       // 이 시점의 캐럿은 `/`를 넣기 **전**이라 그 자리가 곧 `/`의 자리다.
       if (openSlashHere(0)) {
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
+      }
+    }
+    if (e.key === '@' && !e.nativeEvent.isComposing && onMention) {
+      // `/`와 같다 — 글자는 본문에 들어가야 하므로 막지 않고 전파만 끊는다.
+      if (openMentionHere(0)) {
         e.stopPropagation();
         e.nativeEvent.stopImmediatePropagation();
       }
@@ -599,6 +624,8 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         const data = (e.nativeEvent as InputEvent).data;
         // 여기서는 `/`가 **이미 들어간** 뒤라 캐럿이 한 칸 앞서 있다.
         if (data === '/' && !composing.current && onSlash) openSlashHere(1);
+        // 손가락 키보드는 `keydown`에 글자를 싣지 않는다(`keyCode 229`) — `@`도 같다.
+        if (data === '@' && !composing.current && onMention) openMentionHere(1);
       }}
       // 고친 적이 없으면 읽지 않는다(`dirty` 머리말) — 커서만 지나가도 저장되던 자리.
       onBlur={() => {

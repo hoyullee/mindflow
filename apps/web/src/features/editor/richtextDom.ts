@@ -9,6 +9,7 @@
 import type { RichRun } from '@mindflow/mindmap-core';
 import { isStyledRuns, normalizeUrl, parseListPrefix } from '@mindflow/mindmap-core';
 import { LINK_CLASS, isLinkInk } from './richSpans';
+import { mentionInitial, mentionTone } from './mentionChip';
 
 /** Port of `Component#escHtml` (MindFlow.dc.html:2558). */
 export function escHtml(s: string): string {
@@ -67,8 +68,25 @@ export function runsToHtml(n: RichTextValue): string {
       // 색은 `.mf-link` 클래스(→ `--mf-link`)가 준다 — 인라인 `color`로 심으면
       // 커밋 때 `domToRuns`가 그걸 런의 `c`로 저장해 링크를 떼도 파란색이 남는다.
       if (r.href) return `<span class="${LINK_CLASS}" data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>`;
-      // 멘션 — 링크와 같은 이유로 클래스+data 속성만(색은 `.mf-mention`이 준다).
-      if (r.m) return `<span class="mf-mention" data-mention-email="${escHtml(r.m)}">${inner}</span>`;
+      /**
+       * 멘션 — 링크와 같은 이유로 클래스+data 속성만(색은 `.mf-mention`이 준다).
+       *
+       * 머리글자와 색을 **속성으로** 싣는 이유: 공책에서는 이 칩이 아바타 달린
+       * 알약으로 보여야 하는데(스펙 4-7), 아바타를 자식 요소로 넣으면 그 글자가
+       * `domToRuns`에 읽혀 **값에 섞이고** 캐럿이 그 안에 설 수 있다. 속성에 두면
+       * CSS의 `::before`가 그리므로 DOM 글자가 아니다 — 값도 캐럿도 건드리지 않는다.
+       */
+      if (r.m)
+        return `<span class="mf-mention" data-mention-email="${escHtml(r.m)}" data-mention-ini="${escHtml(mentionInitial(r.t))}" data-mention-tone="${escHtml(mentionTone(r.m))}">${inner}</span>`;
+      /**
+       * 날짜 칩·페이지 링크 — 멘션과 **같은 규칙**(클래스 + data 속성)이다.
+       *
+       * 모양(면·테두리·달력 아이콘)은 전부 CSS가 준다. 인라인 style로 심으면
+       * `domToRuns`가 그 색·배경을 런의 `c`로 되읽어 **칩을 떼도 색이 남는다** —
+       * 링크 파랑에서 실제로 겪은 사고와 같은 계열이다(위 `isLinkInk` 주석).
+       */
+      if (r.dt) return `<span class="mf-datechip" data-date="${escHtml(r.dt)}">${inner}</span>`;
+      if (r.pg) return `<span class="mf-pagelink" data-page="${escHtml(r.pg)}">${inner}</span>`;
       return inner;
     })
     .join('');
@@ -96,6 +114,10 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     u: boolean;
     k: boolean;
     hl: string | null;
+    /** 날짜 칩이 가리키는 날(`RichRun.dt`). */
+    dt: string | null;
+    /** 문서 안 페이지 링크(`RichRun.pg`). */
+    pg: string | null;
     /**
      * 이 가지가 **링크의 표시 잔해**인가.
      *
@@ -120,7 +142,9 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
       (last.m || null) === (st.m || null) &&
       !!last.u === st.u &&
       !!last.k === st.k &&
-      (last.hl || null) === (st.hl || null)
+      (last.hl || null) === (st.hl || null) &&
+      (last.dt || null) === (st.dt || null) &&
+      (last.pg || null) === (st.pg || null)
     )
       last.t += t;
     else {
@@ -132,6 +156,8 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
       if (st.u) r.u = true;
       if (st.k) r.k = true;
       if (st.hl) r.hl = st.hl;
+      if (st.dt) r.dt = st.dt;
+      if (st.pg) r.pg = st.pg;
       runs.push(r);
     }
   };
@@ -167,6 +193,12 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (linkAttr) next.href = normalizeUrl(linkAttr);
     const mentionAttr = el2.getAttribute('data-mention-email');
     if (mentionAttr) next.m = mentionAttr;
+    // 날짜 칩·페이지 링크 — 우리가 심은 표식만 받는다(붙여넣기로 들어온 남의
+    // 마크업에는 이 속성이 없으므로 평문으로 내려앉는다. 그 편이 안전하다).
+    const dateAttr = el2.getAttribute('data-date');
+    if (dateAttr) next.dt = dateAttr;
+    const pageAttr = el2.getAttribute('data-page');
+    if (pageAttr) next.pg = pageAttr;
     if (el2.style) {
       const fw = el2.style.fontWeight;
       if (fw) {
@@ -203,7 +235,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (isBlock && runs.length && runs[runs.length - 1]!.t.slice(-1) !== '\n') push('\n', st);
     el2.childNodes.forEach((child) => walk(child, next));
   };
-  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, linkInk: false }));
+  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, linkInk: false }));
   if (!keepTrailing) {
     while (runs.length && /^\n+$/.test(runs[runs.length - 1]!.t)) runs.pop();
     if (runs.length) runs[runs.length - 1]!.t = runs[runs.length - 1]!.t.replace(/\n+$/, '');

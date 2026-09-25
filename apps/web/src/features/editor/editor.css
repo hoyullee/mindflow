@@ -567,6 +567,132 @@ input[type='search']::-webkit-search-results-decoration {
   color: #2e2a26;
 }
 
+/* 칩이 쓰는 글리프 — 마스크로 칠하므로 **색은 토큰이 준다**(다크까지 한 벌로).
+ * 배경 이미지가 아니라 마스크인 이유: 배경 이미지로 넣으면 SVG 안에 색을 박아야
+ * 하고, 그러면 테마마다 이미지를 한 벌씩 더 만들어야 한다. */
+.mf-note-line {
+  --mf-cal-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 11h18'/%3E%3C/svg%3E");
+  --mf-doc-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 3v5h5'/%3E%3C/svg%3E");
+}
+
+/* ── 공책 본문의 인라인 칩 세 벌 (스펙 3·4절) ──────────────────────────────
+ *
+ * **공책 안에서만** 칩으로 그린다(`.mf-note-line` 범위). 맵·화이트보드의 멘션은
+ * 지금대로 민짜 파란 글자다 — 캔버스의 노드는 글자 상자가 좁아 22px 알약이 들어가면
+ * 줄 높이가 통째로 밀린다.
+ *
+ * 세 칩 모두 **아이콘·아바타를 `::before`로** 그린다. 자식 요소로 넣으면 그 글자가
+ * `domToRuns`에 읽혀 값에 섞이고 캐럿이 그 안에 설 수 있다(`runsToHtml`의 주석).
+ * `::before`는 DOM 글자가 아니므로 값도 캐럿도 건드리지 않는다.
+ *
+ * 색은 토큰으로 준다 — 테마가 일곱 벌(다크 포함)이라 원시값을 박으면 다크에서
+ * 종이색 칩이 그대로 떠 버린다. 사람 색(`data-mention-tone`)만 예외다(그 색은 면이
+ * 아니라 사람의 표식이라 테마를 따라가면 안 된다 — 형광펜과 같은 판단). */
+.mf-note-line .mf-datechip,
+.mf-note-line .mf-pagelink,
+.mf-note-line .mf-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  margin: 0 1px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: 1px;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
+}
+
+/* 날짜 칩 — 네모(radius 6). 사람 칩(알약)과 **모양으로** 갈린다. */
+.mf-note-line .mf-datechip {
+  padding: 0 7px 0 6px;
+  border-radius: 6px;
+  background: var(--mf-panel2);
+  border: 1px solid var(--mf-border);
+  color: var(--mf-subtext);
+  cursor: default;
+}
+.mf-note-line .mf-datechip:hover {
+  background: var(--mf-accent-soft);
+  border-color: var(--mf-accent-mute);
+}
+.mf-note-line .mf-datechip::before {
+  content: '';
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  background-color: var(--mf-accent);
+  /* 달력 글리프 — 마스크로 칠해서 **색이 토큰을 따라간다**(다크에서도 맞는다). */
+  -webkit-mask: var(--mf-cal-glyph) center / contain no-repeat;
+  mask: var(--mf-cal-glyph) center / contain no-repeat;
+}
+
+/* 페이지 링크 — 같은 문서 안의 다른 페이지. 문서 아이콘 + 본문 링크와 같은 잉크. */
+.mf-note-line .mf-pagelink {
+  padding: 0 7px 0 6px;
+  border-radius: 6px;
+  background: var(--mf-panel2);
+  border: 1px solid var(--mf-border);
+  color: var(--mf-text);
+  cursor: pointer;
+}
+.mf-note-line .mf-pagelink:hover {
+  background: var(--mf-accent-soft);
+  border-color: var(--mf-accent-mute);
+}
+.mf-note-line .mf-pagelink::before {
+  content: '';
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  background-color: var(--mf-muted);
+  -webkit-mask: var(--mf-doc-glyph) center / contain no-repeat;
+  mask: var(--mf-doc-glyph) center / contain no-repeat;
+}
+
+/* 사람 멘션 — 알약(radius 99) + 머리글자 아바타. 날짜 칩과 **모양이 다르다**. */
+.mf-note-line .mf-mention {
+  padding: 0 8px 0 3px;
+  border-radius: 99px;
+  background: var(--mf-panel2);
+  border: 1px solid var(--mf-border);
+  /* 맵의 `.mf-mention`이 주는 링크 파랑을 이 범위에서만 되돌린다. */
+  color: var(--mf-text);
+}
+.mf-note-line .mf-mention:hover {
+  background: var(--mf-wash);
+}
+/* `attr()`는 `content` 밖에서 쓸 수 없어 **여덟 벌을 선택자로 펴 둔다**. 인라인
+ * `style`로 심는 길도 있지만, 편집 박스의 인라인 style은 `domToRuns`가 되읽는
+ * 자리라(글자색·굵기) 거기에 값을 얹기 시작하면 경계가 흐려진다. */
+.mf-note-line .mf-mention[data-mention-tone='#e8845c'] { --mf-mention-tone: #e8845c; }
+.mf-note-line .mf-mention[data-mention-tone='#7c9bd8'] { --mf-mention-tone: #7c9bd8; }
+.mf-note-line .mf-mention[data-mention-tone='#69b08a'] { --mf-mention-tone: #69b08a; }
+.mf-note-line .mf-mention[data-mention-tone='#c58ac0'] { --mf-mention-tone: #c58ac0; }
+.mf-note-line .mf-mention[data-mention-tone='#d8a24f'] { --mf-mention-tone: #d8a24f; }
+.mf-note-line .mf-mention[data-mention-tone='#8fa3b8'] { --mf-mention-tone: #8fa3b8; }
+.mf-note-line .mf-mention[data-mention-tone='#b88a6e'] { --mf-mention-tone: #b88a6e; }
+.mf-note-line .mf-mention[data-mention-tone='#7fa88f'] { --mf-mention-tone: #7fa88f; }
+.mf-note-line .mf-mention::before {
+  content: attr(data-mention-ini);
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 99px;
+  /* 사람 색은 속성으로 온다(`mentionTone`) — 여덟 벌 중 하나. */
+  background: var(--mf-mention-tone, #8fa3b8);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
 /* 공책 — **읽는 줄에 조작을 얹지 않는다**(디자인 원본). 페이지 머리의 복제·삭제,
    표의 레일, 링크 카드의 바꾸기는 평소 보이지 않다가 그 자리에 마우스를 얹으면
    나타난다. 터치 기기에는 hover가 없으므로 언제나 보인다(아래 미디어 질의). */
