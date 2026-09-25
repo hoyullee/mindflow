@@ -56,7 +56,92 @@ export function noteSelectionRange(el: HTMLElement): { a: number; b: number } | 
 
 /** 이 박스의 **지금 값**(사용자가 방금 친 것까지). */
 export function noteBoxValue(el: HTMLElement): { text: string; rich: RichRun[] | null } {
-  return domToRuns(el, true);
+  const v = domToRuns(el, true);
+  // 조합 껍데기의 **폭 0 글자**는 값이 아니다(`openArmedAnchor`) — 읽는 자리에서
+  // 걷어 내어, 조합 도중에 저장이 돌아도 문서에 남지 않게 한다.
+  if (!v.text.includes(ZWSP)) return v;
+  return {
+    text: v.text.replace(ZWSP_RE, ''),
+    rich: v.rich ? v.rich.map((r) => ({ ...r, t: r.t.replace(ZWSP_RE, '') })).filter((r) => r.t !== '') : null,
+  };
+}
+
+/**
+ * **조합하는 동안 쓸 껍데기를 세운다** — 켜 둔 서식이 첫 글자부터 보이게(제보 8).
+ *
+ * 한글은 음절이 확정되기 전까지 조합 중이고, 그동안 우리는 DOM에 손대지 못한다
+ * (건드리면 조합이 끊긴다) — 그래서 켜 둔 굵게가 **다음 글자를 칠 때**에야 나타났다.
+ * 반대로 **미리 세워 둔 껍데기 안에서 조합하면** 브라우저가 그 안에 글자를 넣어 주므로
+ * 첫 자모부터 굵다(실측: 크로뮴에서 `<span style="font-weight:800">가</span>`).
+ *
+ * 껍데기는 폭 0 글자(`\u200B`) 하나를 물고 있다 — 빈 인라인 요소에는 캐럿이 서지
+ * 못하기 때문이다. 그 글자는 **값이 아니다**: 읽는 자리(`noteBoxValue`)가 걷어 내고,
+ * 조합이 끝나면 DOM에서도 지운다(`closeArmedAnchor`).
+ */
+export function openArmedAnchor(el: HTMLElement): boolean {
+  if (!armed || armed.el !== el || typeof document === 'undefined') return false;
+  const span = noteCaretSpan(el);
+  if (!span || span.a !== span.b || span.a !== armed.at) return false;
+  const kinds = new Set(armed.marks.map((m) => m.kind));
+  let st = '';
+  if (kinds.has('b')) st += 'font-weight:800;';
+  if (kinds.has('i')) st += 'font-style:italic;';
+  const deco = [kinds.has('s') ? 'line-through' : '', kinds.has('u') ? 'underline' : ''].filter(Boolean).join(' ');
+  if (deco) st += `text-decoration:${deco};`;
+  // 인라인 코드(`k`)·강조는 껍데기로 흉내 내지 않는다 — 그쪽은 이미 칠하기가 있다.
+  if (!st) return false;
+  const sel = typeof window === 'undefined' ? null : window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const node = document.createElement('span');
+  node.setAttribute(ANCHOR_ATTR, '1');
+  node.setAttribute('style', st);
+  node.textContent = ZWSP;
+  try {
+    const range = sel.getRangeAt(0).cloneRange();
+    range.insertNode(node);
+    const after = document.createRange();
+    after.setStart(node.firstChild as Text, 1);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+  } catch {
+    node.remove();
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 조합이 끝났다 — 껍데기를 **통째로 걷는다**(폭 0 글자 + 감싼 요소).
+ *
+ * 요소까지 걷는 이유가 중요하다: 그대로 두면 값을 읽는 쪽이 그 인라인 스타일을
+ * **이미 걸린 서식**으로 읽고(`domToRuns`), 뒤이어 도는 `fireCaretMark`가 같은 서식을
+ * 한 번 더 걸어 **토글로 꺼 버린다**(실측: 조합 중에는 굵던 글자가 확정하는 순간
+ * 풀렸다). 껍데기는 어디까지나 **조합 동안의 흉내**이고, 값에 남기는 일은 예전처럼
+ * `fireCaretMark`의 몫이다.
+ */
+export function closeArmedAnchor(el: HTMLElement): void {
+  const hosts = [...el.querySelectorAll(`[${ANCHOR_ATTR}]`)];
+  if (!hosts.length) return;
+  const span = noteCaretSpan(el);
+  const before = linearize(el, []).text;
+  const at = span ? span.b : before.length;
+  // 캐럿 앞에 있던 폭 0 글자의 수만큼 자리가 당겨진다.
+  const gone = (before.slice(0, at).match(ZWSP_RE) ?? []).length;
+  hosts.forEach((host) => {
+    const parent = host.parentNode;
+    if (!parent) return;
+    while (host.firstChild) parent.insertBefore(host.firstChild, host);
+    parent.removeChild(host);
+  });
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const hits: Text[] = [];
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.nodeValue?.includes(ZWSP)) hits.push(n as Text);
+  hits.forEach((n) => {
+    n.nodeValue = (n.nodeValue ?? '').replace(ZWSP_RE, '');
+  });
+  el.normalize();
+  setLinearSelection(el, at - gone, at - gone);
 }
 
 /**
@@ -279,14 +364,51 @@ export function insertNoteLink(el: HTMLElement, span: { a: number; b: number }, 
  * 적어 둔 것은 **한 벌뿐**이다 — 서식을 켜 두는 일은 "다음에 칠 글자"에 대한 것이라
  * 동시에 둘이 될 수 없고, 다른 줄에서 다시 누르면 앞의 것은 잊힌다.
  */
-let armed: { el: HTMLElement; at: number; len: number; kind: NoteFormatKind; val: string | null } | null = null;
+/** 조합 껍데기 표식과 그 안의 폭 0 글자. */
+const ANCHOR_ATTR = 'data-armed-anchor';
+const ZWSP = '\u200B';
+const ZWSP_RE = /\u200B/g;
 
-/** 접힌 캐럿에 서식을 **예약한다** — 걸 자리가 없으면(선택이 있으면) `false`. */
+interface ArmedMark {
+  kind: NoteFormatKind;
+  val: string | null;
+}
+/**
+ * 적어 두는 것은 **한 자리에 대한 여러 서식**이다.
+ *
+ * 예전에는 한 벌(`kind` 하나)이었는데 그러면 굵게+기울임처럼 겹쳐 켜 둘 수가 없었고,
+ * 줄을 바꿀 때 앞 줄에서 쓰던 서식을 그대로 물려주지도 못했다(제보 6). 자리는 여전히
+ * 하나다 — "다음에 칠 글자"에 대한 약속이라 동시에 두 자리일 수 없다.
+ */
+let armed: { el: HTMLElement; at: number; len: number; marks: ArmedMark[] } | null = null;
+
+/**
+ * 접힌 캐럿에 서식을 **예약한다** — 걸 자리가 없으면(선택이 있으면) `false`.
+ *
+ * 같은 자리에서 **같은 서식을 다시 부르면 끈다**(토글) — 툴바의 단추가 켜졌다 꺼지는
+ * 그 뜻이다. 다른 서식이면 겹쳐 쌓인다.
+ */
 export function armCaretMark(el: HTMLElement, kind: NoteFormatKind, val?: string | null): boolean {
   if (kind === 'clear' || kind === 'link') return false;
   const span = noteCaretSpan(el);
   if (!span || span.a !== span.b) return false;
-  armed = { el, at: span.a, len: linearize(el, []).text.length, kind, val: val ?? null };
+  const at = span.a;
+  const keep = armed && armed.el === el && armed.at === at ? armed.marks : [];
+  const hit = keep.findIndex((m) => m.kind === kind);
+  const marks = hit >= 0 ? keep.filter((_, i) => i !== hit) : [...keep, { kind, val: val ?? null }];
+  armed = marks.length ? { el, at, len: linearize(el, []).text.length, marks } : null;
+  return true;
+}
+
+/**
+ * 여러 서식을 **한 번에** 예약한다 — 줄을 바꿀 때 앞 줄의 서식을 물려주는 길(제보 6).
+ * 빈 목록이면 아무것도 하지 않는다(예약을 지우지도 않는다).
+ */
+export function armCaretMarks(el: HTMLElement, kinds: readonly NoteFormatKind[]): boolean {
+  if (!kinds.length) return false;
+  const span = noteCaretSpan(el);
+  if (!span || span.a !== span.b) return false;
+  armed = { el, at: span.a, len: linearize(el, []).text.length, marks: kinds.map((kind) => ({ kind, val: null })) };
   return true;
 }
 
@@ -297,7 +419,12 @@ export function disarmCaretMark(el?: HTMLElement): void {
 
 /** 지금 이 줄에 예약된 서식 — 툴바가 단추를 미리 켜 두는 데 쓴다(없으면 `null`). */
 export function armedCaretMark(el: HTMLElement | null): NoteFormatKind | null {
-  return el && armed?.el === el ? armed.kind : null;
+  return el && armed?.el === el ? (armed.marks[0]?.kind ?? null) : null;
+}
+
+/** 이 줄에 그 서식이 예약돼 있나 — 여럿을 켜 둘 수 있으므로 낱개로 묻는다. */
+export function armedHasMark(el: HTMLElement | null, kind: NoteFormatKind): boolean {
+  return !!el && armed?.el === el && armed.marks.some((m) => m.kind === kind);
 }
 
 /** 예약이 걸린 **글자 자리** — 조합 중에 그 구간을 칠할 때 쓴다(`paintCode`). */
@@ -313,13 +440,16 @@ export function armedCaretAt(el: HTMLElement | null): number | null {
  */
 export function fireCaretMark(el: HTMLElement): RichRun[] | null {
   if (!armed || armed.el !== el) return null;
-  const { at, len, kind, val } = armed;
+  const { at, len, marks } = armed;
   const span = noteCaretSpan(el);
   const now = span && span.a === span.b ? span.a : -1;
   const grew = linearize(el, []).text.length - len;
   armed = null;
   if (now <= at || grew <= 0 || now - at !== grew) return null;
-  const runs = applyNoteFormatRange(el, at, now, kind, val);
+  // 켜 둔 것이 여럿이면 **차례로** 건다 — 한 번에 하나씩 다시 그리므로 다음 번은
+  // 이미 걸린 결과 위에서 잰다(굵게 위에 기울임이 얹힌다).
+  let runs: RichRun[] | null = null;
+  for (const m of marks) runs = applyNoteFormatRange(el, at, now, m.kind, m.val) ?? runs;
   // 다시 그린 뒤의 선택은 **친 글자 전체**다 — 캐럿은 그 끝에 접혀 있어야 이어 친다.
   if (runs) setLinearSelection(el, now, now);
   return runs;

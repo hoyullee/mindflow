@@ -18,7 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armedCaretAt, armedCaretMark, disarmCaretMark, fireCaretMark } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor } from '../noteRichDom';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { listSignature } from '../listLines';
@@ -227,7 +227,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
    */
   const paintArmedCode = (): void => {
     const el = ref.current;
-    if (!el || armedCaretMark(el) !== 'k') return;
+    if (!el || !armedHasMark(el, 'k')) return;
     const at = armedCaretAt(el);
     const now = at === null ? -1 : charOffset(el, window.getSelection()?.focusNode ?? el, window.getSelection()?.focusOffset ?? 0);
     paintCode(at !== null && now > at ? rangeOfChars(el, at, now) : null);
@@ -604,17 +604,29 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       onBlur={() => {
         // 줄을 떠나면 켜 두었던 서식도 잊는다 — 그 자리는 이 줄의 좌표였다.
         const el = ref.current;
+        // 조합이 끝나지 않은 채 떠나는 길도 있다(다른 곳을 눌렀다) — 껍데기를 남기지 않는다.
+        if (el) closeArmedAnchor(el);
         if (el) disarmCaretMark(el);
         paintCode(null);
         if (dirty.current) commit(true);
       }}
       onCompositionStart={() => {
         composing.current = true;
+        /**
+         * 켜 둔 서식이 있으면 **그 껍데기 안에서 조합하게** 한다(제보 8) — 그래야
+         * 첫 글자부터 굵게·기울임이 보인다(`openArmedAnchor` 머리말).
+         */
+        const el = ref.current;
+        if (el) openArmedAnchor(el);
       }}
       onCompositionEnd={() => {
         composing.current = false;
         dirty.current = true;
         paintCode(null);
+        // 껍데기의 폭 0 글자를 먼저 걷는다 — 그 뒤의 `fireCaretMark`가 세는 자리와
+        // 값이 어긋나지 않게(`commit` 안에서 돈다).
+        const el = ref.current;
+        if (el) closeArmedAnchor(el);
         commit();
       }}
       onKeyUp={() => {
@@ -667,7 +679,16 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         if (el) onFocusLine?.(el);
       }}
       onKeyDown={onKeyDown}
-      style={{ outline: 'none', minHeight: '1.6em', whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...style }}
+      /**
+       * `break-spaces`는 **줄 끝의 공백도 줄바꿈에 센다**(제보 7).
+       *
+       * `pre-wrap`은 줄 끝에 남은 공백을 "넘쳐도 그만"으로 흘려 보낸다 — 그래서 줄
+       * 끝에서 스페이스를 아무리 눌러도 캐럿이 그 자리에 붙박여 다음 줄로 넘어가지
+       * 않았고(글자를 하나 쳐야 비로소 넘어갔다), 그동안 공백은 눈에 보이지 않게
+       * 쌓였다. `break-spaces`는 그 공백들도 자리를 차지하게 하므로 폭을 넘는 순간
+       * 다음 줄로 넘어간다 — 값(`\n`·공백 보존)은 `pre-wrap`과 같다.
+       */
+      style={{ outline: 'none', minHeight: '1.6em', whiteSpace: 'break-spaces', wordBreak: 'break-word', ...style }}
     />
   );
 }

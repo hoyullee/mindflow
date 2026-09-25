@@ -29,6 +29,7 @@ import { useBackend } from '../../../adapters/BackendContext';
 import { writeClipboard } from '../noteClipboard';
 import { realPreview } from '../../home/mapPreview';
 import { themeOf } from '../theme';
+import { GRID_UNIT } from '../canvasGrid';
 import { boardProgress, boardSurface, columnBg, columnColor } from '../kanbanMeta';
 import { CardFace, cardBase } from './KanbanBoard';
 import { useParticipantAvatars } from '../useParticipantAvatars';
@@ -1186,7 +1187,6 @@ function MindmapBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; setV
         <MiniMap doc={doc} />
       )}
 
-      <GuideRow icon="eye" text="보기 전용 · 주제를 고치려면 맵을 열어 주세요" />
     </>
   );
 }
@@ -1235,6 +1235,26 @@ function MiniMap({ doc }: { doc: Doc }) {
         justifyContent: 'center',
       }}
     >
+      {/**
+       * **도트 격자도 깐다**(제보: 색은 비슷한데 원본의 점이 없다).
+       *
+       * 캔버스의 그 무늬와 같은 식(`radial-gradient` 타일)이고 색도 그 문서 테마의
+       * `dot`을 쓴다 — 다만 간격은 배율을 따르지 않는다: 미리보기는 맵 전체를 줄여
+       * 담는 자리라 실제 배율이 문서마다 다르고, 그 값을 따라가면 어떤 맵에서는
+       * 점이 뭉쳐 얼룩이 된다. 눈으로 "격자가 있다"를 말하는 것이 목적이므로
+       * 화면 기준 고정 간격(캔버스의 기본 한 칸)이 맞다.
+       */}
+      <span
+        aria-hidden
+        data-embed-minimap-dots
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `radial-gradient(${themeOf(doc.themeKey).dot} 1px, transparent 1px)`,
+          backgroundSize: `${GRID_UNIT}px ${GRID_UNIT}px`,
+          pointerEvents: 'none',
+        }}
+      />
       {svg.el}
     </div>
   );
@@ -1324,7 +1344,17 @@ function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; s
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      {/**
+       * 머리 한 줄 — **프레임 고르개(왼쪽) · 창 크기(오른쪽)**.
+       *
+       * 크기 단추는 원래 판 아래 안내 줄의 오른끝에 있었는데(요청으로 위로 올렸다)
+       * 거기서는 «무엇을 보는가»(프레임)와 «얼마나 크게 보는가»(창 높이)가 판을
+       * 사이에 두고 갈라져 있었다 — 둘 다 **보기를 정하는 일**이라 한 줄에 둔다.
+       * 프레임이 많아 접히면 크기 단추는 그 줄의 오른끝에 그대로 남는다(`flex-start`로
+       * 맞춰 두어 첫 줄과 나란하다).
+       */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
         {frames.map((f, i) => {
           const on = i === view.frame && fitted;
           return (
@@ -1349,6 +1379,20 @@ function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; s
           );
         })}
       </div>
+        <span style={{ flex: '0 0 auto' }}>
+          <Segments
+            attr="data-embed-wbheight"
+            height={22}
+            value={view.height}
+            options={[
+              { v: 's', label: '작게' },
+              { v: 'm', label: '중간' },
+              { v: 'l', label: '크게' },
+            ]}
+            onPick={(v) => setView({ whiteboard: { height: v } })}
+          />
+        </span>
+      </div>
 
       <div
         ref={ref}
@@ -1361,7 +1405,9 @@ function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; s
           // 바탕은 **그 문서 테마의 캔버스 색**(제보) — 도트 격자는 에디터의 것과
           // 같은 간격으로 그 위에 얹는다.
           background: docCanvasBg(doc),
-          backgroundImage: 'radial-gradient(var(--mf-note-bar-dot) 1px, transparent 1px)',
+          // 점 색도 **그 문서의 테마**를 따른다(미니맵과 같은 규칙) — 공책의 색을
+          // 쓰면 어두운 테마의 보드에서 점만 밝게 떠올랐다.
+          backgroundImage: `radial-gradient(${themeOf(doc.themeKey).dot} 1px, transparent 1px)`,
           backgroundSize: '14px 14px',
           overflow: 'hidden',
           cursor: 'grab',
@@ -1426,23 +1472,6 @@ function WhiteboardBody({ block, doc, setView }: { block: NoteBlock; doc: Doc; s
         </div>
       </div>
 
-      <GuideRow
-        icon="eye"
-        text="보기 전용 · 끌어서 움직이고 ⌘+휠로 확대해요"
-        right={
-          <Segments
-            attr="data-embed-wbheight"
-            height={20}
-            value={view.height}
-            options={[
-              { v: 's', label: '작게' },
-              { v: 'm', label: '중간' },
-              { v: 'l', label: '크게' },
-            ]}
-            onPick={(v) => setView({ whiteboard: { height: v } })}
-          />
-        }
-      />
     </>
   );
 }

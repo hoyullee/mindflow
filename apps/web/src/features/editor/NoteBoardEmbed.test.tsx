@@ -139,12 +139,14 @@ describe('공책 본문 · 보드 임베드', () => {
     await waitFor(() => expect(saved('nb3')?.pages?.[0]?.blocks?.[0]?.embed?.size).toBe('sm'));
   });
 
-  it('마인드맵은 개요로 펴지고 가지를 접었다 펼 수 있다', async () => {
+  it('마인드맵의 **개요**는 가지를 접었다 펼 수 있다(기본은 맵 — 요청으로 바뀌었다)', async () => {
     seedSpace([{ title: '릴리즈 맵', docId: 'mp1' }]);
     localStorage.setItem('mindflow_doc_mp1', JSON.stringify(MAP));
     localStorage.setItem('mindflow_doc_nb4', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mp1' }])));
     const { container } = renderEditor('/editor?map=nb4&title=x');
 
+    await waitFor(() => expect(container.querySelector('[data-embed-mmview="outline"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-embed-mmview="outline"]')!);
     await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
     expect(container.querySelector('[data-embed-kind="map"]')).toBeTruthy();
     expect(container.querySelector('[data-embed-rule]')?.textContent).toBe('보기 전용');
@@ -209,7 +211,7 @@ describe('공책 본문 · 보드 임베드', () => {
     line.focus();
     fireEvent.paste(line, { clipboardData: { getData: (t: string) => (t === 'text/plain' ? '/editor?map=mp2' : ''), types: ['text/plain'] } });
 
-    await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('[data-embed-minimap]')).toBeTruthy());
     saveNow();
     await waitFor(() => expect(saved('nb8')?.pages?.[0]?.blocks?.[0]).toMatchObject({ kind: 'link', docId: 'mp2' }));
   });
@@ -293,6 +295,8 @@ describe('공책 본문 · 보드 임베드 2판 — 원본 충실도 · 깜빡�
     localStorage.setItem('mindflow_doc_nb11', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mp9' }])));
     const { container } = renderEditor('/editor?map=nb11&title=x');
 
+    await waitFor(() => expect(container.querySelector('[data-embed-mmview="outline"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-embed-mmview="outline"]')!);
     await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
     // 가지(알림) 아래의 자식과 **손자**가 깊이를 달고 한 줄씩 서 있다.
     const kids = [...container.querySelectorAll('[data-embed-depth]')].map((e) => `${e.getAttribute('data-embed-depth')}:${e.textContent}`);
@@ -308,7 +312,7 @@ describe('공책 본문 · 보드 임베드 2판 — 원본 충실도 · 깜빡�
     localStorage.setItem('mindflow_doc_nb12', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mp10' }])));
     const { container } = renderEditor('/editor?map=nb12&title=x');
 
-    await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('[data-embed-minimap]')).toBeTruthy());
     expect(container.querySelector('.mf-embed-in')).toBeTruthy();
   });
 
@@ -323,7 +327,7 @@ describe('공책 본문 · 보드 임베드 2판 — 원본 충실도 · 깜빡�
       ])),
     );
     const { container } = renderEditor('/editor?map=nb13&title=x');
-    await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('[data-embed-minimap]')).toBeTruthy());
 
     // jsdom은 사각형이 전부 0이라 떨어질 자리를 잴 수 없다 — 두 블록의 상자만 세워 준다.
     const rect = (top: number, height: number) => () =>
@@ -341,5 +345,83 @@ describe('공책 본문 · 보드 임베드 2판 — 원본 충실도 · 깜빡�
 
     saveNow();
     await waitFor(() => expect(saved('nb13')?.pages?.[0]?.blocks?.map((b: { id: string }) => b.id)).toEqual(['b2', 'b1']));
+  });
+});
+
+/**
+ * 설치형 앱(윈도) 테스트에서 온 임베드 손질 — 메뉴·기본 보기·배경·문구·단추 자리.
+ */
+describe('공책 본문 · 보드 임베드 3판 — 메뉴와 보기 손질(제보 5건)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('삽입한 문서의 우클릭 메뉴는 **그 블록이 할 수 있는 일만** 담는다(요청 1)', async () => {
+    seedSpace([{ title: '릴리즈 맵', docId: 'mx1' }]);
+    localStorage.setItem('mindflow_doc_mx1', JSON.stringify(MAP));
+    localStorage.setItem('mindflow_doc_nx1', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mx1' }])));
+    const { container } = renderEditor('/editor?map=nx1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-embed-card]')).toBeTruthy());
+
+    fireEvent.contextMenu(container.querySelector('[data-embed-card]')!, { clientX: 40, clientY: 40 });
+    const menu = (await waitFor(() => {
+      const el = container.querySelector('[data-note-block-menu]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    expect([...menu.querySelectorAll('[data-note-ctx]')].map((e) => e.getAttribute('data-note-ctx'))).toEqual([
+      'cut', 'copy', 'paste', 'paste-plain', 'open', 'embed-size', 'hr', 'del',
+    ]);
+    // 글꼴·링크·댓글처럼 **누를 수 없던 줄**은 없다.
+    expect(menu.querySelector('[data-note-ctx="font"]')).toBeNull();
+    expect(menu.querySelector('[data-note-ctx="link"]')).toBeNull();
+    expect(menu.querySelector('[data-note-ctx="comment"]')).toBeNull();
+    // 삭제가 무엇을 지우는지 한 줄로 말한다 — 원본 보드가 아니다.
+    expect(menu.textContent).toContain('원본 문서는 그대로예요');
+  });
+
+  it('마인드맵은 **맵**으로 열린다(요청 2) — 개요는 골라서 본다', async () => {
+    seedSpace([{ title: '릴리즈 맵', docId: 'mx2' }]);
+    localStorage.setItem('mindflow_doc_mx2', JSON.stringify(MAP));
+    localStorage.setItem('mindflow_doc_nx2', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mx2' }])));
+    const { container } = renderEditor('/editor?map=nx2&title=x');
+
+    await waitFor(() => expect(container.querySelector('[data-embed-minimap]')).toBeTruthy());
+    expect(container.querySelector('[data-embed-mmview="map"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[data-embed-outline]')).toBeNull();
+    // 배경에는 원본 캔버스와 같은 **도트 격자**가 깔린다(요청 3).
+    expect((container.querySelector('[data-embed-minimap-dots]') as HTMLElement)?.style.backgroundImage).toContain('radial-gradient');
+  });
+
+  it('맵·화이트보드 아래의 「보기 전용」 안내 줄은 걷었다(요청 4)', async () => {
+    seedSpace([{ title: '릴리즈 맵', docId: 'mx3' }, { title: '스케치판', docId: 'wx3' }]);
+    localStorage.setItem('mindflow_doc_mx3', JSON.stringify(MAP));
+    localStorage.setItem('mindflow_doc_wx3', JSON.stringify({ ...base, kind: 'board', strokes: [], floats: [] }));
+    localStorage.setItem(
+      'mindflow_doc_nx3',
+      JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'mx3' }, { id: 'b2', kind: 'link', docId: 'wx3' }])),
+    );
+    const { container } = renderEditor('/editor?map=nx3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-embed-canvas]')).toBeTruthy());
+
+    const bodies = [...container.querySelectorAll('[data-note-block][data-note-kind="link"]')].map((e) => e.textContent ?? '');
+    expect(bodies.some((t) => t.includes('주제를 고치려면'))).toBe(false);
+    expect(bodies.some((t) => t.includes('끌어서 움직이고'))).toBe(false);
+  });
+
+  it('화이트보드의 크기 단추는 **판 위**에 선다(요청 5)', async () => {
+    seedSpace([{ title: '스케치판', docId: 'wx4' }]);
+    localStorage.setItem('mindflow_doc_wx4', JSON.stringify({ ...base, kind: 'board', strokes: [], floats: [] }));
+    localStorage.setItem('mindflow_doc_nx4', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'wx4' }])));
+    const { container } = renderEditor('/editor?map=nx4&title=x');
+    await waitFor(() => expect(container.querySelector('[data-embed-canvas]')).toBeTruthy());
+
+    const seg = container.querySelector('[data-embed-wbheight]') as HTMLElement;
+    const canvas = container.querySelector('[data-embed-canvas]') as HTMLElement;
+    // jsdom에는 좌표가 없으므로(F1) **문서 순서**로 본다 — 앞에 서면 위에 그려진다.
+    expect(seg.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -57,7 +57,9 @@ describe('embed 기본값', () => {
   });
 
   it('마인드맵·화이트보드 기본값', () => {
-    expect(mindmapView(block())).toEqual({ view: 'outline', open: [0, 1] });
+    // 맵이 기본이다(요청) — 본문에 맵을 붙이는 사람이 보여 주려는 것은 그 생김새다.
+    expect(mindmapView(block())).toEqual({ view: 'map', open: [0, 1] });
+    expect(mindmapView({ embed: { mindmap: { view: 'outline', open: [] } } })).toEqual({ view: 'outline', open: [] });
     expect(whiteboardView(block())).toEqual({ frame: 0, height: 'm' });
   });
 });
