@@ -82,14 +82,26 @@ export function openArmedAnchor(el: HTMLElement): boolean {
   if (!armed || armed.el !== el || typeof document === 'undefined') return false;
   const span = noteCaretSpan(el);
   if (!span || span.a !== span.b || span.a !== armed.at) return false;
-  const kinds = new Set(armed.marks.map((m) => m.kind));
-  let st = '';
-  if (kinds.has('b')) st += 'font-weight:800;';
-  if (kinds.has('i')) st += 'font-style:italic;';
-  const deco = [kinds.has('s') ? 'line-through' : '', kinds.has('u') ? 'underline' : ''].filter(Boolean).join(' ');
-  if (deco) st += `text-decoration:${deco};`;
+  /**
+   * 껍데기가 그리는 것은 **예약을 얹은 뒤의 모습**이다 — 켠 것만이 아니라 끈 것까지.
+   *
+   * 주변 상태(`noteActiveMarks`)에 예약(`want`)을 덮어 쓴 값을 세 줄로 다 적는다.
+   * 다 적는 이유는 취소선·밑줄이 `text-decoration` **한 줄을 나눠 쓰기** 때문이다 —
+   * 켠 것만 적으면 "밑줄은 그대로 두고 취소선만 끈다"를 말할 길이 없다.
+   */
+  const here = noteActiveMarks(el);
+  const eff = { b: here.b, i: here.i, s: here.s, u: here.u };
+  let touched = false;
+  for (const m of armed.marks) {
+    if (m.kind === 'b' || m.kind === 'i' || m.kind === 's' || m.kind === 'u') {
+      if (eff[m.kind] !== m.want) touched = true;
+      eff[m.kind] = m.want;
+    }
+  }
   // 인라인 코드(`k`)·강조는 껍데기로 흉내 내지 않는다 — 그쪽은 이미 칠하기가 있다.
-  if (!st) return false;
+  if (!touched) return false;
+  const deco = [eff.s ? 'line-through' : '', eff.u ? 'underline' : ''].filter(Boolean).join(' ');
+  const st = `font-weight:${eff.b ? '800' : '400'};font-style:${eff.i ? 'italic' : 'normal'};text-decoration:${deco || 'none'};`;
   const sel = typeof window === 'undefined' ? null : window.getSelection();
   if (!sel || !sel.rangeCount) return false;
   const node = document.createElement('span');
@@ -122,7 +134,10 @@ export function openArmedAnchor(el: HTMLElement): boolean {
  */
 export function closeArmedAnchor(el: HTMLElement): void {
   const hosts = [...el.querySelectorAll(`[${ANCHOR_ATTR}]`)];
-  if (!hosts.length) return;
+  // 표식을 잃은 껍데기도 있을 수 있다 — 브라우저가 조합을 확정하며 요소를 다시
+  // 짜면 속성이 떨어져 나간다. 그래서 **폭 0 글자가 남았는지**로도 한 번 더 본다:
+  // 그 글자가 DOM에 남으면 값 좌표와 캐럿 좌표가 한 칸씩 어긋난다.
+  if (!hosts.length && !(el.textContent ?? '').includes(ZWSP)) return;
   const span = noteCaretSpan(el);
   const before = linearize(el, []).text;
   const at = span ? span.b : before.length;
@@ -369,9 +384,61 @@ const ANCHOR_ATTR = 'data-armed-anchor';
 const ZWSP = '\u200B';
 const ZWSP_RE = /\u200B/g;
 
+/**
+ * **예약이 바뀌었다**고 알리는 이벤트 — 툴바가 단추를 켜고 끄는 근거다(요청).
+ *
+ * 툴바는 `selectionchange`로 단추를 다시 읽는데, 예약은 **선택을 바꾸지 않는다**:
+ * 빈 줄에서 굵게를 눌러도 캐럿은 그대로라 그 이벤트가 오지 않아, 켜 둔 상태가
+ * 단추에 보이지 않았다("텍스트가 없는 줄에 굵게를 걸면 단추가 안 켜진다"). 예약을
+ * 만지는 자리가 여럿(툴바·단축키·Enter 물려주기·줄을 떠날 때)이라 알림을 한 곳에
+ * 모은다 — 듣는 쪽은 `document`에 붙이면 된다.
+ */
+export const NOTE_ARMED_EVENT = 'mf-note-armed';
+
+function announceArmed(): void {
+  if (typeof document === 'undefined') return;
+  document.dispatchEvent(new Event(NOTE_ARMED_EVENT));
+}
+
 interface ArmedMark {
   kind: NoteFormatKind;
   val: string | null;
+  /**
+   * **켜려는 것인가 끄려는 것인가** — 누른 순간의 주변 상태를 뒤집은 값이다.
+   *
+   * 이 한 칸이 예약을 **토글이 아니라 못박기**로 만든다. 예전에는 글자가 들어오면
+   * 무조건 `applyPartialStyle`에 넘겼는데, 그 함수는 "전부 켜져 있으면 끈다"라
+   * 브라우저가 이미 그 서식 안에서 이어 쳐 준 글자에 걸면 **도로 풀렸다**(제보:
+   * "두 번째 텍스트가 입력되는 순간 적용된 서식이 모두 풀려버려"). 이제는 지금
+   * 상태가 `want`와 다를 때만 건다 — 같으면 손대지 않으므로 어떤 순서로 이벤트가
+   * 와도 켜 둔 서식이 풀리지 않는다.
+   */
+  want: boolean;
+}
+
+/** 이 종류가 **켜짐/꺼짐 토글**인가 — 색·형광펜은 값 지정이라 `want`가 뜻이 없다. */
+function isToggleKind(kind: NoteFormatKind): kind is 'b' | 'i' | 's' | 'u' | 'k' {
+  return kind === 'b' || kind === 'i' || kind === 's' || kind === 'u' || kind === 'k';
+}
+
+/**
+ * 값 좌표 `[a, b)`가 **이미 그 서식인가** — 못박기(`want`)가 손댈지 가르는 저울.
+ *
+ * `applyNoteFormatRange`와 **같은 구간 계산**을 쓴다(칸이면 마커 글자를 건너뛴다) —
+ * 다른 자로 재면 "이미 걸렸다"와 실제로 걸리는 자리가 어긋난다.
+ */
+function markedAll(el: HTMLElement, a: number, b: number, kind: 'b' | 'i' | 's' | 'u' | 'k'): boolean {
+  const value = noteBoxValue(el);
+  const spans = el.hasAttribute('data-list-box') ? contentSpans(value.text, a, b) : [{ a, b }];
+  const chars = runsToChars(value);
+  let seen = 0;
+  for (const sp of spans) {
+    for (let i = Math.max(0, sp.a); i < Math.min(sp.b, chars.length); i += 1) {
+      if (!chars[i]![kind]) return false;
+      seen += 1;
+    }
+  }
+  return seen > 0;
 }
 /**
  * 적어 두는 것은 **한 자리에 대한 여러 서식**이다.
@@ -395,8 +462,19 @@ export function armCaretMark(el: HTMLElement, kind: NoteFormatKind, val?: string
   const at = span.a;
   const keep = armed && armed.el === el && armed.at === at ? armed.marks : [];
   const hit = keep.findIndex((m) => m.kind === kind);
-  const marks = hit >= 0 ? keep.filter((_, i) => i !== hit) : [...keep, { kind, val: val ?? null }];
+  // 주변이 이미 그 서식이면 누른 뜻은 "끈다"이다 — 그 판단을 여기서 한 번만 한다.
+  const here = isToggleKind(kind) ? noteActiveMarks(el)[kind] : false;
+  let marks: ArmedMark[];
+  if (hit < 0) marks = [...keep, { kind, val: val ?? null, want: !here }];
+  else if (!isToggleKind(kind)) marks = keep.filter((_, i) => i !== hit);
+  else {
+    // 같은 단추를 다시 눌렀다 — 뜻을 뒤집는다. 뒤집은 결과가 **주변과 같아지면**
+    // 예약할 것이 없다(예약은 주변과 다르게 쓰겠다는 약속이다).
+    const flipped = { ...keep[hit]!, want: !keep[hit]!.want };
+    marks = flipped.want === here ? keep.filter((_, i) => i !== hit) : keep.map((m, i) => (i === hit ? flipped : m));
+  }
   armed = marks.length ? { el, at, len: linearize(el, []).text.length, marks } : null;
+  announceArmed();
   return true;
 }
 
@@ -408,13 +486,18 @@ export function armCaretMarks(el: HTMLElement, kinds: readonly NoteFormatKind[])
   if (!kinds.length) return false;
   const span = noteCaretSpan(el);
   if (!span || span.a !== span.b) return false;
-  armed = { el, at: span.a, len: linearize(el, []).text.length, marks: kinds.map((kind) => ({ kind, val: null })) };
+  armed = { el, at: span.a, len: linearize(el, []).text.length, marks: kinds.map((kind) => ({ kind, val: null, want: true })) };
+  announceArmed();
   return true;
 }
 
 /** 예약을 버린다 — 줄을 떠나면 그 자리도 사라진다. */
 export function disarmCaretMark(el?: HTMLElement): void {
-  if (!el || armed?.el === el) armed = null;
+  if (!el || armed?.el === el) {
+    const had = !!armed;
+    armed = null;
+    if (had) announceArmed();
+  }
 }
 
 /** 지금 이 줄에 예약된 서식 — 툴바가 단추를 미리 켜 두는 데 쓴다(없으면 `null`). */
@@ -422,9 +505,25 @@ export function armedCaretMark(el: HTMLElement | null): NoteFormatKind | null {
   return el && armed?.el === el ? (armed.marks[0]?.kind ?? null) : null;
 }
 
-/** 이 줄에 그 서식이 예약돼 있나 — 여럿을 켜 둘 수 있으므로 낱개로 묻는다. */
+/** 이 줄에 그 서식이 **켜짐으로** 예약돼 있나 — 여럿을 켜 둘 수 있어 낱개로 묻는다. */
 export function armedHasMark(el: HTMLElement | null, kind: NoteFormatKind): boolean {
-  return !!el && armed?.el === el && armed.marks.some((m) => m.kind === kind);
+  return !!el && armed?.el === el && armed.marks.some((m) => m.kind === kind && m.want);
+}
+
+/**
+ * 툴바가 덧씌울 **예약된 단추 상태** — 예약이 없으면 빈 객체다(요청).
+ *
+ * 캐럿이 예약한 자리에 그대로 서 있을 때만 돌려준다: 예약은 "이 자리에서 다음에 칠
+ * 글자"에 대한 약속이라, 캐럿이 옮겨 갔으면 그 약속은 이 자리의 것이 아니다.
+ * 값은 `want` 그대로다 — 굵은 글 안에서 굵게를 눌러 **꺼 둔** 상태도 단추에 보인다.
+ */
+export function armedMarksOverlay(el: HTMLElement | null): Partial<NoteMarks> {
+  if (!el || !armed || armed.el !== el) return {};
+  const span = noteCaretSpan(el);
+  if (!span || span.a !== span.b || span.a !== armed.at) return {};
+  const out: Partial<NoteMarks> = {};
+  for (const m of armed.marks) if (isToggleKind(m.kind)) out[m.kind] = m.want;
+  return out;
 }
 
 /** 예약이 걸린 **글자 자리** — 조합 중에 그 구간을 칠할 때 쓴다(`paintCode`). */
@@ -444,14 +543,32 @@ export function fireCaretMark(el: HTMLElement): RichRun[] | null {
   const span = noteCaretSpan(el);
   const now = span && span.a === span.b ? span.a : -1;
   const grew = linearize(el, []).text.length - len;
-  armed = null;
-  if (now <= at || grew <= 0 || now - at !== grew) return null;
+  if (now <= at || grew <= 0 || now - at !== grew) {
+    armed = null;
+    announceArmed();
+    return null;
+  }
   // 켜 둔 것이 여럿이면 **차례로** 건다 — 한 번에 하나씩 다시 그리므로 다음 번은
   // 이미 걸린 결과 위에서 잰다(굵게 위에 기울임이 얹힌다).
   let runs: RichRun[] | null = null;
-  for (const m of marks) runs = applyNoteFormatRange(el, at, now, m.kind, m.val) ?? runs;
+  for (const m of marks) {
+    // **못박기**: 지금 상태가 뜻한 것과 같으면 손대지 않는다(`ArmedMark.want` 머리말).
+    if (isToggleKind(m.kind) && markedAll(el, at, now, m.kind) === m.want) continue;
+    runs = applyNoteFormatRange(el, at, now, m.kind, m.val) ?? runs;
+  }
   // 다시 그린 뒤의 선택은 **친 글자 전체**다 — 캐럿은 그 끝에 접혀 있어야 이어 친다.
   if (runs) setLinearSelection(el, now, now);
+  /**
+   * **예약은 살아 있다** — 캐럿을 따라 한 칸 앞으로 옮겨 둔다.
+   *
+   * 예전에는 한 글자를 걸고 예약을 버렸다("두 번째 글자부터는 브라우저가 그 요소
+   * 안에서 이어 친다"는 전제였다). 그 전제가 늘 참은 아니다 — 브라우저·IME·OS에
+   * 따라 다시 그린 뒤의 캐럿이 그 요소 **밖**에 서고, 그때부터 치는 글은 평문이
+   * 된다(제보: "두 번째 텍스트가 입력되는 순간 서식이 모두 풀려버려"). 예약을
+   * 들고 있으면 매 글자마다 뜻한 서식을 다시 못박으므로 그 차이가 사라진다.
+   * 이미 그 서식이면 위에서 건너뛰므로 **다시 그리는 일도 없다**(캐럿이 튀지 않는다).
+   */
+  armed = { el, at: now, len: linearize(el, []).text.length, marks };
   return runs;
 }
 

@@ -7504,3 +7504,133 @@ describe('공책 58판 — 서식이 이어지는 자리(제보 6·7·8)', () =>
     });
   });
 });
+
+describe('공책 59판 — 켜 둔 서식은 못박히고 단추에 보인다(제보·요청)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const putCaret = (node: Text, at: number): void => {
+    const range = document.createRange();
+    range.setStart(node, at);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+  const caretEnd = (line: HTMLElement): void => {
+    line.focus();
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+  /** 굵게 단추를 누른다 — 선택을 먼저 알려야 툴바가 이 줄을 대상으로 잡는다. */
+  const hitBold = async (c: HTMLElement): Promise<HTMLElement> => {
+    document.dispatchEvent(new Event('selectionchange'));
+    const btn = (await waitFor(() => c.querySelector('[data-note-mark="b"]'))) as HTMLElement;
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+    return btn;
+  };
+  /** 브라우저가 글자를 **서식 밖에** 떨군 모양 — 줄 끝에 평문 노드를 붙인다. */
+  const typeOutside = (line: HTMLElement, ch: string): void => {
+    const node = document.createTextNode(ch);
+    line.appendChild(node);
+    putCaret(node, ch.length);
+    fireEvent.input(line, { bubbles: true });
+  };
+
+  it('두 번째 글자가 **서식 밖에 떨어져도** 다시 못박는다(제보 2)', async () => {
+    const c = await open('am1', [{ id: 'x1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    caretEnd(line);
+    await hitBold(c);
+
+    // 첫 글자 — 예약이 걸려 굵어진다.
+    line.textContent = 'a';
+    putCaret(line.firstChild as Text, 1);
+    fireEvent.input(line, { bubbles: true });
+    await waitFor(() => expect(line.querySelector('span')?.getAttribute('style')).toContain('font-weight'));
+
+    // 두 번째 글자가 그 스팬 **밖**에 섰다(윈도의 제보가 그 모양이다).
+    typeOutside(line, 'b');
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('am1').pages[0].blocks[0].runs as { t: string; b?: boolean }[];
+      expect(runs.map((r) => r.t).join('')).toBe('ab');
+      // 예전에는 예약을 한 글자 쓰고 버려 `b`가 평문으로 남았다.
+      expect(runs.every((r) => r.b)).toBe(true);
+    });
+  });
+
+  it('**이미 걸린 서식은 다시 걸지 않는다** — 못박기는 토글이 아니다', async () => {
+    const c = await open('am2', [{ id: 'x1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    caretEnd(line);
+    await hitBold(c);
+
+    line.textContent = 'a';
+    putCaret(line.firstChild as Text, 1);
+    fireEvent.input(line, { bubbles: true });
+    const span = (await waitFor(() => line.querySelector('span'))) as HTMLElement;
+
+    // 브라우저가 스팬 **안에서** 이어 쳤다 — 이미 굵으므로 손대지 않아야 한다.
+    (span.firstChild as Text).data = 'ab';
+    putCaret(span.firstChild as Text, 2);
+    fireEvent.input(line, { bubbles: true });
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('am2').pages[0].blocks[0].runs as { t: string; b?: boolean }[];
+      expect(runs.map((r) => r.t).join('')).toBe('ab');
+      expect(runs.every((r) => r.b)).toBe(true);
+    });
+  });
+
+  it('**빈 줄에서 켜 둔 서식도 단추에 보인다**(요청 3)', async () => {
+    const c = await open('am3', [{ id: 'x1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    caretEnd(line);
+    const btn = await hitBold(c);
+
+    // 값에는 아무 일도 일어나지 않는다(걸 글자가 없다) — 그래도 켜진 것이 보여야 한다.
+    await waitFor(() => expect(btn.getAttribute('aria-pressed')).toBe('true'));
+    // 다시 누르면 예약이 걷히고 단추도 꺼진다.
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+    await waitFor(() => expect(btn.getAttribute('aria-pressed')).toBe('false'));
+  });
+
+  it('굵은 글 안에서 **꺼 두면** 단추도 꺼지고 이어 친 글자는 평문이다', async () => {
+    const c = await open('am4', [{ id: 'x1', kind: 'p', runs: [{ t: '굵', b: true, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    caretEnd(line);
+    const btn = await hitBold(c);
+    await waitFor(() => expect(btn.getAttribute('aria-pressed')).toBe('false'));
+
+    // 브라우저는 굵은 스팬 안에서 이어 친다 — 우리가 그 한 글자를 풀어야 한다.
+    const span = line.querySelector('span') as HTMLElement;
+    (span.firstChild as Text).data = '굵x';
+    putCaret(span.firstChild as Text, 2);
+    fireEvent.input(line, { bubbles: true });
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('am4').pages[0].blocks[0].runs as { t: string; b?: boolean }[];
+      expect(runs.map((r) => r.t).join('')).toBe('굵x');
+      expect(runs[runs.length - 1]!.b).toBeFalsy();
+    });
+  });
+});

@@ -38,7 +38,7 @@ import type { EditorController } from '../useEditorState';
 import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
-import { NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
+import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
@@ -4292,7 +4292,15 @@ function FormatToolbar({
             })),
           )
         : el
-          ? noteActiveMarks(el)
+          ? /**
+             * **켜 두기만 한 서식도 단추에 보인다**(요청) — 글자가 아직 없어도.
+             *
+             * 빈 줄에서 굵게를 누르면 값에는 아무 일도 일어나지 않는다(걸 글자가
+             * 없다) — 그래서 DOM만 읽던 예전에는 단추가 꺼진 채였고, 사람은 켜졌는지
+             * 알 길이 없었다. 예약(`armedMarksOverlay`)을 덮어 쓴다: 굵은 글 안에서
+             * **꺼 둔** 상태도 그대로 보인다(그쪽이 `want: false`로 온다).
+             */
+            { ...noteActiveMarks(el), ...armedMarksOverlay(el) }
           : { b: false, i: false, s: false, u: false, k: false };
       setMarks((cur) => (sameMarks(cur, next) ? cur : next));
       const key = el?.getAttribute('data-note-line') ?? '';
@@ -4302,7 +4310,12 @@ function FormatToolbar({
     };
     read();
     document.addEventListener('selectionchange', read);
-    return () => document.removeEventListener('selectionchange', read);
+    // 예약은 선택을 바꾸지 않는다 — 따로 알려 온다(`NOTE_ARMED_EVENT` 머리말).
+    document.addEventListener(NOTE_ARMED_EVENT, read);
+    return () => {
+      document.removeEventListener('selectionchange', read);
+      document.removeEventListener(NOTE_ARMED_EVENT, read);
+    };
   }, [boxRef, painted]);
 
   /**
@@ -5122,9 +5135,15 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
     const made = controller.addNoteBlock(next === 'hr' || next === 'table' ? 'p' : next, block.id);
     setFreshId(made);
     if (made && carry.length) {
+      // 두 길로 부르는 이유는 새 줄이 언제 서는지가 갈리기 때문이다(마이크로태스크로
+      // 이미 서 있으면 그때, 아니면 다음 프레임에). **먼저 성공한 쪽만** 쓴다 —
+      // 둘 다 예약하면 첫 글자를 친 **뒤에** 두 번째가 그 자리를 다시 예약해, 이미
+      // 걸린 서식 위에 또 걸린다.
+      let done = false;
       const arm = (): void => {
+        if (done) return;
         const el = document.querySelector<HTMLElement>(`[data-note-line="${made}"]`);
-        if (el && document.activeElement === el) armCaretMarks(el, carry);
+        if (el && document.activeElement === el) done = armCaretMarks(el, carry);
       };
       if (typeof queueMicrotask === 'function') queueMicrotask(arm);
       if (typeof requestAnimationFrame === 'function') requestAnimationFrame(arm);
