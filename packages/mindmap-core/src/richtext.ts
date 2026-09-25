@@ -44,6 +44,10 @@ export interface RichChar {
   k?: boolean;
   /** 형광펜 색 키 — 공책의 서식(RichRun.hl 참고). */
   hl?: string | null;
+  /** 날짜 칩이 가리키는 날 — 공책의 인라인 날짜(RichRun.dt 참고). */
+  dt?: string | null;
+  /** 문서 안 페이지 링크 — `"<docId>:<pageId>"`(RichRun.pg 참고). */
+  pg?: string | null;
 }
 
 /** Explodes `src.rich` (or, absent that, `src.text` as one unstyled run) into
@@ -55,7 +59,7 @@ export function runsToChars(src: RichSource): RichChar[] {
   runs.forEach((r) => {
     const t = r.t || '';
     for (let i = 0; i < t.length; i++)
-      chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null, m: r.m || null, u: !!r.u, k: !!r.k, hl: r.hl || null });
+      chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null, m: r.m || null, u: !!r.u, k: !!r.k, hl: r.hl || null, dt: r.dt || null, pg: r.pg || null });
   });
   return chars;
 }
@@ -78,7 +82,9 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
       (last.m || null) === (x.m || null) &&
       !!last.u === !!x.u &&
       !!last.k === !!x.k &&
-      (last.hl || null) === (x.hl || null)
+      (last.hl || null) === (x.hl || null) &&
+      (last.dt || null) === (x.dt || null) &&
+      (last.pg || null) === (x.pg || null)
     )
       last.t += x.ch;
     else {
@@ -92,6 +98,8 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
       if (x.u) r.u = true;
       if (x.k) r.k = true;
       if (x.hl) r.hl = x.hl;
+      if (x.dt) r.dt = x.dt;
+      if (x.pg) r.pg = x.pg;
       runs.push(r);
     }
   });
@@ -184,6 +192,11 @@ export function applyPartialStyle(
       c.u = false;
       c.k = false;
       c.hl = null;
+      // 날짜 칩·페이지 링크도 **뜻만** 걷는다 — 글자는 남는다(`8월 27일 목`).
+      // 멘션(`m`)과 같은 규칙이다: 「서식 지우기」는 평문으로 되돌리는 일이지
+      // 글을 지우는 일이 아니다.
+      c.dt = null;
+      c.pg = null;
     }
   }
   const nruns = charsToRuns(chars).filter((r) => r.t);
@@ -196,14 +209,14 @@ export function applyPartialStyle(
  * 되돌아간다(링크만 걸린 런이 그랬다). 그래서 판정을 **여기 한 곳**에 둔다 —
  * 웹의 커밋 경로들도 이 함수를 쓴다. */
 export function isStyledRuns(runs: RichRun[] | null | undefined): boolean {
-  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href || r.m || r.u || r.k || r.hl);
+  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href || r.m || r.u || r.k || r.hl || r.dt || r.pg);
 }
 
 /** Removes one style key from every run, dropping back to plain (`null`)
  * `rich` if nothing else is styled afterward — pure port of `Component#stripRich`
  * (MindFlow.dc.html:2727), used when a WHOLE-node style toggle (e.g. the
  * bold-everything button) should override any conflicting partial run. */
-export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's' | 'href' | 'u' | 'k' | 'hl'): RichRun[] | null {
+export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's' | 'href' | 'u' | 'k' | 'hl' | 'dt' | 'pg'): RichRun[] | null {
   if (!rich || !rich.length) return null;
   const next = rich.map((r) => {
     const o = { ...r };
@@ -313,7 +326,10 @@ export function applyAutoLinks(src: RichSource): { text: string; rich: RichRun[]
   spans.forEach((sp) => {
     for (let i = sp.start; i < sp.end && i < chars.length; i++) {
       const c = chars[i]!;
-      if (c.href || c.m) return; // 이미 링크·멘션이 걸린 구간은 통째로 건너뛴다
+      // 이미 뜻이 걸린 구간은 통째로 건너뛴다 — 링크·멘션·날짜 칩·페이지 링크.
+      // 날짜 칩을 빠뜨리면 `8.27`처럼 생긴 칩 글자가 주소로 읽혀 칩 위에 링크가
+      // 덧걸린다(칩 하나에 두 뜻이 얹히면 되읽는 쪽이 어느 것을 믿을지 모른다).
+      if (c.href || c.m || c.dt || c.pg) return;
     }
     for (let i = sp.start; i < sp.end && i < chars.length; i++) {
       chars[i]!.href = sp.href;

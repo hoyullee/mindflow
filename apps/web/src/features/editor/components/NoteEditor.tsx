@@ -41,7 +41,12 @@ import type { Theme } from '../theme';
 import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
-import { runsToHtml } from '../richtextDom';
+import { runsToHtml, setLinearSelection } from '../richtextDom';
+import { useCommentParticipants } from './CommentPanel';
+import { dateChipLabel } from '../mentionChip';
+import { todayISO } from '../../home/calendar/model';
+import { insertChip } from '../noteChipInsert';
+import { NoteMentionHub, type HubPick } from './NoteMentionHub';
 import { firstImageFile } from '../imageAttach';
 import { CODE_BG, CODE_INK, codeHtml } from '../noteCode';
 import { downloadFile } from '../download';
@@ -490,6 +495,102 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     setSlashAtChar(null);
     setSlashTail('');
   }, []);
+
+  /**
+   * `@` 허브 — 사람·날짜·페이지를 한 메뉴에서 부른다(스펙 4절).
+   *
+   * 상태를 `/`와 **따로** 든 이유: 둘은 동시에 열릴 수 있는 자리가 아니지만(한
+   * 캐럿에 한 메뉴), 닫는 규칙이 다르다 — `/`는 이름이 길어지면 접고 `@`는 공백
+   * 두 칸이나 24자에서 접는다. 한 상태로 묶으면 그 규칙이 섞인다.
+   *
+   * `dateOnly`는 `/날짜`로 연 경우다 — 그때는 사람·페이지를 숨기고 달력을 함께 편다.
+   */
+  const [atFor, setAtFor] = useState<string | null>(null);
+  const [atAnchor, setAtAnchor] = useState<SlashAnchor | null>(null);
+  const [atAtChar, setAtAtChar] = useState<number | null>(null);
+  const [atTail, setAtTail] = useState('');
+  const [atDateOnly, setAtDateOnly] = useState(false);
+  const closeMention = useCallback(() => {
+    setAtFor(null);
+    setAtAtChar(null);
+    setAtTail('');
+    setAtDateOnly(false);
+  }, []);
+  const openMentionAt = (lineKey: string, from?: number | null, tail = '', dateOnly = false) => {
+    const el = document.querySelector(`[data-note-line="${lineKey}"]`);
+    setAtAnchor(measureSlash(el));
+    setAtFor(lineKey);
+    setAtAtChar(typeof from === 'number' ? from : null);
+    setAtTail(tail);
+    setAtDateOnly(dateOnly);
+    // 두 메뉴가 한 캐럿에 겹쳐 뜨지 않게 — `/`로 열고 `날짜`를 고르는 길이 있다.
+    closeSlash();
+  };
+  /**
+   * 허브가 부를 수 있는 사람들 — **댓글이 쓰는 그 명단**이다(`useCommentParticipants`).
+   *
+   * 따로 만들지 않은 이유: 부를 수 있는 사람의 정의는 "이 문서에 초대된 사람"
+   * 하나여야 한다. 두 벌이 되면 댓글에서는 보이는데 본문에서는 안 보이는 사람이
+   * 생긴다. 이 훅은 나를 이미 빼고 준다(스펙 4-4).
+   *
+   * 허브가 열려 있을 때만 묻는다 — 공책을 열어 두기만 해도 왕복이 돌 이유가 없다.
+   */
+  const hubPeople = useCommentParticipants(controller.docId, atFor !== null).map((p) => ({ email: p.email, name: p.displayName || p.email }));
+  /** 이 공책의 **다른** 페이지들 — 지금 보는 페이지는 뺀다(자기 자신을 가리키지 않게). */
+  const hubPages = (controller.doc.pages ?? []).filter((pg) => pg.id !== page?.id).map((pg) => ({ id: pg.id, title: pg.title || '제목 없음' }));
+
+  /**
+   * 허브에서 고른 것을 **본문에 칩으로 박는다**(스펙 4-6).
+   *
+   * 지우는 구간이 둘로 갈린다: `@`로 열었으면 `@질의` 전체이고, `/날짜`로 열었으면
+   * 지울 것이 없다(`/질의`는 목록 쪽이 이미 걷었다) — 그때는 **지금 캐럿 자리**에
+   * 넣는다. 그래서 자리를 상태가 아니라 그 순간의 DOM에서 다시 읽는다.
+   *
+   * 모델을 고친 뒤 **DOM도 우리가 다시 그린다**: 편집 박스는 비제어라(마운트할 때
+   * 한 번만 그린다) 모델만 바꾸면 화면에는 `@질의`가 그대로 남는다.
+   */
+  const pickMention = (pick: HubPick): void => {
+    const key = atFor;
+    if (!page || !key) return;
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+    const text = noteLineText(page, key);
+    const runs = noteLineRuns(page, key);
+    // `/날짜`로 열었으면 지울 것이 없다 — **지금 캐럿 자리**에 넣는다(접혀 있을 때만).
+    const span = el ? noteCaretSpan(el) : null;
+    const from = atAtChar ?? (span && span.a === span.b ? span.a : text.length);
+    const cut = atAtChar === null ? 0 : 1 + atQuery.length;
+    const label = pick.kind === 'person' ? `@${pick.name}` : pick.kind === 'date' ? dateChipLabel(pick.iso) : pick.title;
+    const mark = pick.kind === 'person' ? { m: pick.email } : pick.kind === 'date' ? { dt: pick.iso } : { pg: `${controller.docId}:${pick.id}` };
+    const out = insertChip(text, runs, from, cut, label, mark);
+    commitLine(controller, key, out.runs);
+    closeMention();
+    if (el) {
+      el.innerHTML = runsToHtml({ text: out.text, rich: out.runs });
+      el.focus();
+      setLinearSelection(el, out.caret, out.caret);
+    }
+    /**
+     * 스펙은 여기서 토스트를 띄우라고 하지만(`{이름}님을 멘션했어요…`) **이 앱에는
+     * 토스트 체계가 없다** — 프로토타입에만 있던 부품이다. 칩이 그 자리에 박히는
+     * 것이 이미 "됐다"는 신호라, 없는 체계를 이 한 줄 때문에 세우지 않는다.
+     * (알림이 실제로 나가는 것은 저장 시점이고, 그 확인은 알림 센터의 몫이다.)
+     */
+  };
+
+  // 본문을 굴려도 따라간다 — `/` 목록과 같은 이유·같은 방법.
+  useEffect(() => {
+    if (atFor === null) return;
+    const follow = () => {
+      const el = document.querySelector(`[data-note-line="${atFor}"]`);
+      if (el) setAtAnchor(measureSlash(el));
+    };
+    document.addEventListener('scroll', follow, true);
+    window.addEventListener('resize', follow);
+    return () => {
+      document.removeEventListener('scroll', follow, true);
+      window.removeEventListener('resize', follow);
+    };
+  }, [atFor]);
   /**
    * 집중 모드 — **페이지 목록을 왼쪽으로 밀어 넣는다**(요청).
    *
@@ -792,6 +893,35 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     const bare = slashQuery.replace(/\s/g, '');
     if (/\s/.test(slashQuery) && bare.length >= 7) closeSlash();
   }, [slashFor, slashAtChar, slashQuery, page, closeSlash]);
+
+  /** `@` 뒤에 친 글자 — 규칙은 `slashQuery`와 같다(꼬리를 접미로 뗀다). */
+  const atQuery = useMemo(() => {
+    if (atFor === null || atAtChar === null || !page) return '';
+    const text = noteLineText(page, atFor);
+    if (text[atAtChar] !== '@') return '';
+    const rest = text.slice(atAtChar + 1);
+    return atTail && rest.endsWith(atTail) ? rest.slice(0, rest.length - atTail.length) : rest;
+  }, [atFor, atAtChar, atTail, page]);
+  /** `@`를 본 적이 있나 — 여는 순간에는 모델이 아직 그 글자를 모른다(`slashSeen`과 같다). */
+  const atSeen = useRef(false);
+  useEffect(() => {
+    if (atFor === null || atAtChar === null) atSeen.current = false;
+  }, [atFor, atAtChar]);
+  useEffect(() => {
+    // `/날짜`로 연 허브에는 `@`가 없다 — 글자를 근거로 닫으면 열자마자 닫힌다.
+    if (atFor === null || atAtChar === null || !page || atDateOnly) return;
+    const text = noteLineText(page, atFor);
+    if (text[atAtChar] === '@') atSeen.current = true;
+    else if (atSeen.current) {
+      closeMention(); // `@`를 지웠다(스펙 4-2)
+      return;
+    } else return;
+    /**
+     * **글을 쓰는 중으로 넘어갔을 때** 접는다(스펙 4-2) — 연속 공백·줄바꿈·24자.
+     * 어느 쪽이든 **친 글자는 그대로 둔다**: 지우는 것은 고른 경우뿐이다.
+     */
+    if (/\s\s|\n/.test(atQuery) || atQuery.length > 24) closeMention();
+  }, [atFor, atAtChar, atQuery, page, atDateOnly, closeMention]);
 
   /**
    * **읽고 있는 글자를 회색으로**(요청) — `/질의`에 색만 얹는다.
@@ -2261,6 +2391,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   rememberBox={rememberBox}
                   focusBox={focusBox}
                   openSlash={(id, at, tail) => openSlashAt(id, at, tail)}
+                  openMention={(id, at, tail) => openMentionAt(id, at, tail)}
                   pickObject={pickObject}
                   picked={picked}
                   onlyPicked={selectedIds.length === 1}
@@ -2294,6 +2425,18 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   }
                   setLinkAt(null);
                 }}
+              />
+            )}
+            {atFor && !readOnly && (
+              <NoteMentionHub
+                anchor={atAnchor}
+                query={atQuery}
+                today={todayISO()}
+                people={hubPeople}
+                pages={hubPages}
+                dateOnly={atDateOnly}
+                onPick={pickMention}
+                onClose={closeMention}
               />
             )}
             {slashFor && !readOnly && (
@@ -4946,6 +5089,8 @@ interface BlockProps {
   /** `/`를 쳤다 — **그 줄의 키**와 글자 자리(글자는 본문에 남는다). 목록 항목·표
    * 칸에서도 열린다(그 줄의 글로 좁혀져야 하므로 블록 id로는 모자란다). */
   openSlash: (lineKey: string, at?: number, tail?: string) => void;
+  /** `@` 허브를 이 줄에서 연다 — `openSlash`와 같은 배선. */
+  openMention: (lineKey: string, at?: number, tail?: string) => void;
   /** 이 블록을 **오브젝트로 고른다**(요청 1·6) — `extend`면 지금 고른 것에서 잇는다. */
   pickObject: (id: string, extend?: boolean) => void;
   /** 지금 고른 것에 이 블록이 들어 있는가 — 그림·표가 제 손잡이를 켤 때 본다. */
@@ -5067,7 +5212,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, pickObject, picked, onlyPicked }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, openMention, pickObject, picked, onlyPicked }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -5493,6 +5638,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 if (readOnly) return;
                 openSlash(`${block.id}:body`, at, tail);
               }}
+              onMention={(at, tail) => {
+                if (readOnly) return;
+                openMention(`${block.id}:body`, at, tail);
+              }}
               />
           </div>
         )}
@@ -5588,6 +5737,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               onSlash={(at, tail) => {
                 if (readOnly) return;
                 openSlash(`${block.id}:${item.id}`, at, tail);
+              }}
+              onMention={(at, tail) => {
+                if (readOnly) return;
+                openMention(`${block.id}:${item.id}`, at, tail);
               }}
               onEnter={(at) => {
                 if (readOnly) return false;
@@ -5758,6 +5911,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSlash={(at, tail) => {
         if (readOnly) return;
         openSlash(block.id, at, tail);
+      }}
+      onMention={(at, tail) => {
+        if (readOnly) return;
+        openMention(block.id, at, tail);
       }}
       /**
        * 제목의 편집 박스는 **딱 한 줄 높이**다 — 기본값 `minHeight: 1.6em`은 제목의

@@ -6,9 +6,9 @@ describe('runsToChars / charsToRuns', () => {
   it('explodes a plain (no rich) source into one unstyled char per character', () => {
     const chars = runsToChars({ text: 'abc' });
     expect(chars).toEqual([
-      { ch: 'a', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null },
-      { ch: 'b', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null },
-      { ch: 'c', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null },
+      { ch: 'a', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
+      { ch: 'b', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
+      { ch: 'c', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
     ]);
   });
 
@@ -19,16 +19,16 @@ describe('runsToChars / charsToRuns', () => {
     ];
     const chars = runsToChars({ text: 'abcd', rich });
     expect(chars).toEqual([
-      { ch: 'a', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null },
-      { ch: 'b', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null },
-      { ch: 'c', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null },
-      { ch: 'd', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null },
+      { ch: 'a', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
+      { ch: 'b', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
+      { ch: 'c', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
+      { ch: 'd', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
     ]);
   });
 
   it('an empty `rich` array is treated as absent (falls back to plain text)', () => {
     const chars = runsToChars({ text: 'x', rich: [] });
-    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null }]);
+    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null }]);
   });
 
   it('re-merges adjacent same-style characters back into runs', () => {
@@ -394,5 +394,57 @@ describe('인라인 코드는 다른 글자 서식을 걷어낸다(요청)', () 
     expect(r?.k).toBeFalsy();
     // 켤 때 이미 걷어냈으므로 되살아나지는 않는다 — 다만 끄기가 새로 지우지도 않는다.
     expect(r?.c).toBe('#f00');
+  });
+});
+
+describe('공책의 인라인 칩 — 날짜(dt)와 페이지 링크(pg)', () => {
+  it('**평문으로 접히지 않는다** — 칩만 걸린 런도 서식으로 센다', () => {
+    // 이 판정이 빠지면 칩만 있는 런이 `rich: null`로 접혀 조용히 사라진다
+    // (링크에서 실제로 겪은 사고 — `isStyledRuns` 머리말).
+    expect(isStyledRuns([{ t: '8월 27일 목', b: false, c: null, dt: '2026-08-27' }])).toBe(true);
+    expect(isStyledRuns([{ t: '2쪽', b: false, c: null, pg: 'doc1:p2' }])).toBe(true);
+  });
+
+  it('가리키는 날이 다르면 **한 런으로 합치지 않는다**', () => {
+    const runs = charsToRuns([
+      { ch: 'a', b: false, c: null, dt: '2026-08-27' },
+      { ch: 'b', b: false, c: null, dt: '2026-08-28' },
+    ]);
+    expect(runs).toEqual([
+      { t: 'a', b: false, c: null, dt: '2026-08-27' },
+      { t: 'b', b: false, c: null, dt: '2026-08-28' },
+    ]);
+  });
+
+  it('글자 단위로 펴고 다시 합쳐도 칩이 그대로다(왕복)', () => {
+    const rich: RichRun[] = [
+      { t: '회의는 ', b: false, c: null },
+      { t: '8월 27일 목', b: false, c: null, dt: '2026-08-27' },
+      { t: '입니다', b: false, c: null },
+    ];
+    const back = charsToRuns(runsToChars({ text: '회의는 8월 27일 목입니다', rich }));
+    expect(back).toEqual(rich);
+  });
+
+  it('굵게를 걸어도 칩의 뜻은 남는다 — 서식과 뜻은 다른 칸이다', () => {
+    const out = applyPartialStyle({ text: '8월 27일', rich: [{ t: '8월 27일', b: false, c: null, dt: '2026-08-27' }] }, 0, 6, 'b');
+    expect(out.rich?.[0]).toMatchObject({ b: true, dt: '2026-08-27' });
+  });
+
+  it('**서식 지우기는 뜻만 걷고 글자는 남긴다** — 멘션과 같은 규칙', () => {
+    const out = applyPartialStyle({ text: '8월 27일', rich: [{ t: '8월 27일', b: true, c: null, dt: '2026-08-27' }] }, 0, 6, 'clear');
+    expect(out.text).toBe('8월 27일');
+    expect(out.rich).toBeNull();
+  });
+
+  it('칩이 걸린 구간에는 **자동 링크가 덧걸리지 않는다**', () => {
+    // `8.27`처럼 생긴 칩 글자가 주소로 읽히면 칩 하나에 두 뜻이 얹힌다.
+    const src = { text: 'a geurio.com b', rich: [{ t: 'a geurio.com b', b: false, c: null, dt: '2026-08-27' }] };
+    expect(applyAutoLinks(src)).toBeNull();
+  });
+
+  it('`stripRichStyle`로 칩만 걷을 수 있다', () => {
+    expect(stripRichStyle([{ t: 'x', b: false, c: null, dt: '2026-08-27' }], 'dt')).toBeNull();
+    expect(stripRichStyle([{ t: 'x', b: true, c: null, pg: 'd:p' }], 'pg')).toEqual([{ t: 'x', b: true, c: null }]);
   });
 });

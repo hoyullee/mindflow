@@ -7668,3 +7668,100 @@ describe('공책 59판 — 켜 둔 서식은 못박히고 단추에 보인다(�
     });
   });
 });
+
+describe('공책 60판 — `@` 허브로 날짜·페이지를 본문에 넣는다(스펙 3·4절)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[], pages?: unknown[]) {
+    const doc = pages
+      ? { ...NOTE, pages }
+      : { ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] };
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(doc));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  /** `@`를 친다 — 키를 먼저 받고(그 자리가 `@`의 자리다) 글자가 뒤따라 들어온다. */
+  const hitAt = async (c: HTMLElement, line: HTMLElement, text = '@') => {
+    type(line, '');
+    fireEvent.keyDown(line, { key: '@' });
+    type(line, text);
+    fireEvent.input(line, { bubbles: true });
+    await waitFor(() => expect(c.querySelector('[data-note-hub]')).toBeTruthy());
+  };
+
+  it('`@`를 치면 허브가 뜨고, 날짜를 고르면 **글자 사이에 칩**이 박힌다', async () => {
+    const c = await open('hb1', [{ id: 'b1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    await hitAt(c, line);
+
+    const day = (await waitFor(() => c.querySelector('[data-hub-kind="date"]'))) as HTMLElement;
+    fireEvent.click(day);
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('hb1').pages[0].blocks[0].runs as { t: string; dt?: string }[];
+      const chip = runs.find((r) => r.dt);
+      expect(chip).toBeTruthy();
+      // 칩 글자는 **절대 날짜**다(`오늘`이 아니라) — 한 달 뒤에 읽어도 같은 날이어야 한다.
+      expect(chip!.t).toMatch(/^\d+월 \d+일 [일월화수목금토]$/);
+      // `@`는 사라지고 칩 **뒤에 공백 하나**가 남는다(이어서 바로 칠 수 있게).
+      expect(runs.map((r) => r.t).join('')).not.toContain('@');
+      expect(runs.map((r) => r.t).join('')).toContain(' ');
+    });
+  });
+
+  it('`@`를 **낱말 한가운데서는 열지 않는다** — 주소를 칠 때 끼어들지 않게', async () => {
+    const c = await open('hb2', [{ id: 'b1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    type(line, 'mail');
+    fireEvent.keyDown(line, { key: '@' });
+    type(line, 'mail@');
+    fireEvent.input(line, { bubbles: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(c.querySelector('[data-note-hub]')).toBeNull();
+  });
+
+  it('`Esc`로 닫아도 **친 글자는 그대로 남는다**(스펙 4-2)', async () => {
+    const c = await open('hb3', [{ id: 'b1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    await hitAt(c, line, '@27');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(c.querySelector('[data-note-hub]')).toBeNull());
+    expect(line.textContent).toBe('@27');
+  });
+
+  it('**같은 공책의 다른 페이지**를 찾아 링크로 넣는다', async () => {
+    const c = await open('hb4', [], [
+      { id: 'p1', title: '회의록', blocks: [{ id: 'b1', kind: 'p', runs: [] }] },
+      { id: 'p2', title: '릴리즈 계획', blocks: [] },
+    ]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    await hitAt(c, line, '@릴리즈');
+
+    const pg = (await waitFor(() => c.querySelector('[data-hub-kind="page"]'))) as HTMLElement;
+    expect(pg.textContent).toContain('릴리즈 계획');
+    fireEvent.click(pg);
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('hb4').pages[0].blocks[0].runs as { t: string; pg?: string }[];
+      const chip = runs.find((r) => r.pg);
+      expect(chip?.t).toBe('릴리즈 계획');
+      // 가리키는 것은 **주소가 아니라 id**다(`normalizeUrl`의 스킴 방어를 건드리지 않는다).
+      expect(chip?.pg).toMatch(/:p2$/);
+    });
+  });
+
+  it('지금 보는 페이지는 **후보에 없다** — 자기 자신을 가리키지 않게', async () => {
+    const c = await open('hb5', [], [{ id: 'p1', title: '회의록', blocks: [{ id: 'b1', kind: 'p', runs: [] }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    await hitAt(c, line, '@회의');
+    expect(c.querySelector('[data-hub-kind="page"]')).toBeNull();
+  });
+});
