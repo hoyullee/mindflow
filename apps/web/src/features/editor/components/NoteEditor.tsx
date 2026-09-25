@@ -38,7 +38,7 @@ import type { EditorController } from '../useEditorState';
 import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
-import { NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { runsToHtml } from '../richtextDom';
@@ -50,7 +50,7 @@ import { openNotePrint } from '../notePrint';
 import { linesClipboard, selectionClipboard, writeClipboard, writeImageClipboard } from '../noteClipboard';
 import { NoteBoardEmbed } from './NoteBoardEmbed';
 import { DropLine, useBlockDrag } from './noteBlockDrag';
-import { boardDocIdFromUrl } from '../noteEmbed';
+import { boardDocIdFromUrl, embedSize } from '../noteEmbed';
 import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
@@ -5104,7 +5104,31 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
      * Shift+Enter다(아래 `softBreak`).
      */
     const next = block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3' || block.kind === 'q' ? 'p' : block.kind;
-    setFreshId(controller.addNoteBlock(next === 'hr' || next === 'table' ? 'p' : next, block.id));
+    /**
+     * **켜 두고 쓰던 서식이 새 줄에도 이어진다**(제보 6).
+     *
+     * 예전에는 Enter 한 번에 전부 풀렸다 — 굵게 쓰다 줄을 바꾸면 그 줄만 굵고 다음
+     * 줄은 보통이라, 사람은 매 줄 단추를 다시 눌러야 했다(문서 편집기의 몸에 익은
+     * 것과 반대다). 캐럿 자리의 서식을 읽어 두었다가 새 줄이 서면 그대로 **예약**한다
+     * (`armCaretMarks`) — 실제로 걸리는 것은 첫 글자를 칠 때이므로, 쓰지 않고 넘어간
+     * 빈 줄에는 아무것도 남지 않는다.
+     *
+     * 인라인 코드(`k`)는 물려주지 않는다 — 그것은 「여기부터 코드」라는 뜻이라
+     * 줄이 바뀌면 끝나는 것이 맞다(요청으로 캐럿 예약 자체를 걷어 낸 서식이다).
+     */
+    const here = document.querySelector<HTMLElement>(`[data-note-line="${block.id}"]`);
+    const on = here ? noteActiveMarks(here) : null;
+    const carry = (['b', 'i', 's', 'u'] as const).filter((m) => on?.[m]);
+    const made = controller.addNoteBlock(next === 'hr' || next === 'table' ? 'p' : next, block.id);
+    setFreshId(made);
+    if (made && carry.length) {
+      const arm = (): void => {
+        const el = document.querySelector<HTMLElement>(`[data-note-line="${made}"]`);
+        if (el && document.activeElement === el) armCaretMarks(el, carry);
+      };
+      if (typeof queueMicrotask === 'function') queueMicrotask(arm);
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(arm);
+    }
     return true;
   };
 
@@ -7769,6 +7793,26 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
    * 지우는 것은 쓰기가 **끝난 뒤**다(먼저 지우면 `<img>`가 사라져 주소를 잃는다).
    */
   const isImage = block?.kind === 'img';
+  /**
+   * **삽입한 문서**(칸반·맵·화이트보드·공책)인가 — 그렇다면 메뉴가 통째로 다르다(요청).
+   *
+   * 이 블록에는 글도 서식도 없다. 그런데 본문 메뉴를 그대로 띄우고 있어서 글꼴 ·
+   * 링크 삽입 · 댓글 달기처럼 **누를 수 없는 줄**이 절반이었다. 여기서 할 수 있는
+   * 일만 남긴다: 클립보드 넷 · 열기 · 접기/펼치기 · 아래에 구분선 · 삭제.
+   */
+  const isEmbed = block?.kind === 'link' && !!block.docId;
+  const embedHref = block?.docId ? `/editor?map=${encodeURIComponent(block.docId)}` : '';
+  /**
+   * 임베드의 복사는 **그 문서의 주소**를 싣는다 — 글이 없어 예전 길로는 빈 값이
+   * 실렸다(그림 블록에서 겪은 것과 같은 자리). 그 주소를 본문에 붙여넣으면 다시
+   * 임베드가 되므로(`boardDocIdFromUrl`) 잘라내기 → 붙여넣기가 이동이 된다.
+   */
+  const copyEmbed = (): boolean => {
+    if (!embedHref) return false;
+    const url = typeof window === 'undefined' ? embedHref : new URL(embedHref, window.location.origin).toString();
+    writeClipboard({ plain: url, html: `<a href="${url}">${url}</a>` });
+    return true;
+  };
   const copyImage = (cut: boolean): void => {
     void writeImageClipboard(imageSrcOf(at.blockId)).then((ok) => {
       if (ok && cut) controller.removeNoteBlock(at.blockId);
@@ -7806,6 +7850,50 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
       onPointerDown={(e) => e.stopPropagation()}
       style={{ ...POP, ...base, display: 'flex', flexDirection: 'column', gap: 1 }}
     >
+      {isEmbed ? (
+        <>
+          <span style={POP_HEAD}>삽입한 문서</span>
+          <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={done(() => {
+            if (copyEmbed()) controller.removeNoteBlock(at.blockId);
+          })} />
+          <CtxItem mark="copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(() => void copyEmbed())} />
+          <CtxItem mark="paste" name="붙여넣기" hint="⌘V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>} onClick={done(() => void paste(false))} />
+          <CtxItem mark="paste-plain" name="서식 없이 붙여넣기" hint="⌘⇧V" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /><path d="M9 13h6" /></>} onClick={done(() => void paste(true))} />
+
+          <CtxRule />
+          <CtxItem
+            mark="open"
+            name="열기"
+            icon={<><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></>}
+            onClick={done(() => {
+              if (embedHref && typeof window !== 'undefined') window.location.assign(embedHref);
+            })}
+          />
+          {/* 접기·펼치기 — 판의 머리에도 있지만(펼쳤을 때만) 접힌 카드에서는 그
+              단추가 보이지 않는다. 메뉴는 두 상태에서 같은 자리라 여기가 제자리다. */}
+          <CtxItem
+            mark="embed-size"
+            name={embedSize(block!) === 'sm' ? '펼치기' : '접기'}
+            icon={embedSize(block!) === 'sm' ? <><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" /></> : <><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" /></>}
+            onClick={done(() => controller.setNoteEmbedView(at.blockId, { size: embedSize(block!) === 'sm' ? 'lg' : 'sm' }))}
+          />
+
+          <CtxRule />
+          <CtxItem mark="hr" name="아래에 구분선" icon={<path d="M4 12h16" />} onClick={done(() => controller.addNoteBlock('hr', at.blockId))} />
+          {/* **본문에서만** 뺀다 — 원본 보드는 그대로다. 그 말을 이름에 넣어 둔다
+              (「문서 삭제」만 적으면 보드가 지워지는 줄 알고 누르지 못한다). */}
+          <CtxItem
+            mark="del"
+            name="문서 삭제"
+            hint="⌫"
+            danger
+            icon={<><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>}
+            onClick={done(() => controller.removeNoteBlock(at.blockId))}
+          />
+          <span style={{ padding: '2px 10px 4px', fontSize: 10.5, lineHeight: 1.45, color: 'var(--mf-faint)' }}>본문에서만 빠져요 · 원본 문서는 그대로예요</span>
+        </>
+      ) : (
+      <>
       <span style={POP_HEAD}>블록</span>
       <CtxItem mark="cut" name="잘라내기" hint="⌘X" icon={CUT_ICON} onClick={done(() => {
         if (isImage) {
@@ -7859,6 +7947,8 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
         icon={<><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>}
         onClick={done(() => controller.removeNoteBlock(at.blockId))}
       />
+      </>
+      )}
 
     </div>
       {/* 날개는 메뉴의 **형제**다 — 자식으로 두면 부모의 등장 애니메이션이 남긴

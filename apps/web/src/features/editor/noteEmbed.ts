@@ -61,11 +61,17 @@ export function kanbanView(block: Pick<NoteBlock, 'embed'>, columns: readonly Ka
   return { col, mine: !!v?.mine };
 }
 
-/** 마인드맵 보기 — 기본은 개요, 앞의 두 가지를 펼쳐 둔다(스펙 §6.2). */
+/**
+ * 마인드맵 보기 — 기본은 **맵**, 앞의 두 가지를 펼쳐 둔다.
+ *
+ * 스펙은 개요가 기본이었는데(글 옆에는 글이 어울린다는 생각) 실제로 써 보니 반대였다
+ * (요청): 맵을 본문에 붙이는 사람이 보여 주려는 것은 **그 맵의 생김새**다 — 가지가
+ * 어떻게 뻗었는지가 한눈에 안 들어오면 굳이 붙일 이유가 없다. 개요는 골라서 본다.
+ */
 export function mindmapView(block: Pick<NoteBlock, 'embed'>): { view: 'outline' | 'map'; open: number[] } {
   const v = block.embed?.mindmap;
   return {
-    view: v?.view === 'map' ? 'map' : 'outline',
+    view: v?.view === 'outline' ? 'outline' : 'map',
     open: Array.isArray(v?.open) ? v.open.filter((n) => Number.isInteger(n) && n >= 0) : [0, 1],
   };
 }
@@ -95,7 +101,14 @@ export function mergeEmbed(prev: NoteEmbedView | undefined, patch: NoteEmbedPatc
   // 안쪽 칸은 **덮어쓰지 않고 겹친다**(`{...prev, ...patch}`) — 그래야 「내 카드만」
   // 하나를 뒤집어도 고른 열이 살아남는다. 통째 스프레드를 쓰지 않는 이유가 이것이다.
   const kanban = patch.kanban || prev?.kanban ? { col: 0, mine: false, ...prev?.kanban, ...patch.kanban } : undefined;
-  const mindmap = patch.mindmap || prev?.mindmap ? { view: 'outline' as const, open: [], ...prev?.mindmap, ...patch.mindmap } : undefined;
+  /**
+   * 빈 자리의 기본값은 **읽는 쪽과 같아야** 한다(`mindmapView`).
+   *
+   * 예전에는 여기가 `{ view: 'outline', open: [] }`였는데 읽는 쪽은 `open: [0, 1]`이라,
+   * 아무것도 적히지 않은 임베드에서 보기를 한 번 바꾸는 순간 **펼쳐져 있던 두 가지가
+   * 접혔다**(기본을 맵으로 돌리면서 드러났다 — 맵 → 개요로 가면 늘 접혀 있었다).
+   */
+  const mindmap = patch.mindmap || prev?.mindmap ? { view: 'map' as const, open: [0, 1], ...prev?.mindmap, ...patch.mindmap } : undefined;
   const whiteboard = patch.whiteboard || prev?.whiteboard ? { frame: 0, height: 'm' as const, ...prev?.whiteboard, ...patch.whiteboard } : undefined;
   return {
     ...prev,

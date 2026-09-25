@@ -7414,3 +7414,93 @@ describe('공책 57판 — 윗줄에 붙일 때 초점이 끊기지 않는다(�
     expect(key).not.toBe('c2:j1');
   });
 });
+
+/**
+ * 설치형 앱(윈도) 제보 셋 — 서식이 줄을 넘어 이어지는가 · 줄 끝의 공백 · 한글 첫 글자.
+ */
+describe('공책 58판 — 서식이 이어지는 자리(제보 6·7·8)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  /** 그 텍스트 노드의 자리에 캐럿을 둔다(브라우저가 글자를 친 뒤 하는 일). */
+  const putCaret = (node: Text, at: number): void => {
+    const range = document.createRange();
+    range.setStart(node, at);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+  /** 그 줄 끝에 캐럿을 둔다. */
+  const caretEnd = (line: HTMLElement): void => {
+    line.focus();
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+
+  it('**굵게 쓰다 Enter를 치면 다음 줄도 굵다**(제보 6) — 매 줄 다시 누르지 않는다', async () => {
+    const c = await open('fm1', [{ id: 'x1', kind: 'p', runs: [{ t: '굵은 글', b: true, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    caretEnd(line);
+
+    fireEvent.keyDown(line, { key: 'Enter' });
+    const next = (await waitFor(() => {
+      const el = [...c.querySelectorAll('[data-note-line]')].find((e) => e.getAttribute('data-note-line') !== 'x1');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    // 새 줄에 친 글자가 곧바로 굵어진다(예약해 둔 서식이 첫 글자에 걸린다).
+    next.focus();
+    next.textContent = '이';
+    // 브라우저라면 글자를 친 뒤 캐럿이 그 뒤에 선다 — `fireCaretMark`가 보는 값이다.
+    putCaret(next.firstChild as Text, 1);
+    fireEvent.input(next, { bubbles: true });
+    await waitFor(() => expect(next.querySelector('span')?.getAttribute('style')).toContain('font-weight'));
+  });
+
+  it('줄 끝의 **공백도 줄바꿈에 센다**(제보 7) — `break-spaces`', async () => {
+    const c = await open('fm2', [{ id: 'x1', kind: 'p', runs: [{ t: '한 줄', b: false, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    // `pre-wrap`은 줄 끝 공백을 흘려 보내 캐럿이 그 자리에 붙박였다(제보).
+    expect(line.style.whiteSpace).toBe('break-spaces');
+  });
+
+  it('**켜 둔 서식이 한글 첫 글자부터 보인다**(제보 8) — 조합 껍데기', async () => {
+    const c = await open('fm3', [{ id: 'x1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    caretEnd(line);
+    fireEvent.click(c.querySelector('[data-note-mark="b"]') as HTMLElement);
+
+    // 조합이 시작되면 그 자리에 **껍데기**가 선다 — 그 안에서 조합해야 첫 자모부터 굵다.
+    fireEvent.compositionStart(line);
+    const anchor = line.querySelector('[data-armed-anchor]') as HTMLElement | null;
+    expect(anchor).toBeTruthy();
+    expect(anchor?.getAttribute('style')).toContain('font-weight');
+
+    // 조합이 끝나면 껍데기는 걷히고(값에 남지 않는다) 서식은 제 길로 걸린다.
+    (anchor?.firstChild as Text).data = '\u200B가';
+    putCaret(anchor?.firstChild as Text, 2);
+    fireEvent.compositionEnd(line, { data: '가' });
+    await waitFor(() => expect(line.querySelector('[data-armed-anchor]')).toBeNull());
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('fm3').pages[0].blocks[0].runs;
+      expect(runs.map((r: { t: string }) => r.t).join('')).toBe('가');
+      expect(runs[0].b).toBe(true);
+    });
+  });
+});
