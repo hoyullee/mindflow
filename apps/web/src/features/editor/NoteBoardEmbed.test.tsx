@@ -149,7 +149,7 @@ describe('공책 본문 · 보드 임베드', () => {
     fireEvent.click(container.querySelector('[data-embed-mmview="outline"]')!);
     await waitFor(() => expect(container.querySelector('[data-embed-outline]')).toBeTruthy());
     expect(container.querySelector('[data-embed-kind="map"]')).toBeTruthy();
-    expect(container.querySelector('[data-embed-rule]')?.textContent).toBe('보기 전용');
+    expect(container.querySelector('[data-embed-rule]')).toBeNull();
     expect(container.querySelector('[data-embed-outline-root]')?.textContent).toContain('릴리즈');
     const rows = [...container.querySelectorAll('[data-embed-branch]')].map((e) => e.getAttribute('data-embed-branch'));
     expect(rows).toEqual(['0', '1']);

@@ -43,8 +43,10 @@ describe('embed 기본값', () => {
 
   it('배지는 "여기서 되는 일" — 칸반이라도 편집 권한이 없으면 보기 전용', () => {
     expect(embedRuleLabel('kanban', true)).toBe('열 이동만');
-    expect(embedRuleLabel('kanban', false)).toBe('보기 전용');
-    expect(embedRuleLabel('map', true)).toBe('보기 전용');
+    // 「보기 전용」은 달지 않는다(요청) — 되는 일이 따로 있을 때만 배지가 뜬다.
+    expect(embedRuleLabel('kanban', false)).toBe('');
+    expect(embedRuleLabel('map', true)).toBe('');
+    expect(embedRuleLabel('board', true)).toBe('');
   });
 
   it('칸반 기본 열은 두 번째(진행 중) — 열이 하나뿐이면 첫 열', () => {
