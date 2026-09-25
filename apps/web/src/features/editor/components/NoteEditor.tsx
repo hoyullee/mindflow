@@ -5164,6 +5164,20 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
    * (`NoteLine`의 `autoFocus`는 마운트할 때 한 번이다). 앞 줄은 이미 떠 있으므로
    * 우리가 직접 옮겨야 한다. 지우면 DOM이 다시 그려지므로 다음 프레임에 찾는다.
    */
+  /**
+   * **지워질 줄에서 초점을 미리 옮긴다**(제보: 키패드가 다시 올라온다).
+   *
+   * 리액트가 이 줄을 DOM에서 걷어 내는 순간 초점이 풀리고, 안드로이드는 그때 소프트
+   * 키보드를 내린다. 지우기 **전에** 앞 줄로 옮겨 두면 걷어 낼 때 풀릴 초점이 없다
+   * (캐럿 자리는 아래 `caretToPrevLine`이 이어서 잡는다).
+   */
+  const focusPrevNow = (): void => {
+    const wrap = document.querySelector<HTMLElement>(`[data-note-blockwrap="${block.id}"]`);
+    const prev = wrap?.previousElementSibling as HTMLElement | null;
+    const lines = prev ? [...prev.querySelectorAll<HTMLElement>('[data-note-line][contenteditable="true"]')] : [];
+    (lines[lines.length - 1] ?? prev?.querySelector<HTMLElement>('[data-note-hr]'))?.focus({ preventScroll: true });
+  };
+
   const caretToPrevLine = (): void => {
     const go = () => {
       const wrap = document.querySelector<HTMLElement>(`[data-note-blockwrap="${block.id}"]`);
@@ -5197,6 +5211,8 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
         /* 캐럿을 못 놓아도 포커스는 갔다 */
       }
     };
+    // `caretToLine`과 같은 처방 — 프레임을 건너뛰면 그 사이 초점이 없다(위 주석).
+    if (typeof queueMicrotask === 'function') queueMicrotask(go);
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
     else setTimeout(go, 0);
   };
@@ -5205,6 +5221,8 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
     if (readOnly) return false;
     const empty = runsText(block.runs) === '';
     if (empty && index > 0) {
+      // 지우기 **전에** 앞 줄을 잡는다 — 초점이 풀리는 순간이 없어야 키패드가 안 내려간다.
+      focusPrevNow();
       controller.removeNoteBlock(block.id);
       caretToPrevLine();
       return true;
@@ -5227,7 +5245,12 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
         // 비제어 박스라 **앞 줄의 DOM도** 우리가 다시 그린다(Enter로 가를 때와 같은
         // 이유: 포커스를 잃는 순간 옛 글이 되덮는다).
         const el = document.querySelector<HTMLElement>(`[data-note-line="${joined.key}"]`);
-        if (el) el.innerHTML = runsToHtml({ text: runsText(joined.runs), rich: joined.runs });
+        if (el) {
+          el.innerHTML = runsToHtml({ text: runsText(joined.runs), rich: joined.runs });
+          // **지금 잡는다** — 이 줄은 이미 서 있으므로, 리액트가 아래 줄을 걷어 낼 때
+          // 풀릴 초점이 없다(그 틈이 키패드를 내렸다 올렸다. `caretToLine` 머리말).
+          el.focus({ preventScroll: true });
+        }
         caretToLine(joined.key, joined.at);
         return true;
       }
@@ -9632,6 +9655,20 @@ function caretToLine(key: string, at: number | 'end' = 'end'): void {
       /* 캐럿을 못 놓아도 포커스는 갔다 */
     }
   };
+  /**
+   * **프레임을 건너뛰지 않는다**(제보: Backspace로 윗줄에 붙으면 키패드가 다시 올라온다).
+   *
+   * 예전에는 `requestAnimationFrame` 하나였다. 그 사이에 리액트가 지워진 줄을 DOM에서
+   * 걷어 내므로 **초점이 아무 데도 없는 한 프레임**이 생기고, 안드로이드는 그것을
+   * "편집이 끝났다"로 읽어 소프트 키보드를 내렸다가 다음 프레임에 다시 올린다(화면이
+   * 한 번 크게 출렁인다). 마이크로태스크는 **같은 태스크 안**이라 그 틈이 없다 —
+   * 리액트 18은 끊어지는 이벤트의 갱신을 이벤트 안에서 동기로 흘리므로, 우리 차례가
+   * 올 때 새 DOM은 이미 서 있다.
+   *
+   * 프레임 뒤의 한 번은 그대로 둔다: 뒤이어 또 그려지는 경우(`setFreshId` 같은)에
+   * 캐럿을 지키는 그물이고, 같은 자리에 다시 놓는 일이라 두 번 해도 값이 같다.
+   */
+  if (typeof queueMicrotask === 'function') queueMicrotask(go);
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
   else setTimeout(go, 0);
 }

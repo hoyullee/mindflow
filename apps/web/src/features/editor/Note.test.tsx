@@ -7335,3 +7335,82 @@ describe('공책 56판 — 손가락 2판(제보: 키패드 재발 · 길게 누
     expect(document.activeElement).toBe(before);
   });
 });
+
+/**
+ * Backspace로 윗줄에 붙을 때 **초점이 한 순간도 풀리지 않아야** 한다(제보: 키패드가
+ * 내려갔다 다시 올라온다). 안드로이드는 초점이 빈 순간을 "편집이 끝났다"로 읽는다 —
+ * jsdom에는 키패드가 없으므로 그 대신 **초점의 연속성**을 못박는다.
+ */
+describe('공책 57판 — 윗줄에 붙일 때 초점이 끊기지 않는다(제보: 키패드 재호출)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  /** 그 줄의 맨 앞에 캐럿을 놓고 Backspace. */
+  const backAtStart = (line: HTMLElement): void => {
+    line.focus();
+    const range = document.createRange();
+    range.setStart(line.firstChild ?? line, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.keyDown(line, { key: 'Backspace' });
+  };
+
+  it('글이 있는 줄을 윗줄에 이으면 **그 자리에서** 윗줄이 초점을 받는다', async () => {
+    const c = await open('bs1', [
+      { id: 'a1', kind: 'p', runs: [{ t: '첫 줄', b: false, c: null }] },
+      { id: 'a2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    ]);
+    const second = (await waitFor(() => c.querySelector('[data-note-line="a2"]'))) as HTMLElement;
+
+    backAtStart(second);
+    // **타이머를 한 번도 돌리지 않고** 본다 — 프레임을 기다려야 초점이 온다면
+    // 그 사이에 키패드가 내려간다(그것이 제보다).
+    expect(document.activeElement?.getAttribute('data-note-line')).toBe('a1');
+    // 그리고 실제로 이어졌다 — 두 줄이 한 줄이 된다.
+    saveNow();
+    await waitFor(() => {
+      const blocks = saved('bs1').pages[0].blocks;
+      expect(blocks.length).toBe(1);
+      expect(runsOf(blocks[0])).toBe('첫 줄둘째 줄');
+    });
+  });
+
+  it('빈 줄을 지울 때도 같다 — 지우기 **전에** 윗줄이 초점을 받는다', async () => {
+    const c = await open('bs2', [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [] },
+    ]);
+    const second = (await waitFor(() => c.querySelector('[data-note-line="b2"]'))) as HTMLElement;
+
+    backAtStart(second);
+    expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1');
+    await waitFor(() => expect(c.querySelector('[data-note-line="b2"]')).toBeNull());
+  });
+
+  it('목록을 풀 때는 **한 태스크 안에서** 새 줄이 초점을 받는다(프레임을 넘기지 않는다)', async () => {
+    const c = await open('bs3', [
+      { id: 'c1', kind: 'p', runs: [{ t: '앞 문단', b: false, c: null }] },
+      { id: 'c2', kind: 'ul', items: [{ id: 'j1', runs: [{ t: '항목', b: false, c: null }] }] },
+    ]);
+    const item = (await waitFor(() => c.querySelector('[data-note-line="c2:j1"]'))) as HTMLElement;
+
+    backAtStart(item);
+    // 새 줄은 다음 렌더에 서므로 마이크로태스크 한 번이면 닿는다(프레임은 필요 없다).
+    await Promise.resolve();
+    await Promise.resolve();
+    const key = document.activeElement?.getAttribute('data-note-line') ?? '';
+    expect(key).toBeTruthy();
+    expect(key).not.toBe('c2:j1');
+  });
+});
