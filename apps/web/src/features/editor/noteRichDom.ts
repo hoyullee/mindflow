@@ -400,6 +400,26 @@ function announceArmed(): void {
   document.dispatchEvent(new Event(NOTE_ARMED_EVENT));
 }
 
+/**
+ * 예약이 재는 **글자 수** — 끝의 **자리 채우개 줄바꿈은 세지 않는다**.
+ *
+ * 왜 `linearize(el).text.length`로는 안 되나(제보로 잡은 자리다): 빈 줄의 DOM은
+ * 대개 `<br>` 하나다(브라우저가 캐럿을 세우려고 넣는다). `linearize`는 그것이
+ * **혼자 있는 자식일 때만** 걷어 내는데(`fillerBr`), 조합 껍데기를 세우는 순간
+ * 자식이 둘이 되어 그 `<br>`이 **한 글자로 세어진다**. 그러면 조합이 끝났을 때
+ * "늘어난 글자 수"가 실제보다 하나 많아 `fireCaretMark`의 자리 검사가 어긋나고,
+ * 예약은 조용히 버려진다 — 제보의 "지웠다가 다시 켜면 두 번째 글자에서 서식이
+ * 모두 풀린다"가 그것이다(글을 지운 뒤에야 그 `<br>`이 생기므로 처음 쓸 때는
+ * 멀쩡했다).
+ *
+ * 끝의 줄바꿈 하나를 빼는 것은 **값을 읽는 쪽과 같은 규칙**이다
+ * (`noteBoxValue` → `domToRuns(el, true)`) — 그래서 여기서 잰 수와 서식이 실제로
+ * 걸리는 좌표가 같은 자를 쓴다.
+ */
+function armedLen(el: HTMLElement): number {
+  return linearize(el, []).text.replace(/\n$/, '').length;
+}
+
 interface ArmedMark {
   kind: NoteFormatKind;
   val: string | null;
@@ -473,7 +493,7 @@ export function armCaretMark(el: HTMLElement, kind: NoteFormatKind, val?: string
     const flipped = { ...keep[hit]!, want: !keep[hit]!.want };
     marks = flipped.want === here ? keep.filter((_, i) => i !== hit) : keep.map((m, i) => (i === hit ? flipped : m));
   }
-  armed = marks.length ? { el, at, len: linearize(el, []).text.length, marks } : null;
+  armed = marks.length ? { el, at, len: armedLen(el), marks } : null;
   announceArmed();
   return true;
 }
@@ -486,7 +506,7 @@ export function armCaretMarks(el: HTMLElement, kinds: readonly NoteFormatKind[])
   if (!kinds.length) return false;
   const span = noteCaretSpan(el);
   if (!span || span.a !== span.b) return false;
-  armed = { el, at: span.a, len: linearize(el, []).text.length, marks: kinds.map((kind) => ({ kind, val: null, want: true })) };
+  armed = { el, at: span.a, len: armedLen(el), marks: kinds.map((kind) => ({ kind, val: null, want: true })) };
   announceArmed();
   return true;
 }
@@ -542,7 +562,7 @@ export function fireCaretMark(el: HTMLElement): RichRun[] | null {
   const { at, len, marks } = armed;
   const span = noteCaretSpan(el);
   const now = span && span.a === span.b ? span.a : -1;
-  const grew = linearize(el, []).text.length - len;
+  const grew = armedLen(el) - len;
   if (now <= at || grew <= 0 || now - at !== grew) {
     armed = null;
     announceArmed();
@@ -568,7 +588,7 @@ export function fireCaretMark(el: HTMLElement): RichRun[] | null {
    * 들고 있으면 매 글자마다 뜻한 서식을 다시 못박으므로 그 차이가 사라진다.
    * 이미 그 서식이면 위에서 건너뛰므로 **다시 그리는 일도 없다**(캐럿이 튀지 않는다).
    */
-  armed = { el, at: now, len: linearize(el, []).text.length, marks };
+  armed = { el, at: now, len: armedLen(el), marks };
   return runs;
 }
 

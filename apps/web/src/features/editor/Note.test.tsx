@@ -7613,6 +7613,40 @@ describe('공책 59판 — 켜 둔 서식은 못박히고 단추에 보인다(�
     await waitFor(() => expect(btn.getAttribute('aria-pressed')).toBe('false'));
   });
 
+  it('**지웠다 다시 켜도** 서식이 걸린다 — 빈 줄의 자리 채우개 `<br>`(제보 재보고)', async () => {
+    const c = await open('am5', [{ id: 'x1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
+    /**
+     * 글을 썼다 **지운 뒤**의 DOM이다 — 브라우저가 캐럿을 세우려고 `<br>` 하나를
+     * 남긴다. 그 `<br>`은 혼자 있을 때만 걸러지는데(`fillerBr`), 조합 껍데기가 서면
+     * 자식이 둘이 되어 **한 글자로 세어졌다** — 그래서 늘어난 글자 수가 어긋나
+     * 예약이 조용히 버려졌다.
+     */
+    line.innerHTML = '<br>';
+    line.focus();
+    const atStart = document.createRange();
+    atStart.setStart(line, 0);
+    atStart.collapse(true);
+    const sel0 = window.getSelection();
+    sel0?.removeAllRanges();
+    sel0?.addRange(atStart);
+    await hitBold(c);
+
+    fireEvent.compositionStart(line);
+    const anchor = line.querySelector('[data-armed-anchor]') as HTMLElement | null;
+    expect(anchor).toBeTruthy();
+    (anchor?.firstChild as Text).data = '\u200B가';
+    putCaret(anchor?.firstChild as Text, 2);
+    fireEvent.compositionEnd(line, { data: '가' });
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('am5').pages[0].blocks[0].runs as { t: string; b?: boolean }[];
+      expect(runs.map((r) => r.t).join('')).toBe('가');
+      expect(runs[0]!.b).toBe(true);
+    });
+  });
+
   it('굵은 글 안에서 **꺼 두면** 단추도 꺼지고 이어 친 글자는 평문이다', async () => {
     const c = await open('am4', [{ id: 'x1', kind: 'p', runs: [{ t: '굵', b: true, c: null }] }]);
     const line = (await waitFor(() => c.querySelector('[data-note-line="x1"]'))) as HTMLElement;
