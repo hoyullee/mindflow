@@ -50,7 +50,7 @@ import { NoteDatePop } from './NoteDatePop';
 import { NoteEventPopups, type NoteEventOpen } from './NoteEventPopups';
 import { NoteProfileCard, seedNoteComment } from './NoteProfileCard';
 import type { ShareParticipant } from '../../../adapters/ports';
-import { chipAtCaret } from '../noteChip';
+import { applyHolidayMarks, chipAtCaret } from '../noteChip';
 import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, openNoteComment, overlapsComment, threadIdOfNode } from '../noteComment';
 import { SCHED_KINDS, useNoteAgenda } from '../noteAgenda';
 import { toastShellStyle } from '../../../pwa/toastShell';
@@ -721,6 +721,41 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     });
     return out;
   }, [hubAgenda.entries]);
+
+  /**
+   * **본문 날짜 칩의 공휴일 색**(제보 2) — 토요일이어도 추석이면 붉어야 한다.
+   *
+   * 공휴일은 **값이 아니라 구글에서 오는 사실**이라 본문을 그리는 함수(`runsToHtml`)가
+   * 알 수 없다. 그 함수는 순수해야 하고(DOM·네트워크 없음), 거기에 공휴일을 넘기면
+   * 값이 아닌 것이 마크업 규약에 섞인다. 그래서 **그린 뒤에 덧입힌다** — 글자를
+   * 바꾸지 않고 속성 하나(`data-holiday`)만 더하므로 `domToRuns`가 읽는 값도, 캐럿도
+   * 그대로다(어제 요일 스팬을 넣을 때 세운 그 규칙과 같은 계열이다).
+   *
+   * **한 달만 받는다**: 훅은 달 하나를 보고, 한 공책이 여러 달의 날짜를 가리키는 일은
+   * 드물다. 고르는 기준은 **본문에 가장 많이 나온 달**이고, 훅이 그 달의 *격자*(6주)를
+   * 받으므로 이웃 달의 며칠도 함께 덮인다. 날짜 칩이 아예 없으면 조회하지 않는다.
+   */
+  const chipMonth = useMemo(() => {
+    const tally: Record<string, number> = {};
+    for (const b of page?.blocks ?? []) {
+      for (const r of (b as { runs?: { dt?: string }[] }).runs ?? []) {
+        if (r.dt && /^\d{4}-\d{2}/.test(r.dt)) {
+          const ym = r.dt.slice(0, 7);
+          tally[ym] = (tally[ym] ?? 0) + 1;
+        }
+      }
+    }
+    const best = Object.entries(tally).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
+    if (!best) return null;
+    const [y, m] = best[0].split('-').map(Number);
+    return y && m ? { y, m } : null;
+  }, [page?.blocks]);
+  const holidayAgenda = useNoteAgenda(chipMonth?.y ?? 2026, chipMonth?.m ?? 1, chipMonth !== null);
+  const holidays = holidayAgenda.holidays;
+  useEffect(() => {
+    const root = document.querySelector('[data-note-editor]');
+    if (root) applyHolidayMarks(root, holidays);
+  }, [holidays, page?.blocks]);
 
   /** 댓글 창이 부를 수 있는 사람들 — 허브와 **같은 명단**이다(`useCommentParticipants`). */
   const cmParticipants = useCommentParticipants(controller.docId, cmOpen !== null);
@@ -2872,7 +2907,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 onOpenEvent={setEventOpen}
               />
             )}
-            {eventOpen && <NoteEventPopups open={eventOpen} isMobile={mobile} onClose={() => setEventOpen(null)} />}
+            {eventOpen && <NoteEventPopups open={eventOpen} isMobile={mobile} theme={controller.uiTheme} onClose={() => setEventOpen(null)} />}
             {profilePop && (
               <NoteProfileCard
                 email={profilePop.email}
@@ -4984,7 +5019,19 @@ function FormatToolbar({
   const paintedRef = useRef<LineSel[] | null>(null);
   paintedRef.current = painted;
   useEffect(() => {
+    /**
+     * **IME가 글자를 빚는 동안은 읽지 않는다**(제보 5).
+     *
+     * 한글은 `ㄱ` → `가`로 **같은 자리를 갈아 끼우며** 완성되는데, 그 중간 DOM은
+     * 조합용 임시 상태다(실측: `ㄱ`일 때는 서식 스팬 안이었다가 `가`로 바뀌는 순간
+     * 캐럿이 그 밖에 선다 — 서식은 멀쩡한데 단추만 꺼졌고, 확정하면 다시 켜졌다).
+     * 조합이 끝나면 `compositionend` 뒤의 `selectionchange`가 곧바로 읽으므로
+     * 늦어지는 것도 없다. 값(문서)은 이 플래그와 무관하다 — 여기서 미루는 것은
+     * **툴바의 표시**뿐이다.
+     */
+    let composing = false;
     const read = () => {
+      if (composing) return;
       const liveBox = noteEditBoxInSelection();
       const live = typeof window === 'undefined' ? null : window.getSelection();
       const paint = paintedRef.current;
@@ -5020,13 +5067,24 @@ function FormatToolbar({
       setInCell((cur) => (cur === cell ? cur : cell));
       setLineKey((cur) => (cur === key ? cur : key));
     };
+    const onCompStart = () => {
+      composing = true;
+    };
+    const onCompEnd = () => {
+      composing = false;
+      read();
+    };
     read();
     document.addEventListener('selectionchange', read);
     // 예약은 선택을 바꾸지 않는다 — 따로 알려 온다(`NOTE_ARMED_EVENT` 머리말).
     document.addEventListener(NOTE_ARMED_EVENT, read);
+    document.addEventListener('compositionstart', onCompStart, true);
+    document.addEventListener('compositionend', onCompEnd, true);
     return () => {
       document.removeEventListener('selectionchange', read);
       document.removeEventListener(NOTE_ARMED_EVENT, read);
+      document.removeEventListener('compositionstart', onCompStart, true);
+      document.removeEventListener('compositionend', onCompEnd, true);
     };
   }, [boxRef, painted]);
 

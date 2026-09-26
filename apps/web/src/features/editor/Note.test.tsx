@@ -8827,6 +8827,31 @@ describe('공책 74판 — 줄이 비면 브라우저의 타이핑 스타일도 
     expect(exec.mock.calls.map((c) => (c as unknown as string[])[0])).toContain('bold');
   });
 
+  it('**값을 읽기 전에 브라우저 잔재를 걷는다**(제보 6) — 붉은 글자가 값으로 박히지 않게', async () => {
+    const line = await openLine('ts3', [{ t: '앞글 ', b: false, c: null }]);
+    // 크로뮴이 인라인 코드를 지운 자리에 되살려 놓는 그 마크업(프로브가 찍어 왔다).
+    line.innerHTML =
+      '앞글 <font color="#c44b40" face="ui-monospace, monospace">' +
+      '<span style="font-size: 13.34px; background-color: rgb(244, 237, 228);">AGAIN</span></font>';
+    line.focus();
+    setLinearSelection(line, 9, 9);
+    fireEvent.input(line);
+
+    // DOM에서 걷혔고 — 걷지 않으면 `domToRuns`가 그 색을 런의 `c`로 읽는다.
+    expect(line.querySelector('font')).toBeNull();
+    expect(line.innerHTML).not.toContain('#c44b40');
+    expect(line.textContent).toBe('앞글 AGAIN');
+    // 저장된 값에도 색이 없다 — 이것이 제보의 핵심이다(붉은 글자로 남았다).
+    await waitFor(
+      () => {
+        const runs = saved('ts3').pages[0].blocks[0].runs as { t: string; c: string | null }[];
+        expect(runs.map((r) => r.t).join('')).toBe('앞글 AGAIN');
+        expect(runs.some((r) => r.c)).toBe(false);
+      },
+      { timeout: 4000 },
+    );
+  });
+
   it('글이 **남아 있으면** 건드리지 않는다 — 쓰는 도중의 서식은 사용자의 것이다', async () => {
     const line = await openLine('ts2', [{ t: '가나다', b: false, c: null }]);
     const exec = stubCommands({ bold: true });
@@ -8834,5 +8859,148 @@ describe('공책 74판 — 줄이 비면 브라우저의 타이핑 스타일도 
     setLinearSelection(line, 3, 3);
     fireEvent.input(line);
     expect(exec).not.toHaveBeenCalled();
+  });
+});
+
+describe('공책 75판 — 팝오버가 칸반 마감을 열고, 줄이 일정 페이지와 같아진다(제보 1·3·4)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const ISO = '2026-09-30';
+
+  /** 열이 둘인 보드(마지막 열은 완료라 세지 않는다 — 73판 머리말) + 그 보드를 담은 스페이스. */
+  function seedBoard(cards: unknown[]) {
+    localStorage.setItem(
+      'mindflow_doc_pkb',
+      JSON.stringify({ ...NOTE, kind: 'kanban', pages: undefined, columns: [{ id: 'c1', name: '할 일' }, { id: 'c2', name: '완료' }], cards, tags: [] }),
+    );
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [{ id: 's1', name: '업무', home: true, color: '#f0663f', maps: [{ title: '스프린트 보드', when: '방금', hue: '#f0663f', docId: 'pkb' }], folders: [] }],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+  }
+
+  async function hover(id: string, events: unknown[] = []) {
+    localStorage.setItem('mf_events', JSON.stringify(events));
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '그날', b: false, c: null, dt: ISO }] }] }] }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const chip = (await waitFor(() => container.querySelector(`[data-date="${ISO}"]`))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('[data-datepop-skel]')).toBeNull());
+    return container;
+  }
+
+  it('칸반 마감을 누르면 **읽기 전용 미니 카드**가 뜬다 — 예전에는 아무 일도 없었다(제보 1)', async () => {
+    seedBoard([{ id: 'k1', col: 'c1', pos: 1, text: '마감 카드', due: ISO, tag: '검수', ownerName: '나' }]);
+    await hover('pk1');
+    const row = (await waitFor(() => document.querySelector('[data-datepop-entry="k1"]'))) as HTMLElement;
+    fireEvent.click(row);
+
+    const peek = (await waitFor(() => document.querySelector('[data-note-card-peek="k1"]'))) as HTMLElement;
+    expect(peek.textContent).toContain('마감 카드');
+    expect(peek.textContent).toContain('스프린트 보드');
+    expect(peek.textContent).toContain(ISO);
+    expect(peek.textContent).toContain('검수');
+    // **고칠 수 있는 척하지 않는다** — 읽기 전용이라 입력칸이 하나도 없다.
+    expect(peek.querySelectorAll('input, textarea').length).toBe(0);
+    // 고치러 가는 길은 하나 — 그 보드.
+    expect(peek.querySelector('[data-note-card-peek-open]')?.textContent).toContain('보드에서 열기');
+    // 공책을 떠나지 않았다.
+    expect(document.body.textContent).not.toContain('HOME_PAGE');
+    expect(document.querySelector('[data-note-editor]')).toBeTruthy();
+  });
+
+  it('그리오 일정은 **그대로 상세**가 열린다 — 카드 판이 그 길을 가로채지 않는다', async () => {
+    await hover('pk2', [{ id: 'e1', title: '종일 워크숍', startDate: ISO, endDate: ISO, allDay: true }]);
+    fireEvent.click((await waitFor(() => document.querySelector('[data-datepop-entry="e1"]'))) as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+    expect(document.querySelector('[data-note-card-peek]')).toBeNull();
+  });
+
+  it('**종일은 면을 채운 알약, 시간 일정은 표식 + 시각**(요청 3) — 일정 페이지의 그 규칙', async () => {
+    await hover('pk3', [
+      { id: 'e-all', title: '종일 워크숍', startDate: ISO, endDate: ISO, allDay: true },
+      { id: 'e-t', title: '시간 회의', startDate: ISO, endDate: ISO, allDay: false, startTime: '14:00', endTime: '15:00' },
+    ]);
+    await waitFor(() => expect(document.querySelectorAll('[data-datepop-entry]').length).toBe(2));
+    const chipOf = (id: string) => document.querySelector(`[data-datepop-entry="${id}"] [data-datepop-chip]`) as HTMLElement;
+    expect(chipOf('e-all').getAttribute('data-datepop-chip')).toBe('all');
+    expect(chipOf('e-all').style.background).not.toBe('transparent');
+    expect(chipOf('e-t').getAttribute('data-datepop-chip')).toBe('timed');
+    expect(chipOf('e-t').style.background).toBe('transparent');
+    // 시각 표기도 달력 칩과 같은 함수를 쓴다(`오후 2시`).
+    expect(document.querySelector('[data-datepop-entry="e-t"]')?.textContent).toContain('오후 2시');
+  });
+
+  it('표식은 **우리 것이 점**이다 — 구글은 막대이고, 그 갈림은 `entryChip`이 정한다(요청 4)', async () => {
+    await hover('pk4', [{ id: 'e-t', title: '시간 회의', startDate: ISO, endDate: ISO, allDay: false, startTime: '09:00', endTime: '10:00' }]);
+    const mark = (await waitFor(() => document.querySelector('[data-datepop-mark]'))) as HTMLElement;
+    expect(mark.getAttribute('data-datepop-mark')).toBe('dot');
+    // 점은 5px 원, 막대는 3px 기둥 — `markStyle`이 그렇게 준다(두 화면이 같은 함수다).
+    expect(mark.style.width).toBe('5px');
+    expect(mark.style.background).toBeTruthy();
+  });
+});
+
+describe('공책 76판 — IME가 글자를 빚는 동안 툴바를 읽지 않는다(제보 5)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  /**
+   * 한글은 `ㄱ` → `가`로 **같은 자리를 갈아 끼우며** 완성되고, 그 중간 DOM은 임시
+   * 상태다(실브라우저 실측: `가`로 바뀌는 순간 캐럿이 서식 스팬 밖에 섰고 단추만
+   * 꺼졌다 — 서식은 멀쩡했다). 여기서는 **읽지 않는다는 규칙**을 잰다.
+   */
+  async function open(id: string, runs: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs }] }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return { container, line: (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement };
+  }
+  const bold = () => document.querySelector('[data-note-mark="b"]')?.getAttribute('aria-pressed');
+
+  it('조합 중에 선택이 바뀌어도 단추는 그대로다 — 확정하면 다시 읽는다', async () => {
+    // 굵은 글 위에 캐럿을 두면 단추가 켜진다(지금 동작).
+    const { line } = await open('ime1', [{ t: '굵게', b: true, c: null }, { t: '평문', b: false, c: null }]);
+    line.focus();
+    setLinearSelection(line, 1, 1); // 굵은 글 한복판
+    fireEvent(document, new Event('selectionchange'));
+    await waitFor(() => expect(bold()).toBe('true'));
+
+    // 조합이 시작되면 그 뒤의 `selectionchange`는 무시한다 — 중간 DOM을 믿지 않는다.
+    fireEvent.compositionStart(line, { bubbles: true });
+    line.focus();
+    setLinearSelection(line, 3, 3); // 굵지 않은 자리(`평문` 한복판)로 옮겨도
+    fireEvent(document, new Event('selectionchange'));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    expect(bold()).toBe('true');
+
+    // 확정하면 곧바로 읽는다 — 늦어지지 않는다.
+    fireEvent.compositionEnd(line, { bubbles: true });
+    await waitFor(() => expect(bold()).toBe('false'));
   });
 });

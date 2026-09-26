@@ -6,6 +6,7 @@
 
 import { useMemo } from 'react';
 import type { CalendarEntry } from '../../home/calendar/entries';
+import { chipTimeLabel, entryChip, isAllDayEntry, markStyle } from '../../home/calendar/chips';
 import { dayProgress, entriesOn, partsOf } from '../../home/calendar/model';
 import { useNoteAgenda } from '../noteAgenda';
 import type { NoteEventOpen } from './NoteEventPopups';
@@ -67,6 +68,17 @@ export function NoteDatePop({
    * `--mf-danger`, 토요일은 `--mf-info`, 나머지는 본문색. `MonthGrid`의 `numFg`와
    * 같은 갈래라 한쪽만 바뀌면 두 화면이 어긋난다.
    */
+  /**
+   * 일정 페이지의 칩 색을 **그대로** 뽑는 면 — `card`는 팝오버의 배경이다.
+   *
+   * 공책의 `--mf-card`는 종이 팔레트에서 `#fffdfb`이고 테마를 따를 때는 `th.panel`인데,
+   * 이 값은 **색을 섞는 바탕**으로만 쓰인다(0.34 혼합). 둘의 차이는 채널당 최대 3/255라
+   * 육안으로 갈리지 않으므로 테마의 면 하나로 둔다 — 호출부마다 실제 계산색을 읽어
+   * 넘기는 배선을 더할 값이 아니다.
+   */
+  const surface = useMemo(() => ({ card: th.panel, text: th.text }), [th.panel, th.text]);
+  const chipOf = (e: CalendarEntry) => entryChip(e, surface);
+
   const dow = at ? new Date(at.y, at.m - 1, at.d).getDay() : -1;
   const dowInk = dow === 0 || holiday?.dayOff ? 'var(--mf-danger)' : dow === 6 ? 'var(--mf-info)' : th.text;
 
@@ -152,12 +164,38 @@ export function NoteDatePop({
                   const [id, occ] = e.cardId.split('#');
                   go({ kind: 'geurio', id: id ?? e.cardId, ...(occ ? { occ } : {}), at: iso });
                 }
+                // 칸반 카드의 마감 — 읽기 전용 미니 카드로 연다(제보 1). 예전에는
+                // 이 갈래가 없어 **아무 일도 일어나지 않았다**(「종일」로 보이던 그 줄이다).
+                else go({ kind: 'card', entry: e, at: iso });
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '6px 8px', borderRadius: 8, border: 0, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}
             >
-              <span style={{ flex: '0 0 42px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, color: th.subtext }}>{dayProgress(e, iso) ?? (e.startTime || '종일')}</span>
-              <span aria-hidden style={{ flex: '0 0 3px', height: 16, borderRadius: 2, background: '#e0a88c' }} />
-              <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 700, color: th.text }}>{e.title}</span>
+              {/* 시간 자리 — 기간이면 며칠째, 종일이면 `종일`, 아니면 시작 시각.
+                  시각 표기는 달력 칩과 **같은 함수**를 쓴다(`오전 9시`·`오후 2:30`). */}
+              <span style={{ flex: '0 0 46px', fontSize: 11.5, fontWeight: 700, color: th.subtext }}>
+                {dayProgress(e, iso) ?? (e.startTime ? chipTimeLabel(e.startTime) : '종일')}
+              </span>
+              {/* **일정 페이지와 같은 칩**(요청 3·4): 종일은 면을 채운 알약, 시간 일정은
+                  표식 + 제목. 표식은 구글이 막대, 우리 것이 점이고 색도 그쪽 규칙 그대로다
+                  (`entryChip`) — 여기서 색을 새로 정하면 두 화면이 곧 어긋난다. */}
+              <span
+                data-datepop-chip={isAllDayEntry(e) ? 'all' : 'timed'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  flex: '1 1 auto',
+                  minWidth: 0,
+                  height: 21,
+                  padding: isAllDayEntry(e) ? '0 7px' : 0,
+                  borderRadius: 6,
+                  background: isAllDayEntry(e) ? chipOf(e).bg : 'transparent',
+                  color: chipOf(e).fg,
+                }}
+              >
+                {!isAllDayEntry(e) && <span aria-hidden data-datepop-mark={chipOf(e).mark} style={markStyle(chipOf(e))} />}
+                <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 700 }}>{e.title}</span>
+              </span>
             </button>
           ))
         ) : (

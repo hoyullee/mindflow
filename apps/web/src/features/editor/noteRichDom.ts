@@ -651,3 +651,63 @@ export function resetTypingStyle(el: HTMLElement): void {
     }
   }
 }
+
+/**
+ * 브라우저가 남긴 **서식 잔재**를 벗겨낸다 — 우리 마크업이 아닌 것만(제보 6).
+ *
+ * 제보: 인라인 코드가 걸린 글을 지우고 다시 치면 코드가 아니라 **붉은 글자**가 된다.
+ * 실측한 DOM이 그대로 말해 준다:
+ *
+ * ```html
+ * <font color="#c44b40" face="ui-monospace,…"><span style="font-size:13.34px;
+ *   background-color:rgb(244,237,228)">AGAIN</span></font>
+ * ```
+ *
+ * 크로뮴이 지운 `<code>`의 **계산된 스타일**을 타이핑 스타일로 기억했다가 그대로
+ * 되살린 것이다(`queryCommandValue('foreColor')`가 지운 직후에도 그 붉은색을 답한다).
+ * 그리고 `domToRuns`가 그 `color`를 **런의 `c`로 되읽어** 값에 붉은 글자가 박힌다 —
+ * 화면만의 문제가 아니라 저장되는 문서가 틀어진다.
+ *
+ * `execCommand('removeFormat')`으로는 못 지운다: 접힌 선택에서 **`false`를 돌려주고
+ * 아무것도 바꾸지 않는다**(실측 — 굵게에서 본 것과 같다). 타이핑 스타일과 싸우는
+ * 대신 **결과를 걷어낸다**:
+ *
+ * - `<font>`는 **우리가 절대 만들지 않는다**(`runsToHtml`에 없다) → 통째로 푼다.
+ * - 인라인 `background-color`·`font-family`·`font-size`도 우리 것이 아니다 → 지운다.
+ *   우리 형광은 클래스(`mf-cmark`)로, 코드는 `<code>`로, 크기는 CSS로 그린다.
+ * - **`color`는 남긴다** — 그건 사용자가 고른 글자색이고 `runsToHtml`이 내는 값이다.
+ *   `<font>` 안에 있던 색은 그 요소와 함께 사라지므로 잔재만 걷힌다.
+ *
+ * 글자는 하나도 건드리지 않으므로 **값 좌표가 그대로**다 — 캐럿을 되돌릴 필요가 없다.
+ * 벗길 것이 없으면 DOM을 만지지도 않는다(`false`를 돌려준다).
+ */
+export function stripBrowserFormatting(el: HTMLElement): boolean {
+  let touched = false;
+  // `<font>`를 푼다 — 자식만 제자리에 남긴다.
+  for (const f of [...el.querySelectorAll('font')]) {
+    const parent = f.parentNode;
+    if (!parent) continue;
+    while (f.firstChild) parent.insertBefore(f.firstChild, f);
+    parent.removeChild(f);
+    touched = true;
+  }
+  // 우리 것이 아닌 인라인 선언을 지운다(색은 남긴다 — 위 머리말).
+  for (const node of [...el.querySelectorAll<HTMLElement>('[style]')]) {
+    const st = node.style;
+    for (const prop of ['background-color', 'background', 'font-family', 'font-size']) {
+      if (st.getPropertyValue(prop)) {
+        st.removeProperty(prop);
+        touched = true;
+      }
+    }
+    // 선언이 하나도 남지 않은 껍데기는 스팬째 푼다 — 빈 `<span>`은 값에 영향은
+    // 없지만 쌓이면 `domToRuns`가 훑을 것만 늘어난다.
+    if (!st.length && node.tagName === 'SPAN' && node.attributes.length === 1 && node.parentNode) {
+      const parent = node.parentNode;
+      while (node.firstChild) parent.insertBefore(node.firstChild, node);
+      parent.removeChild(node);
+      touched = true;
+    }
+  }
+  return touched;
+}

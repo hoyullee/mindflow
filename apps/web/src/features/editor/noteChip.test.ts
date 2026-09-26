@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { chipAtCaret, chipRange, extendOverChips } from './noteChip';
+import { applyHolidayMarks, chipAtCaret, chipRange, extendOverChips } from './noteChip';
 import { runsToHtml, setLinearSelection } from './richtextDom';
 import { charOffset } from './noteTextSelect';
 
@@ -152,5 +152,55 @@ describe('캐럿 옆의 칩(제보 1의 토대)', () => {
     expect(chipAtCaret(el, 2, -1)?.getAttribute('data-date')).toBe('2026-09-28'); // 칩1 바로 뒤
     expect(chipAtCaret(el, 0, 1)?.getAttribute('data-date')).toBe('2026-09-28'); // 칩1 바로 앞
     expect(chipAtCaret(el, 4, -1)).toBeNull(); // ` 가 ` 안 — 칩이 아니다
+  });
+});
+
+describe('공휴일이면 요일이 붉다(제보 2)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 날짜 칩 둘이 든 본문 — 토요일 하나(추석), 평범한 월요일 하나. */
+  function body(): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'mf-note-line';
+    el.innerHTML = runsToHtml({
+      text: '',
+      rich: [CHIP('9월 26일 토', '2026-09-26'), TEXT(' 와 '), CHIP('9월 28일 월', '2026-09-28')],
+    });
+    document.body.appendChild(el);
+    return el;
+  }
+
+  const holiday = (iso: string) => document.querySelector(`[data-date="${iso}"]`)?.getAttribute('data-holiday') ?? null;
+
+  it('쉬는 공휴일인 날의 칩에만 표를 단다', () => {
+    const el = body();
+    applyHolidayMarks(el, { '2026-09-26': { dayOff: true } });
+    expect(holiday('2026-09-26')).toBe('1');
+    expect(holiday('2026-09-28')).toBeNull();
+  });
+
+  it('**쉬지 않는** 기념일은 달지 않는다 — 달력의 날짜 숫자와 같은 기준', () => {
+    const el = body();
+    applyHolidayMarks(el, { '2026-09-26': { dayOff: false } });
+    expect(holiday('2026-09-26')).toBeNull();
+  });
+
+  it('공휴일이 걷히면 표도 걷는다 — 다시 그리지 않고 속성만 오간다', () => {
+    const el = body();
+    applyHolidayMarks(el, { '2026-09-26': { dayOff: true } });
+    applyHolidayMarks(el, {});
+    expect(holiday('2026-09-26')).toBeNull();
+  });
+
+  it('**글자도 값도 건드리지 않는다** — 덧입히는 것은 사실 하나뿐이다', () => {
+    const el = body();
+    const before = el.textContent;
+    applyHolidayMarks(el, { '2026-09-26': { dayOff: true } });
+    expect(el.textContent).toBe(before);
+    // 요일 스팬은 그대로이고(색은 CSS가 준다), 인라인 색이 심기지 않았다.
+    expect(el.querySelector('[data-date="2026-09-26"] .mf-datechip-dow')?.textContent).toBe('토');
+    expect(el.innerHTML).not.toContain('color:');
   });
 });

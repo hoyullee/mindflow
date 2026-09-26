@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetTypingStyle } from './noteRichDom';
+import { resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
 
 /**
  * 브라우저가 기억하는 **타이핑 스타일**을 지우는 일(제보 5).
@@ -104,5 +104,71 @@ describe('타이핑 스타일 비우기(제보 5)', () => {
     delete (document as unknown as { execCommand?: unknown }).execCommand;
     state.bold = true;
     expect(() => resetTypingStyle(el)).not.toThrow();
+  });
+});
+
+/**
+ * 브라우저가 남긴 **서식 잔재**를 걷는 일(제보 6).
+ *
+ * 실측한 그대로의 DOM으로 잰다 — 인라인 코드를 지우고 다시 친 자리에서 크로뮴이
+ * 만들어 놓은 마크업이다(`<font color> + <span style="background-color;font-size">`).
+ * 그대로 두면 `domToRuns`가 그 색을 **값**으로 읽어 붉은 글자가 저장된다.
+ */
+describe('브라우저 잔재 걷기(제보 6)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function box(html: string): HTMLElement {
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** 크로뮴이 실제로 만든 것 — 프로브가 찍어 온 마크업 그대로다. */
+  const JUNK =
+    '<font color="#c44b40" face="ui-monospace, SFMono-Regular, monospace">' +
+    '<span style="font-size: 13.34px; background-color: rgb(244, 237, 228);">AGAIN</span></font>';
+
+  it('`<font>`을 풀고 인라인 배경·글꼴·크기를 지운다 — 글자는 그대로', () => {
+    const el = box(`앞글 ${JUNK}`);
+    expect(stripBrowserFormatting(el)).toBe(true);
+    expect(el.textContent).toBe('앞글 AGAIN');
+    expect(el.querySelector('font')).toBeNull();
+    expect(el.innerHTML).not.toContain('background-color');
+    expect(el.innerHTML).not.toContain('font-family');
+    expect(el.innerHTML).not.toContain('font-size');
+    // 값으로 새어 나가던 그 색이 사라졌다 — `domToRuns`가 읽을 `color`가 없다.
+    expect(el.innerHTML).not.toContain('#c44b40');
+  });
+
+  it('**우리 마크업은 건드리지 않는다** — 고른 글자색·굵게·인라인 코드는 그대로', () => {
+    const el = box('<span style="color:#3f8fd0">파란 글</span><span style="font-weight:800">굵게</span><code>코드</code>');
+    expect(stripBrowserFormatting(el)).toBe(false);
+    expect(el.querySelector('[style*="color"]')?.textContent).toBe('파란 글');
+    expect(el.querySelector('[style*="font-weight"]')?.textContent).toBe('굵게');
+    expect(el.querySelector('code')?.textContent).toBe('코드');
+  });
+
+  it('`<font>` 안의 색만 사라진다 — **우리가 만들지 않는 요소**라 그 안의 값은 잔재다', () => {
+    const el = box('<font color="#c44b40">잔재</font><span style="color:#3f8fd0">내 색</span>');
+    stripBrowserFormatting(el);
+    expect(el.innerHTML).not.toContain('#c44b40');
+    expect(el.innerHTML).toContain('#3f8fd0');
+  });
+
+  it('선언이 다 사라진 빈 스팬은 통째로 푼다 — 껍데기가 쌓이지 않게', () => {
+    const el = box('<span style="background-color: rgb(244,237,228);">글</span>');
+    stripBrowserFormatting(el);
+    expect(el.querySelector('span')).toBeNull();
+    expect(el.textContent).toBe('글');
+  });
+
+  it('걷을 것이 없으면 DOM을 만지지 않는다', () => {
+    const el = box('그냥 글');
+    const before = el.innerHTML;
+    expect(stripBrowserFormatting(el)).toBe(false);
+    expect(el.innerHTML).toBe(before);
   });
 });
