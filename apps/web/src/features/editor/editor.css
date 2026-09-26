@@ -722,6 +722,15 @@ input[type='search']::-webkit-search-results-decoration {
   background: var(--mf-note-cm-bg-on);
   border-bottom-color: var(--mf-note-cm-line-on);
 }
+/**
+ * **해결한 스레드는 일반 글자처럼**(6-3의 마지막 줄). 표식(`data-cm`)은 그대로라
+ * 「다시 열기」를 누르면 칠이 돌아온다 — 지우지 않는 것이 요점이다.
+ */
+.mf-note-line .mf-cmark[data-cm-done='1'] {
+  background: transparent;
+  border-bottom-color: transparent;
+  cursor: text;
+}
 
 /* 공책 — **읽는 줄에 조작을 얹지 않는다**(디자인 원본). 페이지 머리의 복제·삭제,
    표의 레일, 링크 카드의 바꾸기는 평소 보이지 않다가 그 자리에 마우스를 얹으면

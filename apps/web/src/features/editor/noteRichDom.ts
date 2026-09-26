@@ -18,7 +18,7 @@ import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtext
 import { renderListEdit } from './listLines';
 
 /** 공책 본문에서 걸 수 있는 서식 — 코어 `applyPartialStyle`의 종류와 같다. */
-export type NoteFormatKind = 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'link' | 'clear';
+export type NoteFormatKind = 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'link' | 'comment' | 'clear';
 
 /** 편집 박스임을 알리는 표식 — 선택이 이 안에 있는지 판단하는 기준. */
 export const NOTE_EDIT_ATTR = 'data-note-edit';

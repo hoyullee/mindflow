@@ -7765,3 +7765,193 @@ describe('공책 60판 — `@` 허브로 날짜·페이지를 본문에 넣는�
     expect(c.querySelector('[data-hub-kind="page"]')).toBeNull();
   });
 });
+
+describe('공책 61판 — 본문 인라인 댓글(스펙 6절)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  /** 편집 박스 안의 `[a, b)` 글자를 고른다 — 브라우저가 드래그로 만드는 그 선택. */
+  function pick(line: HTMLElement, a: number, b: number): void {
+    line.focus();
+    const text = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    if (!text) throw new Error('고를 글자가 없다');
+    const range = document.createRange();
+    range.setStart(text, a);
+    range.setEnd(text, b);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  const hitComment = (): void => {
+    fireEvent.keyDown(document, { key: 'm', metaKey: true, altKey: true });
+  };
+
+  it('고른 글에 `⌘⌥M` — 형광이 걸리고 그 자리에 댓글 창이 선다', async () => {
+    const c = await open('cm1', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 화요일입니다', b: false, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    pick(line, 4, 7);
+    hitComment();
+
+    await waitFor(() => expect(document.querySelector('[data-note-cm-window]')).toBeTruthy());
+    // 인용은 **고른 그 글**이다.
+    expect(document.querySelector('[data-cm-quote]')?.textContent).toBe('화요일');
+    expect(document.querySelector('[data-cm-label]')?.textContent).toBe('새 댓글');
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('cm1').pages[0].blocks[0].runs as { t: string; cm?: string }[];
+      const marked = runs.find((r) => r.cm);
+      expect(marked?.t).toBe('화요일');
+    });
+  });
+
+  it('**한 마디도 쓰지 않고 닫으면 형광도 되돌린다** — 빈 스레드를 남기지 않는다(6-4)', async () => {
+    const c = await open('cm2', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 화요일입니다', b: false, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    pick(line, 4, 7);
+    hitComment();
+    await waitFor(() => expect(document.querySelector('[data-note-cm-window]')).toBeTruthy());
+
+    fireEvent.click(document.querySelector('[data-cm-close]')!);
+    await waitFor(() => expect(document.querySelector('[data-note-cm-window]')).toBeNull());
+
+    saveNow();
+    await waitFor(() => {
+      const runs = saved('cm2').pages[0].blocks[0].runs as { cm?: string }[] | null;
+      expect((runs ?? []).some((r) => r.cm)).toBe(false);
+    });
+  });
+
+  it('**이미 댓글이 달린 부분**에는 겹쳐 달 수 없다(6-2)', async () => {
+    const c = await open('cm3', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 ', b: false, c: null }, { t: '화요일', b: false, c: null, cm: 'old' }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    pick(line, 0, 1);
+    // 걸린 자리(4~7)와 겹치는 구간을 고른다 — 텍스트 노드가 갈려 있으므로 줄 전체로.
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    hitComment();
+
+    await waitFor(() => expect(c.textContent).toContain('이미 댓글이 달린 부분이에요'));
+    expect(document.querySelector('[data-note-cm-window]')).toBeNull();
+  });
+
+  it('고른 글이 없으면 **페이지 댓글로 안내**한다(6-1)', async () => {
+    const c = await open('cm4', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는', b: false, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    line.focus();
+    window.getSelection()?.removeAllRanges();
+    hitComment();
+    await waitFor(() => expect(c.textContent).toContain('지금은 페이지 댓글로 남겨요'));
+  });
+
+  it('표의 칸에는 달 수 없다(6-2: 위젯 블록은 대상에서 뺀다)', async () => {
+    const c = await open('cm5', [{ id: 'b1', kind: 'table', rows: [[[{ t: '칸글', b: false, c: null }]]] }]);
+    const cell = (await waitFor(() => c.querySelector('[data-note-line="b1:r0c0"]'))) as HTMLElement;
+    pick(cell, 0, 2);
+    hitComment();
+    await waitFor(() => expect(c.textContent).toContain('문단이나 목록의 글에만'));
+    expect(document.querySelector('[data-note-cm-window]')).toBeNull();
+  });
+
+  it('형광을 누르면 **그 스레드**가 열린다(6-3)', async () => {
+    const c = await open('cm6', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 ', b: false, c: null }, { t: '화요일', b: false, c: null, cm: 'th-1' }] }]);
+    const mark = (await waitFor(() => c.querySelector('[data-cm="th-1"]'))) as HTMLElement;
+    fireEvent.pointerDown(mark, { bubbles: true });
+    fireEvent.pointerUp(mark, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-cm-window]')).toBeTruthy());
+    expect(document.querySelector('[data-cm-quote]')?.textContent).toBe('화요일');
+  });
+});
+
+describe('공책 62판 — 우측 열의 「본문 댓글 → 페이지 댓글」(스펙 6-6)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 데모 모드의 댓글은 한 키에 통째로 쌓인다(`localCommentStore`의 `mf_comments`). */
+  function seedComment(docId: string, threadId: string, body: string, extra: Record<string, unknown> = {}) {
+    const list = JSON.parse(localStorage.getItem('mf_comments') || '[]') as unknown[];
+    list.push({ id: `c${list.length + 1}`, documentId: docId, nodeId: `nm:${threadId}`, parentId: null, authorName: '나', body, createdAt: new Date().toISOString(), ...extra });
+    localStorage.setItem('mf_comments', JSON.stringify(list));
+  }
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-comments]') ?? container.querySelector('[data-note-tab="댓글"]')!);
+    return container;
+  }
+
+  it('본문 댓글이 없으면 **점선 안내**가 서고, 페이지 댓글 구획이 그 아래다', async () => {
+    await open('pn1', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는', b: false, c: null }] }]);
+    await waitFor(() => expect(document.querySelector('[data-body-cm-empty]')).toBeTruthy());
+    expect(document.querySelector('[data-body-cm-empty]')?.textContent).toContain('댓글 달기');
+    const panel = document.querySelector('[data-comment-panel]')!;
+    const order = [...panel.querySelectorAll('[data-note-body-comments], [data-comment-list]')];
+    expect(order[0]?.hasAttribute('data-note-body-comments')).toBe(true);
+    expect(panel.textContent).toContain('페이지 댓글');
+  });
+
+  it('스레드 카드가 서고, **누르면 본문의 그 형광이 밝아진다**', async () => {
+    seedComment('pn2', 'th-1', '여기 다시 보자');
+    const c = await open('pn2', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 ', b: false, c: null }, { t: '화요일', b: false, c: null, cm: 'th-1' }] }]);
+    const card = (await waitFor(() => document.querySelector('[data-cm-card="th-1"]'))) as HTMLElement;
+    expect(card.textContent).toContain('화요일');
+    expect(card.textContent).toContain('여기 다시 보자');
+
+    fireEvent.click(card);
+    await waitFor(() => expect(c.querySelector('[data-cm="th-1"][data-cm-on="1"]')).toBeTruthy());
+    expect(document.querySelector('[data-note-cm-window]')).toBeTruthy();
+  });
+
+  it('본문에서 사라진 스레드는 **원문이 지워졌어요**로 남는다(6-7)', async () => {
+    seedComment('pn3', 'gone', '없어진 자리');
+    await open('pn3', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는', b: false, c: null }] }]);
+    const card = (await waitFor(() => document.querySelector('[data-cm-card="gone"]'))) as HTMLElement;
+    expect(card.textContent).toContain('원문이 지워졌어요');
+  });
+
+  it('해결된 스레드는 **접힌 자리**로 내려가고 다시 열 수 있다(6-5)', async () => {
+    seedComment('pn4', 'th-9', '끝난 논의', { resolvedAt: new Date().toISOString(), resolvedByName: '나' });
+    await open('pn4', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 ', b: false, c: null }, { t: '화요일', b: false, c: null, cm: 'th-9' }] }]);
+    const toggle = (await waitFor(() => document.querySelector('[data-cm-done-toggle]'))) as HTMLElement;
+    expect(toggle.textContent).toContain('해결된 댓글 1개');
+    expect(document.querySelector('[data-cm-card="th-9"]')).toBeNull();
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(document.querySelector('[data-cm-reopen="th-9"]')).toBeTruthy());
+    fireEvent.click(document.querySelector('[data-cm-reopen="th-9"]')!);
+    await waitFor(() => expect(document.querySelector('[data-cm-card="th-9"]')).toBeTruthy());
+  });
+
+  it('**해결하면 본문의 형광이 꺼지고, 다시 열면 돌아온다**(6-3·6-5) — 표식은 지우지 않는다', async () => {
+    seedComment('pn5', 'th-7', '끝난 논의', { resolvedAt: new Date().toISOString(), resolvedByName: '나' });
+    const c = await open('pn5', [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 ', b: false, c: null }, { t: '화요일', b: false, c: null, cm: 'th-7' }] }]);
+    // 표식은 남아 있고(`data-cm`), 칠만 꺼져 있다(`data-cm-done`).
+    await waitFor(() => expect(c.querySelector('[data-cm="th-7"][data-cm-done="1"]')).toBeTruthy());
+
+    fireEvent.click(document.querySelector('[data-cm-done-toggle]')!);
+    fireEvent.click(await waitFor(() => document.querySelector('[data-cm-reopen="th-7"]')!));
+    await waitFor(() => expect(c.querySelector('[data-cm="th-7"][data-cm-done="1"]')).toBeNull());
+    expect(c.querySelector('[data-cm="th-7"]')).toBeTruthy();
+  });
+});
