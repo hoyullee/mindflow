@@ -20,6 +20,7 @@
 
 import { useMemo, useState } from 'react';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
+import type { CalendarEntry } from '../../home/calendar/entries';
 import { EventDetail, geurioCalendarChips } from '../../home/calendar/EventDetail';
 import { GoogleDetailHost } from '../../home/calendar/GoogleEventDetail';
 import { NewEventModal } from '../../home/calendar/NewEventModal';
@@ -28,6 +29,8 @@ import { geurioColorOptions } from '../../home/calendar/eventColor';
 import { googleDirectoryOf, googleTargetsOf } from '../../home/calendar/googleWiring';
 import { partsOf } from '../../home/calendar/model';
 import { useNoteAgenda } from '../noteAgenda';
+import { NoteCardPeek } from './NoteCardPeek';
+import type { Theme } from '../theme';
 
 /** 지금 열려 있는 것 — 셋 중 하나이거나 아무것도 아니다. */
 export type NoteEventOpen =
@@ -36,9 +39,14 @@ export type NoteEventOpen =
   /** 구글 일정 상세 — 쓸 수 있으면 고칠 수도 있다(그쪽 host가 가른다). */
   | { kind: 'google'; id: string; at: string }
   /** 새 일정 — 놓일 날. */
-  | { kind: 'new'; at: string };
+  | { kind: 'new'; at: string }
+  /**
+   * 칸반 카드의 마감 — **읽기 전용 미니 카드**(제보 1, 사용자 결정).
+   * 그 카드를 고치는 길은 보드뿐이라 값을 통째로 들고 간다(다시 찾지 않는다).
+   */
+  | { kind: 'card'; entry: CalendarEntry; at: string };
 
-export function NoteEventPopups({ open, isMobile, onClose }: { open: NoteEventOpen | null; isMobile: boolean; onClose: () => void }) {
+export function NoteEventPopups({ open, isMobile, theme, onClose }: { open: NoteEventOpen | null; isMobile: boolean; theme: Theme; onClose: () => void }) {
   const at = open ? partsOf(open.at) : null;
   const agenda = useNoteAgenda(at?.y ?? 2026, at?.m ?? 1, !!open);
   const { events, google } = agenda;
@@ -49,6 +57,26 @@ export function NoteEventPopups({ open, isMobile, onClose }: { open: NoteEventOp
   const directory = useMemo(() => googleDirectoryOf(google), [google]);
 
   if (!open) return null;
+
+  /**
+   * 칸반 카드는 **읽기 전용**이다 — 고치는 길은 그 보드뿐이라 단추가 그리로 보낸다.
+   * 조회도 필요 없다: 팝오버가 이미 들고 있던 항목을 그대로 받았다.
+   */
+  if (open.kind === 'card') {
+    return (
+      <NoteCardPeek
+        entry={open.entry}
+        iso={open.at}
+        theme={theme}
+        onClose={onClose}
+        onOpenBoard={() => {
+          const e = open.entry;
+          onClose();
+          window.location.assign(`/editor?map=${encodeURIComponent(e.docId)}&title=${encodeURIComponent(e.boardName)}&docId=${encodeURIComponent(e.docId)}`);
+        }}
+      />
+    );
+  }
 
   if (open.kind === 'new') {
     return (

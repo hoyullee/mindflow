@@ -120,3 +120,24 @@ export function extendOverChips(el: HTMLElement, sel: Selection, dir: -1 | 1): b
   goTo(best);
   return true;
 }
+
+/**
+ * 본문의 날짜 칩에 **공휴일 사실을 덧입힌다**(제보: 추석인 토요일이 파랗다).
+ *
+ * 공휴일은 값이 아니라 **구글에서 오는 사실**이라 본문을 그리는 `runsToHtml`이 알 수
+ * 없다(그 함수는 순수해야 한다 — DOM·네트워크 없음). 그래서 그린 뒤에 속성 하나를
+ * 더한다: 글자를 바꾸지 않으므로 `domToRuns`가 읽는 값도, 캐럿도 그대로다.
+ *
+ * **쉬는 날만** 표시한다 — 구글의 공휴일 캘린더에는 쉬지 않는 기념일도 들어 있고,
+ * 달력의 날짜 숫자도 `dayOff`로 가른다(두 화면이 같은 기준을 쓴다).
+ *
+ * 색은 CSS가 준다(`editor.css`) — 여기서 인라인 색을 심으면 `domToRuns`가 그것을
+ * 런의 `c`로 되읽어 **칩을 떼도 색이 남는다**.
+ */
+export function applyHolidayMarks(root: ParentNode, holidays: Record<string, { dayOff: boolean }>): void {
+  for (const chip of root.querySelectorAll<HTMLElement>('.mf-datechip[data-date]')) {
+    const iso = chip.getAttribute('data-date') ?? '';
+    if (holidays[iso]?.dayOff) chip.setAttribute('data-holiday', '1');
+    else chip.removeAttribute('data-holiday');
+  }
+}

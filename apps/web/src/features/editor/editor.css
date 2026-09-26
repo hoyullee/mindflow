@@ -631,6 +631,13 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-line .mf-datechip[data-dow='6'] .mf-datechip-dow {
   color: var(--mf-info);
 }
+/* **쉬는 공휴일은 요일을 덮는다**(제보) — 추석이 토요일이면 파랑이 아니라 빨강이다.
+ * 이 속성은 값이 아니라 **그린 뒤에 덧입히는 사실**이다(구글에서 온다): 본문을 그리는
+ * `runsToHtml`은 순수해야 해서 알 수 없고, `NoteEditor`가 그 달의 공휴일을 받아 칩에
+ * 달아 준다. 규칙을 요일보다 **뒤에** 둬 토요일 파랑을 이긴다. */
+.mf-note-line .mf-datechip[data-holiday='1'] .mf-datechip-dow {
+  color: var(--mf-danger);
+}
 .mf-note-line .mf-datechip::before {
   content: '';
   width: 11px;

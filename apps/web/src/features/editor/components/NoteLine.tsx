@@ -18,7 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor, resetTypingStyle } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { chipAtCaret, chipRange, extendOverChips } from '../noteChip';
@@ -316,6 +316,15 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         return;
       }
     }
+    /**
+     * **값을 읽기 전에 브라우저 잔재를 걷는다**(제보 6 — `stripBrowserFormatting`).
+     *
+     * 크로뮴은 지운 글의 계산된 스타일을 "다음에 칠 글자"에 물려주는데, 인라인 코드는
+     * 색·배경·글꼴을 다 갖고 있어 `<font color="#c44b40">…`으로 되살아난다. 그대로
+     * 읽으면 그 색이 **값**(`RichRun.c`)이 되어 붉은 글자로 저장된다. 조합 중에는
+     * 건드리지 않는다 — IME가 빚고 있는 노드를 갈아 끼우면 조합이 깨진다.
+     */
+    if (!composing.current) stripBrowserFormatting(el);
     const { text, rich } = domToRuns(el);
     /**
      * **줄이 비면 브라우저의 타이핑 스타일도 비운다**(제보: 줄을 통째로 지운 뒤 다시
