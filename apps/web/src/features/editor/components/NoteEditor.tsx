@@ -289,6 +289,12 @@ export function noteTokens(t: Theme): CSSProperties {
       '--mf-note-chip-pill': mix(t.border, 45, t.panel),
       '--mf-note-chip-pill-line': t.border,
       '--mf-note-chip-pill-on': mix(t.border, 70, t.panel),
+      /* 본문 댓글의 형광 — 어두운 갈래에서는 노란 면이 종이를 뚫고 나오므로
+       * 그 **관계**만 옮긴다(면은 은은하게, 밑줄이 알아보는 표식). */
+      '--mf-note-cm-bg': 'rgba(247, 196, 108, 0.16)',
+      '--mf-note-cm-line': 'rgba(232, 162, 95, 0.5)',
+      '--mf-note-cm-bg-on': 'rgba(247, 196, 108, 0.3)',
+      '--mf-note-cm-line-on': '#e8a25f',
       '--mf-note-ok': '#5eaa5e',
       '--mf-note-ok-ink': '#8fb66f',
       ...TONE_TOKENS,
@@ -347,6 +353,11 @@ export function noteTokens(t: Theme): CSSProperties {
     '--mf-note-chip-pill': '#f3eee8', // 사람 칩(스펙 4-7) — 날짜 칩보다 반 톤 따뜻하다
     '--mf-note-chip-pill-line': '#e9dfd3',
     '--mf-note-chip-pill-on': '#ede5dc',
+    // 본문 댓글의 형광 — 스펙 6-3의 값 그대로.
+    '--mf-note-cm-bg': 'rgba(247, 196, 108, 0.22)',
+    '--mf-note-cm-line': 'rgba(232, 162, 95, 0.55)',
+    '--mf-note-cm-bg-on': 'rgba(247, 196, 108, 0.5)',
+    '--mf-note-cm-line-on': '#e8a25f',
     '--mf-note-ok': '#5eaa5e', // 저장됨 점
     '--mf-note-ok-ink': '#7a8b62', // 저장됨 글자
     ...TONE_TOKENS,

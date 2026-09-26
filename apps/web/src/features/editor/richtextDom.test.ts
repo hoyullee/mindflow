@@ -296,3 +296,41 @@ describe('공책의 서식 — 밑줄 · 인라인 코드 · 형광펜', () => {
     expect(out?.[0]).not.toHaveProperty('u');
   });
 });
+
+describe('본문 댓글 형광(cm) — 맨 바깥에서 감싸고 그대로 되읽는다', () => {
+  it('평문 위의 형광이 왕복한다', () => {
+    const rich = [
+      { t: '회의는', b: false, c: null, cm: 'th-1' },
+      { t: ' 화요일', b: false, c: null },
+    ];
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: '회의는 화요일', rich });
+    expect(div.querySelector('[data-cm]')?.getAttribute('data-cm')).toBe('th-1');
+    expect(domToRuns(div).rich).toEqual(rich);
+  });
+
+  it('**링크·칩이 섞인 구간**에도 걸린다 — 형광이 그 span들을 감싼다(6-2)', () => {
+    const rich = [{ t: '주소', b: false, c: null, href: 'https://a.b/', cm: 'th-2' }];
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: '주소', rich });
+    // 바깥이 형광, 안쪽이 링크 — 이 순서라야 구간 전체에 한 번에 칠해진다.
+    const outer = div.firstElementChild!;
+    expect(outer.getAttribute('data-cm')).toBe('th-2');
+    expect(outer.querySelector('[data-href]')).toBeTruthy();
+    expect(domToRuns(div).rich).toEqual(rich);
+  });
+
+  it('날짜 칩 위의 형광도 왕복한다', () => {
+    const rich = [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27', cm: 'th-3' }];
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: '9월 27일 일', rich });
+    expect(div.firstElementChild?.getAttribute('data-cm')).toBe('th-3');
+    expect(domToRuns(div).rich).toEqual(rich);
+  });
+
+  it('남의 마크업에는 `data-cm`이 없으므로 평문으로 내려앉는다', () => {
+    const el = document.createElement('div');
+    el.innerHTML = '<span class="mf-cmark">회의</span>';
+    expect(domToRuns(el).rich).toBeNull();
+  });
+});
