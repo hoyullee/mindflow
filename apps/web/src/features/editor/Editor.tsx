@@ -16,6 +16,7 @@ import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { KanbanBoard } from './components/KanbanBoard';
 import { NoteEditor, NoteTopBar, noteTokens } from './components/NoteEditor';
+import { NoteAgendaPanel } from './components/NoteAgendaPanel';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { CollabPaused } from './components/CollabPaused';
@@ -51,6 +52,8 @@ export function Editor() {
    * 옆에 서 있다). 상단 바(☰)와 본문이 함께 보는 값이라 둘의 부모인 여기에 둔다.
    */
   const [notePagesOpen, setNotePagesOpen] = useState(false);
+  /** 우측 「일정」 탭(스펙 5절) — 댓글과 같은 고정 열에 선다. */
+  const [noteAgendaOpen, setNoteAgendaOpen] = useState(false);
   // 가로로 돌린 폰 — 속성 시트가 바텀에서 사이드로 바뀐다(`panelWrapStyle`).
   const isShort = useIsShortScreen();
 
@@ -203,7 +206,12 @@ export function Editor() {
           <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--mf-panel)', ...noteTokens(th) }}>
             {/* 상단 바 — 디자인 원본은 공책을 [바 · 목록 · 본문]으로 짠다. 문서 칩이
                 여기 **줄 안에** 서므로(inline) 왼쪽 페이지 목록을 덮지 않는다. */}
-            <NoteTopBar controller={controller} pagesOpen={notePagesOpen} onTogglePages={() => setNotePagesOpen((v) => !v)} />
+            <NoteTopBar
+              controller={controller}
+              pagesOpen={notePagesOpen}
+              onTogglePages={() => setNotePagesOpen((v) => !v)}
+              agenda={{ on: noteAgendaOpen, toggle: () => setNoteAgendaOpen((v) => !v) }}
+            />
             <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
             {/* `key` — 서버 판을 채택하면 본문을 **다시 마운트**한다. 공책의 편집
                 박스는 비제어라(innerHTML을 마운트할 때 한 번만 심는다) 모델만 갈아
@@ -216,6 +224,10 @@ export function Editor() {
                 댓글은 본문을 바꾸지 않고, 리뷰를 받으려고 보기 권한으로 부르는 일이
                 흔하다(맵과 같은 판단). */}
             <CommentPanel controller={controller} />
+            {/* 일정 — 스펙 5절. 댓글과 **같은 고정 열**에 선다(사용자 결정: 기록만
+                모달로 남긴다). 둘 다 켜면 일정이 안쪽(본문 쪽)이다 — 글을 쓰다 날짜를
+                보는 일이 댓글을 읽는 일보다 잦다. */}
+            {noteAgendaOpen && <NoteAgendaPanel controller={controller} onClose={() => setNoteAgendaOpen(false)} />}
             </div>
           </div>
         ) : controller.isKanban ? (

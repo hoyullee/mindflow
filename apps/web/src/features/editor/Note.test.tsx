@@ -2246,7 +2246,7 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     expect(activeItem(c)).toBe('p');
 
     fireEvent.keyDown(document, { key: 'ArrowUp' });
-    await waitFor(() => expect(activeItem(c)).toBe('hr')); // 첫 줄에서 위 → 마지막 줄
+    await waitFor(() => expect(activeItem(c)).toBe('date')); // 첫 줄에서 위 → 마지막 줄(「일정」 묶음의 `날짜`)
     fireEvent.keyDown(document, { key: 'ArrowDown' });
     await waitFor(() => expect(activeItem(c)).toBe('p')); // 마지막에서 아래 → 첫 줄
   });
@@ -7953,5 +7953,157 @@ describe('공책 62판 — 우측 열의 「본문 댓글 → 페이지 댓글�
     fireEvent.click(await waitFor(() => document.querySelector('[data-cm-reopen="th-7"]')!));
     await waitFor(() => expect(c.querySelector('[data-cm="th-7"][data-cm-done="1"]')).toBeNull());
     expect(c.querySelector('[data-cm="th-7"]')).toBeTruthy();
+  });
+});
+
+describe('공책 63판 — 우측 「일정」 탭(스펙 5절)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(NOTE));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  const tab = (c: HTMLElement, name: string): HTMLElement =>
+    [...c.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.trim() === name)!;
+
+  it('탭 순서는 **일정 · 댓글 · 기록**이고, 일정을 누르면 열린다', async () => {
+    const c = await open('ag1');
+    const names = [...c.querySelectorAll<HTMLElement>('[data-note-topbar] button')].map((b) => b.textContent?.trim()).filter((t) => t === '일정' || t === '댓글' || t === '기록');
+    expect(names).toEqual(['일정', '댓글', '기록']);
+
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    // 일정 화면과 **같은 부품**이라 그 사이드가 그대로 선다.
+    expect(c.querySelector('[data-note-agenda] [data-cal-side]')).toBeTruthy();
+  });
+
+  it('같은 탭을 다시 누르면 닫힌다', async () => {
+    const c = await open('ag2');
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeNull());
+  });
+
+  it('고른 날을 **기억한다** — 탭을 접었다 펴도 그날이다', async () => {
+    const c = await open('ag3');
+    fireEvent.click(tab(c, '일정'));
+    const cell = (await waitFor(() => c.querySelector('[data-note-agenda] [data-mini-day]'))) as HTMLElement;
+    const iso = cell.getAttribute('data-mini-day')!;
+    fireEvent.click(cell);
+    await waitFor(() => expect(localStorage.getItem('mf_note_agenda_day')).toBe(iso));
+
+    fireEvent.click(tab(c, '일정'));
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    expect(localStorage.getItem('mf_note_agenda_day')).toBe(iso);
+  });
+
+  it('일정과 댓글은 **같은 열에 나란히** 선다(사용자 결정)', async () => {
+    const c = await open('ag4');
+    fireEvent.click(tab(c, '일정'));
+    fireEvent.click(tab(c, '댓글'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    expect(document.querySelector('[data-comment-panel]')).toBeTruthy();
+  });
+});
+
+describe('공책 64판 — 일정 블록(스펙 2절)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  /** `/`를 치고 이어 친 글자까지(위 19판의 그 흉내). */
+  function slash(container: HTMLElement, text: string): void {
+    const line = container.querySelector('[data-note-line="b1"]') as HTMLElement;
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, text);
+  }
+  const items = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll('[data-note-slash-item]')].map((b) => b.getAttribute('data-note-slash-item'));
+
+  it('`/일정`을 고르면 **블록이 바로 서지 않고** 고르기 창이 먼저 뜬다(2-2)', async () => {
+    const c = await open('sc1', [{ id: 'b1', kind: 'p', runs: [] }]);
+    slash(c, '/일정');
+    await waitFor(() => expect(items(c)).toContain('sched'));
+    fireEvent.keyDown(document, { key: 'Enter' });
+
+    await waitFor(() => expect(document.querySelector('[data-sched-picker]')).toBeTruthy());
+    // 아직 블록은 없다 — 고르지 않으면 자리를 만들지 않는다.
+    saveNow();
+    await waitFor(() => expect(saved('sc1').pages[0].blocks[0].kind).toBe('p'));
+    // 네 종류가 스펙 순서대로.
+    expect([...document.querySelectorAll('[data-sched-pick]')].map((e) => e.getAttribute('data-sched-pick'))).toEqual(['today', 'week', 'month', 'next']);
+  });
+
+  it('종류를 고르면 블록이 서고 **그 보기를 기억한다**', async () => {
+    const c = await open('sc2', [{ id: 'b1', kind: 'p', runs: [] }]);
+    slash(c, '/일정');
+    await waitFor(() => expect(items(c)).toContain('sched'));
+    fireEvent.keyDown(document, { key: 'Enter' });
+    fireEvent.click(await waitFor(() => document.querySelector('[data-sched-pick="week"]')!));
+
+    await waitFor(() => expect(c.querySelector('[data-sched-block]')).toBeTruthy());
+    expect(c.querySelector('[data-sched-block]')?.getAttribute('data-sched-kind')).toBe('week');
+    saveNow();
+    await waitFor(() => {
+      const b = saved('sc2').pages[0].blocks[0];
+      expect(b.kind).toBe('sched');
+      expect(b.sched).toBe('week');
+    });
+  });
+
+  it('세그먼트로 보기를 바꾸면 **문서에 남는다**(2-3의 4)', async () => {
+    const c = await open('sc3', [{ id: 'b1', kind: 'sched', sched: 'today' }]);
+    const seg = (await waitFor(() => c.querySelector('[data-sched-seg="next"]'))) as HTMLElement;
+    fireEvent.click(seg);
+    await waitFor(() => expect(c.querySelector('[data-sched-block]')?.getAttribute('data-sched-kind')).toBe('next'));
+    saveNow();
+    await waitFor(() => expect(saved('sc3').pages[0].blocks[0].sched).toBe('next'));
+  });
+
+  it('머리에 제목과 부제가 서고, `×`로 블록을 지운다', async () => {
+    const c = await open('sc4', [{ id: 'b1', kind: 'sched', sched: 'today' }, { id: 'b2', kind: 'p', runs: [] }]);
+    await waitFor(() => expect(c.querySelector('[data-sched-title]')?.textContent).toBe('오늘 일정'));
+    expect(c.querySelector('[data-sched-sub]')?.textContent).toMatch(/\d+월 \d+일 · \d+개/);
+
+    fireEvent.click(c.querySelector('[data-sched-remove]')!);
+    saveNow();
+    await waitFor(() => expect(saved('sc4').pages[0].blocks.some((b: { kind: string }) => b.kind === 'sched')).toBe(false));
+  });
+
+  it('달력 보기는 미니 달력과 고른 날 목록을 함께 그린다(2-3)', async () => {
+    const c = await open('sc5', [{ id: 'b1', kind: 'sched', sched: 'month' }]);
+    await waitFor(() => expect(c.querySelector('[data-sched-block] [data-mini-cal]')).toBeTruthy());
+    expect(c.querySelector('[data-sched-title]')?.textContent).toMatch(/\d+월 달력/);
+  });
+
+  it('`/날짜`는 블록이 아니라 **`@` 허브를 날짜만으로** 연다(2-1)', async () => {
+    const c = await open('sc6', [{ id: 'b1', kind: 'p', runs: [] }]);
+    slash(c, '/날짜');
+    await waitFor(() => expect(items(c)).toEqual(['date']));
+    fireEvent.keyDown(document, { key: 'Enter' });
+
+    await waitFor(() => expect(c.querySelector('[data-note-hub]')).toBeTruthy());
+    // 사람 줄은 없다 — 날짜만 보이는 허브다.
+    expect(c.querySelector('[data-hub-kind="person"]')).toBeNull();
+    expect(c.querySelector('[data-hub-kind="date"]')).toBeTruthy();
   });
 });

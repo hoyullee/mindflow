@@ -912,6 +912,11 @@ export interface EditorController {
    */
   moveNoteBlockIntoList: (blockId: string, listId: string, at: number) => void;
   setNoteBlockRuns: (blockId: string, runs: RichRun[]) => void;
+  /**
+   * 일정 블록이 **무엇을 보여 줄까**(스펙 2-3의 세그먼트·달력 선택). 블록마다 따로
+   * 기억하므로 한 페이지에 여러 블록을 두고 서로 다른 보기를 걸 수 있다.
+   */
+  setNoteBlockSched: (blockId: string, kind: 'today' | 'week' | 'month' | 'next', day?: string) => void;
   setNoteItemRuns: (blockId: string, itemId: string, runs: RichRun[]) => void;
   toggleNoteCheck: (blockId: string, itemId: string) => void;
   addNoteItem: (blockId: string, after?: string) => string | null;
@@ -7526,6 +7531,20 @@ export function useEditorState(): EditorController {
   );
 
   /** 문단·제목·인용·코드·콜아웃·토글의 글. */
+  const setNoteBlockSched = useCallback(
+    (blockId: string, kind: 'today' | 'week' | 'month' | 'next', day?: string) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => {
+        const next = { ...b, sched: kind };
+        // 고른 날은 **달력 보기에서만** 뜻이 있다 — 다른 보기로 옮겼다고 지우지는
+        // 않는다(달력으로 되돌아오면 보던 날이 그대로여야 한다).
+        if (day) next.schedDay = day;
+        return next;
+      });
+    },
+    [commitBlock, notePage],
+  );
+
   const setNoteBlockRuns = useCallback(
     (blockId: string, runs: RichRun[]) => {
       if (!notePage) return;
@@ -8686,6 +8705,7 @@ export function useEditorState(): EditorController {
     moveNoteBlock,
     moveNoteBlockIntoList,
     setNoteBlockRuns,
+    setNoteBlockSched,
     setNoteItemRuns,
     toggleNoteCheck,
     addNoteItem,

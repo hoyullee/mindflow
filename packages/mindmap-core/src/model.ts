@@ -336,7 +336,8 @@ export type NoteBlockKind =
   | 'link'
   | 'callout'
   | 'toggle'
-  | 'img';
+  | 'img'
+  | 'sched';
 
 /** 콜아웃 어조 — 디자인의 `주의 · 결정 · 질문`. */
 export type NoteCalloutTone = 'warn' | 'decide' | 'ask';
@@ -456,6 +457,20 @@ export interface NoteBlock {
   embed?: NoteEmbedView;
   /** `img` — 이미지 참조(`mfimg:<경로>` 또는 데이터 URL. 맵의 규칙과 같다). */
   src?: string;
+  /**
+   * `sched` — **일정 블록이 보여 주는 것**(스펙 2절). 블록마다 따로 기억한다.
+   *
+   * 값은 네 가지다: `today`(오늘 하루) · `week`(이번 주 일-토) · `month`(미니 달력 +
+   * 고른 날) · `next`(오늘부터 가까운 6개). 없으면 `today`.
+   *
+   * **일정 자체는 여기 없다.** 이 블록이 드는 것은 "무엇을 보여 줄까"뿐이고, 내용은
+   * 캘린더에서 그때그때 읽는다 — 그래서 어제 쓴 페이지를 오늘 열면 오늘 일정이 뜬다
+   * (스펙이 "캘린더와 실시간으로 이어져요"라고 적은 그 뜻이다). 본문에 일정을 베껴
+   * 두면 지우거나 옮긴 일정이 문서에 화석으로 남는다.
+   */
+  sched?: 'today' | 'week' | 'month' | 'next';
+  /** `sched` + `month` — 달력에서 고른 날(`YYYY-MM-DD`). 없으면 오늘. */
+  schedDay?: string;
   /**
    * `img` — **손으로 정한 너비**(px). 없으면 단 폭에 맞춘다(그림의 원래 폭이 상한).
    *
