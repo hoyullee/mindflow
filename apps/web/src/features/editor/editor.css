@@ -696,6 +696,42 @@ input[type='search']::-webkit-search-results-decoration {
   letter-spacing: 0;
 }
 
+/**
+ * 본문 댓글의 형광(스펙 6-3) — 댓글이 걸린 글자.
+ *
+ * 형광펜(`.mf-hl`)과 **다른 것**이다: 형광펜은 사용자가 고른 색이고 이것은
+ * "여기 논의가 있다"는 시스템 표식이라, 색이 테마를 따라가고 누르면 창이 열린다.
+ * 그래서 배경만이 아니라 **밑줄**도 함께 긋는다 — 형광펜 위에 댓글을 달아도 둘이
+ * 구분되게(6-2: 서식이 섞인 범위에도 걸 수 있다).
+ *
+ * 한 스레드가 서식 경계를 넘으면 `runsToHtml`이 런마다 하나씩 감싸 **여러 조각**이
+ * 된다. 조각들은 서로 맞닿아 있어 면과 밑줄이 이어진다.
+ */
+.mf-note-line .mf-cmark {
+  background: var(--mf-note-cm-bg);
+  border-bottom: 2px solid var(--mf-note-cm-line);
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+/* 창이 열려 있거나 패널에서 고른 스레드 — 본문과 패널이 **같이** 밝아진다. */
+.mf-note-line .mf-cmark[data-cm-on='1'] {
+  background: var(--mf-note-cm-bg-on);
+  border-bottom-color: var(--mf-note-cm-line-on);
+}
+/**
+ * **해결한 스레드는 일반 글자처럼**(6-3의 마지막 줄). 표식(`data-cm`)은 그대로라
+ * 「다시 열기」를 누르면 칠이 돌아온다 — 지우지 않는 것이 요점이다.
+ */
+.mf-note-line .mf-cmark[data-cm-done='1'] {
+  background: transparent;
+  border-bottom-color: transparent;
+  cursor: text;
+}
+
 /* 공책 — **읽는 줄에 조작을 얹지 않는다**(디자인 원본). 페이지 머리의 복제·삭제,
    표의 레일, 링크 카드의 바꾸기는 평소 보이지 않다가 그 자리에 마우스를 얹으면
    나타난다. 터치 기기에는 hover가 없으므로 언제나 보인다(아래 미디어 질의). */

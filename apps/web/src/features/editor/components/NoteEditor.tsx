@@ -41,8 +41,11 @@ import type { Theme } from '../theme';
 import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
-import { runsToHtml, setLinearSelection } from '../richtextDom';
+import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { useCommentParticipants } from './CommentPanel';
+import { NoteCommentWindow } from './NoteCommentWindow';
+import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, overlapsComment, threadIdOfNode } from '../noteComment';
+import { toastShellStyle } from '../../../pwa/toastShell';
 import { dateChipLabel } from '../mentionChip';
 import { todayISO } from '../../home/calendar/model';
 import { insertChip } from '../noteChipInsert';
@@ -289,6 +292,12 @@ export function noteTokens(t: Theme): CSSProperties {
       '--mf-note-chip-pill': mix(t.border, 45, t.panel),
       '--mf-note-chip-pill-line': t.border,
       '--mf-note-chip-pill-on': mix(t.border, 70, t.panel),
+      /* 본문 댓글의 형광 — 어두운 갈래에서는 노란 면이 종이를 뚫고 나오므로
+       * 그 **관계**만 옮긴다(면은 은은하게, 밑줄이 알아보는 표식). */
+      '--mf-note-cm-bg': 'rgba(247, 196, 108, 0.16)',
+      '--mf-note-cm-line': 'rgba(232, 162, 95, 0.5)',
+      '--mf-note-cm-bg-on': 'rgba(247, 196, 108, 0.3)',
+      '--mf-note-cm-line-on': '#e8a25f',
       '--mf-note-ok': '#5eaa5e',
       '--mf-note-ok-ink': '#8fb66f',
       ...TONE_TOKENS,
@@ -347,6 +356,11 @@ export function noteTokens(t: Theme): CSSProperties {
     '--mf-note-chip-pill': '#f3eee8', // 사람 칩(스펙 4-7) — 날짜 칩보다 반 톤 따뜻하다
     '--mf-note-chip-pill-line': '#e9dfd3',
     '--mf-note-chip-pill-on': '#ede5dc',
+    // 본문 댓글의 형광 — 스펙 6-3의 값 그대로.
+    '--mf-note-cm-bg': 'rgba(247, 196, 108, 0.22)',
+    '--mf-note-cm-line': 'rgba(232, 162, 95, 0.55)',
+    '--mf-note-cm-bg-on': 'rgba(247, 196, 108, 0.5)',
+    '--mf-note-cm-line-on': '#e8a25f',
     '--mf-note-ok': '#5eaa5e', // 저장됨 점
     '--mf-note-ok-ink': '#7a8b62', // 저장됨 글자
     ...TONE_TOKENS,
@@ -633,6 +647,31 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    * 든다. 박스를 기억하는 이유는 서식 항목이 그 박스의 선택에 걸리기 때문이다.
    */
   const [ctxAt, setCtxAt] = useState<BlockMenuAt | null>(null);
+  /**
+   * **열려 있는 본문 댓글**(스펙 6절) — 스레드 id와 그 줄.
+   *
+   * `fresh`는 "이 창이 만든 스레드인가"다. 아무 말도 쓰지 않고 닫으면 형광까지
+   * 되돌려야 하는데(6-4), 이미 있던 스레드를 열어 본 것뿐이라면 되돌릴 것이 없다.
+   */
+  const [cmOpen, setCmOpen] = useState<{ id: string; lineKey: string; fresh: boolean } | null>(null);
+  /**
+   * 잠깐 뜨는 알림 — 스펙이 토스트라고 부르는 그 줄이다. 자리는 앱이 이미 쓰는
+   * 하단 가운데(`toastShellStyle`)라 일정 알림·업데이트 알림과 같은 데 뜬다.
+   */
+  const [toast, setToast] = useState('');
+  /** 댓글 창이 부를 수 있는 사람들 — 허브와 **같은 명단**이다(`useCommentParticipants`). */
+  const cmParticipants = useCommentParticipants(controller.docId, cmOpen !== null);
+  /**
+   * 열린 스레드의 인용 — **문서 모델에서** 읽는다(스냅샷이 아니라 지금 본문이다).
+   * 편집 박스의 DOM이 아니라 모델을 보는 이유: 글을 고치면 리렌더가 따라오므로 창의
+   * 인용도 함께 갱신된다(DOM을 읽으면 그 순간의 값에 멈춘다).
+   */
+  const cmQuote = cmOpen ? (noteCommentSites(controller.doc.pages).find((x) => x.id === cmOpen.id)?.quote ?? '') : '';
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(''), 3200);
+    return () => window.clearTimeout(t);
+  }, [toast]);
   /**
    * **문서 링크 고르개**(요청) — 예전에는 빈 「문서 고르기」 블록을 먼저 세우고 그
    * 안의 단추를 한 번 더 눌러야 목록이 나왔다. 이미지와 같은 결로, 고르개를 먼저 열고
@@ -1234,6 +1273,26 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    * 걸고 나면 박스의 `innerHTML`이 갈려 들고 있던 `Range`가 죽는다 — 같은 글자 자리로
    * **다시 만들어** 칠한 자리를 지킨다(서식을 연달아 걸 수 있어야 한다).
    */
+  /**
+   * **지금 고른 줄들** — 서식도 본문 댓글도 이 한 답을 본다.
+   *
+   * 박스에 살아 있는 선택이 먼저이고, 칠해 둔 그림(`textSel`)이 그 다음이다. 순서를
+   * 뒤집으면 한 번 칠한 뒤에는 다른 줄을 골라도 **먼저 칠한 줄**이 답이 된다. 표의
+   * 칸은 브라우저 선택 그대로 둔다(우리 칠하기로 바꾸면 칸 안의 조작이 전부 문서
+   * 리스너로 넘어간다) — 그쪽은 호출부의 예전 길로 물러선다.
+   */
+  const selectionLines = (box?: HTMLElement | null): LineSel[] | null => {
+    const inBox = ((): LineSel[] | null => {
+      const live = window.getSelection();
+      if (!box || isCellKey(box.getAttribute('data-note-line') || '')) return null;
+      if (!live || live.isCollapsed || !live.rangeCount) return null;
+      const r = live.getRangeAt(0);
+      if (!box.contains(r.startContainer) || !box.contains(r.endContainer)) return null;
+      return buildLineSelection(box, { node: r.startContainer, offset: r.startOffset }, { node: r.endContainer, offset: r.endOffset });
+    })();
+    return inBox ?? (textSelRef.current?.length ? textSelRef.current : null);
+  };
+
   const formatSelection = (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null): boolean => {
     if (readOnly) return false;
     /**
@@ -1253,15 +1312,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
      * 표의 칸은 브라우저 선택 그대로 둔다(우리 칠하기로 바꾸면 칸 안의 방향키·입력이
      * 전부 문서 리스너로 넘어간다) — 그쪽은 호출부의 예전 길로 물러선다.
      */
-    const inBox = ((): LineSel[] | null => {
-      const live = window.getSelection();
-      if (!box || isCellKey(box.getAttribute('data-note-line') || '')) return null;
-      if (!live || live.isCollapsed || !live.rangeCount) return null;
-      const r = live.getRangeAt(0);
-      if (!box.contains(r.startContainer) || !box.contains(r.endContainer)) return null;
-      return buildLineSelection(box, { node: r.startContainer, offset: r.startOffset }, { node: r.endContainer, offset: r.endOffset });
-    })();
-    const sel = inBox ?? (textSelRef.current?.length ? textSelRef.current : null);
+    const sel = selectionLines(box);
     if (!sel || !sel.length) return false;
     for (const ln of sel) {
       const runs = applyNoteFormatRange(ln.el, ln.from, ln.to, kind, val);
@@ -1286,6 +1337,76 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       });
     setTextSel(again);
     return true;
+  };
+
+  /**
+   * **고른 글에 댓글 달기**(스펙 6-1·6-2) — 우클릭 메뉴와 `⌘⌥M`이 함께 부른다.
+   *
+   * 여는 순간 본문에 형광을 **먼저** 건다. 창이 그 형광에 붙어 서기 때문이다(6-4) —
+   * 자리를 잡을 기준이 없으면 창이 어디에 떠야 할지 알 수 없다. 대신 아무 말도 쓰지
+   * 않고 닫으면 그 형광을 되돌린다(`closeBodyComment`) — 빈 스레드는 남기지 않는다.
+   *
+   * `memo`는 **우클릭한 순간의 선택**이다(6-1: 메뉴를 누르는 사이에 선택이 풀려도 그
+   * 범위에 단다). 메뉴가 뜨면 초점이 옮겨 가 브라우저 선택이 사라지므로, 그때 읽어
+   * 둔 것을 그대로 받는다.
+   */
+  const startBodyComment = (box?: HTMLElement | null, memo?: LineSel[] | null): void => {
+    if (readOnly) return;
+    // 표의 칸은 **선택을 읽기 전에** 가른다 — `selectionLines`가 칸에서는 답을
+    // 주지 않으므로(그쪽은 브라우저 선택 그대로 둔다) 그냥 두면 "고른 글이 없다"로
+    // 읽혀 엉뚱한 안내가 나간다.
+    if (box && isCellKey(box.getAttribute('data-note-line') || '')) {
+      setToast('문단이나 목록의 글에만 댓글을 달 수 있어요');
+      return;
+    }
+    const sel = ((memo && memo.length ? memo : selectionLines(box)) ?? []).filter((ln) => ln.to > ln.from);
+    if (!sel.length) {
+      // 고른 글이 없으면 논의할 자리가 없다 — 페이지 댓글로 안내한다(6-1).
+      controller.openComments();
+      setToast('글을 고른 뒤 댓글 달기를 누르면 그 부분에 달려요 — 지금은 페이지 댓글로 남겨요');
+      return;
+    }
+    if (sel.length > 1) {
+      setToast('한 문단 안에서 글을 골라 주세요');
+      return;
+    }
+    const ln = sel[0]!;
+    const block = (controller.notePage?.blocks ?? []).find((b) => b.id === blockIdOf(ln.key));
+    // 표의 칸은 줄이 아니라 값이고, 체크리스트·그림·구분선·삽입한 문서는 위젯이다(6-2).
+    if (isCellKey(ln.key) || !canCommentOn(block)) {
+      setToast('문단이나 목록의 글에만 댓글을 달 수 있어요');
+      return;
+    }
+    if (overlapsComment(liveEditValue(ln.el).rich, ln.from, ln.to)) {
+      setToast('이미 댓글이 달린 부분이에요 — 형광 부분을 눌러 답글을 달아 주세요');
+      return;
+    }
+    const id = newThreadId();
+    const runs = applyNoteFormatRange(ln.el, ln.from, ln.to, 'comment', id);
+    if (!runs) return;
+    commitLine(controller, ln.key, runs);
+    window.getSelection()?.removeAllRanges();
+    setTextSel([]);
+    setCmOpen({ id, lineKey: ln.key, fresh: true });
+  };
+
+  /**
+   * 댓글 창을 닫는다 — **한 마디도 쓰지 않은 새 스레드면 형광도 되돌린다**(6-4).
+   *
+   * 되돌리는 길은 걸 때와 같은 함수에 빈 값을 넘기는 것이다(`comment` 갈래는 토글이
+   * 아니라 값 지정이라 그렇게 된다). 그 줄이 이미 화면에서 사라졌으면(페이지를 옮겼다)
+   * 할 일이 없다 — 표식은 문서와 함께 되돌아간다.
+   */
+  const closeBodyComment = (wrote: boolean): void => {
+    const open = cmOpen;
+    setCmOpen(null);
+    if (!open || !open.fresh || wrote) return;
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${open.lineKey}"]`);
+    if (!el) return;
+    const span = commentSpans(liveEditValue(el).rich).find((x) => x.id === open.id);
+    if (!span) return;
+    const runs = applyNoteFormatRange(el, span.a, span.b, 'comment', '');
+    if (runs) commitLine(controller, open.lineKey, runs);
   };
   /**
    * 같은 함수를 **문서 리스너와 우클릭 메뉴**도 쓴다(제보 3) — 참조로 들고 다닌다.
@@ -2020,6 +2141,117 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   }, [controller, readOnly]);
 
   /**
+   * **⌘⌥M = 고른 글에 댓글**(스펙 6-1) — 우클릭 메뉴의 그 항목과 **같은 길**이다.
+   *
+   * `Alt`가 함께 눌려 있으므로 위의 서식 단축키(⌘B·⌘I·⌘U·⌘⇧S)와 겹치지 않는다 —
+   * 그쪽은 `e.altKey`면 일찍 물러선다.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (readOnly || e.defaultPrevented || e.isComposing) return;
+      if (!(e.metaKey || e.ctrlKey) || !e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== 'm' && e.code !== 'KeyM') return;
+      const col = colRef.current;
+      const live = document.activeElement as HTMLElement | null;
+      const box = live?.hasAttribute?.('data-note-line') && col?.contains(live) ? live : null;
+      e.preventDefault();
+      e.stopPropagation();
+      startBodyComment(box);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  });
+
+  /**
+   * **형광을 누르면 그 댓글 창**(6-3) — 글을 드래그해서 고르는 중일 때는 열지 않는다.
+   *
+   * `click`은 드래그가 끝난 뒤에도 오므로 "고른 글이 있으면 연다"로는 갈리지 않는다.
+   * 누른 자리와 뗀 자리가 **같은 형광**일 때만 연다.
+   */
+  useEffect(() => {
+    const col = colRef.current;
+    if (!col) return;
+    let down: string | null = null;
+    const onDown = (e: PointerEvent): void => {
+      down = ((e.target as HTMLElement | null)?.closest?.('[data-cm]') as HTMLElement | null)?.getAttribute('data-cm') ?? null;
+    };
+    const onUp = (e: PointerEvent): void => {
+      const id = ((e.target as HTMLElement | null)?.closest?.('[data-cm]') as HTMLElement | null)?.getAttribute('data-cm') ?? null;
+      const same = id && id === down;
+      down = null;
+      if (!same) return;
+      const key = ((e.target as HTMLElement | null)?.closest?.('[data-note-line]') as HTMLElement | null)?.getAttribute('data-note-line') ?? '';
+      setCmOpen({ id, lineKey: key, fresh: false });
+    };
+    col.addEventListener('pointerdown', onDown);
+    col.addEventListener('pointerup', onUp);
+    return () => {
+      col.removeEventListener('pointerdown', onDown);
+      col.removeEventListener('pointerup', onUp);
+    };
+  }, [pageId]);
+
+  /**
+   * 패널의 스레드 카드를 누르면 **본문의 그 형광으로**(6-6) — 스크롤 영역 높이의
+   * 1/3 지점에 오도록 부드럽게 옮기고, 그 스레드를 연다.
+   *
+   * 1/3인 이유: 가운데에 두면 댓글 창이 아래로 열릴 자리가 모자라 위로 뒤집힌다.
+   */
+  useEffect(() => {
+    const onOpen = (e: Event): void => {
+      const id = (e as CustomEvent<string>).detail;
+      if (!id) return;
+      const mark = [...document.querySelectorAll<HTMLElement>('[data-cm]')].find((el) => el.getAttribute('data-cm') === id) ?? null;
+      const key = (mark?.closest?.('[data-note-line]') as HTMLElement | null)?.getAttribute('data-note-line') ?? '';
+      setCmOpen({ id, lineKey: key, fresh: false });
+      const scroller = pageRef.current;
+      // jsdom에는 `scrollTo`가 없다 — 없으면 자리는 그대로 두고 여는 것만 한다.
+      if (!mark || !scroller || typeof scroller.scrollTo !== 'function') return;
+      const top = mark.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - scroller.clientHeight / 3;
+      scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    };
+    document.addEventListener(NOTE_CM_OPEN_EVENT, onOpen);
+    return () => document.removeEventListener(NOTE_CM_OPEN_EVENT, onOpen);
+  }, []);
+
+  /**
+   * 열려 있는 스레드의 형광을 **밝힌다**(6-3의 활성 상태). 본문은 비제어 DOM이라
+   * (`NoteLine` 머리말) 리액트로 속성을 줄 수 없어 여기서 직접 켜고 끈다.
+   */
+  useEffect(() => {
+    const col = colRef.current;
+    if (!col) return;
+    col.querySelectorAll<HTMLElement>('[data-cm-on]').forEach((el) => el.removeAttribute('data-cm-on'));
+    if (!cmOpen) return;
+    col.querySelectorAll<HTMLElement>('[data-cm]').forEach((el) => {
+      if (el.getAttribute('data-cm') === cmOpen.id) el.setAttribute('data-cm-on', '1');
+    });
+  });
+
+  /**
+   * **해결한 스레드는 형광을 끈다**(6-3·6-5) — 표식은 그대로 두고 칠만 걷는다.
+   *
+   * 그래야 「다시 열기」로 형광이 **돌아온다**. 스펙이 프로토타입의 한계로 적어 둔
+   * 자리이고(6-5: 실서비스에서는 mark를 지우지 말고 `resolved`만 바꾸면 된다),
+   * 해결 여부의 임자는 본문이 아니라 댓글 저장소라 여기서는 읽기만 한다.
+   */
+  useEffect(() => {
+    const col = colRef.current;
+    if (!col) return;
+    const done = new Set(
+      controller.comments
+        .filter((c) => !c.parentId && c.resolved)
+        .map((c) => threadIdOfNode(c.nodeId))
+        .filter((x): x is string => !!x),
+    );
+    col.querySelectorAll<HTMLElement>('[data-cm]').forEach((el) => {
+      const id = el.getAttribute('data-cm') || '';
+      if (done.has(id)) el.setAttribute('data-cm-done', '1');
+      else el.removeAttribute('data-cm-done');
+    });
+  });
+
+  /**
    * **⌘F = 이 공책 안에서 찾기**(요청: 공책에서도 단축키를 다 쓰게).
    *
    * 전역 핸들러(`useEditorState`)의 ⌘F는 **맵 검색 바**를 연다 — 공책 화면에는 그
@@ -2366,8 +2598,11 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
               if (!id) return; // 머리(제목·태그)나 빈 자리에서는 브라우저 메뉴 그대로
               e.preventDefault();
               const box = (el?.closest?.('[data-note-line]') as HTMLElement | null) ?? null;
+              // 선택은 **초점을 옮기기 전에** 읽는다(6-1) — `focusBox`가 캐럿을 다시
+              // 놓으면 고른 범위가 사라진다.
+              const sel = selectionLines(box);
               if (box) focusBox(box);
-              setCtxAt({ blockId: id, box, x: e.clientX, y: e.clientY });
+              setCtxAt({ blockId: id, box, sel, x: e.clientX, y: e.clientY });
             }}
             // 폭은 **공책 한 권의 읽기 설정**이다(요청·`cover.wide`) — 가운데 정렬
             // (700px)이 기본이고, `창 너비에 맞춤`이면 단이 화면을 가득 쓴다.
@@ -2428,7 +2663,24 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
               </div>
               );
             })}
-            {ctxAt && !readOnly && <BlockMenu controller={controller} at={ctxAt} formatSelection={formatSelection} onClose={() => setCtxAt(null)} />}
+            {ctxAt && !readOnly && (
+              <BlockMenu controller={controller} at={ctxAt} formatSelection={formatSelection} onComment={() => startBodyComment(ctxAt.box, ctxAt.sel)} onClose={() => setCtxAt(null)} />
+            )}
+            {/* 본문 댓글 창(6-4) — 형광에 붙어 선다. 인용은 **지금 본문**에서 읽는다. */}
+            {cmOpen && (
+              <NoteCommentWindow
+                controller={controller}
+                threadId={cmOpen.id}
+                quote={cmQuote}
+                participants={cmParticipants}
+                onClose={closeBodyComment}
+              />
+            )}
+            {toast && (
+              <div role="status" style={{ ...toastShellStyle, padding: '10px 16px', fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, wordBreak: 'keep-all' }}>
+                {toast}
+              </div>
+            )}
             {linkPick && !readOnly && (
               <DocPickPopup
                 controller={controller}
@@ -7928,6 +8180,12 @@ interface BlockMenuAt {
   blockId: string;
   /** 오른쪽 클릭이 난 편집 박스(`data-note-line`) — 서식은 **이 박스의 선택**에 건다. */
   box: HTMLElement | null;
+  /**
+   * **우클릭한 순간의 선택**(스펙 6-1) — 메뉴를 누르는 사이에 선택이 풀려도 그 범위에
+   * 단다. 서식 항목은 박스의 살아 있는 선택을 다시 읽어도 되지만(메뉴는 초점을 뺏지
+   * 않는다) 댓글은 창을 여는 일이라 초점이 확실히 옮겨 간다 — 그래서 적어 둔다.
+   */
+  sel: LineSel[] | null;
   x: number;
   y: number;
 }
@@ -7953,7 +8211,20 @@ const CTX_FONTS: { kind: 'b' | 'i' | 'u' | 's' | 'hl' | 'c' | 'clear'; name: str
  * 서식은 **오른쪽 클릭이 난 편집 박스**에 건다(`box`) — 메뉴를 여는 동안 브라우저는
  * 선택을 지우지 않으므로, 고른 글이 있으면 그 글에, 없으면 캐럿 자리에 걸린다.
  */
-function BlockMenu({ controller, at, formatSelection, onClose }: { controller: EditorController; at: BlockMenuAt; formatSelection: (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null) => boolean; onClose: () => void }) {
+function BlockMenu({
+  controller,
+  at,
+  formatSelection,
+  onComment,
+  onClose,
+}: {
+  controller: EditorController;
+  at: BlockMenuAt;
+  formatSelection: (kind: NoteFormatKind, val?: string | null, box?: HTMLElement | null) => boolean;
+  /** 「댓글 달기」 — 고른 글에 본문 댓글(스펙 6-1). */
+  onComment: () => void;
+  onClose: () => void;
+}) {
   const [wing, setWing] = useState<'font' | null>(null);
   useAnchored(true, onClose);
   const blocks = controller.notePage?.blocks ?? [];
@@ -8140,7 +8411,13 @@ function BlockMenu({ controller, at, formatSelection, onClose }: { controller: E
       />
 
       <CtxRule />
-      <CtxItem mark="comment" name="댓글 달기" icon={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>} onClick={done(() => controller.openComments())} />
+      <CtxItem
+        mark="comment"
+        name="댓글 달기"
+        hint="⌘⌥M"
+        icon={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>}
+        onClick={done(onComment)}
+      />
 
       <CtxRule />
       <CtxItem mark="hr" name="아래에 구분선" icon={<path d="M4 12h16" />} onClick={done(() => controller.addNoteBlock('hr', at.blockId))} />

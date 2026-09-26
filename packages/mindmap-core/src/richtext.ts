@@ -48,6 +48,8 @@ export interface RichChar {
   dt?: string | null;
   /** 문서 안 페이지 링크 — `"<docId>:<pageId>"`(RichRun.pg 참고). */
   pg?: string | null;
+  /** 본문 댓글 스레드의 id — 공책의 형광 표시(RichRun.cm 참고). */
+  cm?: string | null;
 }
 
 /** Explodes `src.rich` (or, absent that, `src.text` as one unstyled run) into
@@ -59,7 +61,7 @@ export function runsToChars(src: RichSource): RichChar[] {
   runs.forEach((r) => {
     const t = r.t || '';
     for (let i = 0; i < t.length; i++)
-      chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null, m: r.m || null, u: !!r.u, k: !!r.k, hl: r.hl || null, dt: r.dt || null, pg: r.pg || null });
+      chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null, m: r.m || null, u: !!r.u, k: !!r.k, hl: r.hl || null, dt: r.dt || null, pg: r.pg || null, cm: r.cm || null });
   });
   return chars;
 }
@@ -84,7 +86,8 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
       !!last.k === !!x.k &&
       (last.hl || null) === (x.hl || null) &&
       (last.dt || null) === (x.dt || null) &&
-      (last.pg || null) === (x.pg || null)
+      (last.pg || null) === (x.pg || null) &&
+      (last.cm || null) === (x.cm || null)
     )
       last.t += x.ch;
     else {
@@ -100,6 +103,7 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
       if (x.hl) r.hl = x.hl;
       if (x.dt) r.dt = x.dt;
       if (x.pg) r.pg = x.pg;
+      if (x.cm) r.cm = x.cm;
       runs.push(r);
     }
   });
@@ -129,7 +133,7 @@ export function applyPartialStyle(
   src: RichSource,
   s0In: number,
   s1In: number,
-  kind: 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'link' | 'clear',
+  kind: 'b' | 'i' | 's' | 'u' | 'k' | 'c' | 'hl' | 'link' | 'comment' | 'clear',
   val?: string | null,
 ): { text: string; rich: RichRun[] | null } {
   let s0 = s0In;
@@ -182,6 +186,9 @@ export function applyPartialStyle(
     // 형광펜은 색 지정이다(토글이 아니다) — 빈 값이 곧 "지우기"다.
     else if (kind === 'hl') c.hl = val || null;
     else if (kind === 'link') c.href = val || null;
+    // 본문 댓글 표식 — 토글이 아니라 **값 지정**이다(형광펜과 같다). 빈 값이
+    // 곧 "이 자리의 댓글을 걷는다"(쓰지 않고 닫은 새 스레드가 그 길로 되돌아간다).
+    else if (kind === 'comment') c.cm = val || null;
     else {
       c.b = false;
       c.c = null;
@@ -197,6 +204,10 @@ export function applyPartialStyle(
       // 글을 지우는 일이 아니다.
       c.dt = null;
       c.pg = null;
+      // `cm`(본문 댓글)은 **걷지 않는다** — 그것은 서식이 아니라 바깥 스레드를
+      // 가리키는 표식이다. 「서식 지우기」로 사라지면 달아 둔 논의가 말없이 자리를
+      // 잃고, 패널에는 갈 곳 없는 스레드만 남는다(지우는 길은 댓글 창의 「해결」과
+      // 스레드 삭제 하나뿐이어야 한다).
     }
   }
   const nruns = charsToRuns(chars).filter((r) => r.t);
@@ -209,14 +220,14 @@ export function applyPartialStyle(
  * 되돌아간다(링크만 걸린 런이 그랬다). 그래서 판정을 **여기 한 곳**에 둔다 —
  * 웹의 커밋 경로들도 이 함수를 쓴다. */
 export function isStyledRuns(runs: RichRun[] | null | undefined): boolean {
-  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href || r.m || r.u || r.k || r.hl || r.dt || r.pg);
+  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href || r.m || r.u || r.k || r.hl || r.dt || r.pg || r.cm);
 }
 
 /** Removes one style key from every run, dropping back to plain (`null`)
  * `rich` if nothing else is styled afterward — pure port of `Component#stripRich`
  * (MindFlow.dc.html:2727), used when a WHOLE-node style toggle (e.g. the
  * bold-everything button) should override any conflicting partial run. */
-export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's' | 'href' | 'u' | 'k' | 'hl' | 'dt' | 'pg'): RichRun[] | null {
+export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's' | 'href' | 'u' | 'k' | 'hl' | 'dt' | 'pg' | 'cm'): RichRun[] | null {
   if (!rich || !rich.length) return null;
   const next = rich.map((r) => {
     const o = { ...r };

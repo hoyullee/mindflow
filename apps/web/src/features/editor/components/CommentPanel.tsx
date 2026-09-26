@@ -28,6 +28,7 @@ import './comments.css';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
 import { anchoredBoxPos } from './commentAnchor';
+import { NoteBodyComments } from './NoteBodyComments';
 import { BOARD_BAR_LIFT } from './BoardToolbar';
 import { Avatar } from './commentPinShape';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
@@ -109,6 +110,18 @@ function panelPos(controller: EditorController, h: number, bottomInset: number):
   return { left, top };
 }
 
+/** 공책의 구획 머리 — 「본문 댓글」과 같은 글자를 쓴다(그쪽은 개수까지 붙는다). */
+const NOTE_SECTION_HEAD: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '10px 14px 2px',
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '.07em',
+  textTransform: 'uppercase',
+};
+
 export function CommentPanel({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
@@ -179,6 +192,7 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
   // 핀 = **하나의 스레드**다(시안 ①) — 머리에 스레드의 글 수와 해결 토글이 선다.
   // 칸반 카드는 여러 논의가 붙는 자리라 예전처럼 목록이다.
   const pinThread = !!(controller.doc.commentPins ?? []).find((p) => p.id === nodeId);
+  const isNote = controller.doc.kind === 'note';
   const msgs = controller.comments.filter((c) => c.nodeId === nodeId);
   const root = msgs.find((c) => !c.parentId) ?? null;
   const resolved = !!root?.resolved;
@@ -259,6 +273,15 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
           ✕
         </button>
       </header>
+      {/* 공책은 **두 구획**이다(스펙 6-6): 위가 본문의 형광에 달린 논의, 아래가
+          공책 한 권에 대한 논의. 순서를 이렇게 두는 이유는 위쪽이 "지금 읽는 글"에
+          붙은 것이라 눈이 먼저 가야 하기 때문이다. */}
+      {isNote && <NoteBodyComments controller={controller} />}
+      {isNote && (
+        <div style={{ ...NOTE_SECTION_HEAD, color: th.subtext }}>
+          <span>페이지 댓글</span>
+        </div>
+      )}
       <CommentThreads controller={controller} nodeId={nodeId} scroll thread={pinThread} />
     </aside>
   );

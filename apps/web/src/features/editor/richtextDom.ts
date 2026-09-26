@@ -67,7 +67,7 @@ export function runsToHtml(n: RichTextValue): string {
       // 클릭해서 여는 건 커밋된 렌더(`NodeLayer`)가 담당한다.
       // 색은 `.mf-link` 클래스(→ `--mf-link`)가 준다 — 인라인 `color`로 심으면
       // 커밋 때 `domToRuns`가 그걸 런의 `c`로 저장해 링크를 떼도 파란색이 남는다.
-      if (r.href) return `<span class="${LINK_CLASS}" data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>`;
+      if (r.href) inner = `<span class="${LINK_CLASS}" data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>`;
       /**
        * 멘션 — 링크와 같은 이유로 클래스+data 속성만(색은 `.mf-mention`이 준다).
        *
@@ -76,8 +76,8 @@ export function runsToHtml(n: RichTextValue): string {
        * `domToRuns`에 읽혀 **값에 섞이고** 캐럿이 그 안에 설 수 있다. 속성에 두면
        * CSS의 `::before`가 그리므로 DOM 글자가 아니다 — 값도 캐럿도 건드리지 않는다.
        */
-      if (r.m)
-        return `<span class="mf-mention" data-mention-email="${escHtml(r.m)}" data-mention-ini="${escHtml(mentionInitial(r.t))}" data-mention-tone="${escHtml(mentionTone(r.m))}">${inner}</span>`;
+      else if (r.m)
+        inner = `<span class="mf-mention" data-mention-email="${escHtml(r.m)}" data-mention-ini="${escHtml(mentionInitial(r.t))}" data-mention-tone="${escHtml(mentionTone(r.m))}">${inner}</span>`;
       /**
        * 날짜 칩·페이지 링크 — 멘션과 **같은 규칙**(클래스 + data 속성)이다.
        *
@@ -85,8 +85,16 @@ export function runsToHtml(n: RichTextValue): string {
        * `domToRuns`가 그 색·배경을 런의 `c`로 되읽어 **칩을 떼도 색이 남는다** —
        * 링크 파랑에서 실제로 겪은 사고와 같은 계열이다(위 `isLinkInk` 주석).
        */
-      if (r.dt) return `<span class="mf-datechip" data-date="${escHtml(r.dt)}">${inner}</span>`;
-      if (r.pg) return `<span class="mf-pagelink" data-page="${escHtml(r.pg)}">${inner}</span>`;
+      else if (r.dt) inner = `<span class="mf-datechip" data-date="${escHtml(r.dt)}">${inner}</span>`;
+      else if (r.pg) inner = `<span class="mf-pagelink" data-page="${escHtml(r.pg)}">${inner}</span>`;
+      /**
+       * 본문 댓글의 형광 — **맨 바깥에서** 감싼다(스펙 6-3).
+       *
+       * 댓글은 링크·코드·칩이 섞인 범위에도 걸 수 있으므로(6-2), 안쪽 요소를
+       * 감싸는 자리에 와야 형광이 그 구간 전체에 한 번에 칠해진다. 값은 스레드
+       * id뿐이다 — 누가 무엇을 썼는지·해결했는지는 댓글 저장소가 든다.
+       */
+      if (r.cm) inner = `<span class="mf-cmark" data-cm="${escHtml(r.cm)}">${inner}</span>`;
       return inner;
     })
     .join('');
@@ -118,6 +126,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     dt: string | null;
     /** 문서 안 페이지 링크(`RichRun.pg`). */
     pg: string | null;
+    cm: string | null;
     /**
      * 이 가지가 **링크의 표시 잔해**인가.
      *
@@ -144,7 +153,8 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
       !!last.k === st.k &&
       (last.hl || null) === (st.hl || null) &&
       (last.dt || null) === (st.dt || null) &&
-      (last.pg || null) === (st.pg || null)
+      (last.pg || null) === (st.pg || null) &&
+      (last.cm || null) === (st.cm || null)
     )
       last.t += t;
     else {
@@ -158,6 +168,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
       if (st.hl) r.hl = st.hl;
       if (st.dt) r.dt = st.dt;
       if (st.pg) r.pg = st.pg;
+      if (st.cm) r.cm = st.cm;
       runs.push(r);
     }
   };
@@ -199,6 +210,9 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (dateAttr) next.dt = dateAttr;
     const pageAttr = el2.getAttribute('data-page');
     if (pageAttr) next.pg = pageAttr;
+    // 본문 댓글의 형광 — 우리가 심은 표식만.
+    const cmAttr = el2.getAttribute('data-cm');
+    if (cmAttr) next.cm = cmAttr;
     if (el2.style) {
       const fw = el2.style.fontWeight;
       if (fw) {
@@ -235,7 +249,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (isBlock && runs.length && runs[runs.length - 1]!.t.slice(-1) !== '\n') push('\n', st);
     el2.childNodes.forEach((child) => walk(child, next));
   };
-  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, linkInk: false }));
+  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null, linkInk: false }));
   if (!keepTrailing) {
     while (runs.length && /^\n+$/.test(runs[runs.length - 1]!.t)) runs.pop();
     if (runs.length) runs[runs.length - 1]!.t = runs[runs.length - 1]!.t.replace(/\n+$/, '');

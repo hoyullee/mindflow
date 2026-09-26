@@ -6,9 +6,9 @@ describe('runsToChars / charsToRuns', () => {
   it('explodes a plain (no rich) source into one unstyled char per character', () => {
     const chars = runsToChars({ text: 'abc' });
     expect(chars).toEqual([
-      { ch: 'a', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
-      { ch: 'b', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
-      { ch: 'c', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
+      { ch: 'a', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null },
+      { ch: 'b', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null },
+      { ch: 'c', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null },
     ]);
   });
 
@@ -19,16 +19,16 @@ describe('runsToChars / charsToRuns', () => {
     ];
     const chars = runsToChars({ text: 'abcd', rich });
     expect(chars).toEqual([
-      { ch: 'a', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
-      { ch: 'b', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
-      { ch: 'c', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
-      { ch: 'd', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null },
+      { ch: 'a', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null },
+      { ch: 'b', b: true, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null },
+      { ch: 'c', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null },
+      { ch: 'd', b: false, c: '#ff0000', i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null },
     ]);
   });
 
   it('an empty `rich` array is treated as absent (falls back to plain text)', () => {
     const chars = runsToChars({ text: 'x', rich: [] });
-    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null }]);
+    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false, href: null, m: null, u: false, k: false, hl: null, dt: null, pg: null, cm: null }]);
   });
 
   it('re-merges adjacent same-style characters back into runs', () => {
@@ -439,12 +439,57 @@ describe('공책의 인라인 칩 — 날짜(dt)와 페이지 링크(pg)', () =>
 
   it('칩이 걸린 구간에는 **자동 링크가 덧걸리지 않는다**', () => {
     // `8.27`처럼 생긴 칩 글자가 주소로 읽히면 칩 하나에 두 뜻이 얹힌다.
-    const src = { text: 'a geurio.com b', rich: [{ t: 'a geurio.com b', b: false, c: null, dt: '2026-08-27' }] };
+    const src = { text: 'a https://geurio.com b', rich: [{ t: 'a https://geurio.com b', b: false, c: null, dt: '2026-08-27' }] };
     expect(applyAutoLinks(src)).toBeNull();
   });
 
   it('`stripRichStyle`로 칩만 걷을 수 있다', () => {
     expect(stripRichStyle([{ t: 'x', b: false, c: null, dt: '2026-08-27' }], 'dt')).toBeNull();
     expect(stripRichStyle([{ t: 'x', b: true, c: null, pg: 'd:p' }], 'pg')).toEqual([{ t: 'x', b: true, c: null }]);
+  });
+});
+
+describe('공책의 본문 댓글 표식(cm) — 서식이 아니라 스레드를 가리킨다', () => {
+  it('구간에 스레드 id를 걸고, 빈 값으로 다시 걷는다', () => {
+    const on = applyPartialStyle({ text: '회의는 화요일' }, 0, 3, 'comment', 'th-1');
+    expect(on.rich).toEqual([
+      { t: '회의는', b: false, c: null, cm: 'th-1' },
+      { t: ' 화요일', b: false, c: null },
+    ]);
+    const off = applyPartialStyle(on, 0, 3, 'comment', '');
+    expect(off.rich).toBeNull();
+  });
+
+  it('**서식 지우기는 댓글을 걷지 않는다** — 걷으면 스레드가 말없이 자리를 잃는다', () => {
+    const src = { text: '회의는', rich: [{ t: '회의는', b: true, c: '#ff0000', cm: 'th-1' }] };
+    const out = applyPartialStyle(src, 0, 3, 'clear');
+    expect(out.rich).toEqual([{ t: '회의는', b: false, c: null, cm: 'th-1' }]);
+  });
+
+  it('같은 스레드는 한 런으로 합쳐지고, 다른 스레드는 갈린다', () => {
+    const chars = runsToChars({
+      text: 'abcd',
+      rich: [
+        { t: 'ab', b: false, c: null, cm: 'th-1' },
+        { t: 'c', b: false, c: null, cm: 'th-1' },
+        { t: 'd', b: false, c: null, cm: 'th-2' },
+      ],
+    });
+    expect(charsToRuns(chars)).toEqual([
+      { t: 'abc', b: false, c: null, cm: 'th-1' },
+      { t: 'd', b: false, c: null, cm: 'th-2' },
+    ]);
+  });
+
+  it('댓글만 걸린 런도 **평문으로 접히지 않는다**(`isStyledRuns`)', () => {
+    const out = applyPartialStyle({ text: 'abc' }, 0, 2, 'comment', 'th-9');
+    expect(out.rich).not.toBeNull();
+    expect(stripRichStyle(out.rich, 'cm')).toBeNull();
+  });
+
+  it('댓글이 걸린 구간 안의 주소도 **자동 링크가 된다**(6-2: 링크가 섞여도 된다)', () => {
+    const src = { text: 'a https://geurio.com b', rich: [{ t: 'a https://geurio.com b', b: false, c: null, cm: 'th-1' }] };
+    const out = applyAutoLinks(src);
+    expect(out?.rich?.find((r) => r.href)).toMatchObject({ t: 'https://geurio.com', href: 'https://geurio.com/', cm: 'th-1' });
   });
 });
