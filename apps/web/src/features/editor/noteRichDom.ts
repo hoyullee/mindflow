@@ -616,3 +616,38 @@ export function applyNoteFormatRange(el: HTMLElement, a: number, b: number, kind
   redrawBox(el, next, a, b);
   return next.rich ?? [{ t: next.text, b: false, c: null }];
 }
+
+/**
+ * 브라우저가 기억하는 **타이핑 스타일**을 지운다 — 줄이 비었을 때 부른다.
+ *
+ * 제보: 빈 줄에 서식을 켜고 글을 친 뒤 그 줄을 통째로 지우면, 툴바 단추는 꺼지는데
+ * **다시 치면 서식이 살아난다**(그래서 끌 방법이 없다). 실측으로 원인이 갈렸다 —
+ * 지운 뒤 DOM은 깨끗한 `<br>`이고(우리 모델도 비었다) 다시 친 글자는 `<b>`로 들어왔다.
+ * 우리 서식은 언제나 `<span style="font-weight:800">`이므로 그 `<b>`는 **크로뮴이
+ * 제 타이핑 스타일로 넣은 것**이다: 선택을 지울 때 그 선택이 가졌던 서식을 "다음에
+ * 칠 글자"에 물려주는 브라우저 기능이고, 우리 모델은 그것을 모른다.
+ *
+ * 그래서 값이 비면 브라우저 쪽 기억도 함께 비운다 — 화면(툴바)과 다음 글자가 같은
+ * 말을 하게. **예약(`armed`)은 건드리지 않는다**: 그건 사용자가 방금 켠 약속이고,
+ * 이 함수는 글을 지운 자리에서만 불린다(예약을 켜는 것은 입력이 아니다).
+ */
+export function resetTypingStyle(el: HTMLElement): void {
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') return;
+  const sel = window.getSelection();
+  if (!sel || !sel.isCollapsed || !sel.focusNode || !el.contains(sel.focusNode)) return;
+  /**
+   * **켜져 있다고 답하는 것만 토글해 끈다.**
+   *
+   * `removeFormat`은 접힌 선택에서 아무 일도 하지 않는다(실측 — 그 판으로는 `<b>`가
+   * 그대로 다시 들어왔다). 반면 `queryCommandState`는 **타이핑 스타일을 읽어** 주고,
+   * 같은 명령을 접힌 선택에 걸면 그 스타일이 뒤집힌다(브라우저의 Ctrl+B가 빈 자리에서
+   * 하는 일이 바로 그것이다). 그래서 읽고 → 켜져 있으면 한 번 더 걸어 끈다.
+   */
+  for (const cmd of ['bold', 'italic', 'underline', 'strikeThrough']) {
+    try {
+      if (document.queryCommandState(cmd)) document.execCommand(cmd);
+    } catch {
+      /* 지원하지 않는 명령 — 나머지는 그대로 이어 간다 */
+    }
+  }
+}

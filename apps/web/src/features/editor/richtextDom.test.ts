@@ -334,3 +334,55 @@ describe('본문 댓글 형광(cm) — 맨 바깥에서 감싸고 그대로 되�
     expect(domToRuns(el).rich).toBeNull();
   });
 });
+
+describe('날짜 칩의 요일 글자(제보 1)', () => {
+  /** 칩 하나를 그린 뒤 그 스팬을 돌려준다. */
+  function chipOf(t: string, dt: string, rich?: Record<string, unknown>) {
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: t, rich: [{ t, b: false, c: null, dt, ...(rich ?? {}) }] });
+    return div.querySelector('.mf-datechip') as HTMLElement;
+  }
+
+  it('요일은 **따로 감싸고** 무슨 요일인지를 `data-dow`로 적는다 — 색은 CSS가 준다', () => {
+    const sun = chipOf('9월 27일 일', '2026-09-27');
+    expect(sun.getAttribute('data-dow')).toBe('0');
+    expect(sun.querySelector('.mf-datechip-dow')?.textContent).toBe('일');
+    const sat = chipOf('9월 26일 토', '2026-09-26');
+    expect(sat.getAttribute('data-dow')).toBe('6');
+    expect(sat.querySelector('.mf-datechip-dow')?.textContent).toBe('토');
+  });
+
+  it('색을 **인라인으로 심지 않는다** — 심으면 `domToRuns`가 그것을 런의 `c`로 되읽어 칩을 떼도 색이 남는다', () => {
+    const html = runsToHtml({ text: '9월 27일 일', rich: [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' }] });
+    expect(html).not.toContain('color:');
+  });
+
+  it('감싸도 **값은 그대로다** — 글자도, 왕복한 런도', () => {
+    const rich = [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' }];
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: '9월 27일 일', rich });
+    expect(div.textContent).toBe('9월 27일 일');
+    expect(domToRuns(div).rich).toEqual(rich);
+  });
+
+  it('요일이 없는 라벨은 그냥 둔다 — `9월 27일`의 끝 `일`은 **날이지 요일이 아니다**', () => {
+    // 끝 글자만 보면 이 날(일요일)의 요일 글자와 똑같다 — 그래서 앞의 공백까지 본다.
+    const plain = chipOf('9월 27일', '2026-09-27');
+    expect(plain.querySelector('.mf-datechip-dow')).toBeNull();
+    expect(plain.textContent).toBe('9월 27일');
+  });
+
+  it('라벨의 요일이 **그 날의 요일이 아니면** 가르지 않는다 — 정본은 `dt`다', () => {
+    // 손으로 고친 라벨(9/27은 일요일인데 `월`이라 적혀 있다) — 엉뚱한 글자를 물들이지 않는다.
+    const wrong = chipOf('9월 27일 월', '2026-09-27');
+    expect(wrong.querySelector('.mf-datechip-dow')).toBeNull();
+    expect(wrong.getAttribute('data-dow')).toBe('0');
+  });
+
+  it('칩 전체에 걸린 서식은 **요일 글자에도** 그대로 걸린다', () => {
+    const bold = chipOf('9월 27일 일', '2026-09-27', { b: true });
+    const dow = bold.querySelector('.mf-datechip-dow') as HTMLElement;
+    expect(dow.querySelector('span')?.getAttribute('style')).toContain('font-weight');
+    expect(bold.textContent).toBe('9월 27일 일');
+  });
+});

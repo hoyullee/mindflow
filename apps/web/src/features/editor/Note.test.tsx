@@ -8342,19 +8342,33 @@ describe('공책 67판 — 날짜 칩 팝오버의 종일·기간·스켈레톤�
     expect(document.querySelector('[data-datepop-empty]')).toBeTruthy();
   });
 
-  it('요일 색이 일정 페이지와 같다 — 일요일은 danger, 토요일은 info, 평일은 본문색(요청 9)', async () => {
+  /**
+   * **날짜는 본문색, 요일만 색**(제보 1의 후속 요청) — 머리 전체를 물들이면 그 날이
+   * 무슨 날인지가 아니라 "이 팝오버가 강조 상태"로 읽힌다. 색의 규칙 자체는 일정
+   * 페이지와 같다(일요일 danger · 토요일 info · 평일 본문색).
+   */
+  const titleInk = () => (document.querySelector('[data-datepop-title]') as HTMLElement).style.color;
+  const dowInk = () => (document.querySelector('[data-datepop-dow-ink]') as HTMLElement).style.color;
+
+  it('요일 글자만 색이다 — 날짜는 본문색 그대로(제보 1)', async () => {
     await hover('dpe', '2026-09-27'); // 일요일
-    expect((document.querySelector('[data-datepop-title]') as HTMLElement).style.color).toBe('var(--mf-danger)');
+    expect(dowInk()).toBe('var(--mf-danger)');
+    expect(titleInk()).not.toBe('var(--mf-danger)');
     cleanup();
 
     await hover('dpf', '2026-09-26'); // 토요일
-    expect((document.querySelector('[data-datepop-title]') as HTMLElement).style.color).toBe('var(--mf-info)');
-    cleanup();
+    expect(dowInk()).toBe('var(--mf-info)');
+    expect(titleInk()).not.toBe('var(--mf-info)');
+  });
 
+  it('요일 글자가 머리에서 **떨어져 나와 있다** — 날짜와 요일이 따로 그려진다', async () => {
     await hover('dpg', '2026-09-24'); // 목요일
-    const weekday = (document.querySelector('[data-datepop-title]') as HTMLElement).style.color;
-    expect(weekday).not.toBe('var(--mf-danger)');
-    expect(weekday).not.toBe('var(--mf-info)');
+    expect(document.querySelector('[data-datepop-title]')?.textContent).toBe('9월 24일 목요일');
+    expect(document.querySelector('[data-datepop-dow-ink]')?.textContent).toBe('목요일');
+    // 평일은 본문색이라 머리와 같은 색이다 — 그래도 자리는 따로다.
+    expect(dowInk()).toBe(titleInk());
+    expect(dowInk()).not.toBe('var(--mf-danger)');
+    expect(dowInk()).not.toBe('var(--mf-info)');
   });
 });
 
@@ -8678,5 +8692,147 @@ describe('공책 72판 — 표 칸의 여백을 두 번 눌러도 커서가 선�
 
     // 그리고 그 칸이 편집 모드로 열린다.
     await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"] [contenteditable="true"]')).toBeTruthy());
+  });
+});
+
+describe('공책 73판 — 칩 팝오버가 **칸반 마감**도 센다(제보 2)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache(); // 보드 캐시도 함께 비운다 — 앞 테스트의 보드가 새어 든다
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const ISO = '2026-09-30';
+
+  /**
+   * 칸반 보드 하나와 그것을 담은 스페이스를 심는다.
+   *
+   * **열이 둘이어야 한다** — 달력은 **마지막 열을 「완료」로 보고** 그 카드를 세지
+   * 않는다(`collectDated`). 열이 하나면 그 하나가 곧 완료 열이라 아무것도 세지
+   * 않는다(프로브에서 먼저 걸린 자리다: 앱이 아니라 심은 값이 틀렸었다).
+   */
+  function seedBoard(cards: unknown[]) {
+    localStorage.setItem(
+      'mindflow_doc_kbb',
+      JSON.stringify({
+        ...NOTE,
+        kind: 'kanban',
+        pages: undefined,
+        columns: [{ id: 'c1', name: '할 일' }, { id: 'c2', name: '완료' }],
+        cards,
+        tags: [],
+      }),
+    );
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [{ id: 's1', name: '업무', home: true, color: '#f0663f', maps: [{ title: '스프린트 보드', when: '방금', hue: '#f0663f', docId: 'kbb' }], folders: [] }],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+  }
+
+  async function hover(id: string) {
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '그날', b: false, c: null, dt: ISO }] }] }] }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const chip = (await waitFor(() => container.querySelector(`[data-date="${ISO}"]`))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+  }
+
+  const rows = () => [...document.querySelectorAll('[data-datepop-entry]')].map((el) => el.textContent || '');
+
+  it('마감이 걸린 카드가 **종일**로 뜬다 — 일정 화면의 첫 번째 원천이 공책에도 온다', async () => {
+    // 제보의 그 둘: 마감 하나(종일)와 기간 하나(3일짜리의 마지막 날).
+    seedBoard([
+      { id: 'k1', col: 'c1', pos: 1, text: '할일이 많앙.. ㅠㅠ', due: ISO },
+      { id: 'k2', col: 'c1', pos: 2, text: '체크리스트 확인용', start: '2026-09-28', due: ISO },
+    ]);
+    await hover('kbn1');
+    await waitFor(() => expect(rows().length).toBe(2));
+    const text = rows().join(' | ');
+    expect(text).toContain('할일이 많앙.. ㅠㅠ');
+    expect(text).toContain('종일');
+    // 기간은 며칠째인지를 시간 자리에 적는다 — 달력의 그 말과 같다.
+    expect(text).toContain('3/3일째');
+    expect(document.querySelector('[data-datepop-count]')?.textContent).toBe('일정 2개');
+  });
+
+  it('그리오 일정·구글 일정과 **한 목록에** 선다 — 세 원천이 같은 자리에서 센다', async () => {
+    seedBoard([{ id: 'k1', col: 'c1', pos: 1, text: '마감 카드', due: ISO }]);
+    localStorage.setItem(
+      'mf_events',
+      JSON.stringify([{ id: 'e1', title: '인수인계 논의', startDate: ISO, endDate: ISO, allDay: false, startTime: '14:00', endTime: '15:00' }]),
+    );
+    await hover('kbn2');
+    await waitFor(() => expect(rows().length).toBe(2));
+    // 종일이 시간 일정보다 위다(67판의 그 규칙 — 원천이 늘어도 정렬은 하나다).
+    expect(rows()[0]).toContain('마감 카드');
+    expect(rows()[1]).toContain('인수인계 논의');
+  });
+
+  it('**완료 열의 카드는 세지 않는다** — 달력과 같은 규칙이다', async () => {
+    seedBoard([{ id: 'k1', col: 'c2', pos: 1, text: '끝난 카드', due: ISO }]);
+    await hover('kbn3');
+    await waitFor(() => expect(document.querySelector('[data-datepop-skel]')).toBeNull());
+    expect(rows()).toEqual([]);
+    expect(document.querySelector('[data-datepop-count]')?.textContent).toBe('일정 0개');
+  });
+});
+
+describe('공책 74판 — 줄이 비면 브라우저의 타이핑 스타일도 비운다(제보 5)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    delete (document as unknown as { execCommand?: unknown }).execCommand;
+    delete (document as unknown as { queryCommandState?: unknown }).queryCommandState;
+  });
+
+  /** 굵게가 **켜져 있다고 답하는** 브라우저 — 지운 선택의 서식을 물려받은 상태다. */
+  function stubCommands(on: Record<string, boolean>) {
+    const exec = vi.fn(() => true);
+    (document as unknown as { execCommand: unknown }).execCommand = exec;
+    (document as unknown as { queryCommandState: unknown }).queryCommandState = (cmd: string) => !!on[cmd];
+    return exec;
+  }
+
+  async function openLine(id: string, runs: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs }] }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+  }
+
+  it('값이 비면 켜져 있던 서식을 **끈다** — 다시 쳐도 되살아나지 않게', async () => {
+    const line = await openLine('ts1', []);
+    const exec = stubCommands({ bold: true });
+    line.focus();
+    setLinearSelection(line, 0, 0);
+    fireEvent.input(line);
+    expect(exec.mock.calls.map((c) => (c as unknown as string[])[0])).toContain('bold');
+  });
+
+  it('글이 **남아 있으면** 건드리지 않는다 — 쓰는 도중의 서식은 사용자의 것이다', async () => {
+    const line = await openLine('ts2', [{ t: '가나다', b: false, c: null }]);
+    const exec = stubCommands({ bold: true });
+    line.focus();
+    setLinearSelection(line, 3, 3);
+    fireEvent.input(line);
+    expect(exec).not.toHaveBeenCalled();
   });
 });

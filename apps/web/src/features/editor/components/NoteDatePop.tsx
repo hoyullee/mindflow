@@ -104,8 +104,14 @@ export function NoteDatePop({
     >
       <div style={{ padding: '12px 14px 8px' }}>
         <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span data-datepop-title data-datepop-dow={dow >= 0 ? String(dow) : undefined} style={{ flex: '0 0 auto', fontSize: 13.5, fontWeight: 800, color: dowInk }}>
-            {at ? `${at.m}월 ${at.d}일 ${DOW_FULL[dow] ?? ''}` : iso}
+          {/* **날짜는 본문색, 요일만 색**(요청) — 머리 전체를 물들이면 그 날이 무슨
+              날인지가 아니라 "이 팝오버가 강조 상태"로 읽힌다. 칩의 요일 글자와 같은
+              규칙이고, 여기서는 공휴일까지 안다(일정과 함께 받아 온다). */}
+          <span data-datepop-title data-datepop-dow={dow >= 0 ? String(dow) : undefined} style={{ flex: '0 0 auto', fontSize: 13.5, fontWeight: 800, color: th.text }}>
+            {at ? `${at.m}월 ${at.d}일 ` : iso}
+            {at && (
+              <span data-datepop-dow-ink style={{ color: dowInk }}>{DOW_FULL[dow] ?? ''}</span>
+            )}
           </span>
           <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 11.5, fontWeight: 700, color: iso === today ? '#e85e33' : th.subtext }}>{relDayLabel(iso, today)}</span>
           {/* 개수는 **다 받은 뒤에만** 말한다 — 받는 중에 「일정 0개」를 보이면 그게

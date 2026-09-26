@@ -25,16 +25,68 @@ import { addDays, compareInDay, entriesOn, gridRange, partsOf, weekEndISO, weekS
 import { useCalendarEvents, type CalendarEventsApi } from '../home/calendar/useCalendarEvents';
 import { googlePrefsOf, useGoogleCalendar, type GoogleCalendarApi, type GoogleCalendarPrefs } from '../home/calendar/useGoogleCalendar';
 import { useSpaceStore } from '../../adapters/BackendContext';
-import type { SpaceStore } from '../../adapters/ports';
+import type { DocStore, ShareStore, SpaceStore } from '../../adapters/ports';
+import { useDocStore, useShareStore } from '../../adapters/BackendContext';
+import { calendarEntries, type CalendarSource } from '../home/calendar/entries';
+import { coerceSpaces } from '../home/storage';
 
 type GooglePrefBlob = { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string } | null;
 
 /** 이 탭이 이미 읽어 둔 구글 설정 — 같은 블롭을 공책마다 다시 받지 않는다. */
 let prefCache: { at: Promise<GooglePrefBlob> } | null = null;
 
+/**
+ * 칸반 마감을 훑기 위해 받아 둔 **보드 본문** — 이 탭이 사는 동안 한 번만 받는다.
+ *
+ * 값이 비싸다(문서 수만큼의 본문 조회). 그래서 ① 일정이 **실제로 필요할 때만**
+ * 부르고(`enabled`) ② 탭 단위로 기억한다. 일정 화면도 같은 값을 프리페치해 쓰므로
+ * (`previewDocs`) 새로운 비용의 종류는 아니다 — 새로운 것은 **공책에서도** 치른다는
+ * 점이다.
+ */
+let boardCache: { at: Promise<{ sources: CalendarSource[]; bodies: Record<string, string> }> } | null = null;
+
 /** 테스트가 탭 캐시를 비운다(`clearGoogleSessionCache`와 같은 자리). */
 export function clearNoteAgendaPrefCache(): void {
   prefCache = null;
+  boardCache = null;
+}
+
+/**
+ * 칸반 **마감·기간**을 훑을 보드와 그 본문 — 일정 화면이 `state.previewDocs`로
+ * 들고 있는 것과 같은 값을 공책 쪽에서 직접 모은다(제보: 공책의 날짜 칩 팝오버에
+ * 종일 일정이 안 뜬다 — 그 둘은 칸반 카드의 마감이었다).
+ *
+ * 내 스페이스의 보드 + **공유받은 보드**를 함께 본다: 일정 화면이 그렇게 세므로
+ * 여기만 빼면 두 화면의 「일정 N개」가 달라진다.
+ */
+function loadBoards(spaceStore: SpaceStore, docStore: DocStore, shareStore: ShareStore) {
+  if (!boardCache) {
+    boardCache = {
+      at: (async () => {
+        const [ws, shared] = await Promise.all([spaceStore.load().catch(() => null), shareStore.listSharedWithMe().catch(() => [])]);
+        const sources: CalendarSource[] = [];
+        for (const sp of coerceSpaces(Array.isArray(ws?.spaces) ? ws.spaces : [])) {
+          if (sp.id === 'drive') continue; // Drive 데모에는 우리 문서가 없다
+          for (const mp of Array.isArray(sp.maps) ? sp.maps : []) {
+            if (mp.docId) sources.push({ docId: mp.docId, boardName: mp.title, spaceName: sp.name });
+          }
+        }
+        for (const sm of shared) {
+          sources.push({ docId: sm.documentId, boardName: '', spaceName: '공유받음', ...(sm.role === 'view' ? { readOnly: true } : {}) });
+        }
+        const bodies: Record<string, string> = {};
+        // 하나가 실패해도 나머지는 그린다 — 빠진 보드의 마감만 빠진다.
+        await Promise.all(
+          sources.map(async (s) => {
+            const raw = await docStore.loadPreview(s.docId).catch(() => null);
+            if (raw) bodies[s.docId] = raw;
+          }),
+        );
+        return { sources, bodies };
+      })(),
+    };
+  }
+  return boardCache.at;
 }
 
 function loadGooglePrefs(store: SpaceStore): Promise<GooglePrefBlob> {
@@ -87,8 +139,12 @@ export interface NoteAgenda {
  */
 export function useNoteAgenda(y: number, m: number, enabled = true): NoteAgenda {
   const spaceStore = useSpaceStore();
+  const docStore = useDocStore();
+  const shareStore = useShareStore();
   const [prefs, setPrefs] = useState<GoogleCalendarPrefs>(() => googlePrefsOf(null));
   const [prefsReady, setPrefsReady] = useState(false);
+  /** 칸반 마감의 원천 — 받아 오기 전에는 `null`("아직 모름")이다. */
+  const [boards, setBoards] = useState<{ sources: CalendarSource[]; bodies: Record<string, string> } | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -103,6 +159,17 @@ export function useNoteAgenda(y: number, m: number, enabled = true): NoteAgenda 
     };
   }, [enabled, spaceStore]);
 
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    void loadBoards(spaceStore, docStore, shareStore).then((got) => {
+      if (alive) setBoards(got);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [enabled, spaceStore, docStore, shareStore]);
+
   const events = useCalendarEvents(y, m, enabled);
   // 설정을 읽기 전에는 **끈 상태로** 돈다 — `enabled: false`인 prefs를 넘기면 훅이
   // 아무것도 부르지 않는다(연동하지 않은 계정과 같은 길).
@@ -112,15 +179,28 @@ export function useNoteAgenda(y: number, m: number, enabled = true): NoteAgenda 
     if (!enabled) return [];
     const evs = eventEntries(events.events, gridRange(y, m));
     const gs = googleEntries(google.events);
-    return [...evs, ...gs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
-  }, [enabled, events.events, google.events, y, m]);
+    // 칸반 카드의 **마감·기간** — 일정 화면의 첫 번째 원천이다(제보: 공책에는 그것이
+    // 빠져 있어 「3/3일째」·종일 항목이 통째로 보이지 않았다).
+    const ks = boards ? calendarEntries(boards.sources, boards.bodies) : [];
+    return [...ks, ...evs, ...gs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
+  }, [enabled, events.events, google.events, boards, y, m]);
 
   const holidays = useMemo(() => holidayMap(google.events), [google.events]);
 
-  // 구글은 **켜져 있을 때만** 기다린다 — 연동하지 않은 계정을 그 훅의 상태 때문에
-  // 영원히 로딩으로 둘 수는 없다(`prefsReady`면 `prefs.enabled`가 답을 안다).
-  const waitingGoogle = !prefsReady || (prefs.enabled && google.loading);
-  return { entries, holidays, loading: enabled && (events.loading || waitingGoogle), events, google };
+  /**
+   * 구글을 기다리는가 — **`loading`이 아니라 `eventsServed`를 본다**(제보: 그리오
+   * 일정이 먼저 뜬 뒤 스켈레톤으로 되돌아갔다가 둘이 함께 뜬다).
+   *
+   * `loading`은 `false`로 시작한다: 조회 효과가 돌기 전 한 프레임이 "다 받았다"로
+   * 읽혀 그리오만 든 목록이 한 번 그려지고, 곧 `loading`이 참이 되며 스켈레톤으로
+   * 되돌아갔다. `eventsServed`는 **그 달이 기억에 들어왔는가**라 그 틈이 없다.
+   *
+   * 설정을 읽기 전(`prefsReady` 전)도 아직 모르는 상태다 — 연동 여부 자체를 모르므로
+   * "연동 안 함"으로 단정하면 안 된다.
+   */
+  const waitingGoogle = !prefsReady || !google.eventsServed;
+  // 칸반도 기다린다 — 세 원천이 다 와야 「일정 N개」가 진실이다.
+  return { entries, holidays, loading: enabled && (events.loading || waitingGoogle || boards === null), events, google };
 }
 
 // ── 일정 블록이 무엇을 보여 주는가(스펙 2-3) ───────────────────────────────
