@@ -40,6 +40,9 @@ export interface NoteLineOut {
   rows?: string[][];
 }
 
+/** 일정 블록이 보여 주던 것 — 내보낸 글에 남기는 이름. */
+const SCHED_LABEL: Record<NonNullable<NoteBlock['sched']>, string> = { today: '오늘 일정', week: '이번 주 일정', month: '달력', next: '다가오는 일정' };
+
 /** 블록 하나를 줄들로 편다. */
 function linesOf(b: NoteBlock): NoteLineOut[] {
   const depth = b.indent ?? 0;
@@ -81,6 +84,13 @@ function linesOf(b: NoteBlock): NoteLineOut[] {
       return one('img', '(이미지)');
     case 'link':
       return one('link', b.docId ? `문서 링크: ${b.docId}` : '문서 링크');
+    case 'sched':
+      /**
+       * 일정 블록은 **그때그때 캘린더에서 읽는 것**이라 문서에 본문이 없다. 내보낸
+       * 글에는 "여기에 무엇이 있었는지"만 한 줄로 남긴다 — 이미지·문서 링크와 같은
+       * 태도다(베껴 적으면 내보낸 순간의 일정이 화석으로 굳는다).
+       */
+      return one('link', `일정 블록: ${SCHED_LABEL[b.sched ?? 'today']}`);
     default:
       return one('p', runsText(b.runs));
   }

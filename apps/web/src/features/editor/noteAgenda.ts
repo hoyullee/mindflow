@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CalendarEntry } from '../home/calendar/entries';
 import { eventEntries, googleEntries, holidayMap } from '../home/calendar/entries';
 import type { HolidayInfo } from '../home/calendar/entries';
-import { gridRange } from '../home/calendar/model';
+import { addDays, compareInDay, entriesOn, gridRange, partsOf, weekEndISO, weekStartISO } from '../home/calendar/model';
 import { useCalendarEvents } from '../home/calendar/useCalendarEvents';
 import { googlePrefsOf, useGoogleCalendar, type GoogleCalendarPrefs } from '../home/calendar/useGoogleCalendar';
 import { useSpaceStore } from '../../adapters/BackendContext';
@@ -97,4 +97,93 @@ export function useNoteAgenda(y: number, m: number, enabled = true): NoteAgenda 
   const holidays = useMemo(() => holidayMap(google.events), [google.events]);
 
   return { entries, holidays, loading: enabled && events.loading };
+}
+
+// ── 일정 블록이 무엇을 보여 주는가(스펙 2-3) ───────────────────────────────
+
+/** 블록이 든 보기 — `NoteBlock.sched`와 같은 네 값. */
+export type SchedKind = 'today' | 'week' | 'month' | 'next';
+
+export const SCHED_KINDS: { key: SchedKind; name: string; desc: string }[] = [
+  { key: 'today', name: '오늘 일정', desc: '오늘 하루의 일정을 시간순으로' },
+  { key: 'week', name: '이번 주 일정', desc: '일요일부터 토요일까지 날짜별로' },
+  { key: 'month', name: '달력', desc: '이번 달 미니 달력 + 고른 날 일정' },
+  { key: 'next', name: '다가오는 일정', desc: '오늘부터 가까운 일정 6개' },
+];
+
+/** 다가오는 보기가 담는 최대 개수(2-3의 "최대 6개"). */
+export const SCHED_NEXT_MAX = 6;
+
+export interface SchedDay {
+  iso: string;
+  entries: CalendarEntry[];
+}
+
+/**
+ * 그 보기가 그리는 **날짜 줄들**(스펙 2-3의 「종류별 포함 규칙」).
+ *
+ * - `today` — 오늘 한 줄. 비어도 그린다(`일정 없음`이 뜬다)
+ * - `week` — 오늘이 속한 주의 일~토. **빈 날은 건너뛰되 오늘은 비어도 남긴다**
+ * - `next` — 오늘부터 앞으로, 일정을 최대 6개까지 담고 날짜별로 묶는다
+ * - `month` — 고른 날 한 줄(달력은 화면이 따로 그린다)
+ *
+ * 한 날짜 안의 정렬은 `entriesOn`이 이미 한다(기간·종일이 위, 그다음 시각순).
+ */
+export function schedDays(kind: SchedKind, entries: readonly CalendarEntry[], today: string, selected?: string): SchedDay[] {
+  if (kind === 'today') return [{ iso: today, entries: entriesOn(entries, today) }];
+  if (kind === 'month') {
+    const iso = selected || today;
+    return [{ iso, entries: entriesOn(entries, iso) }];
+  }
+  if (kind === 'week') {
+    const start = weekStartISO(today);
+    const out: SchedDay[] = [];
+    for (let i = 0; i < 7; i++) {
+      const iso = addDays(start, i);
+      const day = entriesOn(entries, iso);
+      if (day.length || iso === today) out.push({ iso, entries: day });
+    }
+    return out;
+  }
+  // `next` — 앞으로의 일정을 **개수로** 자른다(날짜로가 아니라). 기간 일정은 시작한
+  // 날에 한 번만 센다(그 날 이후로도 덮지만, 목록에 같은 것이 여러 날 뜨면 6개가
+  // 하나의 일정으로 채워진다).
+  const ahead = entries
+    .filter((e) => (e.start ?? e.due) >= today || e.due >= today)
+    .map((e) => ({ e, at: (e.start ?? e.due) >= today ? (e.start ?? e.due) : today }))
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : compareInDay(a.e, b.e)))
+    .slice(0, SCHED_NEXT_MAX);
+  const byDay = new Map<string, CalendarEntry[]>();
+  ahead.forEach(({ e, at }) => byDay.set(at, [...(byDay.get(at) ?? []), e]));
+  return [...byDay.entries()].map(([iso, list]) => ({ iso, entries: list.sort(compareInDay) }));
+}
+
+/** 머리의 제목(2-3의 2). */
+export function schedTitle(kind: SchedKind, today: string): string {
+  if (kind === 'month') {
+    const at = partsOf(today);
+    return at ? `${at.m}월 달력` : '달력';
+  }
+  return kind === 'today' ? '오늘 일정' : kind === 'week' ? '이번 주 일정' : '다가오는 일정';
+}
+
+/** 머리의 부제(2-3의 3) — 무엇을 세었는지까지 밝힌다. */
+export function schedSubtitle(kind: SchedKind, entries: readonly CalendarEntry[], today: string): string {
+  const at = partsOf(today);
+  if (kind === 'today') {
+    const n = entriesOn(entries, today).length;
+    return at ? `${at.m}월 ${at.d}일 · ${n}개` : `${n}개`;
+  }
+  if (kind === 'week') {
+    const a = partsOf(weekStartISO(today));
+    const b = partsOf(weekEndISO(today));
+    const n = schedDays('week', entries, today).reduce((s, d) => s + d.entries.length, 0);
+    return a && b ? `${a.m}.${a.d} – ${b.m}.${b.d} · ${n}개` : `${n}개`;
+  }
+  if (kind === 'month') {
+    const n = at ? entries.filter((e) => e.due.startsWith(`${at.y}-${String(at.m).padStart(2, '0')}`)).length : 0;
+    return at ? `${at.y}년 ${at.m}월 · ${n}개` : `${n}개`;
+  }
+  const n = schedDays('next', entries, today).reduce((s, d) => s + d.entries.length, 0);
+  return `오늘부터 가까운 ${n}개`;
 }

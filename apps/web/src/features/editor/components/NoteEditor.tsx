@@ -44,7 +44,10 @@ import { NoteLine } from './NoteLine';
 import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { useCommentParticipants } from './CommentPanel';
 import { NoteCommentWindow } from './NoteCommentWindow';
+import { NoteSchedBlock } from './NoteSchedBlock';
+import { NoteSchedPicker } from './NoteSchedPicker';
 import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, overlapsComment, threadIdOfNode } from '../noteComment';
+import { SCHED_KINDS } from '../noteAgenda';
 import { toastShellStyle } from '../../../pwa/toastShell';
 import { dateChipLabel } from '../mentionChip';
 import { todayISO } from '../../home/calendar/model';
@@ -98,7 +101,7 @@ interface Props {
  * 치면 「코드 블록」만 나오고, 한 낱말만 코드로 만들고 싶은 사람은 갈 곳이 없었다
  * (툴바의 `<>` 단추를 아는 사람만 썼다). 고르면 그 자리에 **서식을 켜 둔다**.
  */
-type SlashKind = NoteBlockKind | 'inline-code';
+type SlashKind = NoteBlockKind | 'inline-code' | 'date';
 
 /**
  * **인라인 코드**와 **코드 블록**의 아이콘(시안) — 예전에는 둘 다 꺾쇠(`< >`)라
@@ -153,6 +156,9 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   // "다른 문서로 간다"만 말한다. 인라인 링크(주소)와는 **문서 모양**으로 갈린다.
   { kind: 'link', name: '문서 링크', hint: '', desc: '맵 · 보드 · 칸반 · 공책으로', group: '넣기', icon: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" /><path d="M14 3v5h5" /><path d="M10.5 14.5a2.2 2.2 0 0 0 3.2.2l1.3-1.3a2.2 2.2 0 0 0-3.1-3.1l-.6.6" /><path d="M13.5 12.5a2.2 2.2 0 0 0-3.2-.2L9 13.6a2.2 2.2 0 0 0 3.1 3.1l.6-.6" /></>) },
   { kind: 'hr', name: '구분선', hint: '', desc: '섹션 나누기', group: '넣기', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
+  // 일정(스펙 2-1) — 고르면 블록이 바로 서지 않고 **「일정 블록 고르기」 창**이 먼저
+  // 뜬다(그림·문서 링크와 같은 결: 고르지 않으면 자리를 만들지 않는다).
+  { kind: 'sched', name: '일정', hint: '', desc: '오늘 · 이번 주 · 달력 · 다가오는 일정', group: '일정', sepBefore: true, icon: (<><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /><circle cx="12" cy="15" r="1.4" fill="currentColor" stroke="none" /></>) },
 ];
 
 /**
@@ -163,7 +169,16 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
  * 있을 수 없고, 남겨 두면 눌러도 아무 일이 없는 줄이 된다. 인라인 코드는 글을
  * 고른 뒤 툴바의 `` `a` `` 단추로 건다.
  */
-const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [...BLOCK_TYPES];
+const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
+  ...BLOCK_TYPES,
+  /**
+   * **날짜**(스펙 2-1) — 블록이 아니라 **인라인 칩**이다. 고르면 `@` 허브를 날짜만
+   * 보이게 열어(`dateOnly`) 그 자리에 칩을 박는다. 여기 두는 이유는 사람들이 `/`를
+   * "무언가를 넣는 곳"으로 배우기 때문이다 — `@`를 모르는 사람이 날짜를 넣으려고
+   * 처음 여는 자리가 이 목록이다.
+   */
+  { kind: 'date', name: '날짜', hint: '', desc: '@ 로도 넣어요 · 올리면 그날 일정', group: '일정', icon: (<><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /></>) },
+];
 
 /**
  * 잘라내기 — **맵·보드 에디터의 그 가위**다(제보: 다른 에디터와 다르다).
@@ -659,6 +674,11 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    * 하단 가운데(`toastShellStyle`)라 일정 알림·업데이트 알림과 같은 데 뜬다.
    */
   const [toast, setToast] = useState('');
+  /**
+   * 「일정 블록 고르기」가 열려 있는가(스펙 2-2) — 어느 블록 곁에 넣을지와, 그 줄을
+   * **갈아 끼울지**(빈 줄이었다) 함께 든다. 그림·문서 링크와 같은 결이다.
+   */
+  const [schedPick, setSchedPick] = useState<{ at: string; replace: boolean; anchor: { x: number; y: number } | null } | null>(null);
   /** 댓글 창이 부를 수 있는 사람들 — 허브와 **같은 명단**이다(`useCommentParticipants`). */
   const cmParticipants = useCommentParticipants(controller.docId, cmOpen !== null);
   /**
@@ -2720,6 +2740,22 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 onClose={closeMention}
               />
             )}
+            {schedPick && !readOnly && (
+              <NoteSchedPicker
+                anchor={schedPick.anchor}
+                theme={controller.uiTheme}
+                onClose={() => setSchedPick(null)}
+                onPick={(kind) => {
+                  const spot = schedPick;
+                  setSchedPick(null);
+                  if (!spot) return;
+                  // 빈 줄이었으면 **그 줄을 갈고**, 글이 남아 있으면 아래에 새로 만든다.
+                  const id = spot.replace ? controller.retypeNoteLine(spot.at, 'sched') : controller.addNoteBlock('sched', spot.at);
+                  if (id) controller.setNoteBlockSched(id, kind);
+                  setToast(`'${SCHED_KINDS.find((k) => k.key === kind)?.name ?? '일정'}' 블록을 넣었어요 — 캘린더와 실시간으로 이어져요`);
+                }}
+              />
+            )}
             {slashFor && !readOnly && (
               <SlashMenu
                 anchor={slashAt}
@@ -2739,6 +2775,39 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                    * 자리에 **서식을 켜 둔다**. 다음에 치는 글자부터 코드가 된다
                    * (툴바의 `<>` 단추와 같은 길 — `armCaretMark`).
                    */
+                  /**
+                   * **날짜**(스펙 2-1) — 블록이 아니라 인라인 칩이라, `/질의`를 걷고
+                   * 그 자리에서 `@` 허브를 **날짜만** 보이게 연다. 넣는 일은 허브가
+                   * 하므로 여기서는 자리를 만들지 않는다.
+                   */
+                  if (kind === 'date') {
+                    const at = slashAtChar;
+                    const key = slashFor ?? '';
+                    if (at !== null) dropSlashText(page, slashFor, at, slashQuery, controller);
+                    closeSlash();
+                    const go = (): void => {
+                      const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+                      if (!el) return;
+                      el.focus({ preventScroll: true });
+                      openMentionAt(key, at ?? lineLength(el), '', true);
+                    };
+                    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+                    else setTimeout(go, 0);
+                    return;
+                  }
+                  /**
+                   * **일정**(스펙 2-2) — 고르면 블록이 바로 서지 않고 「일정 블록
+                   * 고르기」 창이 먼저 뜬다. 종류를 고른 뒤에 넣는다(그림·문서 링크와
+                   * 같은 결: 고르지 않으면 자리를 만들지 않는다).
+                   */
+                  if (kind === 'sched') {
+                    const restNow = slashSpan ? slashRest(page, slashFor, slashSpan) : noteLineText(page, slashFor);
+                    if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
+                    // 자리는 **닫기 전에** 적어 둔다 — `closeSlash`가 앵커를 지운다.
+                    setSchedPick({ at: blockIdOf(slashFor ?? ''), replace: !restNow.trim(), anchor: slashAt ? { x: slashAt.gx, y: slashAt.gy } : null });
+                    closeSlash();
+                    return;
+                  }
                   if (kind === 'inline-code') {
                     const at = slashAtChar;
                     const key = slashFor ?? '';
@@ -5803,6 +5872,11 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
 
   if (shape === 'img') {
     return <ImageBlock controller={controller} block={block} picked={picked} onlyPicked={onlyPicked} pickObject={pickObject} />;
+  }
+
+  if (shape === 'sched') {
+    // 일정 블록 — 글이 없는 위젯이라 캐럿이 서지 않는다(구분선·그림과 같은 갈래).
+    return <NoteSchedBlock controller={controller} block={block} flow={blockFlow(block)} picked={picked} pickObject={pickObject} />;
   }
 
   if (shape === 'link') {
@@ -9521,7 +9595,7 @@ function SlashMenu({
   const q = query.trim().toLowerCase();
   const hits = SLASH_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
-  const groups = q ? [{ name: '', items: hits }] : ['기본', '목록', '강조', '넣기'].map((name) => ({ name, items: hits.filter((t) => t.group === name) }));
+  const groups = q ? [{ name: '', items: hits }] : ['기본', '목록', '강조', '넣기', '일정'].map((name) => ({ name, items: hits.filter((t) => t.group === name) }));
   const [cursor, setCursor] = useState(0);
   const flat = groups.flatMap((g) => g.items);
   // 목록이 좁혀지면 고른 줄을 처음으로 되돌린다(없는 줄을 가리키지 않게).
