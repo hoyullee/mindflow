@@ -18,7 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armCaretMark, armedCaretAt, armedHasMark, armedMarksOverlay, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { chipAtCaret, chipRange, extendOverChips } from '../noteChip';
@@ -614,6 +614,31 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
           e.preventDefault();
           return;
         }
+      }
+    }
+    /**
+     * **줄 끝의 인라인 코드에서 한 번은 「밖으로」**(제보) — 그다음 누름이 다음 블록이다.
+     *
+     * 코드가 줄의 마지막이면 그 뒤에 캐럿을 둘 글자가 없어, 브라우저는 오른쪽 방향키에
+     * **아무 일도 하지 않는다**(실측: `offset`이 그대로 4였다). 그래서 이어 친 글자가
+     * 코드 안으로 들어가고, 사용자는 그 상자를 빠져나올 길이 없다.
+     *
+     * 캐럿을 옮기는 대신 **「다음 글자는 코드가 아니다」를 예약**한다 — 그것이 이 편집기가
+     * 서식을 미리 정하는 방식이고(`armCaretMark`), 툴바의 코드 불이 곧바로 꺼져 사용자도
+     * 벗어난 것을 본다. 조합 중에는 껍데기가 **코드 밖에** 서므로(`placeAnchor`) 첫
+     * 자모부터 코드가 아니다. 상자 경계가 눈에 보이는 서식은 코드뿐이라 여기서만 한다 —
+     * 굵은 글 끝에서 방향키를 눌렀다고 굵게가 꺼지면 그게 더 놀랍다.
+     */
+    if (plainArrow && e.key === 'ArrowRight' && !composing && !readOnly) {
+      const sel = window.getSelection();
+      const focus = sel?.focusNode ?? null;
+      const host = focus ? (focus.nodeType === 1 ? (focus as HTMLElement) : focus.parentElement) : null;
+      const inCode = !!host?.closest?.('code');
+      // 이미 「코드 끄기」를 예약해 뒀으면 두 번째 누름이다 — 그때는 줄 밖으로 보낸다.
+      const armedOff = armedMarksOverlay(el).k === false;
+      if (sel?.isCollapsed && inCode && !armedOff && caretOffset(el) >= lineLength(el) && armCaretMark(el, 'k')) {
+        e.preventDefault();
+        return;
       }
     }
     if (plainArrow && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && onEdgeOut) {
