@@ -22,8 +22,8 @@ import type { CalendarEntry } from '../home/calendar/entries';
 import { eventEntries, googleEntries, holidayMap } from '../home/calendar/entries';
 import type { HolidayInfo } from '../home/calendar/entries';
 import { addDays, compareInDay, entriesOn, gridRange, partsOf, weekEndISO, weekStartISO } from '../home/calendar/model';
-import { useCalendarEvents } from '../home/calendar/useCalendarEvents';
-import { googlePrefsOf, useGoogleCalendar, type GoogleCalendarPrefs } from '../home/calendar/useGoogleCalendar';
+import { useCalendarEvents, type CalendarEventsApi } from '../home/calendar/useCalendarEvents';
+import { googlePrefsOf, useGoogleCalendar, type GoogleCalendarApi, type GoogleCalendarPrefs } from '../home/calendar/useGoogleCalendar';
 import { useSpaceStore } from '../../adapters/BackendContext';
 import type { SpaceStore } from '../../adapters/ports';
 
@@ -54,8 +54,29 @@ export interface NoteAgenda {
   entries: CalendarEntry[];
   /** 공휴일(구글) — 날짜 색을 큰 달력과 같게 하려면 필요하다. */
   holidays: Record<string, HolidayInfo>;
-  /** 아직 첫 조회가 끝나지 않았는가 — 빈 목록과 "아직 모름"을 가른다. */
+  /**
+   * 아직 **두 원천이 다 오지 않았는가** — 빈 목록과 "아직 모름"을 가른다.
+   *
+   * 구글까지 세는 이유(제보: 칩 팝오버가 깜빡인다): 예전에는 그리오 조회만 봤다.
+   * 그러면 구글이 아직 오는 중인데도 `loading: false`가 되어 화면이 **다 받은 듯한
+   * 목록**을 그리고(「일정 2개」), 곧 구글 것이 끼어들며 개수와 줄이 바뀐다. 구글에
+   * 일정을 몰아 둔 사람에게는 "없다 → 있다"로 보이고, 그 사이에 팝오버를 닫으면
+   * **종일 일정이 아예 없는 것처럼** 읽힌다(그 제보와 같은 뿌리다).
+   *
+   * 설정을 읽는 동안(`prefsReady` 전)도 아직 모르는 상태다 — 연동 여부 자체를
+   * 모르므로 "연동 안 함"으로 단정하면 안 된다.
+   */
   loading: boolean;
+  /**
+   * 두 원천의 **API 자체** — 목록만으로는 할 수 없는 일(상세를 고치고, 새 일정을
+   * 만들고, 지우기)을 공책 안에서 하려면 필요하다(요청 5·6: 일정 페이지의 그 팝업을
+   * 공책에서도).
+   *
+   * 훅을 한 번 더 부르지 않고 **여기서 내보내는** 이유: 조회가 두 벌이 되면 같은 달을
+   * 두 번 받는다. 팝업 host는 팝업이 열렸을 때만 `enabled`로 켠다.
+   */
+  events: CalendarEventsApi;
+  google: GoogleCalendarApi;
 }
 
 /**
@@ -96,7 +117,10 @@ export function useNoteAgenda(y: number, m: number, enabled = true): NoteAgenda 
 
   const holidays = useMemo(() => holidayMap(google.events), [google.events]);
 
-  return { entries, holidays, loading: enabled && events.loading };
+  // 구글은 **켜져 있을 때만** 기다린다 — 연동하지 않은 계정을 그 훅의 상태 때문에
+  // 영원히 로딩으로 둘 수는 없다(`prefsReady`면 `prefs.enabled`가 답을 안다).
+  const waitingGoogle = !prefsReady || (prefs.enabled && google.loading);
+  return { entries, holidays, loading: enabled && (events.loading || waitingGoogle), events, google };
 }
 
 // ── 일정 블록이 무엇을 보여 주는가(스펙 2-3) ───────────────────────────────

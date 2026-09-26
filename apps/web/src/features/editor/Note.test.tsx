@@ -6,13 +6,15 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { NOTE_LIST_MAX_INDENT, NOTE_TAG_COLORS } from '@mindflow/mindmap-core';
-import { linearize, setLinearSelection } from './richtextDom';
+import { linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import { applyNoteFormatRange } from './noteRichDom';
+import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import { clearNoteAgendaPrefCache } from './noteAgenda';
 
 const NOTE = {
   v: 1,
@@ -8243,5 +8245,438 @@ describe('공책 66판 — 멘션 칩 호버 프로필 카드(스펙 4-8)', () =
     fireEvent.pointerOver(c.querySelector('[data-mention-email]')!, { bubbles: true });
     await waitFor(() => expect(document.querySelector('[data-note-profile]')).toBeTruthy());
     expect(document.querySelector('[data-note-datepop]')).toBeNull();
+  });
+});
+
+describe('공책 67판 — 날짜 칩 팝오버의 종일·기간·스켈레톤·요일 색(제보 2·7·9)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache(); // 모듈 캐시라 앞 테스트의 블롭이 새어 들어온다
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  /** 칩 하나만 있는 공책을 열고, 그 칩 위에 포인터를 올려 팝오버를 띄운다. */
+  async function hover(id: string, iso: string, events: unknown[] = []) {
+    localStorage.setItem('mf_events', JSON.stringify(events));
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '그날', b: false, c: null, dt: iso }] }] }] }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const chip = (await waitFor(() => container.querySelector(`[data-date="${iso}"]`))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+    return { container, chip };
+  }
+
+  const rows = () => [...document.querySelectorAll('[data-datepop-entry]')].map((el) => el.textContent || '');
+
+  it('종일 일정도 뜬다 — 시간 자리에 `종일`이 서고, 종일이 시간 일정보다 위다(제보 2)', async () => {
+    await hover('dpa', '2026-09-27', [
+      { id: 'e1', title: '시간 회의', startDate: '2026-09-27', endDate: '2026-09-27', allDay: false, startTime: '09:00', endTime: '10:00' },
+      { id: 'e2', title: '종일 워크숍', startDate: '2026-09-27', endDate: '2026-09-27', allDay: true },
+    ]);
+    await waitFor(() => expect(rows().length).toBe(2));
+    expect(rows()[0]).toContain('종일 워크숍');
+    expect(rows()[0]).toContain('종일');
+    expect(rows()[1]).toContain('시간 회의');
+    expect(document.querySelector('[data-datepop-count]')?.textContent).toBe('일정 2개');
+  });
+
+  it('**그 날에 걸치기만 한 기간 일정**도 뜬다 — 시작·끝이 다른 달이어도(제보 2의 괄호)', async () => {
+    await hover('dpb', '2026-09-27', [
+      { id: 'e3', title: '걸친 출장', startDate: '2026-09-25', endDate: '2026-09-29', allDay: true },
+      { id: 'e4', title: '달을 넘는 프로젝트', startDate: '2026-08-01', endDate: '2026-10-31', allDay: true },
+      { id: 'e5', title: '하루 전에 끝난 일', startDate: '2026-09-20', endDate: '2026-09-26', allDay: true },
+    ]);
+    await waitFor(() => expect(rows().length).toBe(2));
+    const text = rows().join(' | ');
+    expect(text).toContain('걸친 출장');
+    expect(text).toContain('달을 넘는 프로젝트');
+    // 그 날을 덮지 않는 것은 오지 않는다 — 덮는 것만 고른다.
+    expect(text).not.toContain('하루 전에 끝난 일');
+    // 기간은 시간 자리에 **며칠째인지**를 적는다(달력의 그 말과 같다).
+    expect(text).toContain('3/5일째');
+  });
+
+  it('받는 중에는 개수·목록이 **스켈레톤**이다 — 「일정 0개」를 먼저 보이지 않는다(제보 7)', async () => {
+    // **그리오는 다 왔는데 구글 쪽이 아직인** 상태를 만든다 — 이 판이 고친 바로 그 자리다.
+    // (예전에는 그리오 조회만 보고 `loading`을 껐다: 그래서 구글에 일정을 몰아 둔
+    //  사람에게 「일정 0개」가 먼저 뜨고, 곧 목록이 끼어들며 깜빡였다.)
+    // 워크스페이스 블롭을 읽기 전에는 **연동 여부 자체를 모른다** — 그때도 결론을
+    // 말하면 안 된다. 그 조회를 멈춰 세워 그 창을 열어 둔다.
+    clearNoteAgendaPrefCache();
+    const spy = vi.spyOn(LocalSpaceStore.prototype, 'load').mockReturnValue(new Promise(() => {}));
+    localStorage.setItem(
+      'mindflow_doc_dpc',
+      JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '그날', b: false, c: null, dt: '2026-09-27' }] }] }] }),
+    );
+    const { container } = renderEditor('/editor?map=dpc&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const chip = (await waitFor(() => container.querySelector('[data-date="2026-09-27"]'))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+    // **그리오 조회가 끝나기를 기다린다** — 여기가 이 판의 핵심이다. 예전 판은 이
+    // 시점에 `loading`을 꺼 「일정 0개」를 띄웠다(구글은 아직 오는 중인데도).
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 120));
+    });
+
+    expect(document.querySelector('[data-datepop-skel]')).toBeTruthy();
+    expect(document.querySelector('[data-datepop-count-skel]')).toBeTruthy();
+    // 받는 중에 결론을 말하지 않는다 — 개수도, 「일정이 없어요」도.
+    expect(document.querySelector('[data-datepop-count]')).toBeNull();
+    expect(document.querySelector('[data-datepop-empty]')).toBeNull();
+    spy.mockRestore();
+    clearNoteAgendaPrefCache();
+  });
+
+  it('다 받으면 스켈레톤이 걷히고 결론이 선다', async () => {
+    await hover('dpd', '2026-09-27', []);
+    await waitFor(() => expect(document.querySelector('[data-datepop-skel]')).toBeNull());
+    expect(document.querySelector('[data-datepop-count]')?.textContent).toBe('일정 0개');
+    expect(document.querySelector('[data-datepop-empty]')).toBeTruthy();
+  });
+
+  it('요일 색이 일정 페이지와 같다 — 일요일은 danger, 토요일은 info, 평일은 본문색(요청 9)', async () => {
+    await hover('dpe', '2026-09-27'); // 일요일
+    expect((document.querySelector('[data-datepop-title]') as HTMLElement).style.color).toBe('var(--mf-danger)');
+    cleanup();
+
+    await hover('dpf', '2026-09-26'); // 토요일
+    expect((document.querySelector('[data-datepop-title]') as HTMLElement).style.color).toBe('var(--mf-info)');
+    cleanup();
+
+    await hover('dpg', '2026-09-24'); // 목요일
+    const weekday = (document.querySelector('[data-datepop-title]') as HTMLElement).style.color;
+    expect(weekday).not.toBe('var(--mf-danger)');
+    expect(weekday).not.toBe('var(--mf-info)');
+  });
+});
+
+describe('공책 68판 — 칩은 한 덩어리다(제보 1·8)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, runs: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs }] }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    return { container, line };
+  }
+
+  /**
+   * 캐럿을 줄의 값 좌표 `at`에 놓는다 — 칩 경계를 고르는 것이 이 판의 전부다.
+   *
+   * **초점을 먼저 준다**: jsdom에서 `contentEditable`에 `focus()`를 걸면 선택이 맨
+   * 앞으로 되돌아간다(실측 — `setLinearSelection`이 끝에서 `el.focus()`를 부르므로
+   * 순서를 바꾸지 않으면 언제나 0이 된다). 실브라우저는 그러지 않는다.
+   */
+  function caretAt(line: HTMLElement, at: number) {
+    line.focus();
+    setLinearSelection(line, at, at);
+  }
+
+  const CHIP = { t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' };
+
+  it('칩 스팬은 `contenteditable="false"` — 캐럿이 안으로 들어가지 못한다(제보 8)', async () => {
+    const { line } = await open('ch1', [{ t: '회의는 ', b: false, c: null }, CHIP]);
+    const chip = line.querySelector('[data-date]') as HTMLElement;
+    expect(chip.getAttribute('contenteditable')).toBe('false');
+    // 사람 멘션·페이지 링크도 같은 규칙이다 — 셋이 갈리면 그게 다음 제보가 된다.
+    expect(runsToHtml({ text: '', rich: [{ t: '@나', b: false, c: null, m: 'me@example.com' }] })).toContain('contenteditable="false"');
+    expect(runsToHtml({ text: '', rich: [{ t: '다른 장', b: false, c: null, pg: 'p2' }] })).toContain('contenteditable="false"');
+  });
+
+  it('칩 **바로 뒤**에서 Backspace — 칩이 통째로 사라진다(글자 하나가 아니라)', async () => {
+    const { line } = await open('ch2', [{ t: '회의는 ', b: false, c: null }, CHIP]);
+    caretAt(line, '회의는 9월 27일 일'.length);
+    fireEvent.keyDown(line, { key: 'Backspace' });
+
+    await waitFor(() => expect(line.querySelector('[data-date]')).toBeNull());
+    expect(line.textContent).toBe('회의는 ');
+    // 저장은 자동저장이 물어 간다 — 값이 실제로 칩 없이 내려앉았는지까지 본다.
+    await waitFor(
+      () => {
+        const runs = saved('ch2').pages[0].blocks[0].runs as { t: string; dt?: string }[];
+        expect(runs.some((r) => r.dt)).toBe(false);
+        expect(runs.map((r) => r.t).join('')).toBe('회의는 ');
+      },
+      { timeout: 4000 },
+    );
+  });
+
+  it('칩 **바로 앞**에서 Delete — 같은 규칙으로 통째로 사라진다', async () => {
+    const { line } = await open('ch3', [{ t: '회의는 ', b: false, c: null }, CHIP, { t: ' 입니다', b: false, c: null }]);
+    caretAt(line, '회의는 '.length);
+    fireEvent.keyDown(line, { key: 'Delete' });
+
+    await waitFor(() => expect(line.querySelector('[data-date]')).toBeNull());
+    expect(line.textContent).toBe('회의는  입니다');
+  });
+
+  it('칩이 **줄 맨 앞**이어도 같다 — 뒤에서 Backspace 한 번에 사라진다(제보 8)', async () => {
+    const { line } = await open('ch4', [CHIP, { t: ' 회의', b: false, c: null }]);
+    caretAt(line, '9월 27일 일'.length);
+    fireEvent.keyDown(line, { key: 'Backspace' });
+
+    await waitFor(() => expect(line.querySelector('[data-date]')).toBeNull());
+    expect(line.textContent).toBe(' 회의');
+  });
+
+  it('사람 멘션도 한 덩어리로 지워진다 — 칩 셋이 같은 규칙을 쓴다', async () => {
+    const { line } = await open('ch5', [{ t: '담당 ', b: false, c: null }, { t: '@나', b: false, c: null, m: 'me@example.com' }]);
+    caretAt(line, '담당 @나'.length);
+    fireEvent.keyDown(line, { key: 'Backspace' });
+
+    await waitFor(() => expect(line.querySelector('[data-mention-email]')).toBeNull());
+    expect(line.textContent).toBe('담당 ');
+  });
+
+  it('칩이 아닌 **평범한 글자**는 그대로 한 글자씩 — 이 규칙이 본문 전체를 먹지 않는다', async () => {
+    const { line } = await open('ch6', [{ t: '회의는 ', b: false, c: null }, CHIP, { t: '가나', b: false, c: null }]);
+    caretAt(line, '회의는 9월 27일 일가나'.length);
+    const ev = createEvent.keyDown(line, { key: 'Backspace' });
+    fireEvent(line, ev);
+    // 칩 경계가 아니므로 우리가 가로채지 않는다 — 브라우저가 한 글자를 지운다.
+    expect(ev.defaultPrevented).toBe(false);
+    expect(line.querySelector('[data-date]')).toBeTruthy();
+  });
+});
+
+describe('공책 69판 — 원문이 지워진 본문 댓글(제보 4)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  /** 스레드 하나가 걸린 공책. `marked`가 거짓이면 **본문의 형광만** 지운 상태다. */
+  async function open(id: string, marked: boolean) {
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({
+        ...NOTE,
+        pages: [
+          {
+            id: 'p1',
+            title: '장',
+            blocks: [{ id: 'b1', kind: 'p', runs: marked ? [{ t: '고친 문장', b: false, c: null, cm: 't1' }] : [{ t: '고친 문장', b: false, c: null }] }],
+          },
+        ],
+      }),
+    );
+    // 스레드 자체는 살아 있다 — 원문만 사라진 상태를 만드는 것이 이 판이다.
+    localStorage.setItem(
+      'mf_comments',
+      JSON.stringify([{ id: 'c1', documentId: id, nodeId: 'nm:t1', authorName: '나', body: '여기 고쳐 주세요', createdAt: new Date().toISOString() }]),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-note-comments]') ?? container.querySelector('[data-note-tab="댓글"]')!);
+    return container;
+  }
+
+  it('원문이 **살아 있으면** 카드를 눌러 창이 열린다(지금 동작 그대로)', async () => {
+    await open('cm1', true);
+    const card = (await waitFor(() => document.querySelector('[data-cm-card="t1"]'))) as HTMLElement;
+    fireEvent.click(card);
+    await waitFor(() => expect(document.querySelector('[data-note-cm-window]')).toBeTruthy());
+  });
+
+  it('원문이 **지워졌으면** 창을 열지 않는다 — 좌측 상단에 뜨던 그 판(제보 4)', async () => {
+    const c = await open('cm2', false);
+    const card = (await waitFor(() => document.querySelector('[data-cm-card="t1"]'))) as HTMLElement;
+    fireEvent.click(card);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 120));
+    });
+    expect(document.querySelector('[data-note-cm-window]')).toBeNull();
+    // 스레드가 사라지는 것은 아니다 — 카드는 그대로 남아 내용을 보여 준다(6-7).
+    expect(document.querySelector('[data-cm-card="t1"]')).toBeTruthy();
+    expect(document.querySelector('[data-comment-panel]')?.textContent).toContain('여기 고쳐 주세요');
+    void c;
+  });
+});
+
+describe('공책 70판 — 방향키로 칩 옆에 서면 일정 팝오버(요청 3)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const ISO = '2026-09-27';
+
+  async function open(id: string) {
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({
+        ...NOTE,
+        pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '회의는 ', b: false, c: null }, { t: '9월 27일 일', b: false, c: null, dt: ISO }, { t: ' 입니다', b: false, c: null }] }] }],
+      }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    return { container, line };
+  }
+
+  function caretAt(line: HTMLElement, at: number) {
+    line.focus();
+    setLinearSelection(line, at, at);
+  }
+
+  const START = '회의는 '.length;
+  const END = START + '9월 27일 일'.length;
+
+  it('칩 **바로 뒤**에 서면 뜬다 — 마우스를 쓰지 않아도 그날 일정이 보인다', async () => {
+    const { line } = await open('kb1');
+    caretAt(line, END);
+    fireEvent.keyUp(line, { key: 'ArrowLeft', bubbles: true });
+    await waitFor(() => expect(document.querySelector(`[data-note-datepop="${ISO}"]`)).toBeTruthy());
+  });
+
+  it('칩 **바로 앞**에 서도 뜬다', async () => {
+    const { line } = await open('kb2');
+    caretAt(line, START);
+    fireEvent.keyUp(line, { key: 'ArrowRight', bubbles: true });
+    await waitFor(() => expect(document.querySelector(`[data-note-datepop="${ISO}"]`)).toBeTruthy());
+  });
+
+  it('칩을 **지나치면 닫힌다** — 키보드로 연 것은 키보드로 닫힌다', async () => {
+    const { line } = await open('kb3');
+    caretAt(line, END);
+    fireEvent.keyUp(line, { key: 'ArrowLeft', bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+
+    caretAt(line, END + 3); // ` 입니다` 한복판 — 칩에 붙어 있지 않다
+    fireEvent.keyUp(line, { key: 'ArrowRight', bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeNull());
+  });
+
+  it('**글을 치는 동안은 끼어들지 않는다** — 방향키·Home·End에서만 본다', async () => {
+    const { line } = await open('kb4');
+    caretAt(line, END);
+    fireEvent.keyUp(line, { key: 'ㄱ', bubbles: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 160));
+    });
+    expect(document.querySelector('[data-note-datepop]')).toBeNull();
+  });
+});
+
+describe('공책 71판 — 칩 팝오버에서 여는 일정 팝업(요청 5·6)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const ISO = '2026-09-27';
+
+  async function hover(id: string, events: unknown[] = []) {
+    localStorage.setItem('mf_events', JSON.stringify(events));
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '그날', b: false, c: null, dt: ISO }] }] }] }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const chip = (await waitFor(() => container.querySelector(`[data-date="${ISO}"]`))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+    return container;
+  }
+
+  it('일정을 고르면 **공책 안에서** 상세가 열린다 — 일정 화면으로 건너가지 않는다(요청 5)', async () => {
+    await hover('ev1', [{ id: 'e1', title: '분기 회고', startDate: ISO, endDate: ISO, allDay: false, startTime: '14:00', endTime: '15:00' }]);
+    // 스켈레톤이 걷히고 줄이 설 때까지 기다린다(67판에서 들인 그 대기).
+    await waitFor(() => expect(document.querySelector('[data-datepop-entry="e1"]')).toBeTruthy());
+    const row = document.querySelector('[data-datepop-entry="e1"]') as HTMLElement;
+    fireEvent.click(row);
+
+    // 일정 화면의 그 상세가 떴다 — 제목은 **입력 칸의 값**이라 textContent에는 없다.
+    await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+    const detail = document.querySelector('[data-event-detail]') as HTMLElement;
+    await waitFor(() => expect([...detail.querySelectorAll('input')].some((i) => i.value === '분기 회고')).toBe(true));
+    // 일정 화면(`/home`)으로 건너가지 않았다 — 공책이 그대로 떠 있다.
+    expect(document.body.textContent).not.toContain('HOME_PAGE');
+    expect(document.querySelector('[data-note-editor]')).toBeTruthy();
+    // 팝오버는 제 몫을 다했으므로 닫힌다.
+    expect(document.querySelector('[data-note-datepop]')).toBeNull();
+  });
+
+  it('「이 날에 일정 추가」는 **새 일정 만들기** 팝업을 연다(요청 6)', async () => {
+    await hover('ev2');
+    const add = (await waitFor(() => document.querySelector('[data-datepop-new]'))) as HTMLElement;
+    fireEvent.click(add);
+
+    await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeTruthy());
+    expect(document.body.textContent).not.toContain('HOME_PAGE');
+    expect(document.querySelector('[data-note-editor]')).toBeTruthy();
+  });
+});
+
+describe('공책 72판 — 표 칸의 여백을 두 번 눌러도 커서가 선다(제보 10)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string) {
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'table', rows: [[[{ t: '가', b: false, c: null }], [{ t: '나', b: false, c: null }]]] }] }] }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  it('칸을 고른 뒤 **두 번째 누름은 기본 동작을 막는다** — 브라우저가 초점을 가져가지 못하게', async () => {
+    const c = await open('td1');
+    const cell = (await waitFor(() => c.querySelector('[data-note-table-cell="0:0"]'))) as HTMLElement;
+
+    // 첫 누름 = 칸 고르기.
+    fireEvent.mouseDown(cell, { button: 0, detail: 1, clientX: 40, clientY: 40 });
+    await waitFor(() => expect(cell.getAttribute('data-picked')).toBe('1'));
+
+    /**
+     * 두 번째 누름 = 편집 열기. **`preventDefault`가 걸려야 한다** — 이것이 없으면
+     * 브라우저가 그 자리에서 제 선택을 시작하고, 누른 자리가 칸의 여백이면 선택이
+     * 편집할 수 없는 `<td>`에 떨어져 초점을 가져간다(실브라우저 실측: 여백에서
+     * 초점·캐럿 둘 다 없었고, 이 한 줄로 둘 다 돌아왔다).
+     */
+    const ev = createEvent.mouseDown(cell, { button: 0, detail: 2, clientX: 40, clientY: 40 });
+    fireEvent(cell, ev);
+    expect(ev.defaultPrevented).toBe(true);
+
+    // 그리고 그 칸이 편집 모드로 열린다.
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"] [contenteditable="true"]')).toBeTruthy());
   });
 });

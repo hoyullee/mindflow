@@ -47,9 +47,11 @@ import { NoteCommentWindow } from './NoteCommentWindow';
 import { NoteSchedBlock } from './NoteSchedBlock';
 import { NoteSchedPicker } from './NoteSchedPicker';
 import { NoteDatePop } from './NoteDatePop';
+import { NoteEventPopups, type NoteEventOpen } from './NoteEventPopups';
 import { NoteProfileCard, seedNoteComment } from './NoteProfileCard';
 import type { ShareParticipant } from '../../../adapters/ports';
-import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, overlapsComment, threadIdOfNode } from '../noteComment';
+import { chipAtCaret } from '../noteChip';
+import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, openNoteComment, overlapsComment, threadIdOfNode } from '../noteComment';
 import { SCHED_KINDS, useNoteAgenda } from '../noteAgenda';
 import { toastShellStyle } from '../../../pwa/toastShell';
 import { dateChipLabel } from '../mentionChip';
@@ -685,6 +687,8 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    * 옮기는 그 몇 프레임에 닫혀 버리면 목록을 훑을 수 없다.
    */
   const [datePop, setDatePop] = useState<{ iso: string; rect: { left: number; top: number; bottom: number } } | null>(null);
+  /** 날짜 칩 팝오버에서 연 **일정 팝업**(요청 5·6) — 상세이거나 새로 만들기다. */
+  const [eventOpen, setEventOpen] = useState<NoteEventOpen | null>(null);
   /** 허브가 개수를 물어볼 달 — 오늘의 달이다(허브는 가까운 날을 고르는 자리다). */
   const hubYm = useMemo(() => {
     const p = partsOf(todayISO());
@@ -2303,6 +2307,48 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   }, [pageId]);
 
   /**
+   * **방향키로 캐럿을 옮겼을 때도 같은 팝오버**(요청) — 캐럿 앞이나 뒤에 날짜 칩이
+   * 붙어 있으면 호버와 똑같이 그날 일정을 띄운다.
+   *
+   * 마우스를 쓰지 않는 사람에게 이 정보가 닿는 유일한 길이다. 칩은 한 덩어리라
+   * (`noteChip`) 캐럿은 그 앞이나 뒤에만 설 수 있고, 그래서 "붙어 있다"가 곧
+   * "그 칩을 지나고 있다"다.
+   *
+   * **`keyup`에서 읽는다**: `keydown` 시점에는 브라우저가 아직 캐럿을 옮기지 않았다.
+   * 그리고 **방향키·Home·End에서만** 본다 — 글을 치는 동안 팝오버가 끼어들면 그게
+   * 다음 제보가 된다(글자를 지우다 칩 옆에 닿을 때마다 뜬다).
+   */
+  useEffect(() => {
+    const col = colRef.current;
+    if (!col) return;
+    const MOVERS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']);
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (!MOVERS.has(e.key)) return;
+      const sel = window.getSelection();
+      const line = (sel?.focusNode && (sel.focusNode.nodeType === 1 ? (sel.focusNode as HTMLElement) : sel.focusNode.parentElement)?.closest?.('[data-note-line]')) as HTMLElement | null;
+      if (!sel?.isCollapsed || !line || !col.contains(line)) {
+        setDatePop(null);
+        return;
+      }
+      const at = charOffset(line, sel.focusNode!, sel.focusOffset);
+      const chip = chipAtCaret(line, at, -1) ?? chipAtCaret(line, at, 1);
+      const iso = chip?.getAttribute('data-date') || '';
+      if (!iso) {
+        // 칩을 지나쳤다 — 키보드로 연 팝오버는 키보드로 닫힌다.
+        setDatePop(null);
+        return;
+      }
+      if (datePopTimer.current !== null) window.clearTimeout(datePopTimer.current);
+      datePopTimer.current = null;
+      const r = chip!.getBoundingClientRect();
+      setProfilePop(null);
+      setDatePop({ iso, rect: { left: r.left, top: r.top, bottom: r.bottom } });
+    };
+    col.addEventListener('keyup', onKeyUp);
+    return () => col.removeEventListener('keyup', onKeyUp);
+  }, [pageId]);
+
+  /**
    * 패널의 스레드 카드를 누르면 **본문의 그 형광으로**(6-6) — 스크롤 영역 높이의
    * 1/3 지점에 오도록 부드럽게 옮기고, 그 스레드를 연다.
    *
@@ -2312,8 +2358,29 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     const onOpen = (e: Event): void => {
       const id = (e as CustomEvent<string>).detail;
       if (!id) return;
+      /**
+       * **본문에 원문이 남아 있을 때만 창을 연다**(제보: 원문을 지운 댓글을 패널에서
+       * 고르면 화면 좌측 상단에 창이 뜬다).
+       *
+       * 창은 형광에 **붙어서** 서는 물건이다(`markRect`). 붙을 곳이 없으면 자리를
+       * 못 잡아 초기값인 (0,0) 언저리에 떠 버리는데, 그건 토스트처럼 보일 뿐 아무
+       * 것도 가리키지 않는다. 스레드 자체는 우측 패널 카드가 이미 온전히 보여 주므로
+       * 여기서 여는 것을 접어도 잃는 것이 없다.
+       *
+       * 판단은 **DOM이 아니라 값**으로 한다: 다른 페이지에 걸린 스레드는 DOM에 없을
+       * 뿐 살아 있다 — 그때는 그 페이지로 먼저 건너간다(DOM으로 가르면 그 경우까지
+       * "원문이 없다"로 잘못 읽는다).
+       */
+      const site = noteCommentSites(controller.doc.pages).find((x) => x.id === id) ?? null;
+      if (!site) return;
+      if (site.pageId && site.pageId !== pageId) {
+        // 그 페이지로 건너간 다음 프레임에 다시 시도한다 — 지금은 그릴 DOM이 없다.
+        controller.setNotePageId(site.pageId);
+        window.requestAnimationFrame(() => openNoteComment(id));
+        return;
+      }
       const mark = [...document.querySelectorAll<HTMLElement>('[data-cm]')].find((el) => el.getAttribute('data-cm') === id) ?? null;
-      const key = (mark?.closest?.('[data-note-line]') as HTMLElement | null)?.getAttribute('data-note-line') ?? '';
+      const key = (mark?.closest?.('[data-note-line]') as HTMLElement | null)?.getAttribute('data-note-line') ?? site.lineKey;
       setCmOpen({ id, lineKey: key, fresh: false });
       const scroller = pageRef.current;
       // jsdom에는 `scrollTo`가 없다 — 없으면 자리는 그대로 두고 여는 것만 한다.
@@ -2323,7 +2390,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     };
     document.addEventListener(NOTE_CM_OPEN_EVENT, onOpen);
     return () => document.removeEventListener(NOTE_CM_OPEN_EVENT, onOpen);
-  }, []);
+  }, [controller, pageId]);
 
   /**
    * 열려 있는 스레드의 형광을 **밝힌다**(6-3의 활성 상태). 본문은 비제어 DOM이라
@@ -2802,8 +2869,10 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   datePopTimer.current = window.setTimeout(() => setDatePop(null), 180);
                 }}
                 onClose={() => setDatePop(null)}
+                onOpenEvent={setEventOpen}
               />
             )}
+            {eventOpen && <NoteEventPopups open={eventOpen} isMobile={mobile} onClose={() => setEventOpen(null)} />}
             {profilePop && (
               <NoteProfileCard
                 email={profilePop.email}
@@ -7945,6 +8014,21 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                            * 옮겨 누른 경우) 엉뚱한 칸이 열린다.
                            */
                           if (e.detail >= 2 && sel?.mode === 'cell' && sel.r === ri && sel.c === ci) {
+                            /**
+                             * **기본 동작을 막는다**(제보: 칸의 위/아래 여백을 두 번 누르면
+                             * 커서가 활성화되지 않는다).
+                             *
+                             * 막지 않으면 브라우저가 이 자리에서 **제 선택을 시작한다**.
+                             * 누른 자리가 글줄 위면 그 선택이 편집 박스 안이라 초점이 그대로
+                             * 남지만, `<td>`의 여백이면 선택이 편집할 수 없는 칸에 떨어져
+                             * **초점을 그리로 가져간다** — 우리가 곧바로 준 초점과 캐럿이
+                             * 그 뒤에 덮인다(실측: 여백에서 `focused:false`·캐럿 없음,
+                             * 글줄 위에서는 둘 다 정상).
+                             *
+                             * 터치는 예외다 — 합성 mousedown을 막으면 포커스 흐름이 달라진다
+                             * (아래 첫 누름의 같은 판단과 한 벌이다).
+                             */
+                            if (!touch) e.preventDefault();
                             openEdit(ri, ci, { x: e.clientX, y: e.clientY });
                             return;
                           }
