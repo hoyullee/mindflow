@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { applyHolidayMarks, chipAtCaret, chipRange, extendOverChips } from './noteChip';
 import { runsToHtml, setLinearSelection } from './richtextDom';
+import { noteMarksIn } from './noteRichDom';
 import { charOffset } from './noteTextSelect';
 
 /**
@@ -202,5 +203,54 @@ describe('공휴일이면 요일이 붉다(제보 2)', () => {
     // 요일 스팬은 그대로이고(색은 CSS가 준다), 인라인 색이 심기지 않았다.
     expect(el.querySelector('[data-date="2026-09-26"] .mf-datechip-dow')?.textContent).toBe('토');
     expect(el.innerHTML).not.toContain('color:');
+  });
+});
+
+describe('툴바가 읽는 색·형광(제보 1)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 값을 그려 둔 줄 — `noteMarksIn`은 DOM이 아니라 **그 값**을 읽는다. */
+  function line(rich: Record<string, unknown>[]): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.innerHTML = runsToHtml({ text: '', rich: rich as never });
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it('구간이 **같은 색일 때만** 그 색이다 — 섞였으면 말하지 않는다', () => {
+    const el = line([{ t: '빨강', b: false, c: '#d92626' }, { t: '파랑', b: false, c: '#2266dd' }]);
+    expect(noteMarksIn(el, 0, 2).c).toBe('#d92626');
+    expect(noteMarksIn(el, 0, 4).c).toBeNull(); // 두 색이 섞였다
+  });
+
+  it('형광도 같은 규칙이다', () => {
+    const el = line([{ t: '노랑', b: false, c: null, hl: 'yellow' }, { t: '민', b: false, c: null, hl: 'mint' }]);
+    expect(noteMarksIn(el, 0, 2).hl).toBe('yellow');
+    expect(noteMarksIn(el, 0, 3).hl).toBeNull();
+  });
+
+  it('**접힌 캐럿은 앞 글자를 본다** — 경계에서 어느 쪽 색인지 말할 수 있게', () => {
+    const el = line([{ t: '빨강', b: false, c: '#d92626' }, { t: '평문', b: false, c: null }]);
+    // 빨강 한복판·끝 → 빨강. 이어 치면 그 색을 물려받는 자리다.
+    expect(noteMarksIn(el, 1, 1).c).toBe('#d92626');
+    expect(noteMarksIn(el, 2, 2).c).toBe('#d92626');
+    // 평문 한복판 → 색 없음.
+    expect(noteMarksIn(el, 3, 3).c).toBeNull();
+  });
+
+  it('줄 맨 앞에서는 **뒤 글자**를 본다 — 앞이 없으므로', () => {
+    const el = line([{ t: '빨강', b: false, c: '#d92626' }]);
+    expect(noteMarksIn(el, 0, 0).c).toBe('#d92626');
+  });
+
+  it('색이 없으면 `null`이다 — 켜짐(`b`)과 달리 거짓이 아니다', () => {
+    const el = line([{ t: '평문', b: false, c: null }]);
+    const m = noteMarksIn(el, 0, 2);
+    expect(m.c).toBeNull();
+    expect(m.hl).toBeNull();
+    expect(m.b).toBe(false);
   });
 });

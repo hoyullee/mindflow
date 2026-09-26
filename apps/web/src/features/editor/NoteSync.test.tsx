@@ -261,6 +261,36 @@ describe('공책 — 서버 판을 다시 읽어 따라잡는다', () => {
     expect(container.querySelector('[data-note-line="b1"]')?.textContent).toBe('아직 못 올린 내 글');
   });
 
+  it('**글을 쓰고 있는 중이면 갈아 끼우지 않는다** — 돌아올 때마다 깜빡이고 커서가 풀렸다(제보)', async () => {
+    const docId = `note-typing-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(noteDoc('처음')));
+    const { backend, serverSaves } = makeBackend(noteDoc('처음'));
+    const { container } = renderEditor(backend, docId);
+    const line = await settled(container);
+
+    /**
+     * 저장까지 **끝난** 상태에서 커서만 본문에 둔다 — 위의 두 방어(못 올린 편집이
+     * 있는가 · 보낼 것이 남았는가)는 여기서 전부 통과한다. 그런데도 갈아 끼우면
+     * 편집 박스가 다시 그려져 초점과 캐럿이 사라진다(제보의 그 자리).
+     */
+    line.focus();
+    // jsdom에서도 `contentEditable` 박스는 초점을 받는다 — 그 상태가 이 판의 전제다.
+    expect(document.activeElement?.closest('[contenteditable="true"]')).toBeTruthy();
+
+    serverSaves(noteDoc('다른 기기에서 쓴 글'));
+    focusWindow();
+    await new Promise((r) => setTimeout(r, 500));
+
+    // 화면은 그대로다 — 미룬 것이지 버린 것이 아니다(초점도 편집 박스에 남아 있다).
+    expect(container.querySelector('[data-note-line="b1"]')?.textContent).toBe('처음');
+    expect(document.activeElement?.closest('[contenteditable="true"]')).toBeTruthy();
+
+    // **초점을 놓으면 그때 받는다** — 다음 계기까지 미뤘을 뿐이다.
+    (document.activeElement as HTMLElement | null)?.blur();
+    focusWindow();
+    await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')?.textContent).toBe('다른 기기에서 쓴 글'), { timeout: 4000 });
+  });
+
   it('**상대가 저장했다는 신호**만으로도 따라잡는다 — 창을 옮기지 않아도(나란히 놓고 쓸 때)', async () => {
     const docId = `note-nudge-${Math.random()}`;
     localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(noteDoc('처음')));

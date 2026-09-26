@@ -3193,7 +3193,27 @@ export function useEditorState(): EditorController {
    */
   useEffect(() => {
     if (hydrating || readOnly || bodyMissing || loadError) return;
+    /**
+     * **글을 쓰고 있는 중이면 미룬다**(제보: 다른 앱을 쓰다 돌아오면 문서를 다시
+     * 불러오느라 깜빡이고 커서가 풀린다).
+     *
+     * `refreshFromServer`의 방어 둘(못 올린 편집이 있는가 · 보낼 것이 남았는가)은
+     * 저장이 막 끝난 상태에서 **모두 통과한다** — 그런데 그 순간에도 사람은 그 줄에
+     * 커서를 두고 있을 수 있고, 갈아 끼우면 편집 박스가 다시 그려져(`docEpoch`) 초점과
+     * 캐럿이 사라진다.
+     *
+     * **이 가드는 「창이 돌아왔다」에만 건다** — 상대가 저장했다는 awareness 신호는
+     * "새 내용이 실제로 있다"는 뜻이라 그쪽까지 막으면 나란히 놓고 쓰는 협업이 멈춘다
+     * (그 경로의 기존 테스트가 이 자리를 잡아 줬다). 창 복귀는 신호가 아니라 **계기**일
+     * 뿐이므로, 쓰고 있으면 다음 계기까지 미뤄도 잃는 것이 없다.
+     *
+     * 판단은 **속성으로** 한다 — `isContentEditable`은 jsdom이 구현하지 않아(실측:
+     * `undefined`) 그 값으로 가르면 테스트에서는 가드가 통째로 죽는다.
+     */
+    const typing = (): boolean =>
+      typeof document !== 'undefined' && !!(document.activeElement as HTMLElement | null)?.closest?.('[contenteditable="true"]');
     const wake = (): void => {
+      if (typing()) return;
       void refreshFromServerRef.current();
     };
     const onVisible = (): void => {

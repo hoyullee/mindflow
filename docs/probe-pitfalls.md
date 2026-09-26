@@ -42,6 +42,7 @@
 | `setLinearSelection`으로 놓은 캐럿이 늘 0이다 | jsdom의 `focus()`가 선택을 맨 앞으로 되돌린다 | [F26](#f26) |
 | 새 기능이 0건을 돌려준다(코드는 맞아 보인다) | 심은 시드가 **앱의 규칙에 걸려** 걸러졌다 | [F27](#f27) |
 | 가드를 깨뜨렸는데 테스트가 통과한다 | 함수만 재고 **부르는 자리**를 안 지킨다 | [F28](#f28) |
+| 브라우저 API로 쓴 가드가 jsdom에서 안 걸린다 | `isContentEditable`·`execCommand`는 jsdom에 없다 | [F29](#f29) |
 | 폭 비교가 3px 어긋난다 | 기울어진 요소는 bounding box가 부푼다 | [D3](#d3) |
 | 서식을 걸었더니 글이 밀렸다고 나온다 | `Range` 사각형은 인라인 스팬의 **padding까지** 센다 | [D5](#d5) |
 | 클릭이 엉뚱한 것을 잡는다 | 그 자리에 칩·시트가 먼저 있다 | [D4](#d4) |
@@ -686,6 +687,19 @@ MouseEvent('contextmenu', { cancelable: true }))`) 그 `defaultPrevented`와 메
 **초점을 먼저 주고 그다음에 선택을 놓으세요**(`line.focus(); setLinearSelection(...)`).
 순서를 바꾸지 않으면 "캐럿을 어디에 놓든 0"이라, 경계에서 갈리는 규칙(칩 앞/뒤, 줄 끝)을
 재는 테스트가 **전부 같은 자리를 재게** 됩니다 — 통과해도 아무것도 지키지 못합니다.
+
+<a id="f29"></a>
+### F29. jsdom에는 `isContentEditable`이 **없다**
+
+"지금 글을 쓰고 있는가"를 `document.activeElement.isContentEditable`로 가르는 방어를
+넣고 테스트를 세웠더니 곧바로 깨졌습니다 — 그 값이 `undefined`였습니다. jsdom이 그
+프로퍼티를 구현하지 않기 때문입니다. 실브라우저에서는 동작하므로 **손으로 확인했다면
+통과로 보였을 것이고, 테스트에서는 가드가 통째로 죽어 있었을** 것입니다.
+
+**속성으로 보세요** — `closest('[contenteditable="true"]')`는 양쪽에서 같습니다. 같은
+계열로 조심할 것들: `HTMLElement.innerText`(jsdom은 `textContent`와 다르게 동작하지
+않습니다), `Selection.modify`([F27 옆의 칩 이야기](#f27)), `execCommand`·
+`queryCommandValue`(아예 없습니다 — 쓰는 코드는 없을 때를 견뎌야 합니다).
 
 <a id="f28"></a>
 ### F28. 함수만 재는 단위 테스트는 **배선을 지키지 않는다**
