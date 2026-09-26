@@ -3230,7 +3230,18 @@ function BookTile({ cover, size }: { cover: string; size: 'sm' | 'md' }) {
  * "배경 패턴"). 문서 칩은 이 알약이 대신한다 — 지름·모서리·그림자가 전부 다르고,
  * 캔버스용 칩을 억지로 맞추는 것보다 여기서 그리는 편이 정확하다.
  */
-export function NoteTopBar({ controller, pagesOpen = false, onTogglePages }: { controller: EditorController; pagesOpen?: boolean; onTogglePages?: () => void }) {
+export function NoteTopBar({
+  controller,
+  pagesOpen = false,
+  onTogglePages,
+  agenda,
+}: {
+  controller: EditorController;
+  pagesOpen?: boolean;
+  onTogglePages?: () => void;
+  /** 우측 「일정」 탭(스펙 5절) — 상태는 에디터 레이아웃이 든다(패널도 거기 선다). */
+  agenda?: { on: boolean; toggle: () => void };
+}) {
   const mobile = useIsMobile();
   const page = controller.notePage;
   const space = controller.noteSpaceName;
@@ -3238,7 +3249,9 @@ export function NoteTopBar({ controller, pagesOpen = false, onTogglePages }: { c
   const saving = controller.saveState;
   const saveLabel = readOnly ? '보기 전용' : saving === 'saved' ? '저장됨' : saving === 'saving' ? '저장 중…' : saving === 'unsaved' ? '저장 전' : '변경됨';
   const cover = noteCoverColor(controller.doc.cover);
+  // 순서는 스펙 5절이 정했다 — `일정 · 댓글 · 기록`. 같은 탭을 다시 누르면 닫힌다.
   const tabs: { name: string; on: boolean; onPick: () => void }[] = [
+    ...(agenda ? [{ name: '일정', on: agenda.on, onPick: agenda.toggle }] : []),
     { name: '댓글', on: controller.commentsOpen, onPick: () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) },
     { name: '기록', on: controller.historyOpen, onPick: () => controller.setHistoryOpen(!controller.historyOpen) },
   ];

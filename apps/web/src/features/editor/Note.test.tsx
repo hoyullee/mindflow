@@ -7955,3 +7955,63 @@ describe('공책 62판 — 우측 열의 「본문 댓글 → 페이지 댓글�
     expect(c.querySelector('[data-cm="th-7"]')).toBeTruthy();
   });
 });
+
+describe('공책 63판 — 우측 「일정」 탭(스펙 5절)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify(NOTE));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  const tab = (c: HTMLElement, name: string): HTMLElement =>
+    [...c.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.trim() === name)!;
+
+  it('탭 순서는 **일정 · 댓글 · 기록**이고, 일정을 누르면 열린다', async () => {
+    const c = await open('ag1');
+    const names = [...c.querySelectorAll<HTMLElement>('[data-note-topbar] button')].map((b) => b.textContent?.trim()).filter((t) => t === '일정' || t === '댓글' || t === '기록');
+    expect(names).toEqual(['일정', '댓글', '기록']);
+
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    // 일정 화면과 **같은 부품**이라 그 사이드가 그대로 선다.
+    expect(c.querySelector('[data-note-agenda] [data-cal-side]')).toBeTruthy();
+  });
+
+  it('같은 탭을 다시 누르면 닫힌다', async () => {
+    const c = await open('ag2');
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeNull());
+  });
+
+  it('고른 날을 **기억한다** — 탭을 접었다 펴도 그날이다', async () => {
+    const c = await open('ag3');
+    fireEvent.click(tab(c, '일정'));
+    const cell = (await waitFor(() => c.querySelector('[data-note-agenda] [data-mini-day]'))) as HTMLElement;
+    const iso = cell.getAttribute('data-mini-day')!;
+    fireEvent.click(cell);
+    await waitFor(() => expect(localStorage.getItem('mf_note_agenda_day')).toBe(iso));
+
+    fireEvent.click(tab(c, '일정'));
+    fireEvent.click(tab(c, '일정'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    expect(localStorage.getItem('mf_note_agenda_day')).toBe(iso);
+  });
+
+  it('일정과 댓글은 **같은 열에 나란히** 선다(사용자 결정)', async () => {
+    const c = await open('ag4');
+    fireEvent.click(tab(c, '일정'));
+    fireEvent.click(tab(c, '댓글'));
+    await waitFor(() => expect(c.querySelector('[data-note-agenda]')).toBeTruthy());
+    expect(document.querySelector('[data-comment-panel]')).toBeTruthy();
+  });
+});
