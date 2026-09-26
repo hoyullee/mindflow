@@ -8107,3 +8107,75 @@ describe('공책 64판 — 일정 블록(스펙 2절)', () => {
     expect(c.querySelector('[data-hub-kind="date"]')).toBeTruthy();
   });
 });
+
+describe('공책 65판 — 날짜 칩 호버 팝오버와 허브의 「일정 N」(스펙 3-3·4-3)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  const chipBlock = (iso: string) => ({ id: 'b1', kind: 'p', runs: [{ t: '회의는 ', b: false, c: null }, { t: '9월 27일 일', b: false, c: null, dt: iso }] });
+
+  it('칩에 올리면 **잠깐 뒤에** 열리고, 벗어나면 닫힌다(110ms / 180ms)', async () => {
+    const c = await open('dp1', [chipBlock('2026-09-27')]);
+    const chip = (await waitFor(() => c.querySelector('[data-date="2026-09-27"]'))) as HTMLElement;
+
+    fireEvent.pointerOver(chip, { bubbles: true });
+    // 곧바로는 뜨지 않는다 — 문장을 스쳐 지나는 것만으로 번쩍이면 안 된다.
+    expect(document.querySelector('[data-note-datepop]')).toBeNull();
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+
+    fireEvent.pointerOut(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeNull());
+  });
+
+  it('머리에 날짜·상대 날짜·개수가 서고, 일정이 없으면 그렇게 말한다', async () => {
+    const c = await open('dp2', [chipBlock('2026-09-27')]);
+    const chip = (await waitFor(() => c.querySelector('[data-date="2026-09-27"]'))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+    const pop = document.querySelector('[data-note-datepop]') as HTMLElement;
+    expect(pop.querySelector('[data-datepop-title]')?.textContent).toBe('9월 27일 일요일');
+    expect(pop.querySelector('[data-datepop-count]')?.textContent).toBe('일정 0개');
+    expect(pop.querySelector('[data-datepop-empty]')?.textContent).toBe('이 날에는 일정이 없어요');
+    expect(pop.querySelector('[data-datepop-new]')?.textContent).toContain('이 날에 일정 추가');
+  });
+
+  it('**팝오버 위에 있는 동안은 닫지 않는다** — 칩에서 목록으로 건너갈 수 있다', async () => {
+    const c = await open('dp3', [chipBlock('2026-09-27')]);
+    const chip = (await waitFor(() => c.querySelector('[data-date="2026-09-27"]'))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+    const pop = document.querySelector('[data-note-datepop]') as HTMLElement;
+
+    fireEvent.pointerOut(chip, { bubbles: true }); // 칩에서 벗어나 닫기 예약
+    fireEvent.pointerEnter(pop); // 팝오버로 건너갔다 — 예약이 취소된다
+    await new Promise((r) => setTimeout(r, 260));
+    expect(document.querySelector('[data-note-datepop]')).toBeTruthy();
+  });
+
+  it('허브의 날짜 줄은 **일정이 있을 때만** `일정 N`을 적는다(4-3)', async () => {
+    const c = await open('dp4', [{ id: 'b1', kind: 'p', runs: [] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    type(line, '');
+    fireEvent.keyDown(line, { key: '@' });
+    type(line, '@');
+    fireEvent.input(line, { bubbles: true });
+
+    await waitFor(() => expect(c.querySelector('[data-note-hub]')).toBeTruthy());
+    // 데모 계정에는 일정이 없다 — 줄마다 `일정 0`이 붙지 않는다.
+    expect(c.querySelector('[data-hub-count]')).toBeNull();
+    expect(c.querySelector('[data-hub-kind="date"]')).toBeTruthy();
+  });
+});
