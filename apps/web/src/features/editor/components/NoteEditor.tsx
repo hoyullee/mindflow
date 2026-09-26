@@ -38,7 +38,7 @@ import type { EditorController } from '../useEditorState';
 import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
-import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind } from '../noteRichDom';
+import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind, type NoteMarks } from '../noteRichDom';
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
@@ -4995,7 +4995,7 @@ function FormatToolbar({
    * 상태를 갱신하지 않는다 — 글자를 칠 때마다 이벤트가 오는데 매번 리렌더하면
    * 편집 박스가 흔들린다.
    */
-  const [marks, setMarks] = useState({ b: false, i: false, s: false, u: false, k: false });
+  const [marks, setMarks] = useState<NoteMarks>({ b: false, i: false, s: false, u: false, k: false, c: null, hl: null });
   /**
    * **캐럿이 표의 칸 안인가**(요청 5) — 칸에서 할 수 없는 것들을 꺼 둔다.
    *
@@ -5060,7 +5060,7 @@ function FormatToolbar({
              * **꺼 둔** 상태도 그대로 보인다(그쪽이 `want: false`로 온다).
              */
             { ...noteActiveMarks(el), ...armedMarksOverlay(el) }
-          : { b: false, i: false, s: false, u: false, k: false };
+          : { b: false, i: false, s: false, u: false, k: false, c: null, hl: null };
       setMarks((cur) => (sameMarks(cur, next) ? cur : next));
       const key = el?.getAttribute('data-note-line') ?? '';
       const cell = isCellKey(key);
@@ -5307,7 +5307,14 @@ function FormatToolbar({
             <path d="m14.5 4.5 5 5-8 8H6.5v-5z" />
             <path d="M4 21h16" />
           </svg>
-          <span aria-hidden="true" style={{ width: 14, height: 3, borderRadius: 999, background: noteHighlightColor('yellow') ?? '#FBEFC0', display: 'block' }} />
+          {/* **지금 자리의 형광색**을 말한다(제보 1) — 예전에는 노랑 고정이라, 초록으로
+              칠한 글에 커서를 둬도 노란 막대였다. 형광이 없으면 옅은 바탕으로 둬
+              "아직 없다"가 보이게 한다(`marks.hl`은 섞여 있으면 `null`이다). */}
+          <span
+            aria-hidden="true"
+            data-note-hl-bar={marks.hl ?? ''}
+            style={{ width: 14, height: 3, borderRadius: 999, background: noteHighlightColor(marks.hl ?? '') ?? 'var(--mf-hairline)', display: 'block' }}
+          />
         </button>
         {open === 'hl' && (
           <div style={SWATCH_POP}>
@@ -5332,8 +5339,9 @@ function FormatToolbar({
           onClick={() => setOpen((v) => (v === 'ink' ? null : 'ink'))}
           style={{ ...TOOL_BTN, flexDirection: 'column', gap: 2, background: open === 'ink' ? TB_ON : 'transparent' }}
         >
-          <span aria-hidden="true" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>A</span>
-          <span aria-hidden="true" style={{ width: 14, height: 3, borderRadius: 999, background: 'var(--mf-text)', display: 'block' }} />
+          <span aria-hidden="true" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1, color: marks.c ?? undefined }}>A</span>
+          {/* 글자색도 같은 규칙 — 지금 자리의 색이고, 없으면 본문색이다. */}
+          <span aria-hidden="true" data-note-ink-bar={marks.c ?? ''} style={{ width: 14, height: 3, borderRadius: 999, background: marks.c ?? 'var(--mf-text)', display: 'block' }} />
         </button>
         {open === 'ink' && (
           <div style={SWATCH_POP}>

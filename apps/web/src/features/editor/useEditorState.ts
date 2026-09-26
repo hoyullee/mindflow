@@ -3147,6 +3147,23 @@ export function useEditorState(): EditorController {
     if (docSyncsViaCrdt(docRef.current.kind)) return;
     if (docSignature(docRef.current) !== lastSavedSigRef.current) return; // ①
     if (hasPendingDoc(mapId)) return; // ②
+    /**
+     * ②-b **글을 쓰고 있는 중이면 갈아 끼우지 않는다**(제보: 다른 앱을 쓰다 돌아오면
+     * 문서를 다시 불러오느라 깜빡이고 커서가 풀린다).
+     *
+     * 위의 ①②는 "내가 고친 것이 남아 있는가"를 본다 — 저장이 막 끝난 상태에서는
+     * 둘 다 통과한다. 그런데 그 순간에도 사람은 **그 줄에 커서를 두고 있을 수 있고**,
+     * 서버 판으로 갈아 끼우면 편집 박스가 통째로 다시 그려져(`docEpoch`) 초점과
+     * 캐럿이 사라진다. 남이 바꾼 것이 실제로 있더라도, 쓰고 있는 사람의 손에서
+     * 글을 빼앗는 것보다 **다음 계기까지 미루는** 편이 낫다(창을 떠났다 오거나
+     * 초점을 놓으면 그때 받는다).
+     */
+    if (typeof document !== 'undefined') {
+      const active = document.activeElement as HTMLElement | null;
+      // **속성으로 본다** — `isContentEditable`은 jsdom이 구현하지 않아(실측: `undefined`)
+      // 그 값으로 가르면 테스트에서는 가드가 통째로 죽는다. 속성은 양쪽에서 같다.
+      if (active?.closest?.('[contenteditable="true"]')) return;
+    }
     // 계기가 겹쳐 온다(창 포커스와 visibilitychange가 함께 뜬다) — 잇단 요청을 막는다.
     const now = Date.now();
     if (now - lastRefreshAtRef.current < 1200) return;

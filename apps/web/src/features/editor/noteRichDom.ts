@@ -12,7 +12,7 @@
 // 요소**를 찾아 거기에 대고 동작하는 작은 배관을 따로 쓴다 — 서식 계산 자체는 코어
 // (`applyPartialStyle`)에서 같은 함수를 쓰므로 규칙이 두 벌이 되지는 않는다.
 
-import { applyPartialStyle, charsToRuns, isStyledRuns, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
+import { applyPartialStyle, charsToRuns, isStyledRuns, noteHighlightColor, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
 import type { RichRun } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import { renderListEdit } from './listLines';
@@ -78,10 +78,42 @@ export function noteBoxValue(el: HTMLElement): { text: string; rich: RichRun[] |
  * 못하기 때문이다. 그 글자는 **값이 아니다**: 읽는 자리(`noteBoxValue`)가 걷어 내고,
  * 조합이 끝나면 DOM에서도 지운다(`closeArmedAnchor`).
  */
+/**
+ * 브라우저가 **다음 글자에 물려줄 스타일**을 들고 있는가 — 값이 말하는 것과 다르면 참.
+ *
+ * 크로뮴은 지운 글의 계산된 스타일을 기억했다가 다음 글자에 입힌다(인라인 코드를
+ * 지운 자리에서 색·배경·글꼴 셋을 전부 물려준다 — 실측). 예약이 없어도 그 상태라면
+ * 껍데기를 세워 **덮어야** 한다: 그러지 않으면 첫 글자만 그 서식으로 보였다가
+ * 확정될 때 걷혀(`stripBrowserFormatting`) "적용됐다가 풀린다"가 된다(제보 6).
+ *
+ * 읽을 수 없는 환경(jsdom·옛 브라우저)에서는 거짓이다 — 모르면 세우지 않는다.
+ */
+function hasBrowserTypingStyle(eff: { c: string | null; hl: string | null }): boolean {
+  if (typeof document === 'undefined' || typeof document.queryCommandValue !== 'function') return false;
+  try {
+    const back = document.queryCommandValue('backColor');
+    const font = document.queryCommandValue('fontName');
+    // 배경은 **형광을 켜 둔 것이 아닐 때만** 잔재다(형광은 우리가 준 배경이다).
+    const bgJunk = !eff.hl && !!back && !/transparent|rgba\(0, 0, 0, 0\)/.test(back);
+    // 고정폭 글꼴은 본문에 쓰지 않는다 — 인라인 코드를 지운 자리의 흔적이다.
+    const fontJunk = /mono/i.test(font || '');
+    return bgJunk || fontJunk;
+  } catch {
+    return false;
+  }
+}
+
 export function openArmedAnchor(el: HTMLElement): boolean {
-  if (!armed || armed.el !== el || typeof document === 'undefined') return false;
+  if (typeof document === 'undefined') return false;
   const span = noteCaretSpan(el);
-  if (!span || span.a !== span.b || span.a !== armed.at) return false;
+  if (!span || span.a !== span.b) return false;
+  /**
+   * **예약이 없어도 세울 때가 있다**(제보 6) — 브라우저가 지운 글의 스타일을 들고
+   * 있을 때다. 예전에는 예약이 있을 때만 세웠는데, 인라인 코드를 지운 자리에는
+   * 예약이 없고 잔재만 있어 첫 글자가 코드처럼 보였다가 확정될 때 풀렸다.
+   * 그때 그리는 것은 **주변 값 그대로**이므로 잔재가 덮이고 값은 변하지 않는다.
+   */
+  const mine = armed && armed.el === el && span.a === armed.at ? armed : null;
   /**
    * 껍데기가 그리는 것은 **예약을 얹은 뒤의 모습**이다 — 켠 것만이 아니라 끈 것까지.
    *
@@ -90,18 +122,40 @@ export function openArmedAnchor(el: HTMLElement): boolean {
    * 켠 것만 적으면 "밑줄은 그대로 두고 취소선만 끈다"를 말할 길이 없다.
    */
   const here = noteActiveMarks(el);
-  const eff = { b: here.b, i: here.i, s: here.s, u: here.u };
+  const eff = { b: here.b, i: here.i, s: here.s, u: here.u, c: here.c, hl: here.hl };
   let touched = false;
-  for (const m of armed.marks) {
+  for (const m of mine?.marks ?? []) {
     if (m.kind === 'b' || m.kind === 'i' || m.kind === 's' || m.kind === 'u') {
       if (eff[m.kind] !== m.want) touched = true;
       eff[m.kind] = m.want;
+    } else if (m.kind === 'c' || m.kind === 'hl') {
+      /**
+       * **색·형광도 껍데기가 그린다**(제보 2·3) — 예전에는 빼 놓았다("칠하기가 있다").
+       * 그래서 빈 줄에 색을 켜고 치면 첫 글자가 **본문색으로 보이다가** 조합이 확정될
+       * 때(대개 두 번째 글자를 치는 순간) 색이 들어왔다. 켜짐과 달리 값이므로 `want`가
+       * 아니라 `val`을 쓴다 — 빈 값은 「지우기」다.
+       */
+      const next = m.val || null;
+      if (eff[m.kind] !== next) touched = true;
+      eff[m.kind] = next;
     }
   }
-  // 인라인 코드(`k`)·강조는 껍데기로 흉내 내지 않는다 — 그쪽은 이미 칠하기가 있다.
-  if (!touched) return false;
+  // 인라인 코드(`k`)는 껍데기로 흉내 내지 않는다 — 조합 중에는 `paintCode`가 칠한다.
+  if (!touched && !hasBrowserTypingStyle(eff)) return false;
   const deco = [eff.s ? 'line-through' : '', eff.u ? 'underline' : ''].filter(Boolean).join(' ');
-  const st = `font-weight:${eff.b ? '800' : '400'};font-style:${eff.i ? 'italic' : 'normal'};text-decoration:${deco || 'none'};`;
+  const hlColor = eff.hl ? noteHighlightColor(eff.hl) : null;
+  /**
+   * **값이 말하는 것을 전부 적는다** — 켠 것만이 아니라 끈 것까지.
+   *
+   * 다 적는 이유가 둘이다. ① 취소선·밑줄은 `text-decoration` 한 줄을 나눠 쓰므로
+   * 켠 것만 적으면 "밑줄은 두고 취소선만 끈다"를 말할 길이 없다. ② **브라우저가
+   * 기억하는 타이핑 스타일을 덮어야 한다**(제보 6): 인라인 코드를 지운 자리에서
+   * 크로뮴은 그 색·배경·글꼴을 다음 글자에 물려주는데, 인라인 선언이 그것을 이긴다.
+   * 그래서 색이 없으면 `inherit`, 형광이 없으면 `transparent`를 **명시**한다.
+   */
+  const st =
+    `font-weight:${eff.b ? '800' : '400'};font-style:${eff.i ? 'italic' : 'normal'};text-decoration:${deco || 'none'};` +
+    `color:${eff.c ?? 'inherit'};background-color:${hlColor ?? 'transparent'};font-family:inherit;font-size:inherit;`;
   const sel = typeof window === 'undefined' ? null : window.getSelection();
   if (!sel || !sel.rangeCount) return false;
   const node = document.createElement('span');
@@ -233,14 +287,36 @@ export function noteActiveMarks(el: HTMLElement): NoteMarks {
   return noteMarksIn(el, range.a, range.b);
 }
 
-/** 툴바가 보는 다섯 단추의 켜짐. */
-export interface NoteMarks { b: boolean; i: boolean; s: boolean; u: boolean; k: boolean }
+/**
+ * 툴바가 보는 **지금 자리의 서식** — 다섯 단추의 켜짐 + 색 둘.
+ *
+ * 색(`c`)과 형광(`hl`)은 켜짐이 아니라 **값**이라 따로 둔다(제보 1: 색이 걸린 글에
+ * 커서를 둬도 툴바가 본문색으로 보인다). 구간 전체가 **같은 값일 때만** 그 값이고,
+ * 섞여 있거나 없으면 `null`이다 — "이 자리의 색"이라고 말할 수 없는 상태를 색 하나로
+ * 단정하지 않기 위해서다. 앵커(`openArmedAnchor`)도 이 값을 그대로 그린다.
+ */
+export interface NoteMarks {
+  b: boolean;
+  i: boolean;
+  s: boolean;
+  u: boolean;
+  k: boolean;
+  c: string | null;
+  hl: string | null;
+}
 
-const NO_MARKS: NoteMarks = { b: false, i: false, s: false, u: false, k: false };
+const NO_MARKS: NoteMarks = { b: false, i: false, s: false, u: false, k: false, c: null, hl: null };
 
 /** 두 켜짐이 같은가 — 값이 같으면 리렌더하지 않기 위해. */
 export function sameMarks(x: NoteMarks, y: NoteMarks): boolean {
-  return x.b === y.b && x.i === y.i && x.s === y.s && x.u === y.u && x.k === y.k;
+  return x.b === y.b && x.i === y.i && x.s === y.s && x.u === y.u && x.k === y.k && x.c === y.c && x.hl === y.hl;
+}
+
+/** 이웃한 런들이 **같은 값**을 말할 때만 그 값 — 아니면 `null`(섞였다·없다). */
+function oneOf(runs: readonly RichRun[], pick: (r: RichRun) => string | null | undefined): string | null {
+  const first = pick(runs[0]!) ?? null;
+  if (!first) return null;
+  return runs.every((r) => (pick(r) ?? null) === first) ? first : null;
 }
 
 /**
@@ -271,7 +347,23 @@ export function noteMarksIn(el: HTMLElement, a: number, b: number): NoteMarks {
     const near = [chars[a - 1], chars[a]].filter((r): r is RichRun => !!r);
     if (near.length === 0) return NO_MARKS;
     const any = (pick: (r: RichRun) => boolean): boolean => near.some(pick);
-    return { b: any((r) => !!r.b), i: any((r) => !!r.i), s: any((r) => !!r.s), u: any((r) => !!r.u), k: any((r) => !!r.k) };
+    /**
+     * **색은 「앞 글자」만 본다** — 켜짐과 규칙이 다르다.
+     *
+     * 켜짐은 두 이웃 중 하나라도 그 서식이면 켠다(경계에서 덜 놀랍다). 색은 값이라
+     * 그 규칙을 쓰면 **경계에서 어느 쪽 색인지 말할 수 없다**(빨강 끝 = 파랑 머리).
+     * 이어 치면 앞 글자를 물려받으므로 앞을 본다 — 줄 맨 앞이면 뒤를 본다.
+     */
+    const side = chars[a - 1] ?? chars[a]!;
+    return {
+      b: any((r) => !!r.b),
+      i: any((r) => !!r.i),
+      s: any((r) => !!r.s),
+      u: any((r) => !!r.u),
+      k: any((r) => !!r.k),
+      c: oneOf([side], (r) => r.c),
+      hl: oneOf([side], (r) => r.hl),
+    };
   }
   const span = chars.slice(a, b);
   if (span.length === 0) return NO_MARKS;
@@ -282,6 +374,8 @@ export function noteMarksIn(el: HTMLElement, a: number, b: number): NoteMarks {
     s: all((r) => !!r.s),
     u: all((r) => !!r.u),
     k: all((r) => !!r.k),
+    c: oneOf(span, (r) => r.c),
+    hl: oneOf(span, (r) => r.hl),
   };
 }
 
@@ -303,6 +397,9 @@ export function noteMarksAcross(spans: { el: HTMLElement; from: number; to: numb
     s: each.every((m) => m.s),
     u: each.every((m) => m.u),
     k: each.every((m) => m.k),
+    // 색은 **줄마다 같은 값일 때만** 그 값이다(켜짐의 `every`와 같은 결).
+    c: each.every((m) => m.c === each[0]!.c) ? each[0]!.c : null,
+    hl: each.every((m) => m.hl === each[0]!.hl) ? each[0]!.hl : null,
   };
 }
 
@@ -486,7 +583,18 @@ export function armCaretMark(el: HTMLElement, kind: NoteFormatKind, val?: string
   const here = isToggleKind(kind) ? noteActiveMarks(el)[kind] : false;
   let marks: ArmedMark[];
   if (hit < 0) marks = [...keep, { kind, val: val ?? null, want: !here }];
-  else if (!isToggleKind(kind)) marks = keep.filter((_, i) => i !== hit);
+  else if (!isToggleKind(kind)) {
+    /**
+     * 색·형광은 **값**이라 "다시 눌렀다"의 뜻이 토글과 다르다(제보 3).
+     *
+     * 예전에는 같은 종류를 다시 부르면 무조건 예약을 **지웠다** — 그래서 빨강을 켜 둔
+     * 채 파랑을 고르면 예약이 사라지고, 첫 글자가 **옛 값**(주변·브라우저 기억)으로
+     * 들어왔다. 같은 값을 다시 고른 것만 끄고(그게 "취소"다), 다른 값이면 **갈아
+     * 끼운다**.
+     */
+    const same = (keep[hit]!.val ?? null) === (val ?? null);
+    marks = same ? keep.filter((_, i) => i !== hit) : keep.map((m, i) => (i === hit ? { ...m, val: val ?? null } : m));
+  }
   else {
     // 같은 단추를 다시 눌렀다 — 뜻을 뒤집는다. 뒤집은 결과가 **주변과 같아지면**
     // 예약할 것이 없다(예약은 주변과 다르게 쓰겠다는 약속이다).
@@ -542,7 +650,13 @@ export function armedMarksOverlay(el: HTMLElement | null): Partial<NoteMarks> {
   const span = noteCaretSpan(el);
   if (!span || span.a !== span.b || span.a !== armed.at) return {};
   const out: Partial<NoteMarks> = {};
-  for (const m of armed.marks) if (isToggleKind(m.kind)) out[m.kind] = m.want;
+  for (const m of armed.marks) {
+    if (isToggleKind(m.kind)) out[m.kind] = m.want;
+    // 색·형광은 값이라 예약한 값이 곧 툴바가 보여 줄 값이다(제보 1의 후속 —
+    // 빈 줄에 색을 켜 두면 단추에도 그 색이 보여야 한다). `null`은 「지우기」다.
+    else if (m.kind === 'c') out.c = m.val;
+    else if (m.kind === 'hl') out.hl = m.val;
+  }
   return out;
 }
 
@@ -692,7 +806,10 @@ export function stripBrowserFormatting(el: HTMLElement): boolean {
     touched = true;
   }
   // 우리 것이 아닌 인라인 선언을 지운다(색은 남긴다 — 위 머리말).
+  // **조합 껍데기는 빼 둔다**(`openArmedAnchor`): 그 스팬의 배경·글꼴은 우리가 일부러
+  // 적은 것이고(잔재를 덮는 선언이다), 여기서 지우면 덮기가 곧바로 풀린다.
   for (const node of [...el.querySelectorAll<HTMLElement>('[style]')]) {
+    if (node.hasAttribute(ANCHOR_ATTR)) continue;
     const st = node.style;
     for (const prop of ['background-color', 'background', 'font-family', 'font-size']) {
       if (st.getPropertyValue(prop)) {

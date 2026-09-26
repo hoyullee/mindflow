@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
+import { armCaretMark, noteBoxValue, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
+import { setLinearSelection } from './richtextDom';
 
 /**
  * 브라우저가 기억하는 **타이핑 스타일**을 지우는 일(제보 5).
@@ -170,5 +171,84 @@ describe('브라우저 잔재 걷기(제보 6)', () => {
     const before = el.innerHTML;
     expect(stripBrowserFormatting(el)).toBe(false);
     expect(el.innerHTML).toBe(before);
+  });
+});
+
+/**
+ * **첫 글자에 서식이 안 걸리는 계열**(제보 2·3·6)과 그 방어.
+ *
+ * 셋의 뿌리가 하나다 — 조합 껍데기(`openArmedAnchor`)가 **굵게·기울임·취소선·밑줄만**
+ * 그리고 색·형광은 빼 놓았고, 예약이 없으면 아예 서지 않았다. 그래서 한글 첫 글자는
+ * ① 켜 둔 색이 안 보이고(2) ② 바꾼 색 대신 옛 색이 보이고(3) ③ 지운 인라인 코드의
+ * 스타일이 그대로 보였다(6 — 확정될 때 걷혀 "풀린다"로 읽혔다).
+ */
+describe('조합 껍데기가 그리는 것(제보 2·3·6)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+
+  });
+
+  /** 빈 줄 하나에 캐럿을 두고 껍데기를 세울 수 있는 상태를 만든다. */
+  function line(html = '<br>'): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.setAttribute('data-note-line', 'b1');
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    el.focus();
+    setLinearSelection(el, 0, 0);
+    return el;
+  }
+  const anchor = (el: HTMLElement) => el.querySelector('[data-armed-anchor]') as HTMLElement | null;
+
+  it('켜 둔 **글자색**을 껍데기가 그린다 — 첫 자모부터 그 색이다(제보 2)', () => {
+    const el = line();
+    expect(armCaretMark(el, 'c', '#d92626')).toBe(true);
+    expect(openArmedAnchor(el)).toBe(true);
+    expect(anchor(el)?.getAttribute('style')).toContain('color:#d92626');
+  });
+
+  it('켜 둔 **형광**도 그린다 — 배경으로', () => {
+    const el = line();
+    armCaretMark(el, 'hl', 'yellow');
+    expect(openArmedAnchor(el)).toBe(true);
+    const st = anchor(el)?.getAttribute('style') ?? '';
+    expect(st).toContain('background-color:');
+    expect(st).not.toContain('background-color:transparent');
+  });
+
+  it('**색을 바꾸면 바뀐 색**을 그린다 — 옛 값이 남지 않는다(제보 3)', () => {
+    const el = line();
+    armCaretMark(el, 'c', '#d92626');
+    armCaretMark(el, 'c', '#2266dd');
+    expect(openArmedAnchor(el)).toBe(true);
+    const st = anchor(el)?.getAttribute('style') ?? '';
+    expect(st).toContain('color:#2266dd');
+    expect(st).not.toContain('#d92626');
+  });
+
+  it('**값이 말하는 것을 전부 적는다** — 색·배경·글꼴까지(브라우저 잔재를 덮는 선언)', () => {
+    const el = line();
+    armCaretMark(el, 'b');
+    expect(openArmedAnchor(el)).toBe(true);
+    const st = anchor(el)?.getAttribute('style') ?? '';
+    // 켠 것뿐 아니라 **없는 것도** 명시해야 타이핑 스타일을 이긴다(제보 6).
+    expect(st).toContain('color:inherit');
+    expect(st).toContain('background-color:transparent');
+    expect(st).toContain('font-family:inherit');
+  });
+
+  it('예약도 잔재도 없으면 **세우지 않는다** — 쓸데없이 DOM을 늘리지 않는다', () => {
+    const el = line();
+    expect(openArmedAnchor(el)).toBe(false);
+    expect(anchor(el)).toBeNull();
+  });
+
+  it('껍데기의 폭 0 글자는 **값이 아니다** — 조합 중에 저장돼도 문서에 남지 않는다', () => {
+    const el = line();
+    armCaretMark(el, 'c', '#d92626');
+    openArmedAnchor(el);
+    expect(el.textContent).toBe('​');
+    expect(noteBoxValue(el).text).toBe('');
   });
 });
