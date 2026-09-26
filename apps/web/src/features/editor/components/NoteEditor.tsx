@@ -46,11 +46,12 @@ import { useCommentParticipants } from './CommentPanel';
 import { NoteCommentWindow } from './NoteCommentWindow';
 import { NoteSchedBlock } from './NoteSchedBlock';
 import { NoteSchedPicker } from './NoteSchedPicker';
+import { NoteDatePop } from './NoteDatePop';
 import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, overlapsComment, threadIdOfNode } from '../noteComment';
-import { SCHED_KINDS } from '../noteAgenda';
+import { SCHED_KINDS, useNoteAgenda } from '../noteAgenda';
 import { toastShellStyle } from '../../../pwa/toastShell';
 import { dateChipLabel } from '../mentionChip';
-import { todayISO } from '../../home/calendar/model';
+import { partsOf, todayISO } from '../../home/calendar/model';
 import { insertChip } from '../noteChipInsert';
 import { NoteMentionHub, type HubPick } from './NoteMentionHub';
 import { firstImageFile } from '../imageAttach';
@@ -675,10 +676,40 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    */
   const [toast, setToast] = useState('');
   /**
+   * 날짜 칩 위에 떠 있는 **그날 일정**(스펙 3-3) — 어느 날이고 칩이 화면 어디에 있는가.
+   *
+   * 여닫는 타이밍이 스펙에 박혀 있다(110ms 열고 180ms 닫기): 문장을 읽다 칩을 스쳐
+   * 지나는 것만으로 팝오버가 번쩍이면 글을 읽을 수 없고, 칩에서 팝오버로 마우스를
+   * 옮기는 그 몇 프레임에 닫혀 버리면 목록을 훑을 수 없다.
+   */
+  const [datePop, setDatePop] = useState<{ iso: string; rect: { left: number; top: number; bottom: number } } | null>(null);
+  /** 허브가 개수를 물어볼 달 — 오늘의 달이다(허브는 가까운 날을 고르는 자리다). */
+  const hubYm = useMemo(() => {
+    const p = partsOf(todayISO());
+    return { y: p?.y ?? 2026, m: p?.m ?? 1 };
+  }, []);
+  const datePopTimer = useRef<number | null>(null);
+  /**
    * 「일정 블록 고르기」가 열려 있는가(스펙 2-2) — 어느 블록 곁에 넣을지와, 그 줄을
    * **갈아 끼울지**(빈 줄이었다) 함께 든다. 그림·문서 링크와 같은 결이다.
    */
   const [schedPick, setSchedPick] = useState<{ at: string; replace: boolean; anchor: { x: number; y: number } | null } | null>(null);
+  /**
+   * 허브의 날짜 줄이 적는 **그날 일정 수**(스펙 4-3의 `일정 N`).
+   *
+   * 허브가 스스로 캘린더를 읽지 않는 이유는 그 부품을 순수하게 두기 위해서다 —
+   * 시계·네트워크 없이 테스트가 돈다. 이 달 격자(6주)만 세므로 멀리 있는 날은
+   * 개수가 붙지 않는다: 그 표기는 "가까운 날에 무엇이 있나"를 돕는 값이다.
+   */
+  const hubAgenda = useNoteAgenda(hubYm.y, hubYm.m, atFor !== null);
+  const hubCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    hubAgenda.entries.forEach((e) => {
+      out[e.due] = (out[e.due] ?? 0) + 1;
+    });
+    return out;
+  }, [hubAgenda.entries]);
+
   /** 댓글 창이 부를 수 있는 사람들 — 허브와 **같은 명단**이다(`useCommentParticipants`). */
   const cmParticipants = useCommentParticipants(controller.docId, cmOpen !== null);
   /**
@@ -2212,6 +2243,46 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   }, [pageId]);
 
   /**
+   * 날짜 칩 호버 — 110ms 뒤에 열고, 벗어나면 180ms 뒤에 닫는다(스펙 3-3).
+   *
+   * 본문은 비제어 DOM이라(`NoteLine` 머리말) 칩마다 리액트 핸들러를 달 수 없다 —
+   * 단 하나의 위임 리스너가 본문 판 전체를 받는다. 팝오버 자신에 들어가면 그쪽이
+   * 예약을 취소하므로(`onEnter`) "칩 → 팝오버"로 가는 길이 끊기지 않는다.
+   */
+  useEffect(() => {
+    const col = colRef.current;
+    if (!col) return;
+    const clear = (): void => {
+      if (datePopTimer.current !== null) window.clearTimeout(datePopTimer.current);
+      datePopTimer.current = null;
+    };
+    const onOver = (e: PointerEvent): void => {
+      const chip = (e.target as HTMLElement | null)?.closest?.('[data-date]') as HTMLElement | null;
+      if (!chip) return;
+      const iso = chip.getAttribute('data-date') || '';
+      if (!iso) return;
+      clear();
+      datePopTimer.current = window.setTimeout(() => {
+        const r = chip.getBoundingClientRect();
+        setDatePop({ iso, rect: { left: r.left, top: r.top, bottom: r.bottom } });
+      }, 110);
+    };
+    const onOut = (e: PointerEvent): void => {
+      const chip = (e.target as HTMLElement | null)?.closest?.('[data-date]');
+      if (!chip) return;
+      clear();
+      datePopTimer.current = window.setTimeout(() => setDatePop(null), 180);
+    };
+    col.addEventListener('pointerover', onOver);
+    col.addEventListener('pointerout', onOut);
+    return () => {
+      clear();
+      col.removeEventListener('pointerover', onOver);
+      col.removeEventListener('pointerout', onOut);
+    };
+  }, [pageId]);
+
+  /**
    * 패널의 스레드 카드를 누르면 **본문의 그 형광으로**(6-6) — 스크롤 영역 높이의
    * 1/3 지점에 오도록 부드럽게 옮기고, 그 스레드를 연다.
    *
@@ -2696,6 +2767,23 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 onClose={closeBodyComment}
               />
             )}
+            {datePop && (
+              <NoteDatePop
+                iso={datePop.iso}
+                today={todayISO()}
+                rect={datePop.rect}
+                theme={controller.uiTheme}
+                onEnter={() => {
+                  if (datePopTimer.current !== null) window.clearTimeout(datePopTimer.current);
+                  datePopTimer.current = null;
+                }}
+                onLeave={() => {
+                  if (datePopTimer.current !== null) window.clearTimeout(datePopTimer.current);
+                  datePopTimer.current = window.setTimeout(() => setDatePop(null), 180);
+                }}
+                onClose={() => setDatePop(null)}
+              />
+            )}
             {toast && (
               <div role="status" style={{ ...toastShellStyle, padding: '10px 16px', fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, wordBreak: 'keep-all' }}>
                 {toast}
@@ -2736,6 +2824,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 people={hubPeople}
                 pages={hubPages}
                 dateOnly={atDateOnly}
+                counts={hubCounts}
                 onPick={pickMention}
                 onClose={closeMention}
               />

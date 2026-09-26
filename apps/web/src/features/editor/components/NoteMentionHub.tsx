@@ -52,6 +52,13 @@ interface HubProps {
   pages: HubPage[];
   /** `/날짜`로 열렸나. 참이면 사람·페이지 그룹을 숨기고 달력이 함께 보인다. */
   dateOnly?: boolean;
+  /**
+   * 날짜별 **그날 일정 수**(스펙 4-3의 `일정 N`) — 없으면 그 표기가 뜨지 않는다.
+   *
+   * 허브가 스스로 캘린더를 읽지 않는 이유: 이 부품은 순수하게 유지해야 테스트가
+   * 시계·네트워크 없이 돌고, 같은 값을 이미 읽고 있는 쪽(에디터)이 넘겨 주면 된다.
+   */
+  counts?: Record<string, number>;
   onPick: (pick: HubPick) => void;
   onClose: () => void;
 }
@@ -211,6 +218,7 @@ function HubRow({
   row,
   index,
   active,
+  counts,
   setActiveEl,
   onHover,
   onPick,
@@ -218,6 +226,8 @@ function HubRow({
   row: Row;
   index: number;
   active: boolean;
+  /** 날짜별 그날 일정 수 — 행이 `일정 N`을 적을지 가른다(스펙 4-3). */
+  counts?: Record<string, number>;
   /**
    * 콜백 ref로 받는다 — `RefObject<HTMLButtonElement | null>`을 그대로 prop 타입으로
    * 넘기면 설치된 `@types/react`(18.3.31)의 `RefObject<T>.current: T | null`이 제네릭
@@ -232,6 +242,9 @@ function HubRow({
   const icon = row.kind === 'person' ? <PersonBadge person={row.person} /> : row.kind === 'page' ? <PageBadge /> : <DateBadge />;
   const mainText = row.kind === 'person' ? row.person.name : row.kind === 'date' ? row.hit.label : row.kind === 'page' ? row.page.title : '다른 날짜 고르기…';
   const sideText = row.kind === 'person' ? row.person.email : row.kind === 'date' ? row.hit.sub : row.kind === 'calendar' ? '달력 열기' : null;
+  // `일정 N`은 **있을 때만** 적는다(스펙 4-3) — 0을 적으면 줄마다 `일정 0`이 붙어
+  // 정작 일정이 있는 날이 눈에 띄지 않는다.
+  const count = row.kind === 'date' ? (counts?.[row.hit.iso] ?? 0) : 0;
   return (
     <button
       type="button"
@@ -252,6 +265,11 @@ function HubRow({
     >
       {icon}
       <span style={ROW_MAIN}>{mainText}</span>
+      {count > 0 && (
+        <span data-hub-count style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 700, color: '#d8794f' }}>
+          일정 {count}
+        </span>
+      )}
       {sideText && <span style={row.kind === 'person' ? ROW_SIDE_EMAIL : ROW_SIDE}>{sideText}</span>}
     </button>
   );
@@ -260,7 +278,7 @@ function HubRow({
 // ── 본체 ────────────────────────────────────────────────────────────────
 
 export function NoteMentionHub(props: HubProps): JSX.Element | null {
-  const { anchor, query, today, people, pages, dateOnly, onPick, onClose } = props;
+  const { anchor, query, today, people, pages, dateOnly, counts, onPick, onClose } = props;
 
   const [cursor, setCursor] = useState(0);
   const [calendarMode, setCalendarMode] = useState(false);
@@ -485,7 +503,7 @@ export function NoteMentionHub(props: HubProps): JSX.Element | null {
               <span style={GROUP_HEAD}>날짜</span>
               {dateRows.map((row, i) => {
                 const idx = dateOffset + i;
-                return <HubRow key={rowKey(row)} row={row} index={idx} active={idx === activeIndex} setActiveEl={setActiveElRef.current} onHover={() => setCursor((c) => (c === idx ? c : idx))} onPick={() => pickRow(row)} />;
+                return <HubRow key={rowKey(row)} row={row} index={idx} active={idx === activeIndex} counts={counts} setActiveEl={setActiveElRef.current} onHover={() => setCursor((c) => (c === idx ? c : idx))} onPick={() => pickRow(row)} />;
               })}
             </div>
           )}
