@@ -29,6 +29,7 @@ import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
 import { anchoredBoxPos } from './commentAnchor';
 import { NoteBodyComments } from './NoteBodyComments';
+import { NOTE_COMMENT_SEED_EVENT } from './NoteProfileCard';
 import { BOARD_BAR_LIFT } from './BoardToolbar';
 import { Avatar } from './commentPinShape';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
@@ -282,7 +283,7 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
           <span>페이지 댓글</span>
         </div>
       )}
-      <CommentThreads controller={controller} nodeId={nodeId} scroll thread={pinThread} />
+      <CommentThreads controller={controller} nodeId={nodeId} scroll thread={pinThread} seedEvent={isNote ? NOTE_COMMENT_SEED_EVENT : undefined} />
     </aside>
   );
 
@@ -436,7 +437,20 @@ function revealComment(list: HTMLElement, id: string, scroll: boolean): void {
   list.scrollTop = Math.max(0, Math.min(target, Math.max(0, list.scrollHeight - view)));
 }
 
-export function CommentThreads({ controller, nodeId, scroll = false, thread = false }: { controller: CommentHost; nodeId: string; scroll?: boolean; thread?: boolean }) {
+export function CommentThreads({
+  controller,
+  nodeId,
+  scroll = false,
+  thread = false,
+  seedEvent,
+}: {
+  controller: CommentHost;
+  nodeId: string;
+  scroll?: boolean;
+  thread?: boolean;
+  /** 바깥이 초안을 밀어 넣는 문서 이벤트의 이름 — `CommentComposer`의 그 프롭. */
+  seedEvent?: string;
+}) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -553,6 +567,7 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
           inputLabel={thread ? '스레드 입력' : '댓글 입력'}
           submitLabel="남기기"
           autoFocus={false}
+          seedEvent={seedEvent}
           footer={{ hint: true, avatar: controller.myName, avatarSrc: controller.myAvatar }}
           onSubmit={(body, mentions) => submitThread(body, mentions)}
         />
@@ -876,6 +891,7 @@ export function CommentComposer({
   compact = false,
   footer,
   onCancel,
+  seedEvent,
   onSubmit,
 }: {
   controller: CommentHost;
@@ -891,6 +907,15 @@ export function CommentComposer({
   footer?: { hint?: boolean; avatar?: string; avatarSrc?: string | null };
   /** 있으면 [취소] 버튼이 함께 선다(시안 ②의 초안 말풍선). */
   onCancel?: () => void;
+  /**
+   * **바깥에서 글자를 밀어 넣는 문서 이벤트의 이름**(스펙 4-8의 「댓글로 부르기」).
+   *
+   * 프로필 카드는 우측 열의 이 입력칸에 `@이름 `을 채워야 하는데, 둘은 공통 부모가
+   * 라우트뿐이다(패널 ↔ 본문과 같은 사정). 초안은 이 부품의 상태이므로 **여기서
+   * 받는다** — 이름을 받은 입력칸만 반응하도록 프롭으로 건네, 한 화면의 여러 입력칸이
+   * 함께 채워지는 일이 없게 한다(카드 상세·일정 상세도 같은 부품을 쓴다).
+   */
+  seedEvent?: string;
   onSubmit: (body: string, mentions: CommentMention[]) => Promise<boolean>;
 }) {
   const th = controller.uiTheme;
@@ -909,6 +934,18 @@ export function CommentComposer({
    * (골랐다가 글자를 지웠으면 멘션도 아니다). */
   const picked = useRef<Map<string, CommentMention>>(new Map());
   const boxRef = useRef<HTMLTextAreaElement | null>(null);
+  // 바깥이 밀어 넣는 글자 — 있던 초안 **뒤에** 붙이고 초점을 준다(쓰던 것을 지우지 않는다).
+  useEffect(() => {
+    if (!seedEvent) return;
+    const onSeed = (e: Event): void => {
+      const text = (e as CustomEvent<string>).detail;
+      if (!text) return;
+      setDraft((d) => (d.endsWith(' ') || !d ? d + text : `${d} ${text}`));
+      boxRef.current?.focus();
+    };
+    document.addEventListener(seedEvent, onSeed);
+    return () => document.removeEventListener(seedEvent, onSeed);
+  }, [seedEvent]);
   /** 작성 중 멘션 강조 오버레이(요청) — textarea는 글자를 스스로 색칠할 수 없어
    * 글자를 투명하게 하고(캐럿은 caretColor로 남긴다) **같은 메트릭의 백드롭**이
    * 전체 텍스트를 그리며 멘션 구간만 강조한다. 강조는 색+연한 배경뿐, 굵게는
