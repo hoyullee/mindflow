@@ -140,7 +140,16 @@ export function openArmedAnchor(el: HTMLElement): boolean {
       eff[m.kind] = next;
     }
   }
-  // 인라인 코드(`k`)는 껍데기로 흉내 내지 않는다 — 조합 중에는 `paintCode`가 칠한다.
+  /**
+   * 인라인 코드는 **끄는 쪽만** 껍데기가 맡는다(제보 2).
+   *
+   * 켜는 쪽은 조합 중에 `paintCode`가 칠해 준다 — 코드의 생김새(고정폭·면·색)를 여기서
+   * 스팬에 옮겨 적으면 CSS를 두 벌로 베끼는 일이 된다. 반대로 **나가는** 길은 껍데기가
+   * 아니면 없다: 줄 끝 코드에서는 캐럿을 둘 자리가 그 상자 안뿐이라, 껍데기를 코드
+   * 밖에 세워야(`placeAnchor`) 첫 자모부터 밖에서 태어난다. 그 모양은 이미 위에서
+   * 전부 명시했다(`font-family:inherit`·`background-color:transparent`·`color:inherit`).
+   */
+  for (const m of mine?.marks ?? []) if (m.kind === 'k' && !m.want) touched = true;
   if (!touched && !hasBrowserTypingStyle(eff)) return false;
   const deco = [eff.s ? 'line-through' : '', eff.u ? 'underline' : ''].filter(Boolean).join(' ');
   const hlColor = eff.hl ? noteHighlightColor(eff.hl) : null;
@@ -164,7 +173,7 @@ export function openArmedAnchor(el: HTMLElement): boolean {
   node.textContent = ZWSP;
   try {
     const range = sel.getRangeAt(0).cloneRange();
-    range.insertNode(node);
+    placeAnchor(el, range, node);
     const after = document.createRange();
     after.setStart(node.firstChild as Text, 1);
     after.collapse(true);
@@ -175,6 +184,38 @@ export function openArmedAnchor(el: HTMLElement): boolean {
     return false;
   }
   return true;
+}
+
+/** 우리가 그리는 **인라인 서식 요소**들 — 껍데기가 빠져나와야 할 껍질이다. */
+const INLINE_SHELL = 'code, b, strong, i, em, u, s, strike, span[style]';
+
+/**
+ * 껍데기를 **서식 껍질 밖에** 놓는다 — 캐럿이 그 껍질의 **끝**에 서 있을 때.
+ *
+ * 제보 둘이 같은 뿌리였다. ① 빨간 글 끝에서 색을 바꿔 치면 첫 글자가 옛 색으로
+ * 들어온다 ② 줄 끝의 인라인 코드에서 오른쪽 방향키를 눌러도 그 영역을 벗어날 수 없다.
+ * 둘 다 **캐럿이 인라인 요소 안에 갇혀** 있어서다 — 그 자리에 껍데기를 꽂으면
+ * `<span style="color:빨강">가나<껍데기>ㄷ</껍데기></span>`처럼 **옛 껍질 안에** 들어가고,
+ * 브라우저가 조합 글자를 껍데기 **밖**(옛 껍질 안)에 넣으면 그대로 옛 서식이 된다.
+ *
+ * 그래서 캐럿이 껍질의 끝이면 **가장 바깥 껍질 뒤로** 올려 꽂는다. 값 좌표는 그대로다
+ * (글자를 옮기지 않는다) — 바뀌는 것은 "다음 글자가 어느 요소 안에서 태어나는가"뿐이다.
+ * 끝이 아니면(글 한복판) 제자리에 꽂는다: 거기서는 앞뒤가 같은 껍질이라 옮길 이유가 없다.
+ */
+function placeAnchor(el: HTMLElement, range: Range, node: HTMLElement): void {
+  let shell: HTMLElement | null = null;
+  const start = range.startContainer;
+  let cur: HTMLElement | null = start.nodeType === 1 ? (start as HTMLElement) : start.parentElement;
+  // 캐럿이 그 요소의 **끝**인 동안만 밖으로 올라간다.
+  let atEnd = start.nodeType === 3 ? range.startOffset === (start as Text).length : range.startOffset === start.childNodes.length;
+  while (atEnd && cur && cur !== el && cur.matches?.(INLINE_SHELL)) {
+    if (cur.nextSibling) break; // 뒤에 형제가 있으면 그 사이가 이미 밖이다
+    shell = cur;
+    cur = cur.parentElement;
+    atEnd = true;
+  }
+  if (shell && shell.parentNode) shell.parentNode.insertBefore(node, shell.nextSibling);
+  else range.insertNode(node);
 }
 
 /**

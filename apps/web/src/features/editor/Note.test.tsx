@@ -9004,3 +9004,82 @@ describe('공책 76판 — IME가 글자를 빚는 동안 툴바를 읽지 않�
     await waitFor(() => expect(bold()).toBe('false'));
   });
 });
+
+describe('공책 77판 — 줄 끝 인라인 코드에서 오른쪽 방향키로 빠져나온다(제보 2)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  /** 인라인 코드가 **줄의 마지막**인 줄 — 그 뒤에 캐럿을 둘 글자가 없다. */
+  async function open(id: string) {
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({
+        ...NOTE,
+        pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '앞글 ', b: false, c: null }, { t: 'CODE', b: false, c: null, k: true }] }] }],
+      }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    line.focus();
+    setLinearSelection(line, 9, 9); // 줄 끝 = 코드의 끝
+    fireEvent(document, new Event('selectionchange'));
+    return { container, line };
+  }
+  const codeOn = () => document.querySelector('[data-note-mark="k"]')?.getAttribute('aria-pressed');
+
+  it('한 번 누르면 **코드를 벗어난다** — 툴바의 코드 불이 꺼진다', async () => {
+    const { line } = await open('ca1');
+    await waitFor(() => expect(codeOn()).toBe('true'));
+
+    const ev = createEvent.keyDown(line, { key: 'ArrowRight' });
+    fireEvent(line, ev);
+    // 우리가 처리했으므로 브라우저 기본 동작(아무 일도 못 하는)을 막는다.
+    expect(ev.defaultPrevented).toBe(true);
+    await waitFor(() => expect(codeOn()).toBe('false'));
+  });
+
+  it('**두 번째 누름은 통과한다** — 그때는 다음 블록으로 가는 일이다', async () => {
+    const { line } = await open('ca2');
+    fireEvent.keyDown(line, { key: 'ArrowRight' });
+    await waitFor(() => expect(codeOn()).toBe('false'));
+
+    fireEvent.keyDown(line, { key: 'ArrowRight' });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    // **다시 켜지지 않는다** — 두 번째 누름은 코드를 토글하는 일이 아니라 줄을 떠나는
+    // 일이다(그쪽은 `onEdgeOut`이 맡는다). 여기서 뒤집히면 상자를 못 벗어난다.
+    expect(codeOn()).toBe('false');
+  });
+
+  it('코드가 **줄 끝이 아니면** 건드리지 않는다 — 브라우저가 이미 넘어간다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_ca3',
+      JSON.stringify({
+        ...NOTE,
+        pages: [{ id: 'p1', title: '장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: 'CODE', b: false, c: null, k: true }, { t: ' 뒷글', b: false, c: null }] }] }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=ca3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    const line = (await waitFor(() => container.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    line.focus();
+    setLinearSelection(line, 4, 4); // 코드 끝이지만 줄 끝은 아니다
+
+    fireEvent(document, new Event('selectionchange'));
+    await waitFor(() => expect(codeOn()).toBe('true'));
+    fireEvent.keyDown(line, { key: 'ArrowRight' });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    // 예약을 걸지 않았다 — 캐럿은 여전히 코드 안이고 브라우저가 알아서 넘어간다.
+    expect(codeOn()).toBe('true');
+  });
+});

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { armCaretMark, noteBoxValue, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
-import { setLinearSelection } from './richtextDom';
+import { runsToHtml, setLinearSelection } from './richtextDom';
 
 /**
  * 브라우저가 기억하는 **타이핑 스타일**을 지우는 일(제보 5).
@@ -250,5 +250,64 @@ describe('조합 껍데기가 그리는 것(제보 2·3·6)', () => {
     openArmedAnchor(el);
     expect(el.textContent).toBe('​');
     expect(noteBoxValue(el).text).toBe('');
+  });
+});
+
+/**
+ * **껍데기는 서식 껍질 밖에 선다**(제보 1·2가 같은 뿌리였다).
+ *
+ * 빨간 글 끝에서 색을 바꿔 치면 첫 글자가 옛 색으로 들어오고, 줄 끝의 인라인 코드에서는
+ * 오른쪽 방향키로도 그 상자를 벗어날 수 없었다. 둘 다 **캐럿이 인라인 요소 안에 갇혀**
+ * 있어서다 — 그 자리에 껍데기를 꽂으면 옛 껍질 **안에** 들어가고, 브라우저가 조합 글자를
+ * 껍데기 밖(= 옛 껍질 안)에 넣으면 그대로 옛 서식이 된다.
+ */
+describe('껍데기를 놓는 자리(제보 1·2)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 값을 그린 줄과, 그 줄의 값 좌표 `at`에 놓인 캐럿. */
+  function at(rich: Record<string, unknown>[], pos: number): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.setAttribute('data-note-line', 'b1');
+    el.innerHTML = runsToHtml({ text: '', rich: rich as never });
+    document.body.appendChild(el);
+    el.focus();
+    setLinearSelection(el, pos, pos);
+    return el;
+  }
+  const anchor = (el: HTMLElement) => el.querySelector('[data-armed-anchor]') as HTMLElement | null;
+
+  it('색 스팬의 **끝**에서 색을 바꾸면 껍데기가 그 스팬 **밖**에 선다', () => {
+    const el = at([{ t: '가나', b: false, c: '#d92626' }], 2);
+    armCaretMark(el, 'c', '#2266dd');
+    expect(openArmedAnchor(el)).toBe(true);
+    const a = anchor(el)!;
+    // 옛 색 스팬 안이 아니다 — 그것이 이 판의 전부다.
+    expect(a.parentElement).toBe(el);
+    expect(a.closest('[style*="d92626"]')).toBeNull();
+    expect(a.getAttribute('style')).toContain('color:#2266dd');
+  });
+
+  it('인라인 코드의 **끝**에서도 밖으로 나간다 — 상자를 벗어나는 길이다', () => {
+    const el = at([{ t: '앞글 ', b: false, c: null }, { t: 'CODE', b: false, c: null, k: true }], 9);
+    armCaretMark(el, 'k');
+    expect(openArmedAnchor(el)).toBe(true);
+    expect(anchor(el)!.closest('code')).toBeNull();
+  });
+
+  it('글 **한복판**에서는 제자리에 꽂는다 — 앞뒤가 같은 껍질이라 옮길 이유가 없다', () => {
+    const el = at([{ t: '가나다', b: false, c: '#d92626' }], 1);
+    armCaretMark(el, 'b');
+    expect(openArmedAnchor(el)).toBe(true);
+    expect(anchor(el)!.closest('[style*="d92626"]')).toBeTruthy();
+  });
+
+  it('**글자는 옮기지 않는다** — 값 좌표가 그대로다', () => {
+    const el = at([{ t: '가나', b: false, c: '#d92626' }], 2);
+    armCaretMark(el, 'c', '#2266dd');
+    openArmedAnchor(el);
+    expect(noteBoxValue(el).text).toBe('가나'); // 폭 0 글자는 값이 아니다
   });
 });
