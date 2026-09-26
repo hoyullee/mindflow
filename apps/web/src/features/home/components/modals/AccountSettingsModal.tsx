@@ -1000,8 +1000,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
               따로 두지 않는다 — 같은 설정의 진입점을 둘로 두지 않는다(이 프로젝트 규칙).
               **탭이 기억한 화면은 이것보다 우선한다**: 에디터에서 돌아오면 보던 자리로
               돌아간다. 그래서 이 값은 "새로 시작할 때"만 쓰인다.
-              `대시보드`를 골랐는데 대시보드가 하나도 없으면 스페이스 그리드로 물러선다
-              (없는 화면을 열지 않는다 — 착지 규칙이 그대로 지킨다). */}
+              걷어낸 `대시보드`를 골라 둔 계정은 스페이스로 물러선다(`homeLandingOf`). */}
           <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-landing-group': '' }}>
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
               <div style={{ minWidth: 0, flex: '1 1 160px' }}>

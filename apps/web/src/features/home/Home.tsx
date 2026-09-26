@@ -6,12 +6,8 @@ import { Toolbar } from './components/Toolbar';
 import { MapGrid } from './components/MapGrid';
 import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
-import { DashboardView } from './components/DashboardView';
 import { CalendarView } from './calendar/CalendarView';
-import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { CalendarSkeleton } from './components/CalendarSkeleton';
-import { DashboardPicker } from './components/modals/DashboardPicker';
-import { DashboardModal } from './components/modals/DashboardModal';
 import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
 import { NewSpaceModal } from './components/modals/NewSpaceModal';
@@ -42,7 +38,7 @@ import { useOnline } from '../../hooks/useOnline';
 import { useMarqueeSelect } from './marquee';
 
 /**
- * React port of Home.dc.html — the map dashboard. State/behavior lives in
+ * React port of Home.dc.html — the map home. State/behavior lives in
  * {@link useHomeController} (1:1 with the original `class Component extends
  * DCLogic`); {@link deriveHomeView} mirrors `renderVals()`'s derived data.
  *
@@ -76,15 +72,13 @@ export function Home() {
   const installHint = useInstallHint(isMobile);
   // 예상은 **마운트 때 한 번** 잡는다 — 착지하면서 힌트가 갱신되므로 매 렌더 읽으면
   // 로딩 중에 모양이 바뀔 수 있다.
-  const landingGuess = useRef<'dash' | 'space' | 'cal'>(predictLanding());
+  const landingGuess = useRef<'space' | 'cal'>(predictLanding());
   const online = useOnline();
   const [navOpen, setNavOpen] = useState(false);
   // 로딩 스켈레톤의 모양 — 아직 착지 화면을 모르는 첫 프레임에 쓴다(`predictLanding`:
-  // 이 탭이 기억한 화면 → 이 기기의 힌트). 대시보드로 갈 예정이면 대시보드 껍데기를
-  // 그린다(제보: 스페이스 스켈레톤이 떴다가 통째로 갈아 끼워졌다).
-  const dashSkeleton = view.loading && landingGuess.current === 'dash';
-  // 일정으로 착지할 예정이면 일정 껍데기를 그린다 — 시작 화면을 고를 수 있게 된
-  // 뒤로는(설정 › 시작 화면) 이 진입이 흔하다.
+  // 이 탭이 기억한 화면 → 이 기기의 힌트). 일정으로 착지할 예정이면 일정 껍데기를
+  // 그린다(제보: 스페이스 스켈레톤이 떴다가 통째로 갈아 끼워졌다). 시작 화면을 고를
+  // 수 있게 된 뒤로는(설정 › 시작 화면) 이 진입이 흔하다.
   const calSkeleton = view.loading && landingGuess.current === 'cal';
   // 새 배포 자동 적용 게이트: 목록은 리로드해도 그대로 다시 그려지니 기본은 조용히
   // 적용하고, 입력 중인 팝업·확인 다이얼로그·검색어가 있을 때만 물어본다.
@@ -96,13 +90,13 @@ export function Home() {
     if (!isMobile) setNavOpen(false);
   }, [isMobile]);
 
-  // 폰에서 **화면이 바뀌면** 서랍을 닫는다 — 스페이스·대시보드·일정을 골랐는데 서랍이
+  // 폰에서 **화면이 바뀌면** 서랍을 닫는다 — 스페이스·일정을 골랐는데 서랍이
   // 그대로 남아 고른 화면을 가리고 있었다(배경을 한 번 더 눌러야 했다). 여기서 한 번에
   // 다루는 이유: 행마다 닫기를 챙기면 새 행이 생길 때마다 빠뜨리기 쉽고, 접이식
   // 구획(즐겨찾기·휴지통·공유받음)은 화면을 바꾸지 않으므로 저절로 열린 채 남는다.
   useEffect(() => {
     if (isMobile) setNavOpen(false);
-  }, [isMobile, state.activeSpace, state.activeDash, state.activeCal]);
+  }, [isMobile, state.activeSpace, state.activeCal]);
 
   // One-thumb drawer gestures: left-edge swipe-right opens, swipe-left (while
   // open) closes — the hamburger stays as the visible affordance.
@@ -195,19 +189,14 @@ export function Home() {
             깔아, 로드 완료 시 트레이가 끼어들며 툴바가 아래로 튀는 점프를 막는다. */}
         {/* 검색 중에는 최근 항목을 감춘다 — 질의로 걸러지지 않는 목록이 결과 위에
             남아 있으면 무엇이 결과인지 흐려진다. */}
-        {/* 대시보드 보기 — 화면은 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). 최근
-            항목·툴바·그리드는 스페이스의 것이라 함께 접는다. */}
+        {/* 화면은 언제나 한쪽만 그린다(일정 ↔ 스페이스). 최근 항목·툴바·그리드는
+            스페이스의 것이라 함께 접는다. */}
         {state.activeCal ? (
-          /* 일정 보기 — 대시보드·스페이스와 나란한 세 번째 화면. */
+          /* 일정 보기 — 스페이스와 나란한 두 번째 화면. */
           <CalendarView state={state} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
-        ) : state.activeDash ? (
-          <DashboardView state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
-        ) : dashSkeleton ? (
-          /* 로딩 중이고 이번 진입이 대시보드로 착지할 예정 — 스페이스 스켈레톤(최근
-             항목 띠 + 카드 격자)을 띄우면 곧 통째로 갈아 끼워진다(제보). */
-          <DashboardSkeleton isMobile={isMobile} />
         ) : calSkeleton ? (
-          /* 같은 이유로 일정도 자기 껍데기를 쓴다. */
+          /* 로딩 중이고 이번 진입이 일정으로 착지할 예정 — 스페이스 스켈레톤(최근
+             항목 띠 + 카드 격자)을 띄우면 곧 통째로 갈아 끼워진다(제보). */
           <CalendarSkeleton isMobile={isMobile} />
         ) : (
           <>
@@ -281,8 +270,6 @@ export function Home() {
           그리드의 카드는 언제나 내 맵이라 보기 전용이 아니다(공유받은 맵은 LNB에만). */}
       <ShareModal open={!!state.shareDocId} docId={state.shareDocId ?? ''} onClose={controller.closeShare} theme={modalTheme} kindName={view.shareKindName} docName={view.shareDocName} />
       <TemplateGallery state={state} controller={controller} />
-      <DashboardPicker state={state} view={view} controller={controller} isMobile={isMobile} />
-      <DashboardModal state={state} controller={controller} />
       <Modals state={state} controller={controller} />
       <NewSpaceModal state={state} controller={controller} />
       <FolderModal state={state} controller={controller} />

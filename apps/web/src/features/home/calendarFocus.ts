@@ -44,7 +44,6 @@ export function focusCalendar(target?: CalendarFocus): void {
   saveActiveView({
     activeSpace: cur?.activeSpace ?? '',
     curFolder: cur?.curFolder ?? null,
-    activeDash: null,
     activeCal: true,
   });
   // 알리기 **전에** 세워 둔다 — 구독자가 그 자리에서 가져간다.

@@ -509,16 +509,20 @@ export interface WorkspaceData {
    * 선택("아직 고른 적 없음" = 기본 테마). 값의 유효성은 홈 쪽에서 판별한다. */
   theme?: string;
   /**
-   * 홈에 들어왔을 때의 **첫 화면**(요청) — `'cal' | 'dash' | 'space'`. 테마와 같은
-   * per-user 블롭이라 기기 간에 따라온다(이 기기의 첫 페인트용 힌트는 별도로
-   * localStorage에 둔다 — `features/home/storage.ts`의 `LANDING_HINT_KEY`).
-   * 예전 블롭에는 없으므로 선택("아직 고른 적 없음" = 대시보드, 지금 동작 그대로).
-   * 값의 유효성은 홈 쪽에서 판별한다(`homeLandingOf`).
+   * 홈에 들어왔을 때의 **첫 화면**(요청) — `'cal' | 'space'`. 테마와 같은 per-user
+   * 블롭이라 기기 간에 따라온다(이 기기의 첫 페인트용 힌트는 별도로 localStorage에
+   * 둔다 — `features/home/storage.ts`의 `LANDING_HINT_KEY`). 예전 블롭에는 없으므로
+   * 선택("아직 고른 적 없음" = 스페이스). 걷어낸 대시보드를 골라 둔 계정은 `'dash'`를
+   * 들고 있을 수 있다 — 값의 유효성은 홈 쪽에서 판별한다(`homeLandingOf`).
    */
   homeLanding?: string;
-  /** 대시보드(위젯 배치) 목록 — `spaces`와 같은 규칙으로 모양은 홈 쪽 소유
-   * (`features/home/dashboard/model.ts`)라 여기서는 불투명 JSON이다. 예전 블롭에는
-   * 없으므로 선택("대시보드 없음"). */
+  /**
+   * 걷어낸 대시보드(위젯 배치)의 저장값 — **아무도 해석하지 않는다.**
+   *
+   * 화면은 사라졌지만 배치까지 지우면 되돌릴 수 없어 블롭에는 남겨 둔다. 홈은 읽은
+   * 그대로 다시 실어 보낸다(`features/home/types.ts`의 `dashboardsRaw`): 블롭은
+   * 저장할 때 통째로 덮어쓰므로, 싣지 않으면 다음 저장에 조용히 사라진다.
+   */
   dashboards?: unknown[];
   /**
    * 구글 캘린더 겹치기 설정(PR5) — **켰는가 + 어느 캘린더를 보는가**뿐이다.

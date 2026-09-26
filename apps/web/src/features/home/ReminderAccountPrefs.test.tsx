@@ -28,7 +28,7 @@ import { mockMatchMedia } from '../../test/matchMedia';
 const SPACES_KEY = 'mf_spaces';
 
 function seedWorkspace(over: Partial<WorkspaceData>): void {
-  localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces: [{ id: 's1', name: '일반 스페이스', color: '#f0663f', maps: [] }], mapFolders: {}, recent: [], dashboards: [], ...over }));
+  localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces: [{ id: 's1', name: '일반 스페이스', color: '#f0663f', maps: [] }], mapFolders: {}, recent: [], ...over }));
 }
 
 function savedWorkspace(): WorkspaceData {

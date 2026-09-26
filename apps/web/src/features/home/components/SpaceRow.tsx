@@ -1,7 +1,7 @@
 import type { DragEvent, MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState, SpaceData } from '../types';
-import { ArrowPair } from './DashboardSection';
+import { ArrowPair } from './LnbReorder';
 import { isSpaceView } from '../viewModel';
 
 interface Props {

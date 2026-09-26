@@ -214,7 +214,6 @@ function seedSpaces(): void {
         { id: 's2', name: '원티드랩', color: '#3f8fd0', maps: [{ title: '이슈 트리아지', when: '어제', hue: '#3f8fd0', docId: 'd2' }], folders: [] },
       ],
       activeSpace: 's1',
-      dashboards: [{ id: 'dash1', name: '주간 현황', items: [] }],
     }),
   );
 }
@@ -321,12 +320,12 @@ describe('일정 화면', () => {
     // 알림과 **같은 껍데기**(두 줄 카드)라 나란히 서도 서로 달라 보이지 않는다.
     expect(nav.querySelector('[data-nav-card-summary]')).toBeTruthy();
     expect(nav.style.minHeight).toBe('50px');
-    // 자리: 알림 **바로 아래**, 대시보드 구획보다 **앞**.
+    // 자리: 알림 **바로 아래**, 스페이스 구획보다 **앞**.
     //       예전에는 두 라벨 구획 사이에 홀로 서서 라벨을 빠뜨린 항목처럼 읽혔다.
     const bell = document.querySelector('[data-notification-nav]')!;
-    const dashLabel = screen.getByText('대시보드');
+    const spaceLabel = screen.getByText('스페이스');
     expect(bell.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(nav.compareDocumentPosition(dashLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(nav.compareDocumentPosition(spaceLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('LNB `일정` 카드는 알림과 갈린다 — 테두리 타일에 [가로 바 + 오늘 날짜], 면은 활성일 때만 칠한다(제보)', async () => {
@@ -618,7 +617,7 @@ describe('일정 화면', () => {
   it('이 탭이 일정 화면을 보고 있었으면 돌아왔을 때 일정 화면으로 착지한다', async () => {
     // 세션에 남은 화면 = 일정. (예전에는 `loadActiveView`가 이 필드를 걸러 버려
     // 대시보드로 착지했다 — 실브라우저 프로브가 잡은 회귀.)
-    sessionStorage.setItem(ACTIVE_VIEW_KEY, JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: null, activeCal: true }));
+    sessionStorage.setItem(ACTIVE_VIEW_KEY, JSON.stringify({ activeSpace: 's1', curFolder: null, activeCal: true }));
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await waitFor(() => expect(document.querySelector('[data-calendar-view]')).toBeTruthy());
     expect(localStorage.getItem('mf_home_landing')).toBe('cal');
@@ -2212,11 +2211,13 @@ describe('열어 둔 화면이 다른 기기의 변경을 잡는다', () => {
     expect(chipTexts()).not.toContain('오늘 마감 카드');
   });
 
-  it('보지 않는 화면에서는 묻지 않는다 — 위젯 없는 대시보드', async () => {
-    seedSpaces(); // dash1은 위젯이 없다(첫 진입은 기본 대시보드)
+  it('보지 않는 화면에서는 묻지 않는다 — 스페이스 그리드', async () => {
+    // 문서 **내용**을 지켜보는 화면은 일정 하나뿐이다(카드 썸네일은 낡아도 뜻이
+    // 흐려지지 않는다). 스페이스 그리드에서 탭으로 돌아와도 다시 묻지 않는다.
+    seedSpaces();
     const { docStore } = renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
-    await waitFor(() => expect(document.querySelector('[data-dashboard-view]')).toBeTruthy());
     await waitFor(() => expect(docStore.listCalls).toBeGreaterThan(0)); // 하이드레이션
+    expect(document.querySelector('[data-cal-canvas]')).toBeNull();
     const before = docStore.listCalls;
     fireEvent(window, new Event('focus'));
     await act(async () => {
@@ -2225,21 +2226,4 @@ describe('열어 둔 화면이 다른 기기의 변경을 잡는다', () => {
     expect(docStore.listCalls).toBe(before);
   });
 
-  it('캘린더 위젯이 올라간 대시보드도 잡는다', async () => {
-    localStorage.setItem(
-      'mf_spaces',
-      JSON.stringify({
-        spaces: [{ id: 's1', name: '업무', home: true, color: '#f0663f', maps: [{ title: '스프린트 보드', when: '방금', hue: '#f0663f', docId: 'd1' }], folders: [] }],
-        activeSpace: 's1',
-        dashboards: [{ id: 'dash1', name: '주간 현황', items: [{ id: 'w-cal', kind: 'cal', size: '4x3' }] }],
-      }),
-    );
-    const { docStore } = renderHome([META('d1', '스프린트 보드')], BODIES());
-    await waitFor(() => expect(document.querySelector('[data-dashboard-view]')).toBeTruthy());
-    await waitFor(() => expect(document.body.textContent).toContain('오늘 마감 카드'));
-
-    docStore.remoteEdit('d1', [{ id: 'k1', col: 'c2', pos: 1, text: '위젯에도 도착한 카드', due: todayISO() }]);
-    fireEvent(window, new Event('focus'));
-    await waitFor(() => expect(document.body.textContent).toContain('위젯에도 도착한 카드'));
-  });
 });

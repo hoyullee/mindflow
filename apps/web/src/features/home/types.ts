@@ -3,7 +3,6 @@
 import { loadHomeThemeCache, type HomeThemeKey } from './theme';
 import type { HomeLanding } from './storage';
 import type { DocEditor, SigninMethods } from '../../adapters/ports';
-import type { DashboardData, DashWidgetKind } from './dashboard/model';
 
 export interface MapCardData {
   title: string;
@@ -74,10 +73,6 @@ export type HomeCtxTarget =
   | { kind: 'folder'; id: string }
   /** LNB의 스페이스 행 — ⋮ 버튼과 우클릭이 같은 메뉴를 연다(카드와 같은 규칙). */
   | { kind: 'space'; id: string }
-  /** LNB의 대시보드 행 — 이름 변경·삭제(스페이스 행과 같은 문법). */
-  | { kind: 'dash'; id: string }
-  /** 대시보드 위젯 — 열기·새로 불러오기·맨 앞으로·크기·내리기(디자인 원본). */
-  | { kind: 'widget'; id: string }
   /** 카드가 없는 빈 자리 — "새로 만들기 · 새 폴더 · 가져오기 · 설정". */
   | { kind: 'bg' };
 
@@ -262,19 +257,22 @@ export interface HomeState {
 
   spaces: SpaceData[];
   activeSpace: string;
-  /** 대시보드(위젯 배치) 목록 — 워크스페이스 블롭에 스페이스와 나란히 실린다. */
-  dashboards: DashboardData[];
-  /** 지금 보고 있는 대시보드 id. `null`이면 평소의 스페이스 보기다 — 화면은
-   * 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). */
-  activeDash: string | null;
   /**
-   * 일정 화면을 보고 있는가 — 대시보드·스페이스와 나란한 **세 번째 화면**이다.
+   * 일정 화면을 보고 있는가 — 스페이스와 나란한 **두 번째 화면**이다.
    *
-   * 라우트가 아니라 상태인 이유: 대시보드도 그렇고(홈은 `/home` 한 라우트),
-   * 화면은 언제나 하나만 그린다(`activeCal` → 일정 / `activeDash` → 대시보드 /
-   * 둘 다 아니면 스페이스).
+   * 라우트가 아니라 상태인 이유: 홈은 `/home` 한 라우트이고, 화면은 언제나 하나만
+   * 그린다(`activeCal` → 일정 / 아니면 스페이스).
    */
   activeCal: boolean;
+
+  /**
+   * 걷어낸 대시보드(위젯 배치)의 저장값 — **읽고 그대로 되돌려 쓰기만 한다.**
+   *
+   * 화면은 사라졌지만 배치 데이터까지 지우면 되돌릴 수 없다. 워크스페이스 블롭은
+   * 저장할 때 통째로 덮어쓰므로, 싣지 않으면 다음 저장에 사라진다 — 그래서 불투명한
+   * 채로 들고 있다가 그대로 다시 싣는다(해석하지 않으므로 타입도 `unknown[]`이다).
+   */
+  dashboardsRaw: unknown[];
   /** 일정 화면이 보고 있는 연·월. 오늘이 든 달로 시작한다. */
   calY: number;
   calM: number;
@@ -292,27 +290,8 @@ export interface HomeState {
   calNewEvent: { date: string; allDay: boolean; at?: string } | null;
   /** 열려 있는 Geurio 일정 상세(달력 항목이 아니라 그 일정 id). */
   calEventDetail: string | null;
-  /** LNB 대시보드 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */
-  dashReorder: boolean;
-  /** 대시보드 배치 편집 모드(히어로의 "편집" 토글) — 위젯 드래그 재배치·모서리
-   * 리사이즈·인라인 크기/제거가 열린다. 화면 상태라 저장되지 않는다. */
-  dashEdit: boolean;
-  /** LNB 스페이스 구획의 순서 바꾸기 모드 — 대시보드와 같은 문법(요청). */
+  /** LNB 스페이스 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */
   spaceReorder: boolean;
-  /** "보드 올리기" 피커. `null`이면 닫힘. */
-  dashPicker: {
-    /** 왼쪽 필터 — 'all' | 스페이스 id | 'shared'. */
-    space: string;
-    query: string;
-    /** 고른 것(아직 올리기 전) — 문서면 `docId`가 있고, 일정 위젯이면 없다. */
-    sel: { docId?: string; kind: DashWidgetKind; size: string } | null;
-  } | null;
-  /** 대시보드 이름 변경 팝업(행 우클릭 → 이름 변경). `null`이면 닫힘. */
-  /** 대시보드 만들기·이름 변경 팝업(첨부 디자인) — `id`가 있으면 이름 변경, 없으면
-   *  새로 만들기. 색은 스페이스와 같은 여섯(`SPACE_COLORS`) 중 하나. */
-  dashDialog: { id: string | null; name: string; color: string } | null;
-  /** 대시보드 삭제 확인 대상 id — 배치만 사라지고 문서는 그대로라는 걸 문구가 말한다. */
-  confirmDeleteDash: string | null;
   newSpaceOpen: boolean;
   newSpaceName: string;
   newSpaceColor: string;
@@ -514,7 +493,7 @@ export function initialHomeState(): HomeState {
     // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
     theme: loadHomeThemeCache(),
     // 정본은 워크스페이스다 — 도착하면 그 값으로 맞춘다(테마와 같은 길).
-    homeLanding: 'dash',
+    homeLanding: 'space',
     google: null,
     reminders: null,
     calGoogleDetail: null,
@@ -527,8 +506,7 @@ export function initialHomeState(): HomeState {
 
     spaces: [{ id: 'general', name: '일반 스페이스', home: true, color: '#f0663f', maps: DEFAULT_MAPS }],
     activeSpace: 'general',
-    dashboards: [],
-    activeDash: null,
+    dashboardsRaw: [],
     activeCal: false,
     // 초기값은 오늘이 든 달 — 화면을 열면 이번 달이 보인다.
     calY: new Date().getFullYear(),
@@ -539,12 +517,7 @@ export function initialHomeState(): HomeState {
     calDetail: null,
     calNewEvent: null,
     calEventDetail: null,
-    dashReorder: false,
-    dashEdit: false,
     spaceReorder: false,
-    dashPicker: null,
-    dashDialog: null,
-    confirmDeleteDash: null,
     newSpaceOpen: false,
     newSpaceName: '',
     newSpaceColor: '#f0663f',

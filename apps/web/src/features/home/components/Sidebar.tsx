@@ -5,7 +5,7 @@ import type { DocKindName, HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { SettingsPopover } from './SettingsPopover';
 import { NotificationBell } from './NotificationBell';
-import { DashboardSection, ReorderToggle } from './DashboardSection';
+import { ReorderToggle } from './LnbReorder';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
 import { CalendarNavSection } from './CalendarNavSection';
@@ -165,13 +165,8 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           적으면(hairline 등) 같은 사이드바 안에서 선이 두 종류로 보인다. */}
       <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px 0' }} />
 
-      {/* 대시보드 구획 — 스페이스 위(디자인 원본의 순서). 요청 범위: 기존 홈 디자인에
-          더하는 것은 이 구획과 스페이스 정렬 토글뿐이다. */}
-      <DashboardSection state={state} controller={controller} isMobile={isMobile} />
-
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 9px 7px' }}>
         <span style={SECTION_LABEL}>스페이스</span>
-        {/* 힌트 문구 없음 — 대시보드 구획과 같은 이유(제보). */}
         <ReorderToggle on={state.spaceReorder} label="스페이스 순서 바꾸기" onClick={controller.toggleSpaceReorder} />
       </div>
 
