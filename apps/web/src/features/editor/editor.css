@@ -607,25 +607,26 @@ input[type='search']::-webkit-search-results-decoration {
     border-color 0.14s ease;
 }
 
-/* 날짜 칩 — 네모(radius 6). 사람 칩(알약)과 **모양으로** 갈린다. */
+/* 날짜 칩 — 네모(radius 6). 사람 칩(알약)과 **모양으로** 갈린다.
+ * 색은 스펙 3-1의 값을 그대로 든 칩 전용 토큰이다(`--mf-note-chip-*`). */
 .mf-note-line .mf-datechip {
   padding: 0 7px 0 6px;
   border-radius: 6px;
-  background: var(--mf-panel2);
-  border: 1px solid var(--mf-border);
-  color: var(--mf-subtext);
+  background: var(--mf-note-chip-bg);
+  border: 1px solid var(--mf-note-chip-line);
+  color: var(--mf-note-chip-fg);
   cursor: default;
 }
 .mf-note-line .mf-datechip:hover {
-  background: var(--mf-accent-soft);
-  border-color: var(--mf-accent-mute);
+  background: var(--mf-note-chip-bg-on);
+  border-color: var(--mf-note-chip-line-on);
 }
 .mf-note-line .mf-datechip::before {
   content: '';
   width: 11px;
   height: 11px;
   flex: 0 0 auto;
-  background-color: var(--mf-accent);
+  background-color: var(--mf-note-chip-icon);
   /* 달력 글리프 — 마스크로 칠해서 **색이 토큰을 따라간다**(다크에서도 맞는다). */
   -webkit-mask: var(--mf-cal-glyph) center / contain no-repeat;
   mask: var(--mf-cal-glyph) center / contain no-repeat;
@@ -635,14 +636,14 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-line .mf-pagelink {
   padding: 0 7px 0 6px;
   border-radius: 6px;
-  background: var(--mf-panel2);
-  border: 1px solid var(--mf-border);
+  background: var(--mf-note-chip-bg);
+  border: 1px solid var(--mf-note-chip-line);
   color: var(--mf-text);
   cursor: pointer;
 }
 .mf-note-line .mf-pagelink:hover {
-  background: var(--mf-accent-soft);
-  border-color: var(--mf-accent-mute);
+  background: var(--mf-note-chip-bg-on);
+  border-color: var(--mf-note-chip-line-on);
 }
 .mf-note-line .mf-pagelink::before {
   content: '';
@@ -658,13 +659,15 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-line .mf-mention {
   padding: 0 8px 0 3px;
   border-radius: 99px;
-  background: var(--mf-panel2);
-  border: 1px solid var(--mf-border);
+  /* 사람 칩은 스펙 4-7의 값(`#F3EEE8` / `#E9DFD3`)이 날짜 칩과 반 톤 다르다 —
+   * 알약이 아바타를 물고 있어 면이 조금 더 따뜻해야 원이 뜨지 않는다. */
+  background: var(--mf-note-chip-pill);
+  border: 1px solid var(--mf-note-chip-pill-line);
   /* 맵의 `.mf-mention`이 주는 링크 파랑을 이 범위에서만 되돌린다. */
   color: var(--mf-text);
 }
 .mf-note-line .mf-mention:hover {
-  background: var(--mf-wash);
+  background: var(--mf-note-chip-pill-on);
 }
 /* `attr()`는 `content` 밖에서 쓸 수 없어 **여덟 벌을 선택자로 펴 둔다**. 인라인
  * `style`로 심는 길도 있지만, 편집 박스의 인라인 style은 `domToRuns`가 되읽는

@@ -17,21 +17,57 @@ import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
 import type { DocEditor, DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
 import { pushLocalNotification } from './localNotifications';
 
-/** 직렬화 본문에서 인라인 멘션의 (이메일, 객체 id) 쌍들 — 0026 트리거의
- * `doc_mention_sites`와 같은 규칙(노드·메모의 rich 런 `m`). 이메일만 비교하면
- * 같은 사람을 **다른 객체**에 다시 멘션해도 집합이 그대로라 알림이 없다. */
+/** 인라인 멘션 하나 — 이 파일이 보는 것은 `m`(이메일)뿐이다. */
+type MentionRun = { m?: string };
+/** 공책의 한 블록 — 글을 든 자리가 셋이다(아래 `docMentionSites` 머리말). */
+interface NoteBlockLike {
+  id?: string;
+  runs?: MentionRun[] | null;
+  items?: Array<{ runs?: MentionRun[] | null }> | null;
+  rows?: Array<Array<MentionRun[] | null> | null> | null;
+}
+
+/**
+ * 직렬화 본문에서 인라인 멘션의 **(이메일, 자리) 쌍들** — 서버 트리거
+ * `doc_mention_sites`(0026 + 0043)와 **같은 규칙**이어야 한다.
+ *
+ * 이메일만 비교하면 같은 사람을 **다른 자리**에 다시 멘션해도 집합이 그대로라
+ * 알림이 없다. 그래서 자리까지 함께 든다.
+ *
+ * 훑는 곳은 문서 종류마다 다르다:
+ *   · 맵·화이트보드 — `nodes`(키가 곧 id) · `floats[]`
+ *   · 공책 — `pages[].blocks[]`의 **셋**: `runs` · `items[].runs` · `rows[][]`
+ *     (코어의 `blockText`가 보는 자리와 같다. 자리 이름은 `<페이지id>:<블록id>`)
+ *
+ * **서버와 여기가 갈리면 데모와 실서비스가 다르게 운다** — 종류가 늘어 새 자리가
+ * 생기면 0043과 이 함수를 **함께** 고친다.
+ */
 function docMentionSites(raw: unknown): Set<string> {
   const out = new Set<string>();
-  const d = raw as { nodes?: Record<string, { rich?: Array<{ m?: string }> | null }>; floats?: Array<{ id?: string; rich?: Array<{ m?: string }> | null }> } | null;
+  const d = raw as {
+    nodes?: Record<string, { rich?: MentionRun[] | null }>;
+    floats?: Array<{ id?: string; rich?: MentionRun[] | null }>;
+    pages?: Array<{ id?: string; blocks?: NoteBlockLike[] | null }> | null;
+  } | null;
   if (!d || typeof d !== 'object') return out;
-  const eat = (site: string, rich?: Array<{ m?: string }> | null): void => {
-    (rich ?? []).forEach((r) => {
-      const em = (r.m || '').trim().toLowerCase();
+  const eat = (site: string, rich?: MentionRun[] | null): void => {
+    if (!Array.isArray(rich)) return;
+    rich.forEach((r) => {
+      const em = (r?.m || '').trim().toLowerCase();
       if (em) out.add(`${em}|${site}`);
     });
   };
-  Object.entries(d.nodes ?? {}).forEach(([id, n]) => eat(id, n.rich));
-  (d.floats ?? []).forEach((f) => eat(f.id ?? '', f.rich));
+  Object.entries(d.nodes ?? {}).forEach(([id, n]) => eat(id, n?.rich));
+  (Array.isArray(d.floats) ? d.floats : []).forEach((f) => eat(f?.id ?? '', f?.rich));
+  (Array.isArray(d.pages) ? d.pages : []).forEach((pg) => {
+    const blocks = Array.isArray(pg?.blocks) ? pg.blocks : [];
+    blocks.forEach((b) => {
+      const site = `${pg?.id ?? ''}:${b?.id ?? ''}`;
+      eat(site, b?.runs);
+      (Array.isArray(b?.items) ? b.items : []).forEach((it) => eat(site, it?.runs));
+      (Array.isArray(b?.rows) ? b.rows : []).forEach((row) => (Array.isArray(row) ? row : []).forEach((cell) => eat(site, cell)));
+    });
+  });
   return out;
 }
 

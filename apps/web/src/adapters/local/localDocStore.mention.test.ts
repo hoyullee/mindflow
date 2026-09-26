@@ -51,3 +51,61 @@ describe('LocalDocStore 인라인 멘션 알림', () => {
     expect(list.every((n) => n.recipientEmail === 'kim@x.io')).toBe(true);
   });
 });
+
+/** 공책 한 권 — 블록이 글을 드는 **세 자리**(runs · items[].runs · rows[][])를 담는다. */
+function noteWith(blocks: unknown[], pageId = 'p1'): Doc {
+  return {
+    v: 1, kind: 'note', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral',
+    pages: [{ id: pageId, title: '장', blocks }],
+  } as unknown as Doc;
+}
+const mention = (email: string) => [{ t: '@kim', b: false, c: null, m: email }];
+
+describe('공책 **본문**의 멘션도 알림을 만든다(0043)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+  });
+
+  it('문단에 부른 사람에게 알림이 간다 — 예전에는 공책 본문을 한 글자도 보지 않았다', async () => {
+    const store = new LocalDocStore();
+    await store.save('n1', noteWith([{ id: 'b1', kind: 'p', runs: [] }]));
+    expect(localStorage.getItem('mf_notifications') ?? '[]').not.toContain('doc_mention');
+    await store.save('n1', noteWith([{ id: 'b1', kind: 'p', runs: mention('kim@x.io') }]));
+    expect(localStorage.getItem('mf_notifications') ?? '[]').toContain('doc_mention');
+  });
+
+  it('**목록 항목**과 **표의 칸**도 훑는다 — 코어가 글을 펴는 자리와 같다', async () => {
+    const store = new LocalDocStore();
+    await store.save('n2', noteWith([{ id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: [] }] }]));
+    const quiet = localStorage.getItem('mf_notifications') ?? '[]';
+    await store.save('n2', noteWith([{ id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: mention('lee@x.io') }] }]));
+    expect(localStorage.getItem('mf_notifications')).not.toBe(quiet);
+
+    localStorage.removeItem('mf_notifications');
+    await store.save('n3', noteWith([{ id: 't1', kind: 'table', rows: [[[{ t: '칸', b: false, c: null }]]] }]));
+    await store.save('n3', noteWith([{ id: 't1', kind: 'table', rows: [[[{ t: '칸', b: false, c: null }], mention('park@x.io')]] }]));
+    expect(localStorage.getItem('mf_notifications') ?? '[]').toContain('doc_mention');
+  });
+
+  it('**다른 블록**에 다시 부르면 새 쌍이라 또 울린다 — 같은 블록 안 재멘션은 조용하다', async () => {
+    const store = new LocalDocStore();
+    await store.save('n4', noteWith([{ id: 'b1', kind: 'p', runs: mention('kim@x.io') }, { id: 'b2', kind: 'p', runs: [] }]));
+    // 첫 알림을 읽은 것으로 치우고(로컬은 미확인 중복 억제가 없지만 개수로 센다) 개수를 잰다.
+    const one = JSON.parse(localStorage.getItem('mf_notifications') ?? '[]').length as number;
+    // 같은 블록에 한 번 더 — 쌍이 그대로라 늘지 않는다.
+    await store.save('n4', noteWith([{ id: 'b1', kind: 'p', runs: [...mention('kim@x.io'), { t: ' 덧말', b: false, c: null }] }, { id: 'b2', kind: 'p', runs: [] }]));
+    expect((JSON.parse(localStorage.getItem('mf_notifications') ?? '[]') as unknown[]).length).toBe(one);
+    // 다른 블록에 부르면 새 쌍이다.
+    await store.save('n4', noteWith([{ id: 'b1', kind: 'p', runs: mention('kim@x.io') }, { id: 'b2', kind: 'p', runs: mention('kim@x.io') }]));
+    expect((JSON.parse(localStorage.getItem('mf_notifications') ?? '[]') as unknown[]).length).toBeGreaterThan(one);
+  });
+
+  it('망가진 본문에도 터지지 않는다 — `pages`가 배열이 아니거나 `runs`가 평문일 때', async () => {
+    const store = new LocalDocStore();
+    const broken = { v: 1, kind: 'note', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral', pages: 'nope' } as unknown as Doc;
+    await expect(store.save('n5', broken)).resolves.toBeDefined();
+    const odd = noteWith([{ id: 'b1', kind: 'p', runs: null }, { id: 'b2' }, { id: 'b3', kind: 'table', rows: [null, 'x'] }]);
+    await expect(store.save('n6', odd)).resolves.toBeDefined();
+  });
+});
