@@ -61,6 +61,30 @@ export interface RichTextValue {
  */
 const CHIP_ATOMIC = ' contenteditable="false"';
 
+/** 요일 글자 — 자리가 곧 `Date#getDay()`의 값이다(0=일 … 6=토). */
+const DOW_CHARS = '일월화수목금토';
+
+/** `YYYY-MM-DD` → 요일(0=일 … 6=토). 읽을 수 없으면 `-1`. */
+function dowOfIso(iso: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return -1;
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
+}
+
+/**
+ * 날짜 칩 라벨의 **요일 글자가 시작하는 자리** — 없으면 `-1`.
+ *
+ * 조건이 둘인 이유가 있다. ① 앞에 **공백**이 있어야 한다: `9월 27일`의 끝 글자도
+ * `일`이라 그것만 보면 **날(日)을 요일로 읽는다**(테스트가 이 자리를 잡았다).
+ * ② 그 글자가 **정말 그 날의 요일**이어야 한다: 라벨은 사람이 고칠 수 있는 글이고,
+ * `dt`가 정본이다. 둘 다 맞을 때만 가른다 — 아니면 통째로 둔다(색이 안 붙을 뿐이다).
+ */
+function dowCut(t: string, iso: string): number {
+  const dow = dowOfIso(iso);
+  if (dow < 0 || t.length < 2) return -1;
+  return /\s/.test(t.slice(-2, -1)) && t.slice(-1) === DOW_CHARS[dow] ? t.length - 1 : -1;
+}
+
 
 /** Port of `Component#runsToHtml` (MindFlow.dc.html:2564-2572) — renders `rich` runs (or
  * plain `text`, absent that) into the innerHTML a `contentEditable` box should show. */
@@ -105,7 +129,24 @@ export function runsToHtml(n: RichTextValue): string {
        * `domToRuns`가 그 색·배경을 런의 `c`로 되읽어 **칩을 떼도 색이 남는다** —
        * 링크 파랑에서 실제로 겪은 사고와 같은 계열이다(위 `isLinkInk` 주석).
        */
-      else if (r.dt) inner = `<span class="mf-datechip"${CHIP_ATOMIC} data-date="${escHtml(r.dt)}">${inner}</span>`;
+      else if (r.dt) {
+        /**
+         * **요일 글자만 따로 감싼다**(요청) — 토·일은 일정 페이지와 같은 색으로.
+         *
+         * 색은 `data-dow`를 보고 CSS가 준다(`editor.css`). 여기서 인라인 색을 심으면
+         * `domToRuns`가 그것을 런의 `c`로 되읽어 **칩을 떼도 색이 남는다**(위 `isLinkInk`).
+         * 감싸는 스팬은 **글자를 바꾸지 않으므로** 값(`domToRuns`)도 그대로다.
+         *
+         * 공휴일은 여기서 알 수 없다 — 그 값은 구글에서 오고, 본문을 그리는 이 함수는
+         * 순수하다. 공휴일 색은 팝오버 머리가 맡는다(거기서는 일정과 함께 안다).
+         */
+        const cut = dowCut(r.t, r.dt);
+        const body =
+          cut < 0
+            ? inner
+            : `${st ? `<span style="${st}">${conv(r.t.slice(0, cut))}</span>` : conv(r.t.slice(0, cut))}<span class="mf-datechip-dow">${st ? `<span style="${st}">${conv(r.t.slice(cut))}</span>` : conv(r.t.slice(cut))}</span>`;
+        inner = `<span class="mf-datechip"${CHIP_ATOMIC} data-date="${escHtml(r.dt)}" data-dow="${dowOfIso(r.dt)}">${body}</span>`;
+      }
       else if (r.pg) inner = `<span class="mf-pagelink"${CHIP_ATOMIC} data-page="${escHtml(r.pg)}">${inner}</span>`;
       /**
        * 본문 댓글의 형광 — **맨 바깥에서** 감싼다(스펙 6-3).

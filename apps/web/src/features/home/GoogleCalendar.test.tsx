@@ -4602,3 +4602,70 @@ describe('다시 연결이 필요하면 어느 화면에서도 연결된 척하�
     expect(within(pop).queryByText('내 캘린더')).toBeNull();
   });
 });
+
+/**
+ * `eventsServed` — **「아직 모름」과 「빈 목록」을 가르는 값**(제보 3).
+ *
+ * 공책의 날짜 칩 팝오버가 그리오 일정을 먼저 보여 줬다가 스켈레톤으로 되돌아갔다가
+ * 다시 둘을 보여 줬다. 원인은 이 훅의 `loading`이 **`false`로 시작**한다는 것이다 —
+ * 조회 효과가 돌기 전의 한 프레임이 "다 받았다"로 읽혀 그리오만 든 목록이 한 번
+ * 그려지고, 곧 참이 되며 스켈레톤으로 되돌아간다. 화면이 아니라 **훅에 직접 묻는다**:
+ * 이 값을 쓰는 곳이 늘어날 자리이고, 화면으로 물으면 그 화면의 사정이 섞인다.
+ */
+describe('구글 캘린더 — 받아 왔는가(eventsServed)', () => {
+  it('조회가 끝나기 전에는 거짓이다 — `loading`이 거짓인 첫 프레임에도', async () => {
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        await held; // 일정 조회만 붙들어 둔다 — "받는 중"을 손에 쥐고 본다
+        return ok({ items: [{ id: 'g1', summary: '구글 회의', start: { dateTime: `${day}T09:00:00+09:00` }, end: { dateTime: `${day}T10:00:00+09:00` } }] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+
+    const at = partsOf(day)!;
+    const seen: { loading: boolean; served: boolean; n: number }[] = [];
+    function Probe() {
+      const api = useGoogleCalendar(at.y, at.m, googlePrefsOf({ calendars: ['me@example.com'] }), () => {});
+      seen.push({ loading: api.loading, served: api.eventsServed, n: api.events.length });
+      return null;
+    }
+    render(<Probe />);
+
+    // **그 프레임이 실제로 있다**는 것부터 확인한다 — 없으면 이 테스트는 헛돈다.
+    const gap = () => seen.filter((s) => !s.loading && s.n === 0);
+    await waitFor(() => expect(gap().length).toBeGreaterThan(0));
+    // 그 프레임에서도 "다 받았다"고 말하지 않는다 — 결론을 미루는 것이 이 값의 일이다.
+    expect(gap().every((s) => !s.served)).toBe(true);
+
+    await act(async () => {
+      release();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => expect(seen[seen.length - 1]!.served).toBe(true));
+    expect(seen[seen.length - 1]!.n).toBe(1);
+  });
+
+  it('조회가 **영영 일어나지 않는** 계정은 곧바로 참이다 — 연동을 켜지 않았으면 기다릴 것이 없다', async () => {
+    clientId = null;
+    const at = partsOf(inMonth(1))!;
+    let served: boolean | null = null;
+    function Probe() {
+      served = useGoogleCalendar(at.y, at.m, googlePrefsOf(null), () => {}).eventsServed;
+      return null;
+    }
+    render(<Probe />);
+    expect(served).toBe(true);
+  });
+});

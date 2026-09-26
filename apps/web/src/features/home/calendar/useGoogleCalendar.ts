@@ -99,6 +99,12 @@ export interface GoogleCalendarApi {
    */
   eventColors: Record<string, string>;
   loading: boolean;
+  /**
+   * 지금 보는 달의 일정을 **실제로 받아 왔는가**(캐시에 들어왔는가). `loading`은
+   * `false`로 시작하므로 "아직 조회가 시작도 안 됐다"와 "다 받았다"를 가르지 못한다 —
+   * 빈 목록을 결론으로 그리면 안 되는 화면은 이 값을 본다(공책의 날짜 칩 팝오버).
+   */
+  eventsServed: boolean;
   /** 마지막 오류 문구(설정 화면이 보여 준다). */
   error: string | null;
   /** 사용자가 직접 누른 연결 — 동의 창이 뜬다. */
@@ -495,6 +501,26 @@ export function useGoogleCalendar(
     );
   }, [available, enabled, listLoaded, picked, allCalendars]);
 
+  /**
+   * **이 달의 일정을 실제로 받아 왔는가** — 「빈 목록」과 「아직 모름」을 가른다.
+   *
+   * `loading`으로는 그 둘을 가를 수 없다(제보: 공책의 날짜 칩 팝오버가 그리오 일정을
+   * 먼저 보여 줬다가 스켈레톤으로 되돌아간다): `loading`은 `false`로 **시작**하므로
+   * 조회 효과가 돌기 전 한 프레임이 "다 받았다"로 읽힌다. 여기서는 **기억(캐시)에
+   * 그 달이 들어왔는가**를 본다 — 조회가 끝나야 들어오고, 이미 받아 둔 달이면
+   * 첫 프레임부터 참이라 두 번째 호버에서는 스켈레톤이 아예 뜨지 않는다.
+   *
+   * 조회가 **영영 일어나지 않는** 경우들은 곧바로 참이다: 클라이언트 ID가 없는 배포,
+   * 연동을 끈 계정, 조회하지 않는 소비처(`mode !== 'events'`), 고른 캘린더가 없음.
+   * 그 판단에는 캘린더 목록이 필요하므로 목록이 오기 전에는 거짓이다.
+   */
+  const eventsServed =
+    !available || !enabled || mode !== 'events' || !picked
+      ? true
+      : !listLoaded
+        ? false
+        : eventCache.has(cacheKey) || picked.split(',').every((id) => !allCalendars.some((c) => c.id === id));
+
   // ── 보이는 달의 일정 ────────────────────────────────────────────────────
   useEffect(() => {
     const ids = picked ? picked.split(',') : [];
@@ -882,6 +908,7 @@ export function useGoogleCalendar(
     listLoaded,
     pickedIds: prefs.calendars,
     events: colored,
+    eventsServed,
     /** 이벤트 색 팔레트(번호 → hex) — 색 고르기 칸이 이 색으로 그린다. */
     eventColors: colors,
     loading,

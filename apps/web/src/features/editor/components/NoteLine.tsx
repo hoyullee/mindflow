@@ -18,10 +18,10 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor, resetTypingStyle } from '../noteRichDom';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
-import { chipAtCaret, chipRange } from '../noteChip';
+import { chipAtCaret, chipRange, extendOverChips } from '../noteChip';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
 import { editCaretKeydown } from '../caretPolicy';
@@ -317,6 +317,12 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       }
     }
     const { text, rich } = domToRuns(el);
+    /**
+     * **줄이 비면 브라우저의 타이핑 스타일도 비운다**(제보: 줄을 통째로 지운 뒤 다시
+     * 치면 서식이 살아나 끌 방법이 없다). 우리 모델은 비었는데 크로뮴은 지운 선택의
+     * 서식을 "다음에 칠 글자"에 물려준다 — `resetTypingStyle` 머리말에 실측이 있다.
+     */
+    if (!text) resetTypingStyle(el);
     let value: { text: string; rich: RichRun[] | null } = { text, rich };
     if (final) {
       const linked = applyAutoLinks(value);
@@ -497,8 +503,17 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       const modify = (sel as (Selection & { modify?: (a: string, d: string, g: string) => void }) | null)?.modify;
       if (sel && typeof modify === 'function' && sel.focusNode && el.contains(sel.focusNode)) {
         e.preventDefault();
+        const dir = e.key === 'Home' ? -1 : 1;
         try {
-          modify.call(sel, e.shiftKey ? 'extend' : 'move', e.key === 'Home' ? 'backward' : 'forward', 'lineboundary');
+          modify.call(sel, e.shiftKey ? 'extend' : 'move', dir === -1 ? 'backward' : 'forward', 'lineboundary');
+          /**
+           * **칩에서 멈춘 만큼을 메운다**(제보: 칩 셋이 있는 줄에서 Shift+Home이
+           * 2번째까지만 골라진다). `modify`는 `contenteditable="false"` 요소 앞에서
+           * 서고 다시 불러도 더 가지 않는다 — 칩이 한 덩어리가 되면서 생긴 자리다.
+           * 늘리는 경우에만 메우면 된다: 캐럿만 옮기는 Home·End는 이미 행의 끝에
+           * 닿아 있고(칩 앞·뒤가 곧 그 자리다) 그 뒤로 더 갈 곳이 없다.
+           */
+          if (e.shiftKey) extendOverChips(el, sel, dir);
         } catch {
           /* 못 옮겨도 캐럿은 제자리다 */
         }

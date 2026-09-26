@@ -621,6 +621,16 @@ input[type='search']::-webkit-search-results-decoration {
   background: var(--mf-note-chip-bg-on);
   border-color: var(--mf-note-chip-line-on);
 }
+/* 요일 글자만 색을 갈아입는다(요청) — **일정 페이지와 같은 규칙**이다:
+ * 일요일은 `--mf-danger`, 토요일은 `--mf-info`, 나머지는 칩의 글자색 그대로.
+ * (`MonthGrid`의 `numFg`와 같은 갈래라 한쪽만 바뀌면 두 화면이 어긋난다.)
+ * 공휴일은 여기서 알 수 없다 — 본문을 그리는 함수는 구글 일정을 모른다. */
+.mf-note-line .mf-datechip[data-dow='0'] .mf-datechip-dow {
+  color: var(--mf-danger);
+}
+.mf-note-line .mf-datechip[data-dow='6'] .mf-datechip-dow {
+  color: var(--mf-info);
+}
 .mf-note-line .mf-datechip::before {
   content: '';
   width: 11px;
