@@ -104,6 +104,22 @@ function inMonth(n: number): string {
 }
 
 /**
+ * 이 달 안에서 **이어지는** 며칠 — 구간(시작~종료)을 고르는 검증용.
+ *
+ * `inMonth(n)`은 달을 넘어가면 반대로 접어(오늘−n) 돌려주므로 여러 번 불러
+ * 구간을 만들면 **순서가 뒤집히거나 끝이 달을 넘지 못한다**: 9/26에 돌린 CI가
+ * `inMonth(5)`를 9/21로 받아 「끝은 배타적 다음 날」 단정이 깨졌다. 달의 어디쯤
+ * 에서 돌리느냐로 갈리는 시계 의존이라, 구간은 이 함수로 한 번에 잡는다.
+ */
+function spanInMonth(len: number): string[] {
+  const now = new Date();
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  // 기본은 이틀 뒤부터 — 달 끝에 걸리면 끝에 붙여 뒤로 물린다.
+  const start = Math.max(1, Math.min(now.getDate() + 2, last - len + 1));
+  return Array.from({ length: len }, (_, i) => isoOf(now.getFullYear(), now.getMonth() + 1, start + i));
+}
+
+/**
  * 이 달 안의 **평일** — 공휴일 표시를 검증할 날. 일·토를 고르면 그 칸은 원래
  * 주말 색이라 "공휴일이라서 빨간가"를 구분할 수 없다(가짜 통과).
  */
@@ -3451,7 +3467,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
-      const day = inMonth(2);
+      const [d0, d1, d2] = spanInMonth(3) as [string, string, string];
+      const day = d0;
       const f = stubWork(day, { id: 'w1', from: day, to: day, props: { type: 'homeOffice', homeOffice: {} } });
       clientId = 'test-client.apps.googleusercontent.com';
       const user = userEvent.setup();
@@ -3462,7 +3479,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       const modal = await open();
       // 종료 날짜를 이틀 뒤로 → 사흘에 걸린다.
       fireEvent.click(modal.querySelector('[data-work-to]')!);
-      fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
+      fireEvent.click(document.querySelector(`[data-datepop-day="${d2}"]`)!);
       // 발치는 이제 **막는 것**만 말한다(요청) — 며칠에 걸리는지는 두 날짜 버튼이 말한다.
       await waitFor(() => expect(modal.querySelector('[data-work-to]')?.textContent).toContain('일'));
       expect(modal.querySelector('[data-work-foot]')?.textContent ?? '').toBe('');
@@ -3478,15 +3495,16 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       // 첫 날은 그 날짜가 그대로라 갈래·이름만 간다(#552의 그 규칙).
       expect(Object.keys(bodies[0]!)).toEqual(['workingLocationProperties']);
       // 만드는 두 날은 **각각 정확히 하루**다(끝은 배타적 다음 날).
-      expect(bodies[1]).toMatchObject({ start: { date: inMonth(3) }, end: { date: inMonth(4) } });
-      expect(bodies[2]).toMatchObject({ start: { date: inMonth(4) }, end: { date: inMonth(5) } });
+      expect(bodies[1]).toMatchObject({ start: { date: d1 }, end: { date: nextDay(d1) } });
+      expect(bodies[2]).toMatchObject({ start: { date: d2 }, end: { date: nextDay(d2) } });
     });
 
     it('여러 날을 실은 본문은 어디에도 없다 — 구글이 하루만 받는다', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
-      const day = inMonth(2);
+      const [d0, , d2] = spanInMonth(3) as [string, string, string];
+      const day = d0;
       const f = stubWork(day);
       clientId = 'test-client.apps.googleusercontent.com';
       const user = userEvent.setup();
@@ -3496,7 +3514,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       const { open } = await openWorkModal(container, user, day);
       const modal = await open();
       fireEvent.click(modal.querySelector('[data-work-to]')!);
-      fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
+      fireEvent.click(document.querySelector(`[data-datepop-day="${d2}"]`)!);
       fireEvent.click(modal.querySelector('[data-work-save]')!);
       await waitFor(() => expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(3));
       for (const c of f.mock.calls.filter((x) => (x[1] as { method?: string } | undefined)?.method === 'POST')) {

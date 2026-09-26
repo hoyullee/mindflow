@@ -274,6 +274,21 @@ export function noteTokens(t: Theme): CSSProperties {
       '--mf-note-ck': t.border,
       '--mf-note-code-bg': t.panel2,
       '--mf-note-code-fg': t.text,
+      /**
+       * 인라인 칩(날짜·페이지·사람) — 표와 **같은 태도**다: 스펙의 밝은 값을 박지
+       * 않고 그 **관계**를 테마에서 다시 만든다(박으면 다크에서 어두운 종이 위에
+       * 베이지 알약이 뜬다). 아이콘만 강조색을 그대로 쓴다 — 그 주황이 "이건
+       * 날짜다"라는 표식이라, 면과 달리 밝기와 무관하게 읽혀야 한다.
+       */
+      '--mf-note-chip-bg': t.panel2,
+      '--mf-note-chip-line': t.border,
+      '--mf-note-chip-fg': t.subtext,
+      '--mf-note-chip-icon': t.accent,
+      '--mf-note-chip-bg-on': mix(t.accent, 18, t.panel),
+      '--mf-note-chip-line-on': mix(t.accent, 36, t.panel),
+      '--mf-note-chip-pill': mix(t.border, 45, t.panel),
+      '--mf-note-chip-pill-line': t.border,
+      '--mf-note-chip-pill-on': mix(t.border, 70, t.panel),
       '--mf-note-ok': '#5eaa5e',
       '--mf-note-ok-ink': '#8fb66f',
       ...TONE_TOKENS,
@@ -318,6 +333,20 @@ export function noteTokens(t: Theme): CSSProperties {
     '--mf-note-ck': '#dcd1c6', // 체크 상자의 빈 테두리
     '--mf-note-code-bg': '#332e29',
     '--mf-note-code-fg': '#e7dacb',
+    // 인라인 칩(날짜·페이지·사람) — **스펙 3-1의 값 그대로**(제보: 색이 다르다).
+    // 앞서 `--mf-panel2`·`--mf-border`·`--mf-subtext`로 맞춰 두었는데, 그 셋은 이
+    // 팔레트에서 세그먼트 트랙·실선 경계·보조 글자의 색이라 칩보다 한 톤씩 차갑고
+    // 흐렸다. 스펙이 칩에만 준 값이 따로 있으므로 **칩의 이름으로** 박는다
+    // (`--mf-th`·`--mf-tsel-bg`가 표에 대해 하는 일과 같다).
+    '--mf-note-chip-bg': '#f7f1ea',
+    '--mf-note-chip-line': '#eadfd2',
+    '--mf-note-chip-fg': '#5c554d',
+    '--mf-note-chip-icon': '#d8794f', // 달력 아이콘 — 강조색(#f0663f)보다 차분한 벽돌빛
+    '--mf-note-chip-bg-on': '#fbede6', // 호버
+    '--mf-note-chip-line-on': '#efcdb9',
+    '--mf-note-chip-pill': '#f3eee8', // 사람 칩(스펙 4-7) — 날짜 칩보다 반 톤 따뜻하다
+    '--mf-note-chip-pill-line': '#e9dfd3',
+    '--mf-note-chip-pill-on': '#ede5dc',
     '--mf-note-ok': '#5eaa5e', // 저장됨 점
     '--mf-note-ok-ink': '#7a8b62', // 저장됨 글자
     ...TONE_TOKENS,
