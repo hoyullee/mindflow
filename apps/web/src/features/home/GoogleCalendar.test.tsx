@@ -19,9 +19,9 @@ import { LocalNotificationStore } from '../../adapters/local/localNotificationSt
 import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore } from '../../adapters/ports';
-import { isoOf } from './calendar/model';
+import { isoOf, partsOf } from './calendar/model';
 import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_DIRECTORY, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
-import { clearGoogleSessionCache } from './calendar/useGoogleCalendar';
+import { clearGoogleSessionCache, googlePrefsOf, useGoogleCalendar } from './calendar/useGoogleCalendar';
 import { onCalendarChanged } from '../reminders/calendarChanged';
 
 /**
@@ -1627,62 +1627,61 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(titleOf('갈 회의').style.textDecoration).toBe('');
   });
 
-  it('대시보드를 떠났다 돌아오면 구글 일정이 곧바로 그려진다 — 문서 위젯이 세션 캐시를 비우지 않는다(제보 ⑦)', async () => {
-    // 제보: 대시보드 재진입마다 구글 일정이 깜빡였다. 원인은 **연동이 꺼진 것과
-    // 아직 안 켜진 것을 같게 본 것** — 조회하지 않는 소비처(문서 위젯 `mode: 'off'`,
-    // 닫힌 설정 모달)가 마운트할 때마다 탭의 세션 캐시를 통째로 비웠다. 그래서
-    // 캘린더 위젯은 매번 처음부터 받아야 했고 그 사이 달력이 비었다.
-    localStorage.setItem(
-      'mf_spaces',
-      JSON.stringify({
-        spaces: [{ id: 's1', name: '업무', home: true, color: '#f0663f', maps: [], folders: [] }],
-        activeSpace: 's1',
-        mapFolders: {},
-        google: { calendars: ['me@example.com'] },
-        // 문서 위젯이 **먼저** 온다 — 그 인스턴스의 mode는 'off'다.
-        dashboards: [{ id: 'd1', name: '이번 주', items: [{ id: 'w-doc', docId: 'doc-a', size: '1x1' }, { id: 'w-cal', kind: 'cal', size: '4x3' }] }],
-      }),
-    );
-    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { email: 'me@example.com' }, email: 'me@example.com', name: '나' }));
+  it('아직 켜지지 않은 소비처는 탭 캐시를 비우지 않는다 — 켜져 있던 것이 꺼질 때만 버린다(제보 ⑦)', async () => {
+    // 제보: 재진입마다 구글 일정이 깜빡였다. 원인은 **연동이 꺼진 것과 아직 안 켜진
+    // 것을 같게 본 것** — `enabled: false`로 마운트한 인스턴스가 탭의 세션 캐시를
+    // 통째로 비웠고, 그러면 켜져 있는 화면은 매번 처음부터 받아야 해 그 사이가 비었다.
+    //
+    // **훅에 직접 묻는다**: 이 규칙을 깨뜨리는 자리는 화면이 아니라 훅이고(`enabled`가
+    // 거짓인 인스턴스는 어디서든 만들어진다 — 공책 에디터의 일정 탭은 설정을 읽기
+    // 전까지 정확히 그 상태다), 화면으로 물으면 그 화면이 사라질 때 함께 헛돈다.
     seedToken();
     stubGis();
     const meeting = inMonth(1);
-    let slow = false;
+    let fetches = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
         const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
         if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
         if (url.includes('/colors')) return ok({ event: {} });
-        if (url.includes('/users/me/calendarList')) {
-          if (slow) return new Promise<Response>(() => {});
-          return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
-        }
-        // 두 번째 방문부터는 조회가 **영원히 응답하지 않는다** — 그래도 화면에 일정이
-        // 보이면 그건 기억(캐시)에서 온 것이다.
-        if (slow) return new Promise<Response>(() => {});
-        return ok({ items: [{ id: 'g1', summary: '구글 회의', start: { dateTime: `${meeting}T09:00:00+09:00` }, end: { dateTime: `${meeting}T10:00:00+09:00` }, htmlLink: 'https://calendar.google.com/x' }] });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        fetches += 1;
+        return ok({ items: [{ id: 'g1', summary: '구글 회의', start: { dateTime: `${meeting}T09:00:00+09:00` }, end: { dateTime: `${meeting}T10:00:00+09:00` } }] });
       }),
     );
     clientId = 'test-client.apps.googleusercontent.com';
-    const user = userEvent.setup();
-    const { container } = renderHome();
-    const aside = await waitFor(() => {
-      const el = container.querySelector('aside');
-      expect(el).toBeTruthy();
-      return el as HTMLElement;
-    });
-    await user.click(within(aside).getByText('이번 주'));
-    await waitFor(() => expect(container.querySelector('[data-cal-widget-month]')).toBeTruthy());
-    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
 
-    // 스페이스로 나갔다가 다시 대시보드로 — 이제 조회는 응답하지 않는다.
-    slow = true;
-    await user.click(within(aside).getByText('업무'));
-    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeNull());
-    await user.click(within(aside).getByText('이번 주'));
-    await waitFor(() => expect(container.querySelector('[data-cal-widget-month]')).toBeTruthy());
-    expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0);
+    const at = partsOf(meeting)!;
+    // 켜진 소비처 — 일정을 받아 탭 캐시를 채운다.
+    function On() {
+      const api = useGoogleCalendar(at.y, at.m, googlePrefsOf({ calendars: ['me@example.com'] }), () => {});
+      return <span data-on>{api.events.map((e) => e.title).join(',')}</span>;
+    }
+    // 아직 켜지지 않은 소비처 — 조회하지 않는다(`enabled: false`). 캐시를 건드리면 안 된다.
+    function NotYetOn() {
+      useGoogleCalendar(at.y, at.m, googlePrefsOf(null), () => {});
+      return null;
+    }
+
+    const first = render(<On />);
+    await waitFor(() => expect(first.container.querySelector('[data-on]')!.textContent).toContain('구글 회의'));
+    const afterFirst = fetches;
+    expect(afterFirst).toBeGreaterThan(0);
+    first.unmount();
+
+    // 켜지지 않은 인스턴스가 마운트됐다 사라진다 — 여기서 캐시를 버리면 아래가 빈다.
+    const off = render(<NotYetOn />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    off.unmount();
+
+    // 다시 켜진 화면 — 이제 조회가 한 건도 더 나가지 않아야 하고(캐시가 살아 있다),
+    // 첫 프레임부터 일정이 그려져야 한다(깜빡임 없음).
+    const again = render(<On />);
+    expect(again.container.querySelector('[data-on]')!.textContent).toContain('구글 회의');
+    expect(fetches).toBe(afterFirst);
   });
 
   it('회의실 행이 그 시간에 비어 있는지 말한다 — 모르는 것은 칠하지 않는다(요청 ③)', async () => {

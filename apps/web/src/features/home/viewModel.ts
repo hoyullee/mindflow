@@ -8,7 +8,6 @@ import { calendarEntries, type CalendarSource } from './calendar/entries';
 import { calendarBrief, todayISO, type CalendarBrief } from './calendar/model';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
-import type { DashDocKind } from './dashboard/model';
 import type { Doc, NoteSketch } from '@mindflow/mindmap-core';
 import { noteCoverColor, noteCoverSketch, noteTagColor, pageExcerpt, parseDoc } from '@mindflow/mindmap-core';
 
@@ -192,14 +191,6 @@ export interface HomeViewModel {
    * 구획이 아니라 사이드바의 출처 하나로 두는 게 정보 구조에도 맞는다.
    */
   sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view'; isNew: boolean; kind: DocKindName }[];
-  /** docId → 제목·소속 스페이스 이름 — 대시보드 위젯 머리가 읽는다(내 문서 전체 +
-   * 공유받은 문서. 공유 문서의 "스페이스"는 '공유받음'으로 말한다). */
-  dashDocTitles: Record<string, string>;
-  dashDocSpaces: Record<string, string>;
-  /** "보드 올리기" 피커의 후보 목록 — 내 문서 전체(휴지통 제외, docId 있는 것만.
-   * docId 없는 옛 카드·Drive 데모는 위젯이 가리킬 서버 문서가 없어 내주지 않는다 —
-   * 이름 변경·공유와 같은 가드) + 공유받은 문서. */
-  dashPickCatalog: { docId: string; title: string; spaceId: string; spaceName: string; kind: DashDocKind; hue: string; updatedAt?: string; shared: boolean }[];
   /** 아직 확인하지 않은 초대 수 — LNB "공유받음"의 알림 배지. 0이면 배지 없음. */
   sharedUnread: number;
   /** LNB에 "공유받음" 구획을 그릴지. 처음엔 공유받은 게 없으면 숨겼는데, 항상
@@ -283,13 +274,12 @@ export interface HomeViewModel {
 /**
  * 지금 **스페이스 화면**을 보고 있는가 — LNB의 스페이스 행 활성 표시와 마퀴가 함께 쓴다.
  *
- * 화면은 셋(스페이스·대시보드·일정)이고 언제나 하나만 그린다. 예전에는 각자
- * `!activeDash`처럼 손으로 열거해서 **일정 화면을 더할 때 한쪽만 빠졌다**(제보: 일정을
- * 고르고 있는데 스페이스 행에 계속 포커스가 남는다). 네 번째 화면이 생겨도 여기만
- * 고치면 된다.
+ * 화면은 둘(스페이스·일정)이고 언제나 하나만 그린다. 예전에는 각자 손으로 열거해서
+ * **일정 화면을 더할 때 한쪽만 빠졌다**(제보: 일정을 고르고 있는데 스페이스 행에 계속
+ * 포커스가 남는다). 세 번째 화면이 생겨도 여기만 고치면 된다.
  */
-export function isSpaceView(state: { activeDash: string | null; activeCal: boolean }): boolean {
-  return !state.activeDash && !state.activeCal;
+export function isSpaceView(state: { activeCal: boolean }): boolean {
+  return !state.activeCal;
 }
 
 export function recentTrayDocIds(spaces: SpaceData[], recent: string[], trash: { docId?: string }[], deleted: Record<string, boolean>): string[] {
@@ -980,34 +970,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     .map((m) => ({ docId: m.docId, title: m.title, href: mapHref(m.title, m.docId), role: m.role, isNew: m.isNew, kind: docKindOf(m.title, m.docId, state.previewDocs) }));
   const sharedUnread = sharedItems.filter((m) => m.isNew).length;
 
-  // 대시보드 위젯 머리의 제목·소속 — 어느 스페이스의 문서든 올라올 수 있으므로
-  // 전 스페이스를 한 번 돌아 docId 색인을 만든다(카드 수에 선형 — 홈 파생 계산의
-  // 다른 색인들과 같은 규모).
-  const dashDocTitles: Record<string, string> = {};
-  const dashDocSpaces: Record<string, string> = {};
-  const dashPickCatalog: HomeViewModel['dashPickCatalog'] = [];
-  state.spaces.forEach((sp) => {
-    (Array.isArray(sp.maps) ? sp.maps : []).forEach((m) => {
-      if (m.docId) {
-        dashDocTitles[m.docId] = m.title;
-        dashDocSpaces[m.docId] = sp.name;
-        // 공책은 위젯 후보가 아니다(`DashWidgetKind` 주석 — 축소해 보여 줄 그림이 없다).
-        const pickKind = docKindOf(m.title, m.docId, state.previewDocs);
-        if (!isTrashedCard(m.title, m.docId) && pickKind !== 'note') {
-          dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: sp.id, spaceName: sp.name, kind: pickKind, hue: m.hue, updatedAt: state.docTimes[m.docId], shared: false });
-        }
-      }
-    });
-  });
-  state.sharedMaps.forEach((m) => {
-    dashDocTitles[m.docId] = m.title;
-    dashDocSpaces[m.docId] = '공유받음';
-    const sharedPickKind = docKindOf(m.title, m.docId, state.previewDocs);
-    if (!isTrashedCard(m.title, m.docId) && sharedPickKind !== 'note') {
-      dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: 'shared', spaceName: '공유받음', kind: sharedPickKind, hue: '#f0663f', updatedAt: m.updatedAt, shared: true });
-    }
-  });
-
   return {
     connected,
     isDriveSpace,
@@ -1025,9 +987,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     recentCards,
     sharedItems,
     sharedUnread,
-    dashDocTitles,
-    dashDocSpaces,
-    dashPickCatalog,
     // LNB 항목이므로 폴더/검색 화면에서도 그대로 있다 — 사이드바는 "지금 보고 있는
     // 목록"이 아니라 어디로든 가는 길이다.
     sharedVisible: !loading,

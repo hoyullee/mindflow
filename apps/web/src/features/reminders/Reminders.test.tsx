@@ -342,7 +342,7 @@ describe('일정 알림', () => {
     });
     expect(screen.getByText('HOME')).toBeTruthy();
     // 홈이 새로 마운트될 때 읽는 "이 탭이 보던 화면"도 일정으로 고쳐 둔다.
-    expect(JSON.parse(sessionStorage.getItem(ACTIVE_VIEW_KEY)!)).toMatchObject({ activeCal: true, activeDash: null });
+    expect(JSON.parse(sessionStorage.getItem(ACTIVE_VIEW_KEY)!)).toMatchObject({ activeCal: true });
     // 누른 알림은 사라진다(같은 알림을 다시 보여 줄 이유가 없다).
     expect(document.querySelector('[data-reminder-toast]')).toBeNull();
   });

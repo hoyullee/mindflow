@@ -438,22 +438,16 @@ export function mergeRecent(primary: string[], secondary: string[] | undefined, 
   return out;
 }
 
-/** The currently-viewed space/folder/dashboard, persisted per TAB (sessionStorage)
- * so opening a map in the editor and coming back to Home returns to the screen you
+/** The currently-viewed space/folder, persisted per TAB (sessionStorage) so
+ * opening a map in the editor and coming back to Home returns to the screen you
  * left from, instead of resetting. Tab-scoped on purpose: it's transient view
- * state, not a synced preference.
- *
- * `activeDash`도 함께 싣는다(요청: 홈 첫 화면은 기본 대시보드) — 대시보드에서 맵을
- * 열고 돌아오면 그 대시보드로 돌아오고, **저장된 화면이 아예 없는 첫 진입**에서는
- * 컨트롤러가 기본 대시보드(맨 위)를 연다. */
+ * state, not a synced preference. */
 export const ACTIVE_VIEW_KEY = 'mf_active_view';
 
 export interface ActiveView {
   activeSpace: string;
   curFolder: string | null;
-  /** 대시보드를 보고 있었다면 그 id. 스페이스 화면이었으면 null. */
-  activeDash?: string | null;
-  /** 일정 화면을 보고 있었다면 true(대시보드·스페이스와 나란한 세 번째 화면). */
+  /** 일정 화면을 보고 있었다면 true(스페이스와 나란한 두 번째 화면). */
   activeCal?: boolean;
 }
 
@@ -465,10 +459,10 @@ export function saveActiveView(view: ActiveView): void {
   }
 }
 
-/** 이 탭이 기억한 화면을 잊는다 — **로그인 직후**에 부른다(요청: 로그인 후 첫
- *  진입은 '기본' 대시보드). 만료로 튕겨 나갔다 돌아온 탭에는 지난 세션에 보던
- *  스페이스가 남아 있어, 그걸 그대로 복원하면 로그인 후 첫 화면이 대시보드가 아니게
- *  된다. `?next=`로 돌아가는 **주소**는 이 값과 무관하므로 그대로 동작한다. */
+/** 이 탭이 기억한 화면을 잊는다 — **로그인 직후**에 부른다. 만료로 튕겨 나갔다
+ *  돌아온 탭에는 지난 세션에 보던 스페이스가 남아 있어, 그걸 그대로 복원하면 로그인
+ *  후 첫 화면이 고른 시작 화면이 아니게 된다. `?next=`로 돌아가는 **주소**는 이 값과
+ *  무관하므로 그대로 동작한다. */
 export function clearActiveView(): void {
   try {
     sessionStorage.removeItem(ACTIVE_VIEW_KEY);
@@ -478,33 +472,34 @@ export function clearActiveView(): void {
 }
 
 /**
- * 로딩 스켈레톤의 모양을 정하는 힌트 — 첫 화면이 **대시보드인지 스페이스인지**.
+ * 로딩 스켈레톤의 모양을 정하는 힌트 — 첫 화면이 **일정인지 스페이스인지**.
  *
- * 스켈레톤은 하이드레이션 **전에** 그려야 하는데, 그때는 대시보드 목록이 아직 없어
+ * 스켈레톤은 하이드레이션 **전에** 그려야 하는데, 그때는 고른 시작 화면이 아직 없어
  * 어느 화면으로 착지할지 모른다. 그래서 예전엔 늘 스페이스 스켈레톤(최근 항목 띠 +
- * 카드 격자)이 떴다가 대시보드로 갈아 끼워졌다(제보). 착지할 때마다 결과를 이 기기에
- * 적어 두고, 다음 진입의 첫 프레임이 그 모양으로 시작한다 — 홈 테마 캐시(`mf_home_theme`)
- * 와 같은 "첫 페인트용 힌트"다. 이 탭이 기억한 화면이 있으면 그게 더 정확하다.
+ * 카드 격자)이 떴다가 갈아 끼워졌다(제보). 착지할 때마다 결과를 이 기기에 적어 두고,
+ * 다음 진입의 첫 프레임이 그 모양으로 시작한다 — 홈 테마 캐시(`mf_home_theme`)와 같은
+ * "첫 페인트용 힌트"다. 이 탭이 기억한 화면이 있으면 그게 더 정확하다.
  */
 export const LANDING_HINT_KEY = 'mf_home_landing';
 
 /**
- * 홈의 첫 화면 — 세 최상위 화면 중 하나. 사용자가 **고를 수 있고**(요청: 설정 ›
+ * 홈의 첫 화면 — 두 최상위 화면 중 하나. 사용자가 **고를 수 있고**(요청: 설정 ›
  * 시작 화면) 그 선택은 워크스페이스 블롭에 실려 기기 간에 따라온다. 위의
  * `LANDING_HINT_KEY`는 그것과 별개로 **이 기기가 마지막에 실제로 착지한 화면**을
  * 적어 두는 첫 페인트용 캐시다(스켈레톤 모양을 정한다).
  */
-export type HomeLanding = 'cal' | 'dash' | 'space';
+export type HomeLanding = 'cal' | 'space';
 
-/** 고르는 순서 = 화면이 서는 순서(LNB의 일정 → 대시보드 → 스페이스). */
-export const HOME_LANDING_KEYS: HomeLanding[] = ['cal', 'dash', 'space'];
+/** 고르는 순서 = 화면이 서는 순서(LNB의 일정 → 스페이스). */
+export const HOME_LANDING_KEYS: HomeLanding[] = ['cal', 'space'];
 
-export const HOME_LANDING_LABEL: Record<HomeLanding, string> = { cal: '일정', dash: '대시보드', space: '스페이스' };
+export const HOME_LANDING_LABEL: Record<HomeLanding, string> = { cal: '일정', space: '스페이스' };
 
-/** 저장된 값 해석 — 모르는 값·없는 값은 **대시보드**다(지금 동작 그대로: 고른 적
- *  없는 사용자의 첫 화면이 바뀌지 않는다). */
+/** 저장된 값 해석 — 모르는 값·없는 값은 **스페이스**다. 대시보드를 걷어내기 전에
+ *  `'dash'`를 골라 둔 계정이 있으므로 그 값도 여기로 떨어진다(없는 화면을 열지
+ *  않는다 — 예전 착지 규칙이 대시보드가 하나도 없을 때 하던 일과 같은 자리다). */
 export function homeLandingOf(v: unknown): HomeLanding {
-  return v === 'cal' || v === 'space' ? v : 'dash';
+  return v === 'cal' ? 'cal' : 'space';
 }
 
 export function saveLandingHint(kind: HomeLanding): void {
@@ -518,10 +513,10 @@ export function saveLandingHint(kind: HomeLanding): void {
 /** 이번 진입의 첫 화면 예상. 탭이 기억한 화면 → 이 기기의 힌트 → 스페이스. */
 export function predictLanding(): HomeLanding {
   const view = loadActiveView();
-  if (view) return view.activeCal ? 'cal' : view.activeDash ? 'dash' : 'space';
+  if (view) return view.activeCal ? 'cal' : 'space';
   try {
     const hint = localStorage.getItem(LANDING_HINT_KEY);
-    return hint === 'dash' ? 'dash' : hint === 'cal' ? 'cal' : 'space';
+    return hint === 'cal' ? 'cal' : 'space';
   } catch {
     return 'space';
   }
@@ -536,7 +531,6 @@ export function loadActiveView(): ActiveView | null {
       return {
         activeSpace: v.activeSpace,
         curFolder: typeof v.curFolder === 'string' ? v.curFolder : null,
-        activeDash: typeof v.activeDash === 'string' ? v.activeDash : null,
         activeCal: v.activeCal === true,
       };
     }
