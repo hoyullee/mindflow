@@ -47,6 +47,8 @@ import { NoteCommentWindow } from './NoteCommentWindow';
 import { NoteSchedBlock } from './NoteSchedBlock';
 import { NoteSchedPicker } from './NoteSchedPicker';
 import { NoteDatePop } from './NoteDatePop';
+import { NoteProfileCard, seedNoteComment } from './NoteProfileCard';
+import type { ShareParticipant } from '../../../adapters/ports';
 import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, overlapsComment, threadIdOfNode } from '../noteComment';
 import { SCHED_KINDS, useNoteAgenda } from '../noteAgenda';
 import { toastShellStyle } from '../../../pwa/toastShell';
@@ -688,6 +690,12 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     const p = partsOf(todayISO());
     return { y: p?.y ?? 2026, m: p?.m ?? 1 };
   }, []);
+  /**
+   * 멘션 칩 위의 **프로필 카드**(스펙 4-8) — 날짜 칩과 **같은 타이머를 쓴다**: 한 번에
+   * 하나만 떠야 하고(칩 두 개가 나란하면 둘 다 뜬다), 예약을 따로 들면 한쪽을 취소하는
+   * 코드가 두 벌이 된다.
+   */
+  const [profilePop, setProfilePop] = useState<{ email: string; label: string; rect: { left: number; top: number; bottom: number } } | null>(null);
   const datePopTimer = useRef<number | null>(null);
   /**
    * 「일정 블록 고르기」가 열려 있는가(스펙 2-2) — 어느 블록 곁에 넣을지와, 그 줄을
@@ -2257,21 +2265,33 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       datePopTimer.current = null;
     };
     const onOver = (e: PointerEvent): void => {
-      const chip = (e.target as HTMLElement | null)?.closest?.('[data-date]') as HTMLElement | null;
-      if (!chip) return;
-      const iso = chip.getAttribute('data-date') || '';
-      if (!iso) return;
+      const t = e.target as HTMLElement | null;
+      const chip = (t?.closest?.('[data-date]') as HTMLElement | null) ?? null;
+      const person = (t?.closest?.('[data-mention-email]') as HTMLElement | null) ?? null;
+      if (!chip && !person) return;
       clear();
       datePopTimer.current = window.setTimeout(() => {
-        const r = chip.getBoundingClientRect();
-        setDatePop({ iso, rect: { left: r.left, top: r.top, bottom: r.bottom } });
+        const el = chip ?? person;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const rect = { left: r.left, top: r.top, bottom: r.bottom };
+        if (chip) {
+          setProfilePop(null);
+          setDatePop({ iso: chip.getAttribute('data-date') || '', rect });
+        } else if (person) {
+          setDatePop(null);
+          setProfilePop({ email: person.getAttribute('data-mention-email') || '', label: (person.textContent || '').replace(/^@/, ''), rect });
+        }
       }, 110);
     };
     const onOut = (e: PointerEvent): void => {
-      const chip = (e.target as HTMLElement | null)?.closest?.('[data-date]');
-      if (!chip) return;
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.('[data-date]') && !t?.closest?.('[data-mention-email]')) return;
       clear();
-      datePopTimer.current = window.setTimeout(() => setDatePop(null), 180);
+      datePopTimer.current = window.setTimeout(() => {
+        setDatePop(null);
+        setProfilePop(null);
+      }, 180);
     };
     col.addEventListener('pointerover', onOver);
     col.addEventListener('pointerout', onOut);
@@ -2782,6 +2802,34 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   datePopTimer.current = window.setTimeout(() => setDatePop(null), 180);
                 }}
                 onClose={() => setDatePop(null)}
+              />
+            )}
+            {profilePop && (
+              <NoteProfileCard
+                email={profilePop.email}
+                label={profilePop.label}
+                who={cmParticipants.find((p) => p.email.toLowerCase() === profilePop.email.toLowerCase()) ?? null}
+                here={peerHere(controller, cmParticipants, profilePop.email)}
+                rect={profilePop.rect}
+                theme={controller.uiTheme}
+                onEnter={() => {
+                  if (datePopTimer.current !== null) window.clearTimeout(datePopTimer.current);
+                  datePopTimer.current = null;
+                }}
+                onLeave={() => {
+                  if (datePopTimer.current !== null) window.clearTimeout(datePopTimer.current);
+                  datePopTimer.current = window.setTimeout(() => setProfilePop(null), 180);
+                }}
+                onCall={() => {
+                  const who = cmParticipants.find((p) => p.email.toLowerCase() === profilePop.email.toLowerCase());
+                  const name = who?.displayName?.trim() || profilePop.label || profilePop.email.split('@')[0];
+                  setProfilePop(null);
+                  controller.openComments();
+                  // 열이 서는 **다음 프레임**에 밀어 넣는다 — 입력칸이 아직 없으면 아무도 듣지 않는다.
+                  const go = (): void => seedNoteComment(`@${name} `);
+                  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(go));
+                  else setTimeout(go, 0);
+                }}
               />
             )}
             {toast && (
@@ -10476,6 +10524,19 @@ function blockClipLines(block: NoteBlock): ClipLine[] {
 /** 그 키가 **표의 칸**인가 — 칸은 줄이 아니라 값이라 블록 조작이 닿지 않는다. */
 function isCellKey(key: string): boolean {
   return /^[^:]+:r\d+c\d+$/.test(key);
+}
+
+/**
+ * 그 사람이 **지금 이 문서를 보고 있는가**(스펙 4-8의 초록 점).
+ *
+ * awareness가 싣는 것은 이름뿐이다(이메일은 보내지 않는다 — `PresenceUser`). 그래서
+ * 참가자 명단의 표시 이름·이메일 로컬파트와 맞춰 본다. 이름이 같은 두 사람이 동시에
+ * 붙어 있으면 틀릴 수 있지만, 틀렸을 때 잃는 것은 점 하나다.
+ */
+function peerHere(controller: EditorController, people: ShareParticipant[], email: string): boolean {
+  const who = people.find((p) => p.email.toLowerCase() === email.toLowerCase());
+  const names = new Set([who?.displayName?.trim(), email, email.split('@')[0]].filter((x): x is string => !!x).map((x) => x.toLowerCase()));
+  return (controller.presence?.peers ?? []).some((pr) => names.has((pr.user?.name || '').trim().toLowerCase()));
 }
 
 /**

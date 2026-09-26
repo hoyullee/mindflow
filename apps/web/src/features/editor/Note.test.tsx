@@ -8179,3 +8179,69 @@ describe('공책 65판 — 날짜 칩 호버 팝오버와 허브의 「일정 N�
     expect(c.querySelector('[data-hub-kind="date"]')).toBeTruthy();
   });
 });
+
+describe('공책 66판 — 멘션 칩 호버 프로필 카드(스펙 4-8)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  async function open(id: string) {
+    const blocks = [{ id: 'b1', kind: 'p', runs: [{ t: '물어볼 건 ', b: false, c: null }, { t: '@서연', b: false, c: null, m: 'seo@example.com' }] }];
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  it('멘션 칩에 올리면 프로필 카드가 뜨고, 벗어나면 닫힌다', async () => {
+    const c = await open('pf1');
+    const chip = (await waitFor(() => c.querySelector('[data-mention-email]'))) as HTMLElement;
+
+    fireEvent.pointerOver(chip, { bubbles: true });
+    expect(document.querySelector('[data-note-profile]')).toBeNull(); // 곧바로는 뜨지 않는다
+    await waitFor(() => expect(document.querySelector('[data-note-profile]')).toBeTruthy());
+    expect(document.querySelector('[data-profile-name]')?.textContent).toBe('서연');
+
+    fireEvent.pointerOut(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-profile]')).toBeNull());
+  });
+
+  it('**초대되지 않은 사람**에게도 할 말이 있다(권한 상자)', async () => {
+    const c = await open('pf2');
+    const chip = (await waitFor(() => c.querySelector('[data-mention-email]'))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-profile-role]')).toBeTruthy());
+    // 데모 모드에는 참가자 명단이 없다 — 그 자리를 비워 두지 않는다.
+    expect(document.querySelector('[data-profile-role]')?.textContent).toBe('이 공책에 초대되지 않았어요');
+  });
+
+  it('「댓글로 부르기」는 댓글 열을 열고 입력칸에 `@이름 `을 채운다', async () => {
+    const c = await open('pf3');
+    const chip = (await waitFor(() => c.querySelector('[data-mention-email]'))) as HTMLElement;
+    fireEvent.pointerOver(chip, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-profile-call]')).toBeTruthy());
+
+    fireEvent.click(document.querySelector('[data-profile-call]')!);
+    await waitFor(() => expect(document.querySelector('[data-comment-panel]')).toBeTruthy());
+    await waitFor(() => {
+      const box = document.querySelector<HTMLTextAreaElement>('[data-comment-panel] textarea');
+      expect(box?.value).toBe('@서연 ');
+    });
+  });
+
+  it('날짜 칩과 멘션 칩이 **한 번에 하나만** 뜬다', async () => {
+    const blocks = [{ id: 'b1', kind: 'p', runs: [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' }, { t: '@서연', b: false, c: null, m: 'seo@example.com' }] }];
+    localStorage.setItem('mindflow_doc_pf4', JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container: c } = renderEditor('/editor?map=pf4&title=x');
+    await waitFor(() => expect(c.querySelector('[data-note-editor]')).toBeTruthy());
+
+    fireEvent.pointerOver(c.querySelector('[data-date]')!, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+    fireEvent.pointerOver(c.querySelector('[data-mention-email]')!, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-note-profile]')).toBeTruthy());
+    expect(document.querySelector('[data-note-datepop]')).toBeNull();
+  });
+});
