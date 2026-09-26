@@ -42,6 +42,26 @@ export interface RichTextValue {
   rich?: RichRun[] | null;
 }
 
+/**
+ * 칩을 **한 덩어리**로 만드는 속성(제보: 날짜 칩을 Backspace로 지우면 글자가 하나씩
+ * 지워진다 · 캐럿이 달력 아이콘 뒤에 선다).
+ *
+ * 칩은 글이 아니라 **하나의 값**이다 — "9월 27일 일"에서 `일`만 지운 상태는 뜻이
+ * 없고, 그 상태의 런은 여전히 `dt`를 달고 있어 화면에는 멀쩡한 칩으로 남는다(값과
+ * 보이는 것이 어긋난다). `contenteditable="false"`면 브라우저가 이 스팬을 **원자**로
+ * 다루므로 캐럿이 안으로 들어가지 못하고, 지우면 통째로 사라진다.
+ *
+ * 글자는 DOM에 그대로 있으므로 `domToRuns`·`linearize`가 읽는 값은 달라지지 않는다
+ * (아바타·달력 글리프를 `::before`로 그리는 것과 같은 이유 — 값을 건드리지 않는 곳에
+ * 모양을 둔다).
+ *
+ * 브라우저마다 원자 요소의 경계 처리가 조금씩 다르므로 **지우는 일 자체는 JS가
+ * 못박는다**(`NoteLine`의 `chipAtCaret`) — 이 속성은 캐럿이 안으로 못 들어가게 하는
+ * 몫이고, 그 핸들러가 "앞/뒤의 칩을 통째로"를 보장한다.
+ */
+const CHIP_ATOMIC = ' contenteditable="false"';
+
+
 /** Port of `Component#runsToHtml` (MindFlow.dc.html:2564-2572) — renders `rich` runs (or
  * plain `text`, absent that) into the innerHTML a `contentEditable` box should show. */
 export function runsToHtml(n: RichTextValue): string {
@@ -77,7 +97,7 @@ export function runsToHtml(n: RichTextValue): string {
        * CSS의 `::before`가 그리므로 DOM 글자가 아니다 — 값도 캐럿도 건드리지 않는다.
        */
       else if (r.m)
-        inner = `<span class="mf-mention" data-mention-email="${escHtml(r.m)}" data-mention-ini="${escHtml(mentionInitial(r.t))}" data-mention-tone="${escHtml(mentionTone(r.m))}">${inner}</span>`;
+        inner = `<span class="mf-mention"${CHIP_ATOMIC} data-mention-email="${escHtml(r.m)}" data-mention-ini="${escHtml(mentionInitial(r.t))}" data-mention-tone="${escHtml(mentionTone(r.m))}">${inner}</span>`;
       /**
        * 날짜 칩·페이지 링크 — 멘션과 **같은 규칙**(클래스 + data 속성)이다.
        *
@@ -85,8 +105,8 @@ export function runsToHtml(n: RichTextValue): string {
        * `domToRuns`가 그 색·배경을 런의 `c`로 되읽어 **칩을 떼도 색이 남는다** —
        * 링크 파랑에서 실제로 겪은 사고와 같은 계열이다(위 `isLinkInk` 주석).
        */
-      else if (r.dt) inner = `<span class="mf-datechip" data-date="${escHtml(r.dt)}">${inner}</span>`;
-      else if (r.pg) inner = `<span class="mf-pagelink" data-page="${escHtml(r.pg)}">${inner}</span>`;
+      else if (r.dt) inner = `<span class="mf-datechip"${CHIP_ATOMIC} data-date="${escHtml(r.dt)}">${inner}</span>`;
+      else if (r.pg) inner = `<span class="mf-pagelink"${CHIP_ATOMIC} data-page="${escHtml(r.pg)}">${inner}</span>`;
       /**
        * 본문 댓글의 형광 — **맨 바깥에서** 감싼다(스펙 6-3).
        *

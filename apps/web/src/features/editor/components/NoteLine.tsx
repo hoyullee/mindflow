@@ -21,6 +21,7 @@ import { codeHtml } from '../noteCode';
 import { NOTE_EDIT_ATTR, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor } from '../noteRichDom';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
+import { chipAtCaret, chipRange } from '../noteChip';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
 import { editCaretKeydown } from '../caretPolicy';
@@ -431,6 +432,30 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       if (onTab(e.shiftKey)) {
         e.preventDefault();
         return;
+      }
+    }
+    /**
+     * **칩은 한 덩어리로 지운다**(제보: 날짜 칩을 Backspace로 지우면 글자가 하나씩
+     * 지워진다). 캐럿 바로 앞(Backspace)·바로 뒤(Delete)에 칩이 붙어 있으면 그
+     * 스팬을 통째로 걷고 캐럿을 그 자리에 놓는다.
+     *
+     * 마크업의 `contenteditable="false"`가 이미 캐럿을 안으로 들이지 않지만, 경계에서
+     * 무엇이 지워지는가는 브라우저마다 갈린다 — 여기서 못박아야 어디서나 같다.
+     * 값은 DOM을 고친 뒤 **다시 읽어** 만든다(이 화면의 저장 경로가 원래 그렇다).
+     */
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.nativeEvent.isComposing && !readOnly) {
+      const sel = window.getSelection();
+      if (sel?.isCollapsed) {
+        const at = caretOffset(el);
+        const chip = chipAtCaret(el, at, e.key === 'Backspace' ? -1 : 1);
+        if (chip) {
+          const { start } = chipRange(el, chip);
+          chip.remove();
+          e.preventDefault();
+          setLinearSelection(el, start, start);
+          commit();
+          return;
+        }
       }
     }
     if (e.key === 'Backspace' && !e.nativeEvent.isComposing) {

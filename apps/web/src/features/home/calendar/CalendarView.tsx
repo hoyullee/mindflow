@@ -16,6 +16,7 @@ import { CalendarDetailHost } from './CalendarDetail';
 import { NewEventModal } from './NewEventModal';
 import { geurioColorOptions } from './eventColor';
 import { submitNewEvent } from './newEventSubmit';
+import { googleDirectoryOf, googleTargetsOf } from './googleWiring';
 import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
@@ -106,13 +107,10 @@ export function CalendarView({
     return primary && google.pickedIds.includes(primary.id) ? primary : null;
   }, [google.writableCalendars, google.pickedIds]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
-  // 새 일정의 목적지 — **쓸 수 있는** 구글 캘린더만(공휴일·보기 전용은 뺀다).
-  const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}), ...(c.primary ? { primary: true } : {}) })), [google.writableCalendars]);
-  // 선택 스코프로 열리는 것들(이름 검색·회의실) — 두 팝업이 같은 것을 쓴다.
-  const googleDirectory = useMemo(
-    () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms, checkRoomBusy: google.checkRoomBusy }),
-    [google.canSearchPeople, google.searchPeople, google.canPickRooms, google.rooms, google.roomsReady, google.loadRooms],
-  );
+  // 새 일정의 목적지·선택 스코프 — **공책의 날짜 칩 팝오버도 같은 팝업을 띄우므로**
+  // 파생은 한 자리에 둔다(`googleWiring`). 둘로 흩어지면 한쪽만 고쳐진다.
+  const googleTargets = useMemo(() => googleTargetsOf(google), [google]);
+  const googleDirectory = useMemo(() => googleDirectoryOf(google), [google]);
   // 칸에 몇 개를 보여 줄지는 **격자가 자기 칸 높이를 재서** 정한다(제보: 여유가
   // 남는데도 `+N개 더`가 떴다). 모델은 접지 않고 그 날의 항목을 전부 싣는다.
   const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, MONTH_CELL_ALL, 6, holidays, works), [state.calY, state.calM, entries, today, holidays, works]);
