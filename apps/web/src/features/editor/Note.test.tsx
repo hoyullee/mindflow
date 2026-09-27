@@ -9059,7 +9059,7 @@ describe('공책 77판 — 줄 끝 인라인 코드에서 오른쪽 방향키로
     expect(codeOn()).toBe('false');
   });
 
-  it('코드가 **줄 끝이 아니면** 건드리지 않는다 — 브라우저가 이미 넘어간다', async () => {
+  it('코드가 **줄 끝이 아니면** 껍데기 없이 그 밖의 글자 자리로 나간다', async () => {
     localStorage.setItem(
       'mindflow_doc_ca3',
       JSON.stringify({
@@ -9075,11 +9075,137 @@ describe('공책 77판 — 줄 끝 인라인 코드에서 오른쪽 방향키로
 
     fireEvent(document, new Event('selectionchange'));
     await waitFor(() => expect(codeOn()).toBe('true'));
-    fireEvent.keyDown(line, { key: 'ArrowRight' });
+    const ev = createEvent.keyDown(line, { key: 'ArrowRight' });
+    fireEvent(line, ev);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 60));
     });
-    // 예약을 걸지 않았다 — 캐럿은 여전히 코드 안이고 브라우저가 알아서 넘어간다.
-    expect(codeOn()).toBe('true');
+    /**
+     * 뒤에 글자가 있으면 **껍데기가 필요 없다** — 그 글자 노드가 곧 캐럿 자리다.
+     * 값 좌표는 그대로 4(코드의 경계)이고 바뀌는 것은 "어느 요소 안에 서는가"뿐이다.
+     */
+    expect(ev.defaultPrevented).toBe(true);
+    const sel = window.getSelection()!;
+    expect(sel.focusNode?.parentElement?.closest('code')).toBeNull();
+    expect(linearize(line, [{ container: sel.focusNode!, offset: sel.focusOffset }]).pos[0]).toBe(4);
+    expect(line.querySelector('[data-armed-anchor]')).toBeNull();
+  });
+});
+
+describe('공책 78판 — 덮어쓰기·줄 끝 보초·칩 머리·Esc(제보 1·2·3·4)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const line = (c: HTMLElement, key: string) => c.querySelector(`[data-note-line="${key}"]`) as HTMLElement;
+
+  /**
+   * 제보 1 — 서식이 걸린 줄과 평문 줄을 함께 골라 놓고 글자를 치면, 그 글자들이
+   * **전부** 시작 서식이어야 한다(첫 글자만이 아니라).
+   *
+   * 여기서 지키는 것은 **배선**이다(단위 테스트는 함수만 지킨다 — 프로브 함정 F28):
+   * 덮어쓰기 경로가 예약을 걸어 두는가. 걸어 두면 툴바가 그 상태를 곧바로 비춘다.
+   */
+  it('1 — 여러 줄을 덮어쓰면 시작 서식이 **예약으로** 남는다', async () => {
+    const c = await open('ov1', [
+      { id: 'b1', kind: 'p', runs: [{ t: '굵은 줄', b: true, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '평문 줄', b: false, c: null }] },
+    ]);
+    const first = line(c, 'b1');
+    first.focus();
+    setLinearSelection(first, 0, 0);
+    fireEvent(document, new Event('selectionchange'));
+    // Shift+↓ 로 둘째 줄까지 칠한다 — 그때부터 키는 문서 리스너의 것이다.
+    fireEvent.keyDown(first, { key: 'ArrowDown', shiftKey: true });
+    await waitFor(() => expect(c.querySelector('[data-note-painting="1"]')).toBeTruthy());
+
+    fireEvent.keyDown(document, { key: '가' });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    /**
+     * 여기서부터는 **브라우저의 차례**다 — 잡아 둔 선택을 친 글자로 갈아 끼운다.
+     * 최악의 경우(서식을 하나도 물려주지 않는다)를 손으로 만들어 놓고, 예약이
+     * 그것을 되살리는지 본다. 툴바의 불로 재면 안 된다: 그때 선택은 아직 **굵은
+     * 글 위에** 있어 예약이 없어도 켜져 보인다(그래서 이 자리를 한 번 놓쳤다).
+     */
+    first.innerHTML = '가' + runsToHtml({ text: '', rich: [{ t: '평문 줄', b: false, c: null }] });
+    setLinearSelection(first, 1, 1);
+    fireEvent.input(first);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const bold = [...first.querySelectorAll<HTMLElement>('span[style*="font-weight"]')];
+    expect(bold.map((e) => e.textContent).join('')).toBe('가');
+  });
+
+  /**
+   * 제보 2 — 줄을 통째로 지웠다가 **조합으로** 다시 치면 크로뮴이 보초 `<br>`을
+   * 남긴다(`가<br>`). 그것을 한 글자로 세면 「글 끝인가」가 영영 거짓이라 ↓가 다음
+   * 줄로 넘어가지 못한다(실브라우저로 재현하고 여기서 못박는다).
+   */
+  it('2 — 끝에 보초 `<br>`이 남아도 ↓가 다음 줄로 간다', async () => {
+    const c = await open('br1', [
+      { id: 'b1', kind: 'p', runs: [{ t: '첫 줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    ]);
+    const first = line(c, 'b1');
+    // 크로뮴이 남긴 모양을 그대로 만든다 — 글자 하나 + 보초.
+    first.innerHTML = '가<br>';
+    first.focus();
+    setLinearSelection(first, 1, 1);
+
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2'));
+  });
+
+  /**
+   * 제보 3 — 줄 머리가 원자 칩이면 0번 자리의 글자 노드는 **칩 안**이고, 크로뮴은
+   * 그 캐럿을 블록 경계로 밀어낸다(사각형을 잴 수 없는 자리다). 칩 **밖**의 첫
+   * 글자 노드에 놓는다.
+   */
+  it('3 — 칩으로 시작하는 줄에 → 로 들어가면 캐럿이 **글자 노드** 안에 선다', async () => {
+    const c = await open('cp1', [
+      { id: 'b1', kind: 'p', runs: [{ t: '앞줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' }, { t: ' 뒤의 글', b: false, c: null }] },
+    ]);
+    const first = line(c, 'b1');
+    first.focus();
+    setLinearSelection(first, 2, 2);
+    fireEvent.keyDown(first, { key: 'ArrowRight' });
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b2'));
+
+    const sel = window.getSelection()!;
+    expect(sel.focusNode?.nodeType).toBe(3); // 요소 경계가 아니다
+    const host = sel.focusNode!.parentElement;
+    expect(host?.closest('[data-date]')).toBeNull(); // 칩 안도 아니다
+    // 값 좌표는 칩의 **경계 그대로**다 — 글자를 건너뛰지 않았다.
+    expect(linearize(line(c, 'b2'), [{ container: sel.focusNode!, offset: sel.focusOffset }]).pos[0]).toBe(8);
+  });
+
+  /** 제보 4 — 팝오버가 떠 있으면 Esc가 그것부터 닫는다. */
+  it('4 — Esc로 날짜 팝오버를 닫는다', async () => {
+    const c = await open('esc1', [
+      { id: 'b1', kind: 'p', runs: [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' }, { t: ' 뒤의 글', b: false, c: null }] },
+    ]);
+    const el = line(c, 'b1');
+    el.focus();
+    setLinearSelection(el, 8, 8); // 칩 바로 뒤
+    fireEvent.keyUp(el, { key: 'ArrowRight' });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeTruthy());
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeNull());
   });
 });

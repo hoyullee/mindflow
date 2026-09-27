@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { armCaretMark, noteBoxValue, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
+import { armCaretMark, armMarksForReplace, fireCaretMark, noteBoxValue, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
 import { runsToHtml, setLinearSelection } from './richtextDom';
 
 /**
@@ -309,5 +309,84 @@ describe('껍데기를 놓는 자리(제보 1·2)', () => {
     armCaretMark(el, 'c', '#2266dd');
     openArmedAnchor(el);
     expect(noteBoxValue(el).text).toBe('가나'); // 폭 0 글자는 값이 아니다
+  });
+});
+
+/**
+ * **고른 것을 글자로 덮어쓸 때 서식을 못박는다**(제보 1).
+ *
+ * 제보: 서식이 걸린 1번 줄과 평문인 2번 줄을 함께 골라 놓고 글을 치면 **첫 글자만**
+ * 그 서식이고 나머지는 평문이 된다. 크로뮴은 지워진 자리의 서식을 첫 글자에만
+ * 물려주고, 그 다음 글자는 그 요소 **밖**에서 태어나기 때문이다(플랫폼마다 갈린다 —
+ * 리눅스 크로뮴에서는 셋 다 물려받았다).
+ *
+ * 그래서 결과를 **브라우저가 정하지 않게** 한다: 고른 구간의 시작 서식을 예약으로
+ * 들고 있다가 글자마다 다시 못박는다. 방향은 「유지」다(워드·구글 문서·노션 공통).
+ *
+ * 여기서 재는 것은 그 계약이다 — 브라우저가 서식을 **하나도** 물려주지 않은
+ * 최악의 경우를 손으로 만들어 놓고, 예약이 그것을 되살리는지 본다.
+ */
+describe('덮어쓰기의 서식 못박기(제보 1)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** `굵은글` 뒤에 `평문꼬리`가 붙은 줄 — 앞 3글자가 고른 구간이다. */
+  function overwritten(): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.setAttribute('data-note-edit', 'x');
+    el.innerHTML = runsToHtml({ text: '', rich: [{ t: '굵은글', b: true, c: '#d92626' }, { t: '평문꼬리', b: false, c: null }] });
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it('브라우저가 평문으로 넣어도 **끝까지** 그 서식이 된다', () => {
+    const el = overwritten();
+    // 고른 구간(0~3)의 서식을 읽어 두고 예약한다 — 지워질 길이는 3.
+    armMarksForReplace(el, 0, 3, noteMarksIn(el, 0, 1));
+    // 브라우저가 그 3글자를 **평문** `가나다`로 갈아 끼웠다고 치자(최악의 경우).
+    el.innerHTML = '가나다' + runsToHtml({ text: '', rich: [{ t: '평문꼬리', b: false, c: null }] });
+    setLinearSelection(el, 3, 3);
+
+    const runs = fireCaretMark(el);
+    expect(runs).toBeTruthy();
+    const head = (runs ?? []).filter((r) => '가나다'.includes(r.t[0] ?? ''));
+    expect(head.every((r) => r.b)).toBe(true);
+    expect(head.every((r) => r.c === '#d92626')).toBe(true);
+    // 꼬리는 건드리지 않는다 — 못박는 것은 **친 글자**뿐이다.
+    expect((runs ?? []).find((r) => r.t.includes('평문꼬리'))?.b).toBeFalsy();
+  });
+
+  it('평문을 덮어쓰면 **평문으로 못박는다** — 서식이 새지 않는다', () => {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.setAttribute('data-note-edit', 'x');
+    el.innerHTML = runsToHtml({ text: '', rich: [{ t: '평문', b: false, c: null }, { t: '굵은꼬리', b: true, c: null }] });
+    document.body.appendChild(el);
+    armMarksForReplace(el, 0, 2, noteMarksIn(el, 0, 1));
+    // 브라우저가 굵게 물려준 채로 넣었다 — 시작 서식은 평문이므로 풀려야 한다.
+    el.innerHTML = '<b>가나</b>' + runsToHtml({ text: '', rich: [{ t: '굵은꼬리', b: true, c: null }] });
+    setLinearSelection(el, 2, 2);
+
+    const runs = fireCaretMark(el);
+    expect(runs).toBeTruthy();
+    expect((runs ?? [])[0]?.b).toBeFalsy();
+  });
+
+  it('**예약은 살아 있다** — 다음 글자에도 같은 서식이 걸린다', () => {
+    const el = overwritten();
+    armMarksForReplace(el, 0, 3, noteMarksIn(el, 0, 1));
+    el.innerHTML = '가' + runsToHtml({ text: '', rich: [{ t: '평문꼬리', b: false, c: null }] });
+    setLinearSelection(el, 1, 1);
+    expect(fireCaretMark(el)).toBeTruthy();
+
+    // 두 번째 글자 — 브라우저가 또 평문으로 넣었다고 치자.
+    const now = noteBoxValue(el);
+    el.innerHTML = runsToHtml({ text: '', rich: [...(now.rich ?? []).slice(0, 1), { t: '나', b: false, c: null }, ...(now.rich ?? []).slice(1)] });
+    setLinearSelection(el, 2, 2);
+    const runs = fireCaretMark(el);
+    expect(runs).toBeTruthy();
+    expect((runs ?? []).find((r) => r.t.includes('나'))?.b).toBe(true);
   });
 });

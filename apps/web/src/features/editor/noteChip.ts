@@ -43,6 +43,44 @@ export function chipAtCaret(el: HTMLElement, at: number, dir: -1 | 1): HTMLEleme
 }
 
 /**
+ * 캐럿을 둘 수 있는 글자 노드인가 — **원자 칩 안은 아니다**.
+ *
+ * 크로뮴은 `contenteditable="false"` 안의 캐럿을 **블록 경계로 밀어낸다**(실측:
+ * `focusNode`가 `DIV@0`이 된다). 그 자리는 `Range`의 사각형이 비어 있어 가장자리
+ * 판정과 가로 자리 지키기가 통째로 어긋난다.
+ */
+export function caretText(node: Node | null | undefined): node is Text {
+  return !!node && node.nodeType === 3 && !node.parentElement?.closest?.(CHIP_SELECTOR);
+}
+
+/** 그 가지 안의 **첫(마지막) 캐럿 가능 글자 노드**. */
+export function edgeText(root: Node, last: boolean): Text | null {
+  if (typeof document === 'undefined') return null;
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let hit: Text | null = null;
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (!caretText(n)) continue;
+    hit = n;
+    if (!last) break;
+  }
+  return hit;
+}
+
+/**
+ * 그 요소 **바로 밖**의 캐럿 자리 — `dir`쪽 형제들에서 첫 글자 노드를 찾는다.
+ *
+ * 값 좌표로는 그 요소의 경계 그대로다(글자를 건너뛰지 않는다) — 바뀌는 것은
+ * "캐럿이 어느 노드 안에 서는가"뿐이다. 없으면 `null`(줄의 끝·머리에 붙은 요소).
+ */
+export function outerTextSpot(host: Element, dir: -1 | 1): { node: Node; offset: number } | null {
+  for (let n = dir === 1 ? host.nextSibling : host.previousSibling; n; n = dir === 1 ? n.nextSibling : n.previousSibling) {
+    const text = caretText(n) ? n : n.nodeType === 1 ? edgeText(n, dir === -1) : null;
+    if (text) return { node: text, offset: dir === 1 ? 0 : text.nodeValue?.length ?? 0 };
+  }
+  return null;
+}
+
+/**
  * **행 끝으로 늘리기가 칩에서 멈추는 것**을 메운다(제보: 칩 셋이 있는 줄에서
  * Shift+Home이 2번째까지만 골라진다).
  *

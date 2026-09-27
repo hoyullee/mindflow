@@ -218,6 +218,11 @@ function placeAnchor(el: HTMLElement, range: Range, node: HTMLElement): void {
   else range.insertNode(node);
 }
 
+/** 지금 이 줄에 **조합 껍데기**가 서 있나 — 방향키가 그것을 걷을지 가르는 근거다. */
+export function hasArmedAnchor(el: HTMLElement): boolean {
+  return !!el.querySelector(`[${ANCHOR_ATTR}]`);
+}
+
 /**
  * 조합이 끝났다 — 껍데기를 **통째로 걷는다**(폭 0 글자 + 감싼 요소).
  *
@@ -660,6 +665,37 @@ export function armCaretMarks(el: HTMLElement, kinds: readonly NoteFormatKind[])
   return true;
 }
 
+/**
+ * **고른 것을 글자로 덮어쓸 때, 그 자리의 서식을 못박는다**(제보 1).
+ *
+ * 무엇이 어긋났나: 여러 줄을 골라 놓고 글자를 치면 브라우저가 그 선택을 갈아
+ * 끼우는데(`replaceWithTyping` 머리말 — 한글 조합을 끊지 않으려고 일부러 맡긴다),
+ * 크로뮴은 **첫 글자에만** 지워진 자리의 서식을 물려주고 그 다음 글자는 그 요소
+ * **밖**에서 태어난다. 그래서 "첫 글자만 굵고 나머지는 평문"이 됐다.
+ *
+ * 방향은 **유지**다 — 워드·구글 문서·노션이 모두 「고른 구간의 **시작** 서식으로
+ * 이어 쓴다」이고, 사용자도 형광·글자색은 이미 유지되는 것을 보고 있다. 그러니
+ * 나머지 서식도 같은 쪽으로 맞춘다(둘 중 하나만 되면 된다는 요청).
+ *
+ * 보통의 예약과 다른 점 하나: `len`을 **지워질 글자 수만큼 줄여** 적는다. 예약은
+ * "늘어난 글자 수가 캐럿의 걸음과 같은가"로 자기 자리를 검사하는데(`fireCaretMark`),
+ * 이 길에서는 브라우저가 글자를 넣기 **전에** 고른 구간을 지우므로 지금 DOM의
+ * 길이로 적어 두면 첫 글자에서 그 검사가 어긋나 예약이 조용히 버려진다.
+ */
+export function armMarksForReplace(el: HTMLElement, at: number, drop: number, marks: NoteMarks): void {
+  const list: ArmedMark[] = [
+    { kind: 'b', val: null, want: marks.b },
+    { kind: 'i', val: null, want: marks.i },
+    { kind: 's', val: null, want: marks.s },
+    { kind: 'u', val: null, want: marks.u },
+    { kind: 'k', val: null, want: marks.k },
+    { kind: 'c', val: marks.c, want: true },
+    { kind: 'hl', val: marks.hl, want: true },
+  ];
+  armed = { el, at, len: Math.max(0, armedLen(el) - Math.max(0, drop)), marks: list };
+  announceArmed();
+}
+
 /** 예약을 버린다 — 줄을 떠나면 그 자리도 사라진다. */
 export function disarmCaretMark(el?: HTMLElement): void {
   if (!el || armed?.el === el) {
@@ -729,6 +765,16 @@ export function fireCaretMark(el: HTMLElement): RichRun[] | null {
   for (const m of marks) {
     // **못박기**: 지금 상태가 뜻한 것과 같으면 손대지 않는다(`ArmedMark.want` 머리말).
     if (isToggleKind(m.kind) && markedAll(el, at, now, m.kind) === m.want) continue;
+    /**
+     * 색·형광도 **같은 저울로 건너뛴다**(제보 1의 후속). 예전에는 값이라 늘 다시
+     * 걸었는데, 예약이 살아 있는 동안 글자마다 `innerHTML`을 갈아 끼우는 일이라
+     * 캐럿이 흔들리고 조합이 위태롭다. 이미 그 값이면 할 일이 없다.
+     */
+    if (!isToggleKind(m.kind)) {
+      const has = noteMarksIn(el, at, now);
+      const cur = m.kind === 'c' ? (has.c ?? null) : m.kind === 'hl' ? (has.hl ?? null) : undefined;
+      if (cur !== undefined && cur === (m.val ?? null)) continue;
+    }
     runs = applyNoteFormatRange(el, at, now, m.kind, m.val) ?? runs;
   }
   // 다시 그린 뒤의 선택은 **친 글자 전체**다 — 캐럿은 그 끝에 접혀 있어야 이어 친다.

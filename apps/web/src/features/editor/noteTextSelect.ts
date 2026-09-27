@@ -104,14 +104,36 @@ export function pointAt(el: HTMLElement, index: number): { node: Node; offset: n
   return linearPoints(el, [index])[0] ?? { node: el, offset: el.childNodes.length };
 }
 
-/** 그 줄의 **값 기준** 글자 수 — `el.textContent.length`는 `<br>`을 세지 않아 어긋난다. */
-export function lineLength(el: HTMLElement): number {
-  return linearize(el, []).text.length;
+/**
+ * 그 줄의 **값 기준** 글자들 — 자르는 자리가 `charOffset`과 같은 좌표라야 한다.
+ *
+ * **끝의 줄바꿈 하나는 세지 않는다** — 값을 읽는 쪽과 같은 자를 쓰려고(제보: 줄을
+ * 통째로 지웠다가 한글로 다시 치면 ↓가 다음 줄로 넘어가지 않는다).
+ *
+ * 무슨 일이 있었나(실브라우저로 재현): 줄을 비우면 크로뮴이 보초 `<br>` 하나를
+ * 남긴다. 거기에 **조합으로** 글자를 넣으면 그 `<br>`이 사라지지 않아 DOM이 `가<br>`이
+ * 된다(글자를 직접 치면 크로뮴이 걷어 낸다 — 그래서 영문 타이핑으로는 재현되지
+ * 않았다). `linearize`는 혼자 있는 `<br>`만 채움으로 보므로(`fillerBr`) 그것을 `\n`
+ * 한 글자로 세어 **길이가 2**가 됐고, 캐럿은 1이라 `at >= lineLength(el)`가 영영
+ * 거짓이었다 — 「글 끝인가」가 거짓이면 우리는 다음 줄로 넘기지 않고, 브라우저는
+ * 갈 곳이 없어 아무것도 하지 않는다. 제보의 "문장 마지막에 커서가 멈춘다"가 그것이다.
+ *
+ * 값을 읽는 쪽은 처음부터 끝의 줄바꿈 하나를 걷고 있었다(`domToRuns(el, true)`),
+ * 예약이 재는 자도 그렇다(`armedLen`). **좌표를 재는 자가 둘이면 언젠가 어긋난다** —
+ * 그래서 같은 규칙을 여기로 모은다. 앞쪽 글자들의 자리는 하나도 움직이지 않으므로
+ * `charOffset`·`pointAt`과의 왕복도 그대로다.
+ *
+ * 코드 블록·Shift+Enter가 일부러 붙이는 **보초 `<br>`**도 이 규칙에 맞는다: 값이
+ * `가\n`이면 DOM은 `가<br><br>`이고, 하나를 걷어 길이 2가 되어 줄바꿈 뒤의 캐럿(2)이
+ * 그대로 「글 끝」이다.
+ */
+export function lineText(el: HTMLElement): string {
+  return linearize(el, []).text.replace(/\n$/, '');
 }
 
-/** 그 줄의 **값 기준** 글자들 — 자르는 자리가 `charOffset`과 같은 좌표라야 한다. */
-export function lineText(el: HTMLElement): string {
-  return linearize(el, []).text;
+/** 그 줄의 **값 기준** 글자 수 — `el.textContent.length`는 `<br>`을 세지 않아 어긋난다. */
+export function lineLength(el: HTMLElement): number {
+  return lineText(el).length;
 }
 
 /**

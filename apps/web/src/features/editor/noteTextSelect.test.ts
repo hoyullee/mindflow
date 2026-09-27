@@ -38,6 +38,34 @@ describe('공책 선택의 좌표계 — 값과 같은 수를 센다', () => {
     expect(charOffset(el, tail, 0)).toBe(5);
   });
 
+  /**
+   * **끝의 줄바꿈 하나는 세지 않는다** — 값을 읽는 쪽과 같은 자를 쓴다(제보 2).
+   *
+   * 줄을 통째로 지우면 크로뮴이 보초 `<br>`을 남기는데, 거기에 **조합으로** 글자를
+   * 넣으면 그것이 남아 DOM이 `가<br>`이 된다(실브라우저로 재현 — 영문 타이핑은
+   * 크로뮴이 걷어 내므로 이 길로만 온다). 그 `<br>`을 한 글자로 세면 길이가 2가 되어
+   * 캐럿(1)이 영영 「글 끝」이 아니고, ↓가 다음 줄로 넘어가지 못한다.
+   */
+  it('**끝의 줄바꿈 하나**는 값과 같이 세지 않는다 — `가<br>`은 한 글자다', () => {
+    const el = box('가<br>');
+    expect(lineText(el)).toBe('가');
+    expect(lineLength(el)).toBe(1);
+    // 앞쪽 자리는 하나도 움직이지 않는다 — `charOffset`과의 왕복이 그대로여야 한다.
+    expect(charOffset(el, el.firstChild as Text, 1)).toBe(1);
+  });
+
+  it('**보초까지 둘**이면 하나만 걷는다 — Shift+Enter로 만든 빈 마지막 행', () => {
+    // 값이 `가\n`인 줄의 DOM(`softBreak`·`codeHtml`이 보초 `<br>`을 하나 더 붙인다).
+    const el = box('가<br><br>');
+    expect(lineText(el)).toBe('가\n');
+    expect(lineLength(el)).toBe(2); // 줄바꿈 뒤의 캐럿(2)이 곧 글 끝이다
+  });
+
+  it('가운데의 줄바꿈은 그대로 센다 — 끝이 아니면 걷지 않는다', () => {
+    const el = box('가<br>나');
+    expect(lineLength(el)).toBe(3);
+  });
+
   it('`<br>`이 없으면 예전과 같은 수다(회귀 없음)', () => {
     const el = box('가나다라마');
     expect(lineLength(el)).toBe(5);

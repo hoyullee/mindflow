@@ -3787,7 +3787,15 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
-      const day = inMonth(2);
+      /**
+       * **구간은 `spanInMonth`로 한 번에 잡는다**(그 함수의 머리말). `inMonth(2)`와
+       * `inMonth(4)`를 따로 부르면 달을 넘는 날에 뒤쪽이 **반대로 접혀**(오늘−4)
+       * 시작보다 앞선 날이 된다 — 그러면 구간이 아니라 하루짜리라 반복 선택이
+       * 그대로 남는다(9/27에 돌린 CI가 이 자리에서 깨졌다).
+       */
+      const span = spanInMonth(3);
+      const day = span[0]!;
+      const to = span[2]!;
       stubWork(day);
       clientId = 'test-client.apps.googleusercontent.com';
       const user = userEvent.setup();
@@ -3803,7 +3811,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       // 종료 날짜를 뒤로 밀면 하루짜리가 아니므로 반복는 뜻이 없다.
       fireEvent.click(modal.querySelector('[data-work-to]')!);
       const cell = await waitFor(() => {
-        const el = document.querySelector(`[data-datepop-day="${inMonth(4)}"]`);
+        const el = document.querySelector(`[data-datepop-day="${to}"]`);
         expect(el).toBeTruthy();
         return el as HTMLElement;
       });
