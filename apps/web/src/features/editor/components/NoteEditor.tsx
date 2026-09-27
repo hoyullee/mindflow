@@ -5109,7 +5109,19 @@ function FormatToolbar({
     };
     const onCompEnd = () => {
       composing = false;
-      read();
+      /**
+       * **값이 고쳐진 다음에 읽는다**(제보 1·2 — 단추 불이 깜빡인다).
+       *
+       * 이 손은 `document`의 **캡처 단계**에 있어 줄 부품의 `onCompositionEnd`보다
+       * 먼저 돈다. 그 시점의 DOM에는 **아직 서식이 걸리지 않은 맨 글자**가 들어 있어
+       * 단추가 한 번 꺼졌다가, 뒤이어 `fireCaretMark`가 돌며 다시 켜진다. 마이크로
+       * 태스크로 미루면 그 사이 버블 단계까지 끝나 있으므로 한 번만 읽는다.
+       *
+       * 예약 쪽도 함께 손봤다(`armedMarksOverlay`) — 어느 순서로 읽혀도 같은 답이
+       * 나오게. 여기서 미루는 것은 **쓸데없는 한 번을 없애는** 일이다.
+       */
+      if (typeof queueMicrotask === 'function') queueMicrotask(read);
+      else read();
     };
     read();
     document.addEventListener('selectionchange', read);

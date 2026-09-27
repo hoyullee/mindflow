@@ -49,35 +49,35 @@ describe('인라인 코드 경계의 캐럿 정거장', () => {
   it('코드 **안의 끝**에서 → 는 코드 **밖**으로(값 좌표는 그대로)', () => {
     const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
     put(codeText(el), 2); // 코드 안, 끝
-    expect(codeEdgeStep(el, 1)).toBe('moved');
+    expect(codeEdgeStep(el, 1)).toBe('out');
     expect(where(el)).toEqual({ at: 4, code: false });
   });
 
   it('코드 **밖의 뒤 경계**에서 ← 는 코드 **안**으로', () => {
     const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
     put(el.lastChild!, 0); // 코드 바로 뒤(밖)
-    expect(codeEdgeStep(el, -1)).toBe('moved');
+    expect(codeEdgeStep(el, -1)).toBe('in');
     expect(where(el)).toEqual({ at: 4, code: true });
   });
 
   it('코드 **밖의 앞 경계**에서 → 는 코드 **안**으로', () => {
     const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
     put(el.firstChild!, 2); // 코드 바로 앞(밖)
-    expect(codeEdgeStep(el, 1)).toBe('moved');
+    expect(codeEdgeStep(el, 1)).toBe('in');
     expect(where(el)).toEqual({ at: 2, code: true });
   });
 
   it('코드 **안의 머리**에서 ← 는 코드 **밖**으로', () => {
     const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
     put(codeText(el), 0);
-    expect(codeEdgeStep(el, -1)).toBe('moved');
+    expect(codeEdgeStep(el, -1)).toBe('out');
     expect(where(el)).toEqual({ at: 2, code: false });
   });
 
   it('코드 **안에서 머리로 가는 한 걸음**도 우리가 놓는다 — 브라우저는 밖으로 접는다', () => {
     const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
     put(codeText(el), 1); // 코드 안 두 번째
-    expect(codeEdgeStep(el, -1)).toBe('moved');
+    expect(codeEdgeStep(el, -1)).toBe('in');
     // 제보의 그림: 여기서 크로뮴은 **코드 앞**(밖, at=2)으로 갔다. 우리는 안에 세운다.
     expect(where(el)).toEqual({ at: 2, code: true });
   });
@@ -110,5 +110,32 @@ describe('인라인 코드 경계의 캐럿 정거장', () => {
     sel?.removeAllRanges();
     sel?.addRange(range);
     expect(codeEdgeStep(el, 1)).toBeNull();
+  });
+});
+
+/**
+ * **정거장이 돌려주는 값은 「다음 글자가 코드인가」다**(제보 5의 재보고).
+ *
+ * 캐럿을 어느 노드에 두었는지와 별개로, 크로뮴은 **글자를 넣는 자리**를 경계에서
+ * 한쪽으로 접는다(모듈 머리말의 표). 그래서 호출부는 이 값으로 그 뜻을 못박는다 —
+ * 여기서 지키는 것은 **안/밖이 값으로 구분된다**는 사실이다.
+ */
+describe('정거장은 안/밖을 말한다', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('머리 경계의 두 정거장은 서로 다른 값이다', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 1);
+    expect(codeEdgeStep(el, -1)).toBe('in'); // 코드 안 머리
+    expect(codeEdgeStep(el, -1)).toBe('out'); // 그 밖
+  });
+
+  it('끝 경계의 두 정거장도 서로 다른 값이다', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 2); // 코드 안 끝
+    expect(codeEdgeStep(el, 1)).toBe('out'); // 그 밖
+    expect(codeEdgeStep(el, -1)).toBe('in'); // 되돌아오면 다시 안
   });
 });

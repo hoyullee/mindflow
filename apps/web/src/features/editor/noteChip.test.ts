@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyHolidayMarks, chipAtCaret, chipRange, extendOverChips } from './noteChip';
+import { applyHolidayMarks, chipAtCaret, chipRange, extendOverChips, moveOverChips } from './noteChip';
 import { runsToHtml, setLinearSelection } from './richtextDom';
 import { noteMarksIn } from './noteRichDom';
 import { charOffset } from './noteTextSelect';
@@ -40,14 +40,16 @@ function lineWithChips(): HTMLElement {
  */
 function stubModify(el: HTMLElement, sel: Selection, chipStart: (at: number) => { node: Node; offset: number }): void {
   const chips = [...el.querySelectorAll<HTMLElement>('[data-date]')].map((c) => chipRange(el, c));
-  (sel as Selection & { modify: (a: string, d: string, g: string) => void }).modify = (_alter, dir) => {
+  (sel as Selection & { modify: (a: string, d: string, g: string) => void }).modify = (alter, dir) => {
     const at = charOffset(el, sel.focusNode!, sel.focusOffset);
     const to =
       dir === 'backward'
         ? Math.max(0, ...chips.filter((c) => c.end <= at).map((c) => c.end))
         : Math.min(el.textContent!.length, ...chips.filter((c) => c.start >= at).map((c) => c.start));
     const p = chipStart(to);
-    sel.extend(p.node, p.offset);
+    // `move`는 **접어서** 옮긴다 — 크로뮴과 같다(Home·End가 그쪽이다).
+    if (alter === 'move') sel.setBaseAndExtent(p.node, p.offset, p.node, p.offset);
+    else sel.extend(p.node, p.offset);
   };
 }
 
@@ -252,5 +254,48 @@ describe('툴바가 읽는 색·형광(제보 1)', () => {
     expect(m.c).toBeNull();
     expect(m.hl).toBeNull();
     expect(m.b).toBe(false);
+  });
+});
+
+/**
+ * **캐럿만 옮기는 쪽도 메운다**(제보 3·4).
+ *
+ * 늘리는 쪽(Shift+Home)만 메워 두었더니 두 제보가 왔다: Home이 줄 머리로 가지
+ * 않는다 · 줄 끝에서 ↑가 윗줄로 넘어가지 않는다(「행의 머리인가」가 영영 거짓이라).
+ * 사용자가 그 차이를 정확히 짚었다 — "신기하게 shift+home 조합으로는 다 선택된다."
+ */
+describe('칩을 넘어 행 머리로 캐럿 옮기기(제보 3·4)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('브라우저가 첫 칩 앞에서 서도 **줄의 0번**까지 간다', () => {
+    const el = lineWithChips();
+    const len = el.textContent!.length;
+    el.focus();
+    setLinearSelection(el, len, len);
+    const sel = window.getSelection()!;
+    stubModify(el, sel, outside(el));
+
+    // 브라우저 몫 — 칩3 바로 뒤(12)에서 선다.
+    (sel as Selection & { modify: (a: string, d: string, g: string) => void }).modify('move', 'backward', 'lineboundary');
+    expect(charOffset(el, sel.focusNode!, sel.focusOffset)).toBe(12);
+
+    expect(moveOverChips(el, sel, -1)).toBe(true);
+    expect(charOffset(el, sel.focusNode!, sel.focusOffset)).toBe(0);
+    // **접혀 있어야 한다** — 캐럿을 옮기는 일이지 고르는 일이 아니다.
+    expect(sel.isCollapsed).toBe(true);
+  });
+
+  it('칩이 **없으면** 손대지 않는다 — 그 걸음은 브라우저의 것이다', () => {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.innerHTML = runsToHtml({ text: '', rich: [TEXT('평범한 한 줄')] });
+    document.body.appendChild(el);
+    el.focus();
+    setLinearSelection(el, 3, 3);
+    const sel = window.getSelection()!;
+    stubModify(el, sel, outside(el));
+    expect(moveOverChips(el, sel, -1)).toBe(false);
   });
 });

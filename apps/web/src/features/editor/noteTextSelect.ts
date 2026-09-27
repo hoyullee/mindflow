@@ -164,12 +164,26 @@ export function rowHeight(el: HTMLElement): number {
  * `modify`는 선택을 움직이므로 두 끝을 적어 두었다 되돌린다(`setBaseAndExtent`는
  * 방향까지 지킨다 — Shift로 고르는 중에도 안전하다).
  */
-export function lineBoundaryAt(el: HTMLElement, sel: Selection, dir: -1 | 1): number {
+export function lineBoundaryAt(
+  el: HTMLElement,
+  sel: Selection,
+  dir: -1 | 1,
+  /**
+   * `modify`가 **선 자리에서 더 가는 법**(선택) — 원자 칩이 그 앞을 막는다(제보 3).
+   *
+   * `contenteditable="false"` 요소 앞에서 `lineboundary`가 서기 때문에, 칩으로
+   * 시작하는 줄에서는 「행의 머리」가 영영 0이 되지 않는다. 그 메우는 법을 아는 것은
+   * 칩 쪽(`noteChip.moveOverChips`)이라 여기서는 고리로만 받는다 — 좌표를 재는 이
+   * 파일이 칩을 알면 두 모듈이 서로를 물게 된다.
+   */
+  past?: (el: HTMLElement, sel: Selection, dir: -1 | 1) => void,
+): number {
   const probe = (sel as Selection & { modify?: (a: string, d: string, g: string) => void }).modify;
   if (typeof probe !== 'function' || !sel.anchorNode || !sel.focusNode || !el.contains(sel.focusNode)) return -1;
   const keep = { an: sel.anchorNode, ao: sel.anchorOffset, fn: sel.focusNode, fo: sel.focusOffset };
   try {
     probe.call(sel, 'move', dir === -1 ? 'backward' : 'forward', 'lineboundary');
+    past?.(el, sel, dir);
     const at = sel.focusNode && el.contains(sel.focusNode) ? charOffset(el, sel.focusNode, sel.focusOffset) : -1;
     sel.setBaseAndExtent(keep.an, keep.ao, keep.fn, keep.fo);
     return at;
