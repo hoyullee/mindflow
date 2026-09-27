@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { armCaretMark, armMarksForReplace, fireCaretMark, noteBoxValue, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
+import { armCaretMark, armMarksForReplace, armedMarksOverlay, disarmCaretMark, fireCaretMark, noteBoxValue, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
 import { runsToHtml, setLinearSelection } from './richtextDom';
 
 /**
@@ -388,5 +388,93 @@ describe('덮어쓰기의 서식 못박기(제보 1)', () => {
     const runs = fireCaretMark(el);
     expect(runs).toBeTruthy();
     expect((runs ?? []).find((r) => r.t.includes('나'))?.b).toBe(true);
+  });
+});
+
+/**
+ * **글자가 들어오는 찰나에도 툴바가 같은 답을 내야 한다**(제보 1·2).
+ *
+ * 제보: 켜 둔 서식으로 글을 치면 첫 글자에는 단추에 불이 들어오는데 **두 번째부터
+ * 꺼지고**, 띄어쓰기를 하면 다시 켜진다(형광·글자색은 두 번째에서만 꺼졌다 세 번째에
+ * 다시 켜진다).
+ *
+ * 왜 그런가: 조합이 끝나면 `compositionend`가 **캡처 단계**에서 툴바를 먼저 깨우고
+ * (`NoteEditor`의 읽기), 값을 고치는 쪽(`fireCaretMark`)은 그 뒤 버블 단계에서 돈다.
+ * 그 찰나의 DOM에는 **아직 서식이 걸리지 않은 맨 글자**가 있고, 예약은 한 칸 뒤에
+ * 있어 예전 `armedMarksOverlay`는 "내 자리가 아니다"라며 빈손을 돌려줬다 — 그래서
+ * 툴바가 맨 글자를 읽어 불을 껐다. 공백은 조합이 없어 그 틈이 생기지 않는다(제보의
+ * "띄어쓰기 후에는 다시 켜진다"가 그 증거다).
+ *
+ * 고친 뒤의 계약: **예약이 살아 있는지 재는 자를 `fireCaretMark`와 같은 것으로** 쓴다.
+ */
+describe('글자가 들어오는 찰나의 툴바(제보 1·2)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    disarmCaretMark();
+  });
+
+  /** 빈 줄에 굵게를 켜 둔다 — 그 줄과 예약을 돌려준다. */
+  function armedLine(): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.setAttribute('data-note-edit', 'x');
+    el.innerHTML = '<br>';
+    document.body.appendChild(el);
+    const r = document.createRange();
+    r.setStart(el, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(r);
+    expect(armCaretMark(el, 'b')).toBe(true);
+    return el;
+  }
+
+  it('켠 직후에는 그 자리에서 보인다(회귀 없음)', () => {
+    const el = armedLine();
+    expect(armedMarksOverlay(el).b).toBe(true);
+  });
+
+  it('**맨 글자가 막 들어온 찰나**에도 보인다 — 값은 아직 고쳐지기 전이다', () => {
+    const el = armedLine();
+    // 브라우저가 서식 없이 한 글자를 넣었다(아직 `fireCaretMark`가 돌기 전).
+    el.innerHTML = '가';
+    setLinearSelection(el, 1, 1);
+    expect(armedMarksOverlay(el).b).toBe(true);
+  });
+
+  it('두 글자가 들어온 찰나에도 보인다 — 늘어난 만큼 캐럿도 갔다', () => {
+    const el = armedLine();
+    el.innerHTML = '가나';
+    setLinearSelection(el, 2, 2);
+    expect(armedMarksOverlay(el).b).toBe(true);
+  });
+
+  it('**캐럿만 옮긴 자리**는 그 약속이 아니다 — 늘어난 글자가 없다', () => {
+    const el = armedLine();
+    el.innerHTML = '가나다';
+    // 글자는 셋 늘었는데 캐럿은 하나만 갔다 — 예약해 놓고 딴 데를 누른 모양이다.
+    setLinearSelection(el, 1, 1);
+    expect(armedMarksOverlay(el).b).toBeUndefined();
+  });
+
+  it('형광·글자색도 같은 창에서 보인다(제보 2)', () => {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.setAttribute('data-note-edit', 'x');
+    el.innerHTML = '<br>';
+    document.body.appendChild(el);
+    const r = document.createRange();
+    r.setStart(el, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(r);
+    armCaretMark(el, 'hl', 'yellow');
+    armCaretMark(el, 'c', '#d92626');
+    el.innerHTML = '가';
+    setLinearSelection(el, 1, 1);
+    expect(armedMarksOverlay(el).hl).toBe('yellow');
+    expect(armedMarksOverlay(el).c).toBe('#d92626');
   });
 });

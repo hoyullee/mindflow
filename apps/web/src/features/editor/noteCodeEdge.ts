@@ -27,6 +27,21 @@
  * 크로뮴은 아무 일도 하지 않는다. 그때만 `'leave'`를 돌려주고, 호출부가 조합
  * 껍데기(`openArmedAnchor` — 폭 0 글자 하나)를 코드 밖에 세워 캐럿을 그리로 옮긴다.
  * 그 껍데기는 글자가 들어오거나 줄을 떠나면 걷힌다(`closeArmedAnchor`).
+ *
+ * ## 캐럿을 옮기는 것만으로는 모자란다 — **친 글자가 어디에 떨어지는가**
+ *
+ * 실측(제보 5의 재보고): 크로뮴은 **글자를 넣는 자리**도 경계에서 한쪽으로 접는다.
+ * 캐럿을 어느 노드에 두었든 결과가 같다.
+ *
+ * | 캐럿 | 친 글자 |
+ * | --- | --- |
+ * | 코드의 **머리** 경계(안이든 밖이든) | 언제나 코드 **밖** |
+ * | 코드의 **끝** 경계(안이든 밖이든) | 언제나 코드 **안** |
+ *
+ * 그래서 네 정거장 가운데 둘은 캐럿만 옮기면 사람의 뜻과 **반대로** 움직인다. 이
+ * 함수는 캐럿을 놓은 뒤 **어느 쪽에 세웠는지**를 돌려주고(`'in'`·`'out'`), 호출부가
+ * 그 뜻을 예약으로 못박는다(`armCaretMarkAs(el, 'k', …)`). 정거장이 곧 "다음 글자가
+ * 코드인가"라는 약속이 되고, 툴바의 코드 불도 그 약속을 그대로 비춘다.
  */
 
 import { caretText, edgeText, outerTextSpot } from './noteChip';
@@ -81,11 +96,11 @@ function put(spot: { node: Node; offset: number }): boolean {
 /**
  * 방향키 한 번이 **코드 경계를 지나는 걸음**인가 — 맞으면 우리가 캐럿을 놓는다.
  *
- * @returns `'moved'` 우리가 옮겼다(호출부는 기본 동작을 막는다) ·
- *          `'leave'` 나가야 하는데 밖에 설 자리가 없다(껍데기가 필요하다) ·
- *          `null` 이 걸음은 브라우저의 것이다.
+ * @returns `'in'` 코드 **안**에 세웠다 · `'out'` 코드 **밖**에 세웠다(둘 다 호출부가
+ *          기본 동작을 막고 그 뜻을 예약한다) · `'leave'` 나가야 하는데 밖에 설
+ *          자리가 없다(껍데기가 필요하다) · `null` 이 걸음은 브라우저의 것이다.
  */
-export function codeEdgeStep(el: HTMLElement, dir: -1 | 1): 'moved' | 'leave' | null {
+export function codeEdgeStep(el: HTMLElement, dir: -1 | 1): 'in' | 'out' | 'leave' | null {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
   const sel = window.getSelection();
   if (!sel || !sel.isCollapsed || !sel.focusNode || !el.contains(sel.focusNode)) return null;
@@ -99,7 +114,7 @@ export function codeEdgeStep(el: HTMLElement, dir: -1 | 1): 'moved' | 'leave' | 
     // 껍질의 끝(머리)에 서 있다 — 한 걸음은 **밖으로**.
     if (dir === 1 ? at >= me.end : at <= me.start) {
       const spot = outerTextSpot(me.node, dir);
-      if (spot) return put(spot) ? 'moved' : null;
+      if (spot) return put(spot) ? 'out' : null;
       // 밖에 설 자리가 없다 — →면 껍데기를 세워 내보내고(호출부), ←면 줄 머리라
       // 앞 줄로 넘기는 길이 이미 있다(`onEdgeOut`).
       return dir === 1 ? 'leave' : null;
@@ -110,7 +125,7 @@ export function codeEdgeStep(el: HTMLElement, dir: -1 | 1): 'moved' | 'leave' | 
      */
     if (dir === -1 && at - 1 <= me.start) {
       const spot = insideSpot(me, me.start);
-      return spot && put(spot) ? 'moved' : null;
+      return spot && put(spot) ? 'in' : null;
     }
     return null;
   }
@@ -118,5 +133,5 @@ export function codeEdgeStep(el: HTMLElement, dir: -1 | 1): 'moved' | 'leave' | 
   const enter = spans.find((s) => (dir === 1 ? s.start === at : s.end === at));
   if (!enter) return null;
   const spot = insideSpot(enter, at);
-  return spot && put(spot) ? 'moved' : null;
+  return spot && put(spot) ? 'in' : null;
 }

@@ -18,11 +18,11 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armCaretMark, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, hasArmedAnchor, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armCaretMark, armCaretMarkAs, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, hasArmedAnchor, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
 import { codeEdgeStep } from '../noteCodeEdge';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
-import { chipAtCaret, chipRange, extendOverChips } from '../noteChip';
+import { chipAtCaret, chipRange, extendOverChips, moveOverChips } from '../noteChip';
 import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
 import { editCaretKeydown } from '../caretPolicy';
@@ -530,6 +530,15 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
            * 닿아 있고(칩 앞·뒤가 곧 그 자리다) 그 뒤로 더 갈 곳이 없다.
            */
           if (e.shiftKey) extendOverChips(el, sel, dir);
+          /**
+           * **캐럿만 옮길 때도 메운다**(제보 4: Home이 줄 머리로 가지 않는다).
+           *
+           * 예전 주석은 "캐럿만 옮기는 Home·End는 이미 행의 끝에 닿아 있다"고 적었는데
+           * 그것이 틀렸다 — 줄 **머리**가 칩이면 `modify`는 그 칩 **뒤**에서 서고,
+           * 그 앞의 0번 자리로는 영영 가지 못한다(실측: `at`이 8에서 멈췄다). 사용자가
+           * 그 차이를 짚었다: "신기하게 shift+home 조합으로는 칩까지 다 선택된다."
+           */
+          else moveOverChips(el, sel, dir);
         } catch {
           /* 못 옮겨도 캐럿은 제자리다 */
         }
@@ -655,7 +664,18 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         }
       } else {
         const step = codeEdgeStep(el, dir);
-        if (step === 'moved') {
+        if (step === 'in' || step === 'out') {
+          /**
+           * **정거장이 곧 「다음 글자가 코드인가」다**(제보 5의 재보고).
+           *
+           * 캐럿만 옮겨서는 모자랐다 — 크로뮴은 **글자를 넣는 자리**도 경계에서
+           * 한쪽으로 접는다(`noteCodeEdge` 머리말의 표): 머리 경계에서는 언제나
+           * 코드 밖, 끝 경계에서는 언제나 코드 안. 그래서 네 정거장 가운데 둘이
+           * 사람의 뜻과 반대로 움직였다. 어느 쪽에 세웠는지는 방금 우리가 정했으므로
+           * 그 뜻을 그대로 못박는다(`armCaretMarkAs` — 이 자리에서는 주변을 보는
+           * 저울이 답을 낼 수 없다. 앞도 뒤도 코드의 자리다).
+           */
+          armCaretMarkAs(el, 'k', step === 'in');
           e.preventDefault();
           return;
         }
@@ -992,7 +1012,8 @@ function caretOnEdgeLine(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean 
    * `modify`는 선택을 움직이므로 두 끝을 적어 두었다 되돌린다(`setBaseAndExtent`는
    * 방향까지 지킨다 — Shift로 고르는 중에도 안전하다).
    */
-  const edge = lineBoundaryAt(el, sel, dir);
+  // 원자 칩이 `lineboundary`를 막는다 — 그 앞까지 재야 「행의 머리」가 0이 된다(제보 3).
+  const edge = lineBoundaryAt(el, sel, dir, moveOverChips);
   if (edge >= 0) return dir === -1 ? edge <= 0 : edge >= lineLength(el);
   const c = caretRect(el, sel);
   const b = el.getBoundingClientRect();

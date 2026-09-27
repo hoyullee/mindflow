@@ -160,6 +160,79 @@ export function extendOverChips(el: HTMLElement, sel: Selection, dir: -1 | 1): b
 }
 
 /**
+ * **행 끝으로 캐럿을 옮기는 것이 칩에서 멈추는 것**을 메운다(제보 3·4).
+ *
+ * `extendOverChips`의 **접힌 캐럿** 판이다. 같은 자리에서 같은 이유로 막힌다 —
+ * `Selection.modify(..., 'lineboundary')`는 `contenteditable="false"` 요소 앞에서
+ * 선다. 늘리는 쪽(Shift+Home)만 메워 두었더니 제보가 둘 왔다: **Home이 줄 머리로
+ * 가지 않는다**(칩 뒤에서 선다) · 줄 끝에서 **↑가 윗줄로 넘어가지 않는다**(우리는
+ * 「행의 머리인가」를 그 값으로 묻는데 그것이 영영 0이 되지 않아, 가장자리가 아닌
+ * 줄로 읽고 브라우저에 맡긴다 — 그러면 캐럿이 그 줄의 머리로만 간다).
+ *
+ * 사용자가 그 차이를 정확히 짚었다: "신기하게 shift+home 조합으로는 다 선택된다."
+ *
+ * 칩만큼은 우리가 건너뛰고 그 앞의 글자들은 다시 `modify`에게 맡긴다 — 감긴 행의
+ * 경계를 아는 것은 브라우저뿐이다(`extendOverChips`와 같은 규칙). 움직였으면 참.
+ */
+export function moveOverChips(el: HTMLElement, sel: Selection, dir: -1 | 1): boolean {
+  const modify = (sel as Selection & { modify?: (a: string, d: string, g: string) => void }).modify;
+  if (typeof modify !== 'function' || !sel.focusNode || !el.contains(sel.focusNode)) return false;
+  const goTo = (at: number): boolean => {
+    const p = pointAt(el, at);
+    let node: Node = p.node;
+    let offset = p.offset;
+    // 칩 **안**에는 두지 않는다 — 크로뮴이 그 캐럿을 블록 경계로 밀어낸다.
+    const chip = (node.nodeType === 1 ? (node as HTMLElement) : node.parentElement)?.closest?.(CHIP_SELECTOR) as HTMLElement | null;
+    if (chip && chip.parentNode) {
+      const kids = [...chip.parentNode.childNodes];
+      const i = kids.indexOf(chip as ChildNode);
+      if (i >= 0) {
+        node = chip.parentNode;
+        offset = at <= chipRange(el, chip).start ? i : i + 1;
+      }
+    }
+    try {
+      const range = document.createRange();
+      range.setStart(node, offset);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const read = (): number => (sel.focusNode && el.contains(sel.focusNode) ? charOffset(el, sel.focusNode, sel.focusOffset) : best);
+  const farther = (a: number, b: number) => (dir === -1 ? Math.min(a, b) : Math.max(a, b));
+
+  let best = charOffset(el, sel.focusNode, sel.focusOffset);
+  const start = best;
+  const cap = el.querySelectorAll(CHIP_SELECTOR).length + 1;
+  for (let i = 0; i < cap; i += 1) {
+    const chip = chipAtCaret(el, best, dir);
+    if (!chip) break;
+    const range = chipRange(el, chip);
+    const over = dir === -1 ? range.start : range.end;
+    if (over === best || !goTo(over)) break;
+    best = over;
+    try {
+      modify.call(sel, 'move', dir === -1 ? 'backward' : 'forward', 'lineboundary');
+    } catch {
+      break;
+    }
+    const next = farther(best, read());
+    if (next === best) {
+      goTo(best);
+      break;
+    }
+    best = next;
+  }
+  if (best === start) return false;
+  goTo(best);
+  return true;
+}
+
+/**
  * 본문의 날짜 칩에 **공휴일 사실을 덧입힌다**(제보: 추석인 토요일이 파랗다).
  *
  * 공휴일은 값이 아니라 **구글에서 오는 사실**이라 본문을 그리는 `runsToHtml`이 알 수

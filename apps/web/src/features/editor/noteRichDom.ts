@@ -653,6 +653,26 @@ export function armCaretMark(el: HTMLElement, kind: NoteFormatKind, val?: string
 }
 
 /**
+ * **뜻을 못박아** 예약한다 — 토글이 아니라 "다음 글자는 이렇다"를 직접 적는다.
+ *
+ * 왜 필요한가(제보 5): 인라인 코드의 경계에서는 `armCaretMark`가 쓰는 저울
+ * (`noteActiveMarks`)이 **답을 낼 수 없다**. 그 자리는 앞도 뒤도 코드의 자리라
+ * 양쪽 이웃을 보는 규칙이 언제나 「코드다」로 읽는다. 그런데 사람에게 그 자리는
+ * 둘이다 — 상자 **안**이냐 **밖**이냐. 어느 쪽에 섰는지는 캐럿을 놓은 우리가
+ * 알고 있으므로, 저울을 거치지 않고 그 값을 그대로 적는다.
+ */
+export function armCaretMarkAs(el: HTMLElement, kind: NoteFormatKind, want: boolean): boolean {
+  if (!isToggleKind(kind)) return false;
+  const span = noteCaretSpan(el);
+  if (!span || span.a !== span.b) return false;
+  const at = span.a;
+  const keep = armed && armed.el === el && armed.at === at ? armed.marks.filter((m) => m.kind !== kind) : [];
+  armed = { el, at, len: armedLen(el), marks: [...keep, { kind, val: null, want }] };
+  announceArmed();
+  return true;
+}
+
+/**
  * 여러 서식을 **한 번에** 예약한다 — 줄을 바꿀 때 앞 줄의 서식을 물려주는 길(제보 6).
  * 빈 목록이면 아무것도 하지 않는다(예약을 지우지도 않는다).
  */
@@ -725,7 +745,25 @@ export function armedHasMark(el: HTMLElement | null, kind: NoteFormatKind): bool
 export function armedMarksOverlay(el: HTMLElement | null): Partial<NoteMarks> {
   if (!el || !armed || armed.el !== el) return {};
   const span = noteCaretSpan(el);
-  if (!span || span.a !== span.b || span.a !== armed.at) return {};
+  if (!span || span.a !== span.b) return {};
+  /**
+   * **예약으로 친 글자들의 끝도 그 약속 안이다**(제보 1·2 — 툴바 불이 깜빡인다).
+   *
+   * 예전에는 캐럿이 예약한 **그 자리**일 때만 돌려줬다. 그런데 글자가 들어오는
+   * 순간에는 그 둘이 잠깐 어긋난다: 조합이 끝나면 `compositionend`가 **캡처 단계**에서
+   * 툴바를 먼저 깨우는데(`NoteEditor`의 읽기), 값을 고치는 쪽(`fireCaretMark`)은
+   * 그 뒤 버블 단계에서 돈다. 그 찰나에 툴바가 읽는 것은 **아직 서식이 걸리지 않은
+   * 맨 글자**이고 예약은 한 칸 뒤에 있어, 단추 불이 꺼졌다가 곧 켜진다 — 제보의
+   * "두 번째 글자부터 불이 꺼진다"가 그것이다(공백을 치면 조합이 없어 그 틈도 없다).
+   *
+   * 그래서 **예약이 살아 있는지 재는 자를 `fireCaretMark`와 같은 것으로** 맞춘다:
+   * 캐럿이 앞으로 간 만큼 글자도 늘었으면 그 글자들은 이 예약이 못박을 것들이다.
+   * (조합 껍데기의 폭 0 글자도 캐럿 앞에 있으므로 둘은 함께 늘어난다.)
+   */
+  if (span.a !== armed.at) {
+    const grew = armedLen(el) - armed.len;
+    if (grew <= 0 || span.a - armed.at !== grew) return {};
+  }
   const out: Partial<NoteMarks> = {};
   for (const m of armed.marks) {
     if (isToggleKind(m.kind)) out[m.kind] = m.want;

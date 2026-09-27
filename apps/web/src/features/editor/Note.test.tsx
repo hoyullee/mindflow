@@ -9209,3 +9209,127 @@ describe('공책 78판 — 덮어쓰기·줄 끝 보초·칩 머리·Esc(제보 
     await waitFor(() => expect(document.querySelector('[data-note-datepop]')).toBeNull());
   });
 });
+
+describe('공책 79판 — 칩이 막던 행 머리, 코드 정거장의 뜻(제보 3·4·5)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const line = (c: HTMLElement, key: string) => c.querySelector(`[data-note-line="${key}"]`) as HTMLElement;
+  const codeOn = () => document.querySelector('[data-note-mark="k"]')?.getAttribute('aria-pressed');
+
+  /**
+   * 제보 3 — 줄 머리가 칩이면 `modify(..., 'lineboundary')`가 그 칩 **뒤**에서 선다.
+   * 그러면 「행의 머리인가」가 영영 거짓이라 ↑가 윗줄로 넘어가지 못했다.
+   *
+   * jsdom에는 `modify`가 없으므로 크로뮴의 그 성질을 **모델로 얹는다**(칩 앞에서 선다).
+   * 실브라우저 증거는 프로브 쪽이다(실측: `at`이 8에서 멈췄다).
+   */
+  it('3 — 칩이 막아도 ↑가 윗줄로 넘어간다', async () => {
+    const c = await open('up1', [
+      { id: 'b1', kind: 'p', runs: [{ t: '윗줄', b: false, c: null }] },
+      { id: 'b2', kind: 'p', runs: [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' }, { t: ' 뒤의 글', b: false, c: null }] },
+    ]);
+    const el = line(c, 'b2');
+    el.focus();
+    setLinearSelection(el, 13, 13);
+    const sel = window.getSelection()!;
+    // 크로뮴 모델 — 뒤로 가는 `lineboundary`는 칩 **뒤**(8)에서 선다.
+    (sel as Selection & { modify: (a: string, d: string, g: string) => void }).modify = (alter, dir) => {
+      if (dir !== 'backward') return;
+      const spot = pointAtIn(el, 8);
+      if (alter === 'move') sel.setBaseAndExtent(spot.node, spot.offset, spot.node, spot.offset);
+      else sel.extend(spot.node, spot.offset);
+    };
+
+    fireEvent.keyDown(el, { key: 'ArrowUp' });
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1'));
+  });
+
+  /** 제보 4 — 같은 뿌리. Home은 줄의 **0번**까지 가야 한다. */
+  it('4 — Home이 칩을 넘어 줄 머리로 간다', async () => {
+    const c = await open('hm1', [
+      { id: 'b1', kind: 'p', runs: [{ t: '9월 27일 일', b: false, c: null, dt: '2026-09-27' }, { t: ' 뒤의 글', b: false, c: null }] },
+    ]);
+    const el = line(c, 'b1');
+    el.focus();
+    setLinearSelection(el, 13, 13);
+    const sel = window.getSelection()!;
+    (sel as Selection & { modify: (a: string, d: string, g: string) => void }).modify = (alter, dir) => {
+      if (dir !== 'backward') return;
+      const spot = pointAtIn(el, 8);
+      if (alter === 'move') sel.setBaseAndExtent(spot.node, spot.offset, spot.node, spot.offset);
+      else sel.extend(spot.node, spot.offset);
+    };
+
+    fireEvent.keyDown(el, { key: 'Home' });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    const now = window.getSelection()!;
+    expect(linearize(el, [{ container: now.focusNode!, offset: now.focusOffset }]).pos[0]).toBe(0);
+    expect(now.isCollapsed).toBe(true);
+  });
+
+  /**
+   * 제보 5 — 정거장이 곧 「다음 글자가 코드인가」다. 캐럿만 옮겨서는 모자랐다:
+   * 크로뮴은 글자를 넣는 자리도 경계에서 한쪽으로 접는다(실측). 그 뜻을 예약으로
+   * 못박으면 툴바의 코드 불이 그 약속을 그대로 비춘다.
+   */
+  it('5 — 코드 안쪽 정거장은 불이 켜지고, 바깥쪽은 꺼진다', async () => {
+    const c = await open('ce1', [
+      { id: 'b1', kind: 'p', runs: [{ t: '안녕', b: false, c: null }, { t: '코드', b: false, c: null, k: true }, { t: '뒷글', b: false, c: null }] },
+    ]);
+    const el = line(c, 'b1');
+    el.focus();
+    // 코드 **안**의 끝(값 4)에 캐럿을 못박는다.
+    const codeText = el.querySelector('code')!.firstChild as Text;
+    const put = (node: Node, offset: number) => {
+      const r = document.createRange();
+      r.setStart(node, offset);
+      r.collapse(true);
+      const s = window.getSelection();
+      s?.removeAllRanges();
+      s?.addRange(r);
+      fireEvent(document, new Event('selectionchange'));
+    };
+    put(codeText, 2);
+    await waitFor(() => expect(codeOn()).toBe('true'));
+
+    // → 한 번이면 코드 **밖**의 정거장 — 불이 꺼진다(다음 글자는 코드가 아니다).
+    fireEvent.keyDown(el, { key: 'ArrowRight' });
+    await waitFor(() => expect(codeOn()).toBe('false'));
+
+    // ← 한 번이면 다시 코드 **안** — 불이 켜진다.
+    fireEvent.keyDown(el, { key: 'ArrowLeft' });
+    await waitFor(() => expect(codeOn()).toBe('true'));
+  });
+});
+
+/** 값 좌표를 **칩 바깥의** DOM 자리로 — 크로뮴 모델이 칩 안에 초점을 두지 않게. */
+function pointAtIn(el: HTMLElement, at: number): { node: Node; offset: number } {
+  const kids = [...el.childNodes];
+  let acc = 0;
+  for (let i = 0; i < kids.length; i += 1) {
+    const len = (kids[i]!.textContent || '').length;
+    if (at <= acc) return { node: el, offset: i };
+    if (at < acc + len) {
+      const n = kids[i]!;
+      if (n.nodeType === 3) return { node: n, offset: at - acc };
+      return { node: el, offset: i + 1 };
+    }
+    acc += len;
+  }
+  return { node: el, offset: kids.length };
+}
