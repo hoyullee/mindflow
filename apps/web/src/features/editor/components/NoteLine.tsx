@@ -18,7 +18,8 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armCaretMark, armedCaretAt, armedHasMark, armedMarksOverlay, closeArmedAnchor, disarmCaretMark, fireCaretMark, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armCaretMark, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, hasArmedAnchor, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
+import { codeEdgeStep } from '../noteCodeEdge';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
 import { chipAtCaret, chipRange, extendOverChips } from '../noteChip';
@@ -310,6 +311,12 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      * 걸면 박스를 이미 다시 그렸으므로 여기서 값을 읽을 필요가 없다.
      */
     if (!composing.current) {
+      /**
+       * **껍데기를 먼저 걷는다** — 조합이 아니어도 서 있을 수 있다(제보 5: 줄 끝
+       * 인라인 코드에서 →로 나가면 그 자리에 껍데기가 선다). 남겨 두면 폭 0 글자가
+       * 값에 섞이고, `fireCaretMark`가 세는 글자 수도 한 칸 어긋나 예약이 버려진다.
+       */
+      closeArmedAnchor(el);
       const marked = fireCaretMark(el);
       if (marked) {
         onChange(marked);
@@ -629,16 +636,43 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      * 자모부터 코드가 아니다. 상자 경계가 눈에 보이는 서식은 코드뿐이라 여기서만 한다 —
      * 굵은 글 끝에서 방향키를 눌렀다고 굵게가 꺼지면 그게 더 놀랍다.
      */
-    if (plainArrow && e.key === 'ArrowRight' && !composing && !readOnly) {
-      const sel = window.getSelection();
-      const focus = sel?.focusNode ?? null;
-      const host = focus ? (focus.nodeType === 1 ? (focus as HTMLElement) : focus.parentElement) : null;
-      const inCode = !!host?.closest?.('code');
-      // 이미 「코드 끄기」를 예약해 뒀으면 두 번째 누름이다 — 그때는 줄 밖으로 보낸다.
-      const armedOff = armedMarksOverlay(el).k === false;
-      if (sel?.isCollapsed && inCode && !armedOff && caretOffset(el) >= lineLength(el) && armCaretMark(el, 'k')) {
-        e.preventDefault();
-        return;
+    if (plainArrow && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !composing && !readOnly) {
+      const dir = e.key === 'ArrowRight' ? 1 : -1;
+      /**
+       * **껍데기가 서 있으면 이미 코드 밖이다** — 그 다음 누름의 뜻이 방향마다 다르다.
+       *
+       * →면 **그대로 둔다**: 껍데기의 폭 0 글자가 줄의 마지막이라 아래의 `onEdgeOut`이
+       * 곧바로 다음 줄로 보낸다(두 번째 누름의 뜻이 그것이다). 여기서 껍데기를 걷으면
+       * 캐럿이 코드 **안**으로 되돌아가, 다음 줄이 없는 문서에서는 상자에 도로 갇힌다
+       * (테스트가 이 자리를 잡았다).
+       *
+       * ←면 걷는다 — 들어온 길을 그대로 되짚어 코드 안으로 돌아가는 것이 맞다.
+       */
+      if (hasArmedAnchor(el)) {
+        if (dir === -1) {
+          closeArmedAnchor(el);
+          disarmCaretMark(el);
+        }
+      } else {
+        const step = codeEdgeStep(el, dir);
+        if (step === 'moved') {
+          e.preventDefault();
+          return;
+        }
+        /**
+         * **줄 끝의 코드에서 나가는 길**(제보) — 밖에 캐럿이 설 글자가 없다.
+         *
+         * 「다음 글자는 코드가 아니다」를 예약하고(`armCaretMark`) 껍데기를 코드
+         * **밖**에 세운다(`openArmedAnchor` → `placeAnchor`). 그래야 캐럿이 눈에
+         * 보이게 상자를 빠져나가고, 이어 치는 글자도 조합이든 아니든 밖에서 태어난다.
+         * 예전에는 예약만 했는데 — 캐럿이 제자리라 "나간 것 같지 않다"는 제보가
+         * 다시 왔다(툴바의 코드 불만 꺼졌다).
+         */
+        if (step === 'leave' && armCaretMark(el, 'k')) {
+          openArmedAnchor(el);
+          e.preventDefault();
+          return;
+        }
       }
     }
     if (plainArrow && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && onEdgeOut) {

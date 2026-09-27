@@ -38,7 +38,7 @@ import type { EditorController } from '../useEditorState';
 import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
-import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, sameMarks, type NoteFormatKind, type NoteMarks } from '../noteRichDom';
+import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armMarksForReplace, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, noteMarksIn, sameMarks, type NoteFormatKind, type NoteMarks } from '../noteRichDom';
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
@@ -50,7 +50,7 @@ import { NoteDatePop } from './NoteDatePop';
 import { NoteEventPopups, type NoteEventOpen } from './NoteEventPopups';
 import { NoteProfileCard, seedNoteComment } from './NoteProfileCard';
 import type { ShareParticipant } from '../../../adapters/ports';
-import { applyHolidayMarks, chipAtCaret } from '../noteChip';
+import { CHIP_SELECTOR, applyHolidayMarks, caretText, chipAtCaret, outerTextSpot } from '../noteChip';
 import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, openNoteComment, overlapsComment, threadIdOfNode } from '../noteComment';
 import { SCHED_KINDS, useNoteAgenda } from '../noteAgenda';
 import { toastShellStyle } from '../../../pwa/toastShell';
@@ -1920,6 +1920,14 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       const last = sel[sel.length - 1];
       if (!first || !last) return;
       const gone = lineLength(first.el) - first.from; // 첫 줄에서 지워질 길이
+      /**
+       * **덮어쓸 글자의 서식을 지우기 전에 읽어 둔다**(제보 1 — `armMarksForReplace`).
+       *
+       * 「고른 구간의 시작」이 기준이다: 첫 줄의 `from` 자리 글자 하나. 그 자리에
+       * 글자가 없으면(줄 끝에서 시작한 선택) 캐럿 규칙으로 물러선다 —
+       * `noteMarksIn`이 접힌 자리를 그렇게 본다(앞 글자를 물려받는다).
+       */
+      const head = noteMarksIn(first.el, first.from, Math.min(lineLength(first.el), first.from + 1));
       const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
       if (!done) {
         setTextSel(null);
@@ -1937,6 +1945,8 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       } catch {
         /* 선택을 못 세우면 글자가 캐럿 자리에 들어간다(고른 것은 이미 지워졌다) */
       }
+      // 브라우저가 첫 글자에만 물려주는 서식을 **끝까지 못박는다**(제보 1).
+      armMarksForReplace(el, first.from, gone, head);
       setTextSel(null);
     };
 
@@ -2382,6 +2392,33 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     col.addEventListener('keyup', onKeyUp);
     return () => col.removeEventListener('keyup', onKeyUp);
   }, [pageId]);
+
+  /**
+   * **Esc면 팝오버부터 닫는다**(요청) — 날짜 팝오버도 프로필 카드도.
+   *
+   * 왜 캡처 단계인가: 이 화면에는 Esc를 쓰는 손이 여럿이다(칠해 둔 선택 걷기 ·
+   * 넣기 목록 · 링크 판). 팝오버가 떠 있는데 그 가운데 하나가 먼저 먹으면 "Esc를
+   * 눌렀는데 팝오버는 그대로"가 된다. 그래서 문서의 캡처 단계에서 받아 **그 한
+   * 번은 팝오버의 것**으로 쓰고 전파를 끊는다 — 팝오버가 없으면 아무 일도 하지
+   * 않으므로 다른 손들은 그대로다.
+   *
+   * 캐럿은 건드리지 않는다: 이 팝오버는 초점을 가져가지 않는 물건이라(호버·방향키로
+   * 뜬다) 닫히면 쓰던 자리에서 그대로 이어 쓴다.
+   */
+  useEffect(() => {
+    if (!datePop && !profilePop) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (datePopTimer.current !== null) window.clearTimeout(datePopTimer.current);
+      datePopTimer.current = null;
+      setDatePop(null);
+      setProfilePop(null);
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [datePop, profilePop]);
 
   /**
    * 패널의 스레드 카드를 누르면 **본문의 그 형광으로**(6-6) — 스크롤 영역 높이의
@@ -10482,7 +10519,43 @@ function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; of
     }
   }
   const text = lineLength(el);
-  return pointAt(el, dir === 1 ? 0 : text);
+  return textSpotIn(el, dir === 1 ? 0 : text, dir);
+}
+
+/**
+ * 값 좌표를 **캐럿이 실제로 설 수 있는 자리**로 푼다 — 원자 칩 **밖의 글자 노드**.
+ *
+ * 왜 `pointAt`만으로는 안 되나(제보: 2번 줄 맨 앞의 날짜 칩으로 들어가면 커서가
+ * 비활성화된다). 줄이 칩으로 시작하면 0번 자리의 글자 노드는 **칩 안**이고, 칩은
+ * `contenteditable="false"`라 크로뮴이 그 캐럿을 **블록 경계로 밀어낸다**(실측:
+ * `focusNode`가 `DIV@0`이 된다). 그 자리는 `Range`의 사각형이 비어 있어
+ * (실측: 0×0) — 바로 아래 `placeCaretInLine` 머리말이 이미 적어 둔 그 사고다:
+ * "요소 경계에 놓으면 캐럿 사각형을 잴 수 없어 다음 방향키가 가장자리 판정에
+ * 실패한다."
+ *
+ * 그래서 가려는 쪽으로 훑어 **칩 밖의 첫 글자 자리**를 고른다. 줄 머리가 칩이면
+ * 그 칩 **뒤**가 그 자리다 — 칩은 어차피 한 덩어리라(`noteChip`) 방향키 한 번에
+ * 통째로 지나가는 물건이고, 그 앞에는 크로뮴이 캐럿을 그릴 자리를 내주지 않는다.
+ * 아무 데도 없으면(줄이 칩 하나뿐) 원래 자리를 그대로 준다 — 잃는 것이 없다.
+ */
+function textSpotIn(el: HTMLElement, at: number, dir: -1 | 1): { node: Node; offset: number } {
+  const first = pointAt(el, at);
+  if (caretText(first.node)) return first;
+  /**
+   * 칩 **안**으로 풀렸으면 그 칩 바로 **밖**으로 — 값 좌표는 칩의 경계 그대로이므로
+   * 글자를 건너뛰지 않는다(`outerTextSpot`). 이것이 없으면 훑기가 한 글자 더 가서
+   * 캐럿이 칩 뒤 **두 번째** 자리에 선다(실측: 칩 뒤의 공백을 건너뛰었다).
+   */
+  const host = first.node.nodeType === 3 ? first.node.parentElement : (first.node as HTMLElement);
+  const chip = host?.closest?.(CHIP_SELECTOR) as HTMLElement | null;
+  const out = chip ? outerTextSpot(chip, dir) : null;
+  if (out) return out;
+  const len = lineLength(el);
+  for (let i = at + dir; i >= 0 && i <= len; i += dir) {
+    const spot = pointAt(el, i);
+    if (caretText(spot.node)) return spot;
+  }
+  return first;
 }
 
 /**
@@ -10589,7 +10662,10 @@ function caretToLine(key: string, at: number | 'end' = 'end'): void {
     // **텍스트 노드 안에** 놓는다 — 요소 경계에 놓으면 캐럿 사각형을 잴 수 없어
     // 다음 방향키가 가장자리 판정에 실패한다(`placeCaretInLine`과 같은 이유).
     const len = lineLength(el);
-    const spot = pointAt(el, at === 'end' ? len : Math.max(0, Math.min(at, len)));
+    const want = at === 'end' ? len : Math.max(0, Math.min(at, len));
+    // 원자 칩 **안**도 요소 경계와 같다 — 크로뮴이 그 캐럿을 블록 경계로 밀어낸다
+    // (`textSpotIn` 머리말). 그래서 값 자리를 캐럿이 설 수 있는 자리로 한 번 푼다.
+    const spot = textSpotIn(el, want, want >= len ? -1 : 1);
     try {
       const range = document.createRange();
       range.setStart(spot.node, spot.offset);
