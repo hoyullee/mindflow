@@ -66,6 +66,7 @@
 | 표의 크기 그립을 테스트에서 못 찾는다 | 재어서 그리는 부품은 jsdom에 없다 | [F9](#f9) |
 | ⌘S를 눌러도 저장본이 그대로다 | 폴링이 200ms 타이머를 매번 껐다 | [F10](#f10) |
 | jsdom은 통과인데 크롬에서 글자가 서식 **밖**에 떨어진다 | 폭 0인 인라인 요소 안의 캐럿은 브라우저가 앞으로 접는다 | [F11](#f11) |
+| 캐럿 자리를 재는 코드의 테스트가 **늘 `null`**이다 | jsdom의 `Range`에는 `getBoundingClientRect`가 아예 없다 | [F30](#f30) |
 | `fireEvent.pointerDown(el, { shiftKey: true })`가 안 먹는다 | jsdom에는 `PointerEvent`가 없어 init이 통째로 버려진다 | [F12](#f12) |
 | 방향키 한 번에 두 칸을 간다(새로 붙인 손이 같은 키를 또 받는다) | 이벤트 중에 `document`에 붙인 리스너가 **그 이벤트**를 받는다 | [F13](#f13) |
 | 바로 누르면 되는데 **잠시 쉬었다** 누르면 안 된다 | 되살리는 쪽에 "몇 초 안"이라는 신선도 조건이 있다 | [F14](#f14) |
@@ -700,6 +701,25 @@ MouseEvent('contextmenu', { cancelable: true }))`) 그 `defaultPrevented`와 메
 계열로 조심할 것들: `HTMLElement.innerText`(jsdom은 `textContent`와 다르게 동작하지
 않습니다), `Selection.modify`([F27 옆의 칩 이야기](#f27)), `execCommand`·
 `queryCommandValue`(아예 없습니다 — 쓰는 코드는 없을 때를 견뎌야 합니다).
+
+<a id="f30"></a>
+### F30. jsdom의 `Range`에는 `getBoundingClientRect`가 **없다** — 가드가 아니라 예외를 재고 있었다
+
+코드 경계에 캐럿을 직접 그리려고 `range.getBoundingClientRect()`로 자리를 재고, "못
+재면 그리지 않는다"를 **높이 0** 으로 갈랐습니다(`if (!box || box.height <= 0) return
+null`). 그 가드를 지키는 테스트를 세웠더니 통과했는데, **가드를 지워도 그대로
+통과**했습니다.
+
+jsdom에는 그 메서드가 아예 없습니다(`Range.prototype.getBoundingClientRect === undefined`
+— `Element` 쪽은 있어서 더 헷갈립니다). 호출이 `TypeError`로 터지고 `try/catch`가
+받아 `null`이 나오던 것이라, 테스트는 **높이 가드가 아니라 예외 경로**를 재고
+있었습니다. 실브라우저에는 그 메서드가 있으니 가드가 죽었어도 아무도 몰랐을 것입니다.
+
+**둘로 갈라 재세요** — ① 메서드가 없는 그대로(예외 경로) ② `Range.prototype`에 높이
+0을 돌려주는 스텁을 꽂고(높이 가드). ②를 끼운 뒤에야 가드를 지웠을 때 빨개집니다.
+같은 계열의 확인법: **가드를 지워 봐서 빨개지지 않으면 그 테스트는 그 가드의 것이
+아닙니다**([F28](#f28)). 참고로 **기본 캐럿의 픽셀**은 이 환경에서 볼 수 없으므로
+([E7](#e7)), 캐럿을 우리 요소로 그리는 쪽이 검증 가능한 설계이기도 합니다.
 
 <a id="f28"></a>
 ### F28. 함수만 재는 단위 테스트는 **배선을 지키지 않는다**

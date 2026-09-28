@@ -42,6 +42,27 @@
  * 함수는 캐럿을 놓은 뒤 **어느 쪽에 세웠는지**를 돌려주고(`'in'`·`'out'`), 호출부가
  * 그 뜻을 예약으로 못박는다(`armCaretMarkAs(el, 'k', …)`). 정거장이 곧 "다음 글자가
  * 코드인가"라는 약속이 되고, 툴바의 코드 불도 그 약속을 그대로 비춘다.
+ *
+ * ## 그런데 **그려지는 캐럿**은 여전히 한 자리다 (제보 · 이 판)
+ *
+ * 자리도 불도 친 글자도 전부 맞는데 **눈에 보이는 막대**가 반대쪽에 서 있다는
+ * 제보다. 원인은 같은 접기다 — 크로뮴은 서로 「보이기에 같은」 두 자리를 **위쪽
+ * 하나로** 정규화해 그린다. 그래서 코드 **머리**의 두 자리는 둘 다 상자 **밖**에,
+ * 코드 **끝**의 두 자리는 둘 다 상자 **안**에 그려진다:
+ *
+ * | 캐럿이 선 자리 | 코드 불 | 그려지는 막대 |
+ * | --- | --- | --- |
+ * | 머리 · 안 | ON | 상자 **밖**(틀렸다) |
+ * | 머리 · 밖 | OFF | 상자 밖 |
+ * | 끝 · 안 | ON | 상자 안 |
+ * | 끝 · 밖 | OFF | 상자 **안**(틀렸다) |
+ *
+ * 실측으로 **좌표는 갈린다**(같은 줄에서 492 / 499.06 / 565.7 / 572.77 — 7px 차이다.
+ * 코드의 좌우 여백 0.38em + 테두리 + 마진이 그만큼이다). 값이 있는데 크로뮴이 그걸로
+ * 그리지 않을 뿐이라, **우리가 그 좌표에 직접 막대를 세운다**(`codeEdgeCaret`).
+ * 네 자리 전부에 세워 두 정거장이 늘 다른 x에 보이게 하고, 안쪽은 코드 잉크로,
+ * 바깥쪽은 본문 잉크로 칠해 「다음 글자가 코드인가」를 색으로도 알린다.
+ * 그 동안만 그 줄의 기본 캐럿을 감춘다(`caret-color: transparent`).
  */
 
 import { caretText, edgeText, outerTextSpot } from './noteChip';
@@ -134,4 +155,77 @@ export function codeEdgeStep(el: HTMLElement, dir: -1 | 1): 'in' | 'out' | 'leav
   if (!enter) return null;
   const spot = insideSpot(enter, at);
   return spot && put(spot) ? 'in' : null;
+}
+
+/** 코드 경계에 선 캐럿의 **그릴 자리** — 뷰포트 좌표다(`position: fixed`). */
+export interface CodeCaretSpot {
+  left: number;
+  top: number;
+  height: number;
+}
+
+interface Edge {
+  span: CodeSpan;
+  /** 코드의 **머리** 경계인가(아니면 끝). */
+  head: boolean;
+}
+
+/** 캐럿이 선 **코드 경계** — 아니면 `null`. */
+function caretEdge(el: HTMLElement): Edge | null {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+  if (el.closest?.('[data-note-kind="code"]')) return null; // 코드 블록 안은 상자를 그리지 않는다
+  const sel = window.getSelection();
+  if (!sel || !sel.isCollapsed || !sel.focusNode || !el.contains(sel.focusNode)) return null;
+  const at = charOffset(el, sel.focusNode, sel.focusOffset);
+  const host = sel.focusNode.nodeType === 1 ? (sel.focusNode as HTMLElement) : sel.focusNode.parentElement;
+  const mine = (host?.closest?.('code') as HTMLElement | null) ?? null;
+  const spans = codeSpans(el);
+  // 캐럿이 **든 코드**를 먼저 본다 — 코드 둘이 맞붙어 있으면 같은 좌표가 앞의 끝이자
+  // 뒤의 머리다. 밖에 서 있으면 그 좌표를 경계로 삼는 첫 코드를 쓴다.
+  const span = spans.find((s) => s.node === mine && (at === s.start || at === s.end)) ?? spans.find((s) => at === s.start || at === s.end);
+  return span ? { span, head: at === span.start } : null;
+}
+
+/**
+ * 코드 경계에 선 캐럿의 **약속** — 「다음에 칠 글자가 코드인가」. 경계가 아니면 `null`.
+ *
+ * 이 한 값이 **툴바의 코드 불과 우리가 그리는 막대의 공통 원천**이다. 둘이 다른 것을
+ * 보면 사용자에게는 그것이 곧 버그다(제보: 불은 켜졌는데 막대는 밖에 있다).
+ *
+ * - **예약이 있으면 그것**(`armCaretMarkAs` — 방향키로 경계를 지날 때 우리가 세운다).
+ * - 없으면 **크로뮴의 규칙**: 실측으로 머리 경계는 언제나 밖, 끝 경계는 언제나 안에
+ *   글자를 넣는다(캐럿을 어느 노드에 두었든 같다). 그래서 머리면 `false`, 끝이면
+ *   `true`다 — 눌러서 온 것이 아니라 **눌러서 생길 일**을 적는다.
+ */
+export function codeEdgeMark(el: HTMLElement, armedK: boolean | undefined): boolean | null {
+  const edge = caretEdge(el);
+  if (!edge) return null;
+  return typeof armedK === 'boolean' ? armedK : !edge.head;
+}
+
+/**
+ * 캐럿이 **코드 경계에 서 있으면** `inside` 쪽의 자리를 잰다 — 그리는 것은 호출부다.
+ *
+ * 자리는 캐럿이 선 노드가 아니라 **`inside`가 가리키는 쪽**에서 잰다: 둘이 어긋나도
+ * (크로뮴이 자리를 접으므로 흔한 일이다) 그림은 약속을 따른다.
+ */
+export function codeEdgeCaret(el: HTMLElement, inside: boolean): CodeCaretSpot | null {
+  const edge = caretEdge(el);
+  if (!edge) return null;
+  const { span, head } = edge;
+  const spot = inside ? insideSpot(span, head ? span.start : span.end) : outerTextSpot(span.node, head ? -1 : 1);
+  if (!spot) return null; // 줄의 처음·끝이라 밖에 글자 노드가 없다 — 그때는 그리지 않는다
+  let box: DOMRect | null = null;
+  try {
+    const range = document.createRange();
+    range.setStart(spot.node, spot.offset);
+    range.collapse(true);
+    box = range.getBoundingClientRect();
+  } catch {
+    return null;
+  }
+  // 높이 0은 「잴 수 없었다」는 뜻이다(요소 경계의 사각형 · jsdom) — 그때는 그리지
+  // 않는다. 못 그린 자리에 캐럿까지 감추면 캐럿이 통째로 사라진다.
+  if (!box || box.height <= 0) return null;
+  return { left: box.left, top: box.top, height: box.height };
 }
