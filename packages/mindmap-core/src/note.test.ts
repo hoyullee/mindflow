@@ -538,6 +538,24 @@ describe('평문을 본문에 붙여넣는다 — 표식을 살려서', () => {
     expect(out?.blocks.map((b) => b.kind)).toEqual(['ul', 'ol']);
   });
 
+  /**
+   * 제보 13 — 목록 줄을 복사해 **다른 목록 줄의 글 끝**에 붙이면 `- `가 글자로 들어갔다.
+   * 줄 한가운데라 `adopt`가 서지 못하는 자리였는데, 항목은 이미 제 마커를 그리므로
+   * 표식이 한 겹 더 들어갈 이유가 없다.
+   */
+  it('목록 줄의 **글 끝**에 붙여도 표식이 글자로 남지 않는다(제보 13)', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('먼저') }] }];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 2, to: 2 }, '- 하나');
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ul']);
+    expect(out?.blocks[0]?.items?.map((x) => runsText(x.runs))).toEqual(['먼저하나']);
+  });
+
+  it('번호 줄을 글머리 항목에 붙여도 마찬가지다 — 종류가 달라도 표식은 지운다(제보 13)', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('먼저') }] }];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 2, to: 2 }, '1. 하나');
+    expect(out?.blocks[0]?.items?.map((x) => runsText(x.runs))).toEqual(['먼저하나']);
+  });
+
   it('문단에 붙이면 예전 그대로 — 표식 없는 줄은 문단이다', () => {
     const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '- 하나\n사이');
     expect(out?.blocks.map((b) => b.kind)).toEqual(['ul', 'p', 'p']);

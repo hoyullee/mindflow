@@ -1986,7 +1986,7 @@ export function useEditorState(): EditorController {
    * something — the React-hook counterpart of `Component#recordHistory`
    * (MindFlow.dc.html:551), driven explicitly per-action instead of a
    * `componentDidUpdate` diff (this hook has no equivalent lifecycle to diff against). */
-  const commitDoc = useCallback((updater: (d: Doc) => Doc, continuous = false) => {
+  const commitDoc = useCallback((updater: (d: Doc) => Doc, continuous = false, scope?: string) => {
     if (readOnlyRef.current) return; // 보기 전용(#22) — 모든 문서 변이의 chokepoint
     // 공유 맵인데 실시간이 끊겼다 — 지금 만드는 편집은 상대 것과 갈라질 수 있고,
     // 병합에서 한쪽이 조용히 사라진다(core `crdt/divergence.test.ts`). 그래서 유예
@@ -2017,6 +2017,7 @@ export function useEditorState(): EditorController {
         historyRef.current!.record(
           { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [], pages: next.pages ?? [], cover: next.cover ?? null },
           continuous,
+          scope,
         );
         setHistoryTick((t) => t + 1);
       }
@@ -6780,7 +6781,7 @@ export function useEditorState(): EditorController {
 
   /** 페이지 본문을 고친다 — `updatedAt`을 함께 찍어 목록의 "몇 분 전"이 맞게 한다. */
   const commitPage = useCallback(
-    (pageId: string, updater: (pg: NotePage) => NotePage, continuous = false) => {
+    (pageId: string, updater: (pg: NotePage) => NotePage, continuous = false, scope?: string) => {
       commitDoc((d) => {
         const pages = d.pages ?? [];
         let touched = false;
@@ -6792,14 +6793,21 @@ export function useEditorState(): EditorController {
           return { ...out, updatedAt: new Date().toISOString() };
         });
         return touched ? { ...d, pages: next } : d;
-      }, continuous);
+      }, continuous, scope);
     },
     [commitDoc],
   );
 
-  /** 블록 하나를 고친다(가장 잦은 경로 — 글자 입력이 여기로 온다). */
+  /**
+   * 블록 하나를 고친다(가장 잦은 경로 — 글자 입력이 여기로 온다).
+   *
+   * `scope`는 **뭉치기의 울타리**다(제보 11 — `HistoryStack.record`의 머리말).
+   * 기본은 그 블록이고, 한 블록 안에 여러 줄이 있는 것(목록 항목·표 칸)은 부르는
+   * 쪽이 더 잘게 준다 — 다른 줄로 옮겨 이어 쳤는데 한 단계로 붙으면 ⌘Z 한 번이
+   * 두 줄을 함께 지운다.
+   */
   const commitBlock = useCallback(
-    (pageId: string, blockId: string, updater: (b: NoteBlock) => NoteBlock, continuous = true) => {
+    (pageId: string, blockId: string, updater: (b: NoteBlock) => NoteBlock, continuous = true, scope?: string) => {
       commitPage(
         pageId,
         (pg) => {
@@ -6816,6 +6824,7 @@ export function useEditorState(): EditorController {
         // 글자 입력은 **한 덩이의 undo**여야 한다 — 한 글자마다 단계를 만들면
         // ⌘Z 한 번이 한 글자를 지운다(노드 편집과 같은 규칙).
         continuous,
+        scope ?? `${pageId}:${blockId}`,
       );
     },
     [commitPage],
@@ -6824,7 +6833,7 @@ export function useEditorState(): EditorController {
   /** 페이지 제목. 빈 제목을 허용한다 — 목록이 `제목 없는 페이지`로 보여 준다. */
   const setNotePageTitle = useCallback(
     (pageId: string, title: string) => {
-      commitPage(pageId, (pg) => (pg.title === title ? pg : { ...pg, title }), true);
+      commitPage(pageId, (pg) => (pg.title === title ? pg : { ...pg, title }), true, `${pageId}:title`);
     },
     [commitPage],
   );
@@ -7592,10 +7601,14 @@ export function useEditorState(): EditorController {
       const next = normalizeRuns(runs);
       const cur = notePage.blocks.find((b) => b.id === blockId)?.items?.find((it) => it.id === itemId)?.runs;
       if (sameRuns(cur, next)) return;
-      commitBlock(notePage.id, blockId, (b) => ({
-        ...b,
-        items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, runs: next } : it)),
-      }));
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => ({ ...b, items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, runs: next } : it)) }),
+        true,
+        // 항목마다 따로 뭉친다 — 다음 항목으로 옮겨 이어 쳐도 undo가 한 걸음씩 간다(제보 11).
+        `${notePage.id}:${blockId}:${itemId}`,
+      );
     },
     [commitBlock, notePage],
   );
@@ -7722,10 +7735,14 @@ export function useEditorState(): EditorController {
       if (!notePage) return;
       // 바뀐 것이 없으면 커밋하지 않는다(`setNoteBlockRuns` 머리말).
       if (sameRuns(notePage.blocks.find((b) => b.id === blockId)?.rows?.[row]?.[col], normalizeRuns(runs))) return;
-      commitBlock(notePage.id, blockId, (b) => {
-        const rows = (b.rows ?? []).map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? normalizeRuns(runs) : c)) : r));
-        return { ...b, rows };
-      });
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => ({ ...b, rows: (b.rows ?? []).map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? normalizeRuns(runs) : c)) : r)) }),
+        true,
+        // 칸마다 따로 뭉친다 — 옆 칸으로 옮겨 이어 쳐도 undo가 한 걸음씩 간다(제보 11).
+        `${notePage.id}:${blockId}:r${row}c${col}`,
+      );
     },
     [commitBlock, notePage],
   );

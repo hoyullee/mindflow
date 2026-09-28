@@ -890,10 +890,24 @@ export function pasteNoteBlocks(
 
   // 첫 줄의 표식을 살릴 수 있는가 — 줄의 맨 앞이고, 목록 안이면 같은 종류일 때만.
   const adopt = !head.length && first.kind !== null && (!listed || first.kind === src.kind);
+  /**
+   * **목록 줄에 붙여넣을 때는 표식을 글자로 남기지 않는다**(제보 13).
+   *
+   * 우리 복사는 목록을 마크다운 표식과 함께 싣는다(`selectionText` — 다른 앱에 붙여도
+   * 목록으로 읽히게). 그 글을 **다시 목록 항목에** 붙여넣으면 표식이 갈 곳이 없다:
+   * 항목은 이미 제 마커를 그리고 있으므로 `- `가 글자로 한 겹 더 들어간다(제보의
+   * 그림이 그것이다). 줄 한가운데라 `adopt`가 서지 못하는 자리에서 특히 그랬다.
+   *
+   * 그래서 **붙여넣는 자리가 목록이면** 첫 줄의 표식은 지운다 — 종류가 달라도
+   * 마찬가지다(번호 줄을 글머리 항목에 붙여도 `1. `이 글자로 들어갈 이유는 없다).
+   * 일반 줄에 붙여넣는 길은 그대로다: 맨 앞이면 표식이 그 줄을 목록으로 만들고
+   * (`adopt`), 문장 가운데면 예전처럼 글자로 남는다(요청의 단서).
+   */
+  const dropMark = listed && first.kind !== null;
   interface Out { kind: 'ul' | 'ol' | 'ck' | null; indent: number; done?: boolean; start?: number; chars: ReturnType<typeof plainChars> }
   const out: Out[] = lines.map((ln, k) => {
     if (k === 0) {
-      const keep = adopt ? ln.text : ln.raw;
+      const keep = adopt || dropMark ? ln.text : ln.raw;
       return {
         kind: adopt ? ln.kind : listed ? src.kind : null,
         indent: adopt ? ln.indent : j >= 0 ? itemDepth(items[j] as NoteListItem) : 0,

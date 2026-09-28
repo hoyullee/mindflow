@@ -1223,3 +1223,30 @@ input[type='search']::-webkit-search-results-decoration {
     animation: none;
   }
 }
+
+/* 임베드의 머리 — **미리보기 위에 얹고 마우스를 얹었을 때만** 보인다(요청 10).
+   예전에는 카드 맨 위에 한 줄을 차지해, 본문에 넣은 보드가 늘 제 이름표를 달고
+   있었다(제목·경로·시각·단추). 보는 동안에는 그림만 남기고, 무엇인지·어디로
+   가는지는 필요할 때 손이 부르게 한다. 손가락에는 hover가 없으므로 늘 보인다. */
+.mf-embed-head {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+  pointer-events: none;
+}
+[data-embed-card]:hover .mf-embed-head,
+[data-embed-card]:focus-within .mf-embed-head,
+[data-embed-picked='1'] .mf-embed-head {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .mf-embed-head {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}

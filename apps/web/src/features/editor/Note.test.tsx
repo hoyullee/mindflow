@@ -10106,6 +10106,27 @@ describe('공책 87판 — 접기·콜아웃·달력 머리(제보 14·15·16·1
     });
   });
 
+  it('11 — 다른 줄을 잇달아 고쳐도 ⌘Z는 **한 걸음씩** 돌아간다(뭉쳐서 한꺼번에가 아니라)', async () => {
+    const c = await open('uz1', [
+      { id: 'a', kind: 'p', runs: r('1') },
+      { id: 'b', kind: 'p', runs: r('2') },
+      { id: 'cc', kind: 'p', runs: r('3') },
+    ]);
+    // 쉬지 않고 세 줄을 고친다 — 뭉치기 창(1200ms) 안이다.
+    type(c.querySelector('[data-note-line="a"]')!, '1A');
+    type(c.querySelector('[data-note-line="b"]')!, '2B');
+    type(c.querySelector('[data-note-line="cc"]')!, '3C');
+    const shot = () => [...c.querySelectorAll('[data-note-line]')].map((e) => e.textContent).join('|');
+    await waitFor(() => expect(shot()).toBe('1A|2B|3C'));
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(shot()).toBe('1A|2B|3'));
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(shot()).toBe('1A|2|3'));
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(shot()).toBe('1|2|3'));
+  });
+
   it('16 — 이름을 비우고 색을 「기본」으로 되돌리면 그 어조의 기본으로 돌아간다', async () => {
     const c = await open('cl2', [{ id: 'co', kind: 'callout', tone: 'decide', toneName: '메모', toneColor: '#7C9BD8', runs: r('x') }]);
     const chip = () => c.querySelector('[data-note-tone]') as HTMLButtonElement;

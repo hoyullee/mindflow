@@ -106,6 +106,28 @@ describe('공책 본문 · 보드 임베드', () => {
     expect([...container.querySelectorAll('[data-embed-card-id]')].map((e) => e.textContent)).toEqual(['알림 분리날짜 없음0']);
   });
 
+  it('10 — 머리는 미리보기 **위에 얹힌다**(흐름에서 한 줄을 차지하지 않는다)', async () => {
+    seedSpace([{ title: '스프린트 보드', docId: 'kbh' }]);
+    localStorage.setItem('mindflow_doc_kbh', JSON.stringify(KANBAN));
+    localStorage.setItem('mindflow_doc_nbh', JSON.stringify(noteWith([{ id: 'b1', kind: 'link', docId: 'kbh' }])));
+    const { container } = renderEditor('/editor?map=nbh&title=x');
+
+    await waitFor(() => expect(container.querySelector('[data-embed-cards]')).toBeTruthy());
+    const head = container.querySelector('[data-embed-head]') as HTMLElement;
+    // 미리보기 우측 상단에 뜬다 — 카드가 그 기준면이다.
+    expect(head.style.position).toBe('absolute');
+    expect(head.style.top).toBe('8px');
+    expect(head.style.right).toBe('8px');
+    expect((container.querySelector('[data-embed-card]') as HTMLElement).style.position).toBe('relative');
+    // 마우스를 얹었을 때만 보이는 규칙은 CSS가 든다 — 클래스로 확인한다.
+    expect(head.className).toContain('mf-embed-head');
+    // 담기는 것 넷: 제목 · 경로(종류·스페이스) · 업데이트 시각 · 접기+열기.
+    expect(container.querySelector('[data-embed-title]')?.textContent).toBe('스프린트 보드');
+    expect(container.querySelector('[data-embed-meta]')?.textContent).toContain('칸반');
+    expect(head.querySelector('[data-embed-collapse]')).toBeTruthy();
+    expect(head.querySelector('[data-embed-open]')).toBeTruthy();
+  });
+
   it('열을 바꾸고 「내 카드만」을 켜면 그 상태가 **문서에 남는다**', async () => {
     seedSpace([{ title: '스프린트 보드', docId: 'kb2' }]);
     localStorage.setItem('mindflow_doc_kb2', JSON.stringify(KANBAN));
