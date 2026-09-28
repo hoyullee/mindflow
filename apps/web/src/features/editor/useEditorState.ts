@@ -942,6 +942,8 @@ export interface EditorController {
    */
   pasteNoteText: (key: string, from: number, to: number, text: string) => NotePaste | null;
   setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
+  /** 표에 격자를 **한 번에** 붙여넣는다 — 모자라면 행·열을 늘린다(요청 8). */
+  pasteNoteTable: (blockId: string, row: number, col: number, grid: RichRun[][][]) => void;
   /** 표에 행을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 아래. */
   addNoteTableRow: (blockId: string, at?: number) => void;
   /** 표에 열을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 오른쪽. */
@@ -7728,6 +7730,35 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
+  /**
+   * 고른 자리에서 시작해 **격자를 통째로** 붙여넣는다(요청 8).
+   *
+   * 한 커밋으로 끝낸다 — `setNoteCell`을 칸마다 부르면 되돌리기가 칸 수만큼 쌓여
+   * 한 번의 붙여넣기를 되돌리는 데 ⌘Z를 수십 번 눌러야 한다.
+   *
+   * **모자라면 늘린다**(엑셀·시트와 같다): 3행짜리를 마지막 행에 붙여넣으면 아래로
+   * 두 행이 생긴다. 새로 생긴 자리의 빈 칸은 빈 런이다. 크기 값(`colW`)과 칠(`fills`)은
+   * 건드리지 않는다 — 늘어난 열은 값이 없어 남은 폭을 나눠 받는다.
+   */
+  const pasteNoteTable = useCallback(
+    (blockId: string, row: number, col: number, grid: RichRun[][][]) => {
+      if (!notePage || !grid.length) return;
+      commitBlock(notePage.id, blockId, (b) => {
+        const old = b.rows ?? [];
+        const height = Math.max(old.length, row + grid.length);
+        const width = Math.max(old[0]?.length ?? 0, col + Math.max(...grid.map((r) => r.length)));
+        const rows = Array.from({ length: height }, (_, ri) =>
+          Array.from({ length: width }, (_, ci) => {
+            const from = grid[ri - row]?.[ci - col];
+            return from ? normalizeRuns(from) : (old[ri]?.[ci] ?? textRuns(''));
+          }),
+        );
+        return { ...b, rows };
+      });
+    },
+    [commitBlock, notePage],
+  );
+
   /** 표에 행·열 더하기(빈 칸으로). */
   /**
    * 표 편집 — 넣기·지우기·옮기기가 전부 `rows`(행 배열의 배열) 하나를 다시 쓴다.
@@ -8738,6 +8769,7 @@ export function useEditorState(): EditorController {
     deleteNoteTextRange,
     pasteNoteText,
     setNoteCell,
+    pasteNoteTable,
     addNoteTableRow,
     addNoteTableCol,
     removeNoteTableRow,

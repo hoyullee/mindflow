@@ -1833,7 +1833,7 @@ describe('공책 16판 — 표 크기 조절 · 행열 삭제 · Enter로 닫기
     expect((cols[1] as HTMLElement).style.width).toBe('260px');
   });
 
-  it('행 높이는 `tr`에 걸리고, 열을 지우면 너비도 함께 당겨진다(요청)', async () => {
+  it('행 높이는 **걸지 않는다**(요청 6: 행 크기 조절 제거) — 열을 지우면 너비는 함께 당겨진다', async () => {
     const sized = {
       ...NOTE,
       pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0]!.blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, colW: [120, 260], rowH: [40, 90] } : b)) }, NOTE.pages[1]],
@@ -1841,7 +1841,8 @@ describe('공책 16판 — 표 크기 조절 · 행열 삭제 · Enter로 닫기
     localStorage.setItem('mindflow_doc_ntz1', JSON.stringify(sized));
     const { container } = renderEditor('/editor?map=ntz1&title=x');
     const rowsEl = (await waitFor(() => container.querySelectorAll('[data-note-table-box] tr'))) as NodeListOf<HTMLElement>;
-    expect(rowsEl[1]?.style.height).toBe('90px');
+    // 문서에 남아 있는 옛 `rowH`도 화면에 걸지 않는다 — 높이는 그 행의 글이 정한다.
+    expect(rowsEl[1]?.style.height).toBe('');
 
     // 첫 열을 지우면 그 너비도 사라지고 뒤가 당겨진다.
     const cell = container.querySelector('[data-note-table-cell="0:0"]') as HTMLElement;
@@ -1937,12 +1938,13 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
 
     const items = ctxOf(menu);
     // 행의 일은 곧장 첫 판에 있다 — `행 ›`을 한 번 더 누르지 않는다(요청).
-    expect(items).toEqual(['row-above', 'row-below', 'row-up', 'row-del', 't-align', 't-fill']);
+    // 클립보드 둘은 **어디서나** 맨 위다(요청 7·8) — 고른 행을 통째로 싣는다.
+    expect(items).toEqual(['t-copy', 't-paste', 'row-above', 'row-below', 'row-up', 'row-del', 't-align', 't-fill']);
     // 「행 복제」·「행 아래로 이동」은 걷었다(요청).
     expect(items).not.toContain('row-dup');
     expect(items).not.toContain('row-down');
-    // 표 자신이 대상인 것들도 없다 — 행을 고른 자리에서 표를 지우게 두지 않는다.
-    for (const gone of ['t-pick', 't-row', 't-dup', 't-csv', 't-del', 't-cut', 't-copy', 't-paste']) {
+    // 표 자신이 대상인 것들은 없다 — 행을 고른 자리에서 표를 지우게 두지 않는다.
+    for (const gone of ['t-pick', 't-row', 't-dup', 't-csv', 't-del', 't-cut']) {
       expect(items).not.toContain(gone);
     }
   });
@@ -1953,7 +1955,7 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
     fireEvent.click((await waitFor(() => container.querySelector('[data-note-table-colhandle="1"]'))) as HTMLElement);
     fireEvent.contextMenu(container.querySelector('[data-note-table-colhandle="1"]')!);
     let menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
-    expect(ctxOf(menu)).toEqual(['col-left', 'col-right', 'col-left-move', 'col-right-move', 'col-del', 't-align', 't-fill']);
+    expect(ctxOf(menu)).toEqual(['t-copy', 't-paste', 'col-left', 'col-right', 'col-left-move', 'col-right-move', 'col-del', 't-align', 't-fill']);
 
     fireEvent.contextMenu(container.querySelector('[data-note-table-cell="1:0"]')!);
     menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
@@ -2036,7 +2038,7 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
     expect(container.querySelector('[data-note-table-menu]')).toBeTruthy();
   });
 
-  it('**마지막 행·열에도** 크기 그립이 있다(제보 6)', async () => {
+  it('**마지막 열에도** 크기 그립이 있다(제보 6 · 행 그립은 걷었다)', async () => {
     const sized = {
       ...NOTE,
       pages: [{ ...NOTE.pages[0], blocks: NOTE.pages[0]!.blocks.map((b: { id: string }) => (b.id === 'b4' ? { ...b, colW: [120, 260], rowH: [40, 90] } : b)) }, NOTE.pages[1]],
@@ -2049,6 +2051,8 @@ describe('공책 17판 — 표 제보 7건(메뉴 범위 · 레일 클릭 · 타
     // 대신 **표 너비가 합으로 못박혔는지**로 마지막 열을 줄일 수 있음을 확인한다.
     const table = container.querySelector('[data-note-table-box] table') as HTMLElement;
     expect(table.style.width).toBe('380px');
+    // 행 그립은 어느 판에서도 그리지 않는다(요청 6).
+    expect(container.querySelector('[data-note-table-grip^="row"]')).toBeNull();
   });
 
   it('열 레일이 표의 가로 스크롤을 따라간다(제보 7)', async () => {
@@ -9873,5 +9877,124 @@ describe('공책 85판 — 표 전체 선택의 「표 삭제」 · `/` 목록(�
     fireEvent.click(pop.querySelector('[data-note-slash-item="link-inline"]')!);
 
     await waitFor(() => expect(document.querySelector('[data-note-link-pop]')).toBeTruthy());
+  });
+});
+
+describe('공책 86판 — 표: 빈 열·넘치는 테두리·행 크기·클립보드(제보 4·5·6·7·8)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const cellOf = (t: string) => [{ t, b: false, c: null }];
+  const T3 = [
+    { id: 'tb', kind: 'table', rows: [[cellOf('A'), cellOf('B'), cellOf('C')], [cellOf('a'), cellOf('b'), cellOf('d')]] },
+  ];
+  async function open(id: string, blocks: unknown[] = T3) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-table-cell="0:0"]')).toBeTruthy());
+    return container;
+  }
+  /** 화면에 **보이는** 격자 — 모델이 아니라 칸의 DOM을 읽는다(제보 4의 핵심). */
+  const screenGrid = (c: HTMLElement): string[][] => {
+    const out: string[][] = [];
+    for (let r = 0; ; r += 1) {
+      const row: string[] = [];
+      for (let k = 0; ; k += 1) {
+        const el = c.querySelector(`[data-note-table-cell="${r}:${k}"]`);
+        if (!el) break;
+        row.push(el.textContent ?? '');
+      }
+      if (!row.length) break;
+      out.push(row);
+    }
+    return out;
+  };
+
+  it('4 — 가운데에 열을 넣으면 **빈 열**이 거기 생긴다(옆 열이 복사되지 않는다)', async () => {
+    const c = await open('tq1');
+    expect(screenGrid(c)).toEqual([
+      ['A', 'B', 'C'],
+      ['a', 'b', 'd'],
+    ]);
+
+    fireEvent.contextMenu(c.querySelector('[data-note-table-colhandle="1"]')!);
+    fireEvent.click((await waitFor(() => c.querySelector('[data-note-ctx="col-right"]'))) as HTMLElement);
+
+    // 모델은 예전에도 옳았다 — 샌 것은 **화면**이다(비제어 편집 박스가 옛 DOM을 들고 있었다).
+    await waitFor(() =>
+      expect(screenGrid(c)).toEqual([
+        ['A', 'B', '', 'C'],
+        ['a', 'b', '', 'd'],
+      ]),
+    );
+  });
+
+  it('5 — 열이 많아 넘치는 표는 **테두리 상자도 표만큼** 넓다(오른쪽 열이 잘리지 않게)', async () => {
+    const c = await open('tq2');
+    const box = c.querySelector('[data-note-table-box]') as HTMLElement;
+    // 열 3개 × 최소 84px — 상자에도 표와 같은 바닥이 걸린다.
+    expect(box.style.minWidth).toBe('254px'); // 3열 × 84 + 테두리 2px
+    expect(box.style.width).toBe('100%');
+  });
+
+  it('6 — 행 크기 조절은 없다(그립도, `tr`의 높이도)', async () => {
+    const c = await open('tq3', [{ ...T3[0], rowH: [40, 90] }]);
+    expect(c.querySelector('[data-note-table-grip^="row"]')).toBeNull();
+    const trs = c.querySelectorAll<HTMLElement>('[data-note-table-box] tr');
+    expect([...trs].map((t) => t.style.height)).toEqual(['', '']);
+  });
+
+  it('7 — ⌘C가 **고른 행 전체**를 싣는다(앵커 칸 하나가 아니라)', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    // `ClipboardItem`이 없으면 평문 한 벌로 물러선다(`writeClipboard`) — 두 벌의 내용은
+    // `noteTableClip.test.ts`가 따로 본다. 여기서 보는 것은 **무엇을 골라 실었는가**다.
+    delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
+
+    const c = await open('tq4');
+    fireEvent.click(c.querySelector('[data-note-table-rowhandle="1"]') as HTMLElement);
+    fireEvent.keyDown(c.querySelector('[data-note-table-box]')!, { key: 'c', metaKey: true });
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('a\tb\td'));
+  });
+
+  it('8 — 표 모양을 붙여넣으면 격자로 들어가고, 모자라면 표가 늘어난다', async () => {
+    const c = await open('tq5');
+    const cell = c.querySelector('[data-note-table-cell="1:1"]') as HTMLElement;
+    fireEvent.mouseDown(cell, { button: 0 });
+    fireEvent.mouseUp(cell);
+    await waitFor(() => expect(cell.closest('td')?.getAttribute('data-picked')).toBeTruthy());
+    fireEvent.paste(cell, { clipboardData: { getData: (t: string) => (t === 'text/plain' ? '1\t2\n3\t4' : '') } });
+
+    await waitFor(() =>
+      expect(screenGrid(c)).toEqual([
+        ['A', 'B', 'C'],
+        ['a', '1', '2'],
+        ['', '3', '4'],
+      ]),
+    );
+  });
+
+  it('8 — **표가 아닌 글**(탭도 줄바꿈도 없다)은 가로채지 않는다', async () => {
+    const c = await open('tq6');
+    const cell = c.querySelector('[data-note-table-cell="1:1"]') as HTMLElement;
+    fireEvent.mouseDown(cell, { button: 0 });
+    fireEvent.mouseUp(cell);
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(e, 'clipboardData', { value: { getData: (t: string) => (t === 'text/plain' ? '안녕' : '') } });
+    c.querySelector('[data-note-table-cell="1:1"]')!.dispatchEvent(e);
+
+    // 막지 않았다 — 칸의 편집 박스가 예전처럼 그 글을 받는다.
+    expect(e.defaultPrevented).toBe(false);
+    expect(screenGrid(c)).toEqual([
+      ['A', 'B', 'C'],
+      ['a', 'b', 'd'],
+    ]);
   });
 });

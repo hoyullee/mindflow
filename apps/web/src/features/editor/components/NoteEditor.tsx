@@ -73,7 +73,8 @@ import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
-import { keyLabel } from '../shortcutLabels';
+import { comboLabel, keyLabel } from '../shortcutLabels';
+import { parseTableClip, readTableClip, tableClipboard, tableGridOf, type TableRect } from '../noteTableClip';
 import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, onNoteTagsChange, removeNoteTag } from '../noteTags';
 import { useIsMobile, useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { cancelTouchMenu, installTouchMenuGate, isTouchPointer, registerTouchMenuCloser } from '../noteTouchMenu';
@@ -7011,6 +7012,27 @@ function fillTargetsOf(sel: TableSel): TableFillTarget[] {
 }
 
 /** 이 칸이 고른 것에 드는가. */
+/**
+ * 고른 것을 **네모 하나로** — 클립보드는 격자를 다루므로 축·전체도 네모로 편다(요청 7).
+ *
+ * 행을 고르면 그 행의 모든 열, 열을 고르면 그 열의 모든 행, 표 전체면 전부다.
+ */
+function selRect(sel: TableSel, rows: number, cols: number): TableRect {
+  if (sel.mode === 'all') return { r0: 0, c0: 0, r1: rows - 1, c1: cols - 1 };
+  if (sel.mode === 'row') {
+    const [a, b] = axisSpan(sel.r, sel.r1);
+    return { r0: a, c0: 0, r1: b, c1: cols - 1 };
+  }
+  if (sel.mode === 'col') {
+    const [a, b] = axisSpan(sel.c, sel.c1);
+    return { r0: 0, c0: a, r1: rows - 1, c1: b };
+  }
+  if (sel.mode === 'range') {
+    return { r0: Math.min(sel.r0, sel.r1), c0: Math.min(sel.c0, sel.c1), r1: Math.max(sel.r0, sel.r1), c1: Math.max(sel.c0, sel.c1) };
+  }
+  return { r0: sel.r, c0: sel.c, r1: sel.r, c1: sel.c };
+}
+
 function selHas(sel: TableSel | null, r: number, c: number): boolean {
   if (!sel) return false;
   if (sel.mode === 'all') return true;
@@ -7273,8 +7295,8 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    * 끄는 동안은 화면에만 반영하고(`live`), 손을 뗄 때 한 번 문서에 적는다 — 픽셀마다
    * 커밋하면 실행 취소가 한 칸씩 수십 개로 쌓인다(맵의 드래그와 같은 처방).
    */
-  const sizing = useRef<{ axis: 'col' | 'row'; i: number; from: number; base: number[]; boxTop: number } | null>(null);
-  const [live, setLive] = useState<{ axis: 'col' | 'row'; sizes: number[]; fit: boolean } | null>(null);
+  const sizing = useRef<{ i: number; from: number; base: number[]; boxTop: number } | null>(null);
+  const [live, setLive] = useState<{ sizes: number[]; fit: boolean } | null>(null);
   /** 끄는 중의 마지막 크기 — 손을 뗄 때 **업데이터를 거치지 않고** 읽는다(`up` 머리말). */
   const liveRef = useRef(live);
   liveRef.current = live;
@@ -7346,7 +7368,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     return () => ro.disconnect();
     // `setNoteTableSizes`는 `{ ...b, colW }`로 **`rows` 참조를 그대로 둔다** — 크기를
     // 커밋해도 `rows` 의존성이 변하지 않아 이펙트가 재실행되지 않았다(실측).
-  }, [rows, width, block.colW, block.rowH]);
+  }, [rows, width, block.colW]);
 
   /* 표 밖을 누르면 선택이 풀린다 — 단 방금 고른 것은 제 클릭으로 풀리지 않는다. */
   useEffect(() => {
@@ -7566,6 +7588,28 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     openMenu(e, next);
   };
 
+  /**
+   * **고른 것을 클립보드로**(요청 7) — 칸 하나든 구역이든 행·열이든 표 전체든 같은 길이다.
+   *
+   * 예전에는 메뉴의 「복사」가 앵커 칸 **하나**만 읽었다(행을 골라도 칸 하나였다).
+   * 지금은 고른 것을 네모로 펴서 그 격자를 TSV와 `<table>` 두 벌로 싣는다.
+   */
+  const copySel = (which: TableSel): void => {
+    writeClipboard(tableClipboard(tableGridOf(block.rows, selRect(which, rows.length, width))));
+  };
+  /** 격자를 고른 자리에 붙여넣는다 — 모자라면 표가 늘어난다(요청 8). */
+  const pasteGrid = (which: TableSel, grid: RichRun[][][]): void => {
+    const a = selAnchor(which);
+    controller.pasteNoteTable(block.id, a.r, a.c, grid);
+    // 붙여넣은 만큼을 골라 둔다 — 어디가 바뀌었는지 보이지 않으면 확인할 길이 없다.
+    const h = grid.length;
+    const w = Math.max(...grid.map((r) => r.length));
+    pick(h === 1 && w === 1 ? { mode: 'cell', r: a.r, c: a.c } : { mode: 'range', r0: a.r, c0: a.c, r1: a.r + h - 1, c1: a.c + w - 1, r: a.r, c: a.c });
+    // 여러 칸을 고른 상태의 키는 숨은 상자가 받는다 — 붙여넣은 칸에 포커스가 남아
+    // 있으면 그 칸만 옛 글을 들고 있다(비제어 박스는 쓰는 중인 자리를 건드리지 않는다).
+    if (h > 1 || w > 1) focusKeys();
+  };
+
   const fill = (target: TableFillTarget | TableFillTarget[], color: string | null) => {
     controller.setNoteTableFill(block.id, target, color);
     // 칠하고 나면 선택을 놓는다(스펙 3-2) — 색을 보려면 면이 가리지 않아야 한다.
@@ -7612,6 +7656,17 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       // 끌어 전부를 덮어도 메뉴가 같은 판단을 하고(`wholeTable`), 키는 곧장 전체다.
       pick({ mode: 'all' });
       focusKeys();
+      return;
+    }
+    /**
+     * **⌘C — 고른 것을 복사한다**(요청 7). 글을 고치는 중에는 브라우저의 것이다
+     * (그 칸 안의 고른 글자). 전파를 끊는 이유는 본문의 전역 ⌘C가 같은 키를 또
+     * 잡아 **칠해 둔 줄**을 대신 싣기 때문이다.
+     */
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'c' || e.key === 'C') && !editing && sel) {
+      e.preventDefault();
+      e.stopPropagation();
+      copySel(sel);
       return;
     }
     if (e.key === 'Tab' && (editing || atCell || sel)) {
@@ -7916,11 +7971,13 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     );
 
   /** 지금 쓰는 크기 — 끄는 중이면 그 값, 아니면 문서의 값. */
-  const colW = (live?.axis === 'col' ? live.sizes : block.colW) ?? null;
-  const rowH = (live?.axis === 'row' ? live.sizes : block.rowH) ?? null;
+  const colW = (live ? live.sizes : block.colW) ?? null;
 
   /**
-   * 경계선 그립 — 열의 오른쪽 변·행의 아래 변에 얹힌 **얇은 띠**다.
+   * 경계선 그립 — 열의 오른쪽 변에 얹힌 **얇은 띠**다.
+   *
+   * **행에는 없다**(요청 6) — 행의 높이는 그 행의 글이 정한다. 손으로 정해 둔 높이는
+   * 글이 늘어도 그대로라 칸이 잘려 보였고, 줄이면 글자가 상자 밖으로 삐져나왔다.
    *
    * 값이 아직 없으면 지금 화면의 치수(`geom`)를 그대로 받아 적고 시작한다: 고정
    * 레이아웃으로 넘어가는 순간 나머지 열도 값이 있어야 손대지 않은 열이 제멋대로
@@ -7932,15 +7989,15 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    *   (제보: 선이 줄에 맞지 않고 틀어져 있다). 표식을 실어 보내면 CSS가 그 선만
    *   오른쪽·아래 끝으로 되돌린다.
    */
-  const grip = (axis: 'col' | 'row', i: number, place: CSSProperties, end = false) => (
+  const grip = (i: number, place: CSSProperties, end = false) => (
     <div
-      key={`${axis}-${i}`}
+      key={`col-${i}`}
       className="mf-note-tgrip"
-      data-note-table-grip={`${axis}:${i}`}
-      data-note-table-grip-end={end ? axis : undefined}
+      data-note-table-grip={`col:${i}`}
+      data-note-table-grip-end={end ? 'col' : undefined}
       role="separator"
-      aria-label={axis === 'col' ? `${i + 1}번째 열 너비 조절` : `${i + 1}번째 행 높이 조절`}
-      title={axis === 'col' ? '끌어서 열 너비 조절' : '끌어서 행 높이 조절'}
+      aria-label={`${i + 1}번째 열 너비 조절`}
+      title="끌어서 열 너비 조절"
       /**
        * **경계선에서도 표 메뉴가 뜬다**(제보).
        *
@@ -7960,7 +8017,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
           e.stopPropagation();
           return;
         }
-        handleContext(e, sel ?? (axis === 'col' ? { mode: 'col', c: i } : { mode: 'row', r: i }));
+        handleContext(e, sel ?? { mode: 'col', c: i });
       }}
       /**
        * **손가락은 길게 눌러 잡는다**(요청) — 짧게 스치는 것은 스크롤이어야 하고,
@@ -7980,7 +8037,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
           t: window.setTimeout(() => {
             holdRef.current = null;
             el.setPointerCapture?.(id);
-            startSizing(axis, i, clientX, clientY);
+            startSizing(i, clientX);
           }, TOUCH_HOLD_MS),
         };
       }}
@@ -8007,14 +8064,11 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
         if (readOnly) return;
         e.preventDefault();
         e.stopPropagation();
-        startSizing(axis, i, e.clientX, e.clientY);
+        startSizing(i, e.clientX);
       }}
-      // 열 그립이 행 그립 **위**에 온다. 둘은 경계가 만나는 자리에서 6×6으로 겹치는데,
-      // 행 그립은 표 너비를 통째로 덮으므로 순서만으로는 열을 잡을 수 없다(실측:
-      // 열 경계를 겨냥해도 `elementFromPoint`가 행 그립을 돌려줬다).
       style={{
         position: 'absolute',
-        zIndex: axis === 'col' ? 2 : 1,
+        zIndex: 2,
         // 이 띠 위의 손가락은 **우리 것**이다 — 길게 누르는 동안 판이 굴러가면
         // 문턱을 넘어 기다림이 접힌다(즉 조절을 시작할 수 없다).
         touchAction: 'none',
@@ -8024,11 +8078,11 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   );
 
   /** 잡는 순간 — 마우스는 곧바로, 손가락은 길게 누른 뒤 여기로 온다. */
-  function startSizing(axis: 'col' | 'row', i: number, clientX: number, clientY: number): void {
+  function startSizing(i: number, clientX: number): void {
     {
         // 재어 온 값은 소수점이 붙는다 — 문서에는 **정수**만 적는다
         // (`178.984375`가 저장본에 남으면 사람이 읽을 수 없고 diff도 시끄럽다).
-        const raw = (axis === 'col' ? (colW ?? geom?.cols.map((c) => c.w) ?? []) : (rowH ?? geom?.rows.map((r) => r.h) ?? [])).slice();
+        const raw = (colW ?? geom?.cols.map((c) => c.w) ?? []).slice();
         const base = roundSizes(raw);
         if (!base.length) return;
         /**
@@ -8044,7 +8098,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
         const sc = scrollRef.current;
         /** 잡는 순간 이 표가 판에 **들어맞는가** — 끄는 동안의 막대 정책이 이 값이다. */
         const fits = !sc || sc.scrollWidth <= sc.clientWidth + 1;
-        if (axis === 'col' && sc && sc.scrollWidth <= sc.clientWidth + 1) {
+        if (sc && sc.scrollWidth <= sc.clientWidth + 1) {
           let over = base.reduce((a, b) => a + b, 0) - sc.clientWidth;
           while (over > 0) {
             const wide = base.reduce((best: number, v: number, k: number) => (v > (base[best] ?? 0) ? k : best), 0);
@@ -8054,11 +8108,11 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             over -= cut;
           }
         }
-        sizing.current = { axis, i, from: axis === 'col' ? clientX : clientY, base: base.slice(), boxTop: boxRef.current?.getBoundingClientRect().top ?? 0 };
+        sizing.current = { i, from: clientX, base: base.slice(), boxTop: boxRef.current?.getBoundingClientRect().top ?? 0 };
         // 표 **윗변의 화면 자리**를 못박는다 — 끄는 동안 여기서 벗어나면 되돌린다.
         pin.current = { top: boxRef.current?.getBoundingClientRect().top ?? 0 };
         if (typeof requestAnimationFrame === 'function') pinRaf.current = requestAnimationFrame(keepTop);
-        setLive({ axis, sizes: base.slice(), fit: fits });
+        setLive({ sizes: base.slice(), fit: fits });
     }
   }
 
@@ -8108,11 +8162,11 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     const move = (e: MouseEvent) => {
       const g = sizing.current;
       if (!g) return;
-      const min = g.axis === 'col' ? 56 : 28;
-      const d = (g.axis === 'col' ? e.clientX : e.clientY) - g.from;
+      const min = 56;
+      const d = e.clientX - g.from;
       const next = g.base.slice();
       next[g.i] = Math.max(min, Math.round((g.base[g.i] ?? min) + d));
-      setLive((cur) => ({ axis: g.axis, sizes: next, fit: cur?.fit ?? true }));
+      setLive((cur) => ({ sizes: next, fit: cur?.fit ?? true }));
     };
     const up = () => {
       const g = sizing.current;
@@ -8137,7 +8191,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
        * 뒤처질 수 있다.
        */
       const last = liveRef.current;
-      if (g && last) controller.setNoteTableSizes(block.id, g.axis, last.sizes);
+      if (g && last) controller.setNoteTableSizes(block.id, 'col', last.sizes);
       setLive(null);
     };
     /**
@@ -8176,6 +8230,26 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       // 표 안의 누름은 본문의 드래그 선택을 깨우지 않는다(스펙 6) — 칸을 고르는 일과
       // 블록을 가로질러 글을 고르는 일이 한 번에 일어나면 둘 다 엉킨다.
       onPointerDown={(e) => e.stopPropagation()}
+      /**
+       * **⌘V — 표 모양이면 격자로 붙여넣는다**(요청 8).
+       *
+       * 키를 가로채 클립보드를 **읽지** 않는 이유: `navigator.clipboard.read()`는
+       * 브라우저가 권한을 묻는 길이라 붙여넣기마다 판이 하나 더 뜬다. 진짜 `paste`
+       * 이벤트에는 내용이 이미 실려 온다 — 고른 칸(그 자신이 편집 박스다)이든 숨은
+       * `<input>`이든 여기까지 올라오므로 한 자리에서 받는다.
+       *
+       * **캡처로** 받는다 — 칸의 `NoteLine`이 먼저 받으면 표 모양의 글이 한 칸 안에
+       * 줄줄이 들어간다. 표가 아닌 글(탭도 줄바꿈도 없는 낱말)은 그대로 흘려보내
+       * 예전 길이 하던 일을 그대로 하게 둔다.
+       */
+      onPasteCapture={(e) => {
+        if (readOnly || edit !== null || !sel) return;
+        const grid = parseTableClip(e.clipboardData.getData('text/html'), e.clipboardData.getData('text/plain'));
+        if (!grid) return;
+        e.preventDefault();
+        e.stopPropagation();
+        pasteGrid(sel, grid);
+      }}
       onKeyDown={onKeyDown}
       // 표를 벗어나면 얹힌 칸도 없다 — 레일이 마지막 자리에 남아 있지 않게.
       onMouseLeave={() => {
@@ -8271,7 +8345,25 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             position: 'relative',
             // 크기를 손으로 정한 표는 제 폭만큼, 아니면 판을 가득 — 어느 쪽이든
             // 테두리가 표를 정확히 두른다.
+            /**
+             * **테두리는 표를 두른다 — 넘칠 때도**(제보 5: 열이 8개가 되어 가로
+             * 스크롤이 생기면 맨 오른쪽 열이 깨져 보인다).
+             *
+             * 너비를 손대지 않은 표는 `width: 100%`인데, 그 100%는 **스크롤 판의
+             * 폭**이다. 그런데 안의 `<table>`은 열이 너무 좁아지지 않게 바닥을 두므로
+             * (`minWidth: width * 84`) 열이 많아지면 표가 그 100%보다 넓어진다 —
+             * 그러면 테두리를 그리는 이 상자만 판 폭에 머물러, 오른쪽 변과 둥근
+             * 모서리가 **마지막 열을 가로질러** 지나간다(실측: 열 8개에서 표 672px,
+             * 상자 640px. 오른쪽 끝으로 스크롤하면 테두리가 8번째 열 한가운데를
+             * 자른다). 상자에 같은 바닥을 주면 테두리가 표를 온전히 두른다.
+             *
+             * **테두리 2px을 더한다** — 전역이 `box-sizing: border-box`라(`index.css`)
+             * 이 상자의 `min-width`는 테두리까지 포함한 값이다. 표의 바닥과 똑같이
+             * 주면 안쪽 폭이 2px 모자라 마지막 열이 그만큼 삐져나온다(실측: 표 672px,
+             * 상자 672px인데 마지막 칸의 오른끝이 상자보다 1px 밖이었다).
+             */
             width: colW ? 'max-content' : '100%',
+            ...(colW ? null : { minWidth: width * 84 + 2 }),
             border: '1px solid var(--mf-hairline)',
             borderRadius: 12,
             background: 'var(--mf-card)',
@@ -8313,8 +8405,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
               보고 끝의 하나를 빼서 맨 아래 행을 끌 수 없었다. 끝의 그립만 안쪽으로
               당기는 이유: 상자가 `overflow-x: auto`라 세로도 `auto`로 계산되어, 3px라도
               넘치면 그립이 잘리고 **모든 표에 유령 스크롤바**가 생긴다. */}
-          {!readOnly && geom && geom.cols.map((c, ci) => grip('col', ci, { left: c.l + c.w - (ci === geom.cols.length - 1 ? 6 : 3), top: 0, width: 6, bottom: 0, cursor: 'col-resize' }, ci === geom.cols.length - 1))}
-          {!readOnly && geom && geom.rows.map((r, ri) => grip('row', ri, { top: r.t + r.h - (ri === geom.rows.length - 1 ? 6 : 3), left: 0, height: 6, right: 0, cursor: 'row-resize' }, ri === geom.rows.length - 1))}
+          {!readOnly && geom && geom.cols.map((c, ci) => grip(ci, { left: c.l + c.w - (ci === geom.cols.length - 1 ? 6 : 3), top: 0, width: 6, bottom: 0, cursor: 'col-resize' }, ci === geom.cols.length - 1))}
           <table
             ref={tableRef}
             style={{
@@ -8348,7 +8439,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             )}
             <tbody>
               {rows.map((row, ri) => (
-                <tr key={ri} style={rowH?.[ri] ? { height: rowH[ri] } : undefined}>
+                <tr key={ri}>
                   {row.map((cell, ci) => {
                     const on = selHas(sel, ri, ci);
                     const editing = edit?.r === ri && edit.c === ci;
@@ -8589,6 +8680,9 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           onFocusLine={focusBox}
                           lineKey={`${block.id}:r${ri}c${ci}`}
                           runs={cell}
+                          // 고른 칸은 포커스를 들고 있어도 값에 맞춰 다시 그린다 —
+                          // 글을 고치는 중이 아니기 때문이다(붙여넣기·되돌리기).
+                          armed={armed}
                           readOnly={readOnly || !typeable}
                           placeholder=""
                           listBox
@@ -8664,6 +8758,8 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
             fill(fillTargetsOf(menu.sel), color);
             setMenu(null);
           }}
+          onCopy={() => copySel(menu.sel)}
+          onPaste={(grid) => pasteGrid(menu.sel, grid)}
           onDone={() => {
             setMenu(null);
             setSel(null);
@@ -8686,9 +8782,12 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
  * | 고른 것 | 메뉴 |
  * | --- | --- |
  * | 칸·구역 | 복사 · 붙여넣기 / 정렬 › · 색 채우기 › |
- * | 행 | 위에 행 추가 · 아래에 행 추가 · 행 위로 이동 · 행 삭제 / 정렬 › · 색 채우기 › |
- * | 열 | 왼쪽/오른쪽에 열 추가 · 열 왼쪽/오른쪽으로 이동 · 열 삭제 / 정렬 › · 색 채우기 › |
- * | 표 전체 | 색 채우기 › / 표 삭제 |
+ * | 행 | 복사 · 붙여넣기 / 위에 행 추가 · 아래에 행 추가 · 행 위로 이동 · 행 삭제 / 정렬 › · 색 채우기 › |
+ * | 열 | 복사 · 붙여넣기 / 왼쪽·오른쪽에 열 추가 · 열 왼쪽·오른쪽으로 이동 · 열 삭제 / 정렬 › · 색 채우기 › |
+ * | 표 전체 | 복사 · 붙여넣기 / 색 채우기 › / 표 삭제 |
+ *
+ * **복사·붙여넣기는 어디에나 있다**(요청 7·8) — 예전에는 칸·구역에만 있었고 칸
+ * **하나**만 읽고 썼다. 지금은 고른 것을 네모로 펴서 격자째 오간다.
  *
  * **행·열의 일은 날개를 걷고 첫 판에 폈다**(요청) — 행을 고른 뒤 `행 ›`을 한 번 더
  * 누르는 것은 이미 말한 것을 다시 말하는 일이다. 고르는 판(정렬 · 색 채우기)만 날개로
@@ -8713,6 +8812,8 @@ function TableMenu({
   rows,
   cols,
   onFill,
+  onCopy,
+  onPaste,
   onDone,
 }: {
   controller: EditorController;
@@ -8722,6 +8823,8 @@ function TableMenu({
   rows: number;
   cols: number;
   onFill: (color: string | null) => void;
+  onCopy: () => void;
+  onPaste: (grid: RichRun[][][]) => void;
   onDone: () => void;
 }) {
   const [wing, setWing] = useState<'align' | 'fill' | null>(null);
@@ -8748,7 +8851,6 @@ function TableMenu({
       Math.min(sel.c0, sel.c1) === 0 &&
       Math.max(sel.r0, sel.r1) === rows - 1 &&
       Math.max(sel.c0, sel.c1) === cols - 1);
-  const cellish = (sel.mode === 'cell' || sel.mode === 'range') && !wholeTable;
   const isRow = sel.mode === 'row';
   const isCol = sel.mode === 'col';
   const isAll = wholeTable;
@@ -8767,20 +8869,13 @@ function TableMenu({
   const showAlign = true;
   // 높이는 세어서 넘긴다(고정값이었다): 항목 33 + gap 1,
   // 구분선 1 + margin 8 + gap 1, 머리말 22 + 팝업 패딩 14.
-  const itemCount = (cellish ? 2 : 0) + (isRow ? 4 : 0) + (isCol ? 5 : 0) + (showAlign ? 1 : 0) + 1 + (isAll ? 1 : 0);
+  // 복사·붙여넣기는 **언제나 둘**이다(요청 7·8) — 고른 것이 무엇이든 클립보드가 받는다.
+  const itemCount = 2 + (isRow ? 4 : 0) + (isCol ? 5 : 0) + (showAlign ? 1 : 0) + 1 + (isAll ? 1 : 0);
   const ruleCount = isAll ? 1 : 1;
   const { ref: menuRef, style: base } = useCursorPlacement(at, TABLE_MENU_W, 36 + itemCount * 34 + ruleCount * 10);
-  const cell = block.rows?.[spot.r]?.[spot.c];
   const run = (fn: () => void) => () => {
     fn();
     onDone();
-  };
-  const write = async (t: string) => {
-    try {
-      await navigator.clipboard.writeText(t);
-    } catch {
-      /* 클립보드를 막아 둔 환경 — ⌘C가 그대로 동작한다 */
-    }
   };
   /** 지금 걸려 있는 정렬 — 행을 골랐으면 그 행의 값, 아니면 그 열의 값. */
   const alignNow = (isRow ? block.rowAlign?.[spot.r] : block.colAlign?.[spot.c]) ?? 'left';
@@ -8801,24 +8896,28 @@ function TableMenu({
         style={{ ...POP, ...base, display: 'flex', flexDirection: 'column', gap: 1 }}
       >
         <span style={{ ...POP_HEAD, textTransform: 'none', letterSpacing: 0 }}>표 · {label.name}</span>
-        {cellish && (
-          <>
-            <CtxItem mark="t-copy" name="복사" hint="⌘C" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={run(() => void write(runsText(cell ?? [])))} />
-            <CtxItem
-              mark="t-paste"
-              name="붙여넣기"
-              hint="⌘V"
-              icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>}
-              onClick={run(() => {
-                void navigator.clipboard
-                  .readText()
-                  .then((t) => t && controller.setNoteCell(block.id, spot.r, spot.c, textRuns(t.split('\n')[0]!)))
-                  .catch(() => undefined);
-              })}
-            />
-            <CtxRule />
-          </>
-        )}
+        {/* 복사·붙여넣기는 **언제나** 첫 줄에 — 고른 것이 무엇이든 클립보드가 받는다(요청 7·8). */}
+        <CtxItem
+          mark="t-copy"
+          name={`복사${label.count ? ` (${label.count})` : ''}`}
+          hint={comboLabel('c')}
+          icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>}
+          onClick={run(onCopy)}
+        />
+        <CtxItem
+          mark="t-paste"
+          name="붙여넣기"
+          hint={comboLabel('v')}
+          icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>}
+          onClick={run(() => {
+            void readTableClip()
+              .then((grid) => {
+                if (grid) onPaste(grid);
+              })
+              .catch(() => undefined);
+          })}
+        />
+        <CtxRule />
 
         {/* 행의 일 — 날개를 걷고 첫 판에 폈다(요청). */}
         {isRow && (

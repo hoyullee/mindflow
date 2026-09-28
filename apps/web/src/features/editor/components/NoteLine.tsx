@@ -27,6 +27,16 @@ import { listSignature } from '../listLines';
 import { snapCaretOffListMarker } from '../richtextDom';
 import { editCaretKeydown } from '../caretPolicy';
 
+/**
+ * 이 줄의 값을 한 문자열로 — **다시 그릴 만큼 달라졌는가**를 가르는 표식이다.
+ *
+ * `innerHTML`을 견주지 않는 이유: 브라우저가 우리가 심은 HTML을 제 방식으로 다시
+ * 쓰므로(따옴표·속성 차례·빈 태그) 같은 값인데도 매번 달라 보인다. 값끼리 견준다.
+ */
+function lineSig(runs: RichRun[] | undefined): string {
+  return !runs || runs.length === 0 ? '' : JSON.stringify(runs);
+}
+
 interface Props {
   runs: RichRun[] | undefined;
   onChange: (runs: RichRun[]) => void;
@@ -82,6 +92,15 @@ interface Props {
    * 글자와 선택을 함께 지운다.
    */
   selecting?: boolean;
+  /**
+   * **포커스는 있지만 글을 고치는 중은 아니다** — 값이 갈리면 그래도 다시 그린다.
+   *
+   * 표의 **고른 칸**이 그렇다: 한글 첫 글자를 받으려고 포커스를 여기 두지만, 글을
+   * 고치기 시작하면 편집이 따로 열린다(`openEdit`). 그 사이에 값이 갈리는 길이
+   * 있다 — 붙여넣기·되돌리기가 그것이다. 아래 다시 그리기 효과는 "포커스가 있으면
+   * 건드리지 않는다"가 규칙인데, 이 칸은 그 규칙의 예외다(제보 8에서 잡았다).
+   */
+  armed?: boolean;
   /**
    * **⌘A를 한 번 더** — 줄 하나를 다 고른 상태에서 다시 누르면 본문 전체.
    * 처리했으면 `true`(브라우저의 "이 박스 전체 고르기"를 막는다).
@@ -166,7 +185,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectDoc, onSelectSide, onSelectAll, onTab, onSlash, onMention, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, armed, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectDoc, onSelectSide, onSelectAll, onTab, onSlash, onMention, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -241,6 +260,47 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
       el.innerHTML = runsToHtml(value);
     }
   };
+
+  /**
+   * **바깥에서 값이 갈렸으면 다시 그린다 — 쓰고 있지 않은 박스만**(제보 4).
+   *
+   * 이 박스는 비제어다(위 마운트 효과의 머리말) — 값이 바뀌어도 DOM을 다시 심지
+   * 않는다. 타이핑마다 다시 심으면 캐럿이 맨 앞으로 튀기 때문이고, **자기가 쓴 값**은
+   * 이미 화면에 있으니 다시 그릴 일도 없다.
+   *
+   * 그런데 **남이 바꾼 값**은 그 규칙에 걸려 화면에 영영 닿지 못한다. 표의 칸이
+   * 그랬다: 열을 가운데에 끼우면 모델은 `A B ␣ C`인데 화면은 `A B C C`였다 —
+   * 리액트가 `<td key={ci}>`를 재사용하면서 3번째 칸에 새 `runs`를 내려 주지만 이
+   * 박스가 옛 DOM을 들고 있었던 것이다(행 옮기기·되돌리기도 같은 자리에서 샜다).
+   *
+   * 그래서 **포커스가 없는 박스만** 값에 맞춰 다시 그린다 — 쓰고 있는 박스는 그대로
+   * 두므로 비제어로 둔 이유(캐럿)는 그대로 지킨다. 값을 실제로 그렸을 때만 표식을
+   * 갱신하므로, 못 그리고 지나간 변화는 다음 렌더에서 다시 시도된다.
+   */
+  const drawnRuns = useRef<RichRun[] | null | undefined>(undefined);
+  const drawnSig = useRef<string | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (drawnSig.current === null) {
+      // 마운트 효과가 이미 그렸다 — 그 값을 기준점으로 삼는다.
+      drawnRuns.current = runs ?? null;
+      drawnSig.current = lineSig(runs);
+      return;
+    }
+    if (drawnRuns.current === (runs ?? null)) return;
+    const sig = lineSig(runs);
+    if (sig === drawnSig.current) {
+      drawnRuns.current = runs ?? null;
+      return;
+    }
+    // 쓰는 중인 박스·조합 중인 박스는 건드리지 않는다(표식도 남겨 다음에 다시 본다).
+    if (composing.current || justComposed.current) return;
+    if (!armed && typeof document !== 'undefined' && document.activeElement === el) return;
+    drawnRuns.current = runs ?? null;
+    drawnSig.current = sig;
+    redraw(el, { text: runsText(runs), rich: runs ?? null });
+  });
 
   /**
    * 값을 읽는다 — **살아 있는 DOM을 건드려도 되는 때에만** 잔재를 거기서 걷는다.
