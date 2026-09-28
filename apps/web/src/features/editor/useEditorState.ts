@@ -1018,7 +1018,7 @@ export interface EditorController {
   saveOtherDoc: (docId: string, doc: Doc, prevVersion: number) => Promise<SaveResult>;
   /** 문서 링크 블록이 고를 수 있는 문서들(공책일 때만 채워진다). */
   linkTargets: LinkTarget[];
-  setNoteCalloutTone: (blockId: string, tone: NoteCalloutTone) => void;
+  setNoteCalloutTone: (blockId: string, tone: NoteCalloutTone, custom?: { name?: string | null; color?: string | null }) => void;
   /** 가로 정렬 — 왼쪽이면 칸을 지운다(기본값은 적지 않는다). */
   setNoteBlockAlign: (blockId: string, align: 'left' | 'center' | 'right') => void;
   /** 들여쓰기 단계를 `delta`만큼(0..4로 자른다). */
@@ -8118,10 +8118,34 @@ export function useEditorState(): EditorController {
   );
 
   /** 콜아웃 어조(주의·결정·질문). */
+  /**
+   * 콜아웃의 어조 — 미리 만든 셋 가운데 하나와, 사람이 고쳐 적은 이름·색(요청 16).
+   *
+   * `custom`을 주지 않으면 이름·색은 **그대로 둔다**(어조만 돌리는 예전 길). 값으로
+   * `null`을 주면 지운다 — 그러면 그 어조의 기본 이름·색으로 돌아간다. 기본값은
+   * 문서에 적지 않는다(`setNoteBlockAlign`과 같은 규칙 — 옛 문서와 골든이 같게 남는다).
+   */
   const setNoteCalloutTone = useCallback(
-    (blockId: string, tone: NoteCalloutTone) => {
+    (blockId: string, tone: NoteCalloutTone, custom?: { name?: string | null; color?: string | null }) => {
       if (!notePage) return;
-      commitBlock(notePage.id, blockId, (b) => ({ ...b, tone }), false);
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const next: NoteBlock = { ...b, tone };
+          if (custom && 'name' in custom) {
+            const name = custom.name?.trim();
+            if (name) next.toneName = name;
+            else delete next.toneName;
+          }
+          if (custom && 'color' in custom) {
+            if (custom.color) next.toneColor = custom.color;
+            else delete next.toneColor;
+          }
+          return next;
+        },
+        false,
+      );
     },
     [commitBlock, notePage],
   );

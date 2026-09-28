@@ -334,13 +334,16 @@ describe('공책 2판 — 공책 안에서 찾기 · 고급 블록 · 협업', (
     expect(container.querySelector('[data-note-slash]')).toBeNull();
   });
 
-  it('콜아웃은 어조를 돌려 가며 고른다(주의 → 결정 → 질문)', async () => {
+  // 어조 칩은 이제 **판을 연다**(요청 16: 셋만으로는 부족하다) — 예전에는 누를 때마다
+  // 주의 → 결정 → 질문을 돌기만 했다. 셋은 그 판의 빠른 고르기로 남아 있다.
+  it('콜아웃의 어조는 칩이 연 판에서 고른다(주의 · 결정 · 질문)', async () => {
     const doc = { ...NOTE, pages: [{ id: 'p1', title: 't', blocks: [{ id: 'b1', kind: 'callout', tone: 'warn', runs: [{ t: '보세요', b: false, c: null }] }] }] };
     localStorage.setItem('mindflow_doc_ns6', JSON.stringify(doc));
     const { container } = renderEditor('/editor?map=ns6&title=x');
     await waitFor(() => expect(container.querySelector('[data-note-tone="warn"]')).toBeTruthy());
 
     fireEvent.click(container.querySelector('[data-note-tone="warn"]')!);
+    fireEvent.click((await waitFor(() => container.querySelector('[data-note-tone-pick="decide"]'))) as HTMLElement);
     await waitFor(() => expect(container.querySelector('[data-note-tone="decide"]')).toBeTruthy());
     saveNow();
     await waitFor(() => expect(saved('ns6')?.pages?.[0]?.blocks?.[0]?.tone).toBe('decide'));
@@ -9996,5 +9999,129 @@ describe('공책 86판 — 표: 빈 열·넘치는 테두리·행 크기·클립
       ['A', 'B', 'C'],
       ['a', 'b', 'd'],
     ]);
+  });
+});
+
+describe('공책 87판 — 접기·콜아웃·달력 머리(제보 14·15·16·17)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const r = (t: string) => [{ t, b: false, c: null }];
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  /** 그 줄 안에 캐럿을 놓고 툴바에 알린다(툴바는 `selectionchange`를 듣는다). */
+  function caretIn(line: HTMLElement): void {
+    const node = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode();
+    if (!node) return;
+    line.focus();
+    const range = document.createRange();
+    range.setStart(node, 1);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+  }
+
+  it('14 — 접기 제목·제목 셋에서는 **B에 불이 켜지고 눌리지 않는다**(블록이 굵기를 정한다)', async () => {
+    const c = await open('tg1', [
+      { id: 'tg', kind: 'toggle', open: true, runs: r('머리'), items: [{ id: 'i1', runs: r('내용') }] },
+      { id: 'p1b', kind: 'p', runs: r('평범한 줄') },
+      { id: 'h1b', kind: 'h1', runs: r('제목 줄') },
+    ]);
+    const bold = () => c.querySelector('[data-note-mark="b"]') as HTMLButtonElement;
+    // 평범한 줄에서는 예전 그대로 — 꺼져 있고 누를 수 있다.
+    caretIn(c.querySelector('[data-note-line="p1b"]') as HTMLElement);
+    await waitFor(() => expect(bold().getAttribute('aria-pressed')).toBe('false'));
+    expect(bold().disabled).toBe(false);
+
+    // 접기 **제목**에서는 켜져 있고 눌리지 않는다.
+    caretIn(c.querySelector('[data-note-line="tg"]') as HTMLElement);
+    await waitFor(() => expect(bold().getAttribute('aria-pressed')).toBe('true'));
+    expect(bold().disabled).toBe(true);
+
+    // 제목 셋도 같다 — 눈에는 굵은데 툴바가 아니라고 하던 자리다.
+    caretIn(c.querySelector('[data-note-line="h1b"]') as HTMLElement);
+    await waitFor(() => expect(bold().disabled).toBe(true));
+
+    // 접기의 **내용 줄**은 평범한 본문이다 — 그쪽은 잠기지 않는다.
+    caretIn(c.querySelector('[data-note-line="tg:body"]') as HTMLElement);
+    await waitFor(() => expect(bold().disabled).toBe(false));
+  });
+
+  it('15 — 접기 제목의 Enter는 **내용 줄로** 간다(접기를 하나 더 만들지 않는다)', async () => {
+    const c = await open('tg2', [{ id: 'tg', kind: 'toggle', open: true, runs: r('머리'), items: [{ id: 'i1', runs: r('내용') }] }]);
+    const head = c.querySelector('[data-note-line="tg"]') as HTMLElement;
+    head.focus();
+    fireEvent.keyDown(head, { key: 'Enter' });
+
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-note-line')).toBe('tg:body'));
+    // 블록은 그대로 하나다 — 빈 접기가 새로 생기지 않는다.
+    saveNow();
+    expect(saved('tg2').pages[0].blocks).toHaveLength(1);
+  });
+
+  it('15 — 접혀 있으면 **펴면서** 내용 줄로 간다', async () => {
+    const c = await open('tg3', [{ id: 'tg', kind: 'toggle', open: false, runs: r('머리'), items: [{ id: 'i1', runs: r('내용') }] }]);
+    expect(c.querySelector('[data-note-line="tg:body"]')).toBeNull();
+    const head = c.querySelector('[data-note-line="tg"]') as HTMLElement;
+    head.focus();
+    fireEvent.keyDown(head, { key: 'Enter' });
+
+    await waitFor(() => expect(c.querySelector('[data-note-line="tg:body"]')).toBeTruthy());
+  });
+
+  it('16 — 콜아웃의 어조 칩이 **이름과 색을 정하는 판**을 연다(셋 돌리기만 하던 자리)', async () => {
+    const c = await open('cl1', [{ id: 'co', kind: 'callout', tone: 'warn', runs: r('알려 둘 것') }]);
+    const chip = () => c.querySelector('[data-note-tone]') as HTMLButtonElement;
+    expect(chip().textContent).toBe('주의');
+
+    fireEvent.click(chip());
+    const pop = (await waitFor(() => c.querySelector('[data-note-tone-pop]'))) as HTMLElement;
+    // 미리 만든 셋은 빠른 고르기로 남는다.
+    expect([...pop.querySelectorAll('[data-note-tone-pick]')].map((b) => b.getAttribute('data-note-tone-pick'))).toEqual(['warn', 'decide', 'ask']);
+
+    // 이름을 고쳐 적는다.
+    fireEvent.change(pop.querySelector('[data-note-tone-name]')!, { target: { value: '메모' } });
+    await waitFor(() => expect(chip().textContent).toBe('메모'));
+
+    // 색도 고른다 — 문서에 남는다.
+    fireEvent.click(pop.querySelector('[data-note-tone-color="#7C9BD8"]')!);
+    saveNow();
+    await waitFor(() => {
+      const b = saved('cl1').pages[0].blocks[0];
+      expect(b.toneName).toBe('메모');
+      expect(b.toneColor).toBe('#7C9BD8');
+    });
+  });
+
+  it('16 — 이름을 비우고 색을 「기본」으로 되돌리면 그 어조의 기본으로 돌아간다', async () => {
+    const c = await open('cl2', [{ id: 'co', kind: 'callout', tone: 'decide', toneName: '메모', toneColor: '#7C9BD8', runs: r('x') }]);
+    const chip = () => c.querySelector('[data-note-tone]') as HTMLButtonElement;
+    expect(chip().textContent).toBe('메모');
+
+    fireEvent.click(chip());
+    const pop = (await waitFor(() => c.querySelector('[data-note-tone-pop]'))) as HTMLElement;
+    fireEvent.change(pop.querySelector('[data-note-tone-name]')!, { target: { value: '   ' } });
+    fireEvent.click(pop.querySelector('[data-note-tone-color="default"]')!);
+
+    await waitFor(() => expect(chip().textContent).toBe('결정'));
+    saveNow();
+    await waitFor(() => {
+      const b = saved('cl2').pages[0].blocks[0];
+      expect(b.toneName).toBeUndefined();
+      expect(b.toneColor).toBeUndefined();
+    });
   });
 });

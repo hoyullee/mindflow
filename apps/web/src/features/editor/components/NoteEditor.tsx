@@ -239,6 +239,173 @@ const TONES: { tone: NoteCalloutTone; name: string; bg: string; ink: string }[] 
   { tone: 'ask', name: '질문', bg: 'var(--mf-info-soft)', ink: 'var(--mf-info)' },
 ];
 
+/**
+ * 콜아웃의 **지금 생김새** — 미리 만든 어조 위에 사람이 고른 이름·색을 얹는다(요청 16).
+ *
+ * 색을 고르면 면은 그 색을 아주 옅게 깐 것이다(`color-mix`) — 여섯 벌의 테마 어디에
+ * 놓여도 글이 읽히도록 카드 색과 섞는다. 고르지 않았으면 예전 그대로(디자인 값).
+ */
+function calloutLook(block: NoteBlock): { name: string; bg: string; ink: string } {
+  const preset = TONES.find((t) => t.tone === (block.tone ?? 'warn')) ?? TONES[0]!;
+  const ink = block.toneColor?.trim() || preset.ink;
+  return {
+    name: block.toneName?.trim() || preset.name,
+    ink,
+    bg: block.toneColor?.trim() ? `color-mix(in srgb, ${block.toneColor.trim()} 13%, var(--mf-card))` : preset.bg,
+  };
+}
+
+/**
+ * 콜아웃 왼쪽의 **어조 칩** — 누르면 이름·색을 정하는 판이 열린다(요청 16).
+ *
+ * 예전에는 누를 때마다 미리 만든 셋을 돌기만 했다(주의 → 결정 → 질문). 제보는
+ * "세 가지뿐"이라는 것이었으므로, 셋은 **빠른 고르기**로 남기고 그 아래에 이름 칸과
+ * 색 팔레트를 둔다. 이름을 비우면 그 어조의 기본 이름으로, 색의 `기본`을 누르면
+ * 기본 색으로 돌아간다 — 고쳐 둔 것을 되돌릴 길이 없으면 고치기를 겁내게 된다.
+ */
+function CalloutToneChip({ controller, block, readOnly }: { controller: EditorController; block: NoteBlock; readOnly: boolean }) {
+  const [open, setOpen] = useState(false);
+  const look = calloutLook(block);
+  const tone = block.tone ?? 'warn';
+  const wrap = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  return (
+    <span ref={wrap} contentEditable={false} style={{ position: 'relative', flex: '0 0 auto', marginTop: 2 }}>
+      <button
+        type="button"
+        data-note-tone={tone}
+        data-note-tone-open={open ? '1' : undefined}
+        disabled={readOnly}
+        title={readOnly ? look.name : '어조 · 이름 · 색 고르기'}
+        onClick={() => setOpen((v) => !v)}
+        className="btn"
+        style={{
+          height: 20,
+          padding: '0 8px',
+          borderRadius: 999,
+          border: 'none',
+          background: open ? 'color-mix(in srgb, currentColor 12%, transparent)' : 'transparent',
+          color: look.ink,
+          fontFamily: 'inherit',
+          fontSize: 11,
+          fontWeight: 800,
+          cursor: readOnly ? 'default' : 'pointer',
+        }}
+      >
+        {look.name}
+      </button>
+      {open && !readOnly && (
+        <span data-note-tone-pop style={{ ...POP, top: 26, left: 0, width: 216, display: 'block', textAlign: 'left' }}>
+          <span style={{ ...POP_HEAD, display: 'block' }}>어조</span>
+          <span style={{ display: 'flex', gap: 4, padding: '0 4px 7px' }}>
+            {TONES.map((t) => (
+              <button
+                key={t.tone}
+                type="button"
+                data-note-tone-pick={t.tone}
+                aria-pressed={t.tone === tone}
+                onClick={() => controller.setNoteCalloutTone(block.id, t.tone)}
+                className="btn"
+                style={{
+                  flex: '1 1 0',
+                  height: 24,
+                  borderRadius: 8,
+                  border: `1px solid ${t.tone === tone ? t.ink : 'var(--mf-border-soft)'}`,
+                  background: t.tone === tone ? t.bg : 'transparent',
+                  color: t.ink,
+                  fontFamily: 'inherit',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                {t.name}
+              </button>
+            ))}
+          </span>
+          <span style={{ ...POP_HEAD, display: 'block' }}>이름</span>
+          <span style={{ display: 'block', padding: '0 4px 7px' }}>
+            <input
+              data-note-tone-name
+              value={block.toneName ?? ''}
+              placeholder={look.name}
+              maxLength={12}
+              onChange={(e) => controller.setNoteCalloutTone(block.id, tone, { name: e.currentTarget.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'Escape') setOpen(false);
+                e.stopPropagation();
+              }}
+              style={{ width: '100%', height: 28, padding: '0 9px', boxSizing: 'border-box', borderRadius: 8, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-panel)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5 }}
+            />
+          </span>
+          <span style={{ ...POP_HEAD, display: 'block' }}>색</span>
+          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '0 4px 4px' }}>
+            {NOTE_TAG_COLORS.map(([hex, name]) => (
+              <button
+                key={hex}
+                type="button"
+                data-note-tone-color={hex}
+                aria-label={name}
+                title={name}
+                aria-pressed={block.toneColor === hex}
+                onClick={() => controller.setNoteCalloutTone(block.id, tone, { color: hex })}
+                className="btn"
+                style={{ width: 20, height: 20, borderRadius: 999, border: block.toneColor === hex ? '2px solid var(--mf-text)' : '1px solid var(--mf-border-soft)', background: hex, cursor: 'pointer', padding: 0 }}
+              />
+            ))}
+            <button
+              type="button"
+              data-note-tone-color="default"
+              title="기본 색"
+              onClick={() => controller.setNoteCalloutTone(block.id, tone, { color: null })}
+              className="btn"
+              style={{ height: 20, padding: '0 8px', borderRadius: 999, border: '1px solid var(--mf-border-soft)', background: 'transparent', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}
+            >
+              기본
+            </button>
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * **이 줄의 굵기를 블록이 정하는가**(제보 14).
+ *
+ * 제목 셋(`runStyleOf`의 `fontWeight: 800`)과 접기의 제목(`fontWeight: 700`)은 글자에
+ * 굵게를 걸지 않아도 굵게 보인다. 그런데 툴바는 **런(`b`)만** 읽어서 단추가 꺼져
+ * 있었다 — 눈에는 굵은데 툴바는 아니라고 하는 자리다(제보: "접기 제목은 굵은데
+ * 불이 안 들어온다").
+ *
+ * 그래서 이런 줄에서는 단추에 **불을 켜고 누를 수 없게** 한다. 켜기만 하고 누르게
+ * 두면 눌러도 아무 일이 없다(런의 800과 블록의 800이 같은 값이라 화면이 그대로다) —
+ * 고장난 단추가 되므로 누가 정하는지를 단추가 말하게 한다(`title`).
+ *
+ * 접기의 **내용 줄**(`:body`)은 해당하지 않는다 — 거기는 평범한 본문이다.
+ */
+function blockDecidesBold(page: NotePage | null | undefined, key: string): boolean {
+  if (!page || !key) return false;
+  const [blockId, rest] = key.split(':');
+  const kind = page.blocks.find((b) => b.id === blockId)?.kind;
+  if (kind === 'h1' || kind === 'h2' || kind === 'h3') return true;
+  return kind === 'toggle' && !rest;
+}
+
 /** 인라인 서식 — 코어 `applyPartialStyle`의 종류와 1:1. */
 const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; css: CSSProperties; icon?: JSX.Element }[] = [
   { kind: 'b', label: 'B', name: '굵게', css: { fontWeight: 800 } },
@@ -5290,6 +5457,8 @@ function FormatToolbar({
    * **상태로** 들어 함께 내려 준다.
    */
   const [lineKey, setLineKey] = useState('');
+  /** 제목·접기 제목처럼 **블록이 굵기를 정하는 줄**인가(제보 14). */
+  const boldLocked = blockDecidesBold(controller.notePage, lineKey);
   /** 칠해 둔 선택은 리스너 안에서 **지금 값**을 봐야 한다(리스너는 한 번만 붙는다). */
   const paintedRef = useRef<LineSel[] | null>(null);
   paintedRef.current = painted;
@@ -5563,15 +5732,21 @@ function FormatToolbar({
     >
       <BlockTypeMenu controller={controller} rememberBox={rememberBox} boxRef={boxRef} lineKey={lineKey} disabled={inCell} />
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
-      {MARKS.map((m) => (
+      {MARKS.map((m) => {
+        // 제목·접기 제목은 **블록이** 굵기를 정한다 — 불은 켜고 누르지는 못하게(제보 14).
+        const locked = m.kind === 'b' && boldLocked;
+        const on = locked || marks[m.kind];
+        return (
         <button
           key={m.kind}
           type="button"
           data-note-mark={m.kind}
-          data-tip={m.name}
+          data-note-mark-locked={locked ? '1' : undefined}
+          data-tip={locked ? '이 줄은 블록이 굵기를 정합니다' : m.name}
           aria-label={m.name}
           className="btn mf-note-tb"
-          aria-pressed={marks[m.kind]}
+          aria-pressed={on}
+          disabled={locked}
           onMouseDown={stop}
           onClick={() => apply(m.kind)}
           style={{
@@ -5579,8 +5754,9 @@ function FormatToolbar({
             fontFamily: "'JetBrains Mono', ui-monospace, monospace",
             fontWeight: 700,
             // 걸려 있으면 켜진 면 — 지금 글자가 어떤 서식인지 툴바가 말해 준다(요청).
-            background: marks[m.kind] ? TB_ON : 'transparent',
-            color: marks[m.kind] ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
+            background: on ? TB_ON : 'transparent',
+            color: on ? 'var(--mf-accent-deep)' : 'var(--mf-subtext)',
+            ...(locked ? { cursor: 'default' } : {}),
             ...m.css,
           }}
         >
@@ -5592,7 +5768,8 @@ function FormatToolbar({
             m.label
           )}
         </button>
-      ))}
+        );
+      })}
       <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
       {/* 형광펜 */}
       <div style={{ position: 'relative' }}>
@@ -6510,42 +6687,16 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   }
 
   if (block.kind === 'callout') {
-    const tone = TONES.find((t) => t.tone === (block.tone ?? 'warn')) ?? TONES[0]!;
+    const look = calloutLook(block);
     return (
       <div
         data-note-block={block.id}
         data-note-kind="callout"
         onMouseUp={rememberBox}
-        style={{ ...blockFlow(block), display: 'flex', gap: 10, alignItems: 'flex-start', padding: '13px 15px', borderRadius: 13, background: tone.bg, borderLeft: `3px solid ${tone.ink}` }}
+        style={{ ...blockFlow(block), display: 'flex', gap: 10, alignItems: 'flex-start', padding: '13px 15px', borderRadius: 13, background: look.bg, borderLeft: `3px solid ${look.ink}` }}
       >
-        {/* 어조는 **왼쪽 칩을 눌러** 돈다 — 세 가지뿐이라 메뉴보다 한 번 누르는 쪽이 빠르다. */}
-        <button
-          type="button"
-          data-note-tone={block.tone ?? 'warn'}
-          disabled={readOnly}
-          title="주의 · 결정 · 질문"
-          onClick={() => {
-            const i = TONES.findIndex((t) => t.tone === (block.tone ?? 'warn'));
-            controller.setNoteCalloutTone(block.id, TONES[(i + 1) % TONES.length]!.tone);
-          }}
-          className="btn"
-          style={{
-            flex: '0 0 auto',
-            height: 20,
-            marginTop: 2,
-            padding: '0 8px',
-            borderRadius: 999,
-            border: 'none',
-            background: 'transparent',
-            color: tone.ink,
-            fontFamily: 'inherit',
-            fontSize: 11,
-            fontWeight: 800,
-            cursor: readOnly ? 'default' : 'pointer',
-          }}
-        >
-          {tone.name}
-        </button>
+        {/* 어조는 **왼쪽 칩**이 연다 — 미리 만든 셋에 더해 이름·색을 손으로 정한다(요청 16). */}
+        <CalloutToneChip controller={controller} block={block} readOnly={readOnly} />
         <NoteLine
           onFocusLine={focusBox}
           lineKey={block.id}
@@ -6588,7 +6739,21 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
             placeholder="접어 둘 제목"
             autoFocus={freshId === block.id}
             onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
-            onEnter={enterBlock}
+            /**
+             * **제목의 Enter는 안쪽 내용으로 간다**(제보 15) — 접기를 하나 더 만들지 않는다.
+             *
+             * 예전에는 다른 블록과 같은 `enterBlock`이었다: 제목을 적고 Enter를 치면
+             * 빈 접기가 하나 더 생겼고, 정작 쓰려던 내용 줄에는 마우스로 가야 했다.
+             * 접기의 제목과 내용은 **한 블록의 두 줄**이므로(아래 머리말) 제목 다음
+             * 자리는 언제나 그 내용이다. 접혀 있으면 펴고, 내용 줄이 없으면 만든다.
+             */
+            onEnter={() => {
+              if (readOnly) return false;
+              if (!open) controller.toggleNoteOpen(block.id);
+              if (!block.items?.[0]) controller.addNoteItem(block.id);
+              caretToLine(`${block.id}:body`, 'end');
+              return true;
+            }}
             onBackspaceAtStart={backBlock}
             style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, lineHeight: 1.8, color: 'var(--mf-text)' }}
           />

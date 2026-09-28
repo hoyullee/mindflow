@@ -262,17 +262,30 @@ export function schedDays(kind: SchedKind, entries: readonly CalendarEntry[], to
   return [...byDay.entries()].map(([iso, list]) => ({ iso, entries: list.sort(compareInDay) }));
 }
 
-/** 머리의 제목(2-3의 2). */
-export function schedTitle(kind: SchedKind, today: string): string {
+/**
+ * 머리의 제목(2-3의 2).
+ *
+ * **달력형의 제목은 「보고 있는 달」이다**(제보 17) — 예전에는 `today`로만 지어서
+ * 달력을 10월로 넘겨도 머리는 「9월 달력」이었다. 다른 해를 보고 있으면 해까지
+ * 적는다(`2027년 3월 달력`) — 그러지 않으면 1월에서 뒤로 넘겼을 때 어느 해인지
+ * 말할 길이 없다. `shown`을 주지 않으면 예전처럼 오늘이 속한 달이다.
+ */
+export function schedTitle(kind: SchedKind, today: string, shown?: { y: number; m: number }): string {
   if (kind === 'month') {
-    const at = partsOf(today);
-    return at ? `${at.m}월 달력` : '달력';
+    const now = partsOf(today);
+    const at = shown ?? now;
+    if (!at) return '달력';
+    return now && at.y !== now.y ? `${at.y}년 ${at.m}월 달력` : `${at.m}월 달력`;
   }
   return kind === 'today' ? '오늘 일정' : kind === 'week' ? '이번 주 일정' : '다가오는 일정';
 }
 
-/** 머리의 부제(2-3의 3) — 무엇을 세었는지까지 밝힌다. */
-export function schedSubtitle(kind: SchedKind, entries: readonly CalendarEntry[], today: string): string {
+/**
+ * 머리의 부제(2-3의 3) — 무엇을 세었는지까지 밝힌다.
+ *
+ * 달력형은 제목과 같은 달을 센다(`shown` — 제보 17).
+ */
+export function schedSubtitle(kind: SchedKind, entries: readonly CalendarEntry[], today: string, shown?: { y: number; m: number }): string {
   const at = partsOf(today);
   if (kind === 'today') {
     const n = entriesOn(entries, today).length;
@@ -285,8 +298,9 @@ export function schedSubtitle(kind: SchedKind, entries: readonly CalendarEntry[]
     return a && b ? `${a.m}.${a.d} – ${b.m}.${b.d} · ${n}개` : `${n}개`;
   }
   if (kind === 'month') {
-    const n = at ? entries.filter((e) => e.due.startsWith(`${at.y}-${String(at.m).padStart(2, '0')}`)).length : 0;
-    return at ? `${at.y}년 ${at.m}월 · ${n}개` : `${n}개`;
+    const on = shown ?? at;
+    const n = on ? entries.filter((e) => e.due.startsWith(`${on.y}-${String(on.m).padStart(2, '0')}`)).length : 0;
+    return on ? `${on.y}년 ${on.m}월 · ${n}개` : `${n}개`;
   }
   const n = schedDays('next', entries, today).reduce((s, d) => s + d.entries.length, 0);
   return `오늘부터 가까운 ${n}개`;
