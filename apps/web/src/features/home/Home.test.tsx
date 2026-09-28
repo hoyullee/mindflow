@@ -21,6 +21,7 @@ import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { mapId } from './storage';
 import { RECENT_CARD_W, recentFit } from './components/RecentStrip';
 import { HOME_THEMES, UNREAD_BADGE_BG } from './theme';
+import { LNB_LIST_CAP } from './components/LnbSection';
 import { __resetUpdateControl, publishUpdateStatus, setUpdateControls } from '../../pwa/updateControl';
 import type { Doc } from '@mindflow/mindmap-core';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
@@ -5502,8 +5503,13 @@ describe('홈 리디자인 계약', () => {
       expect(st.background).toContain('--mf-border-soft');
       expect(st.flexShrink).toBe('0');
     }
-    // 스페이스 목록은 내용 높이만 쓴다 — 하나일 때 '새 스페이스'와의 빈칸이 벌어지던 원인
-    expect(parseFloat((aside.querySelector('.lnb-scroll') as HTMLElement).style.minHeight)).toBe(0);
+    // 스페이스 목록은 내용 높이만 쓴다 — 하나일 때 '새 스페이스'와의 빈칸이 벌어지던 원인.
+    // 이제 바닥을 `minHeight: 0`으로 여는 대신 **눌리지 않게**(flexShrink 0) 두고 상한만
+    // 건다 — 넘치면 굴러가는 것은 LNB 판 전체다(제보: 일정을 펴면 스페이스로 못 간다).
+    const spaceList = aside.querySelector('.lnb-scroll') as HTMLElement;
+    expect(spaceList.style.minHeight).toBe('');
+    expect(spaceList.style.flexShrink).toBe('0');
+    expect(spaceList.style.maxHeight).toBe(`${LNB_LIST_CAP}px`);
 
     await user.click(shared);
     // 셋이 같은 껍데기를 쓴다 — 이제 **가라앉은 판이 아니라 왼쪽 rail**이다(첨부 디자인).
@@ -5832,5 +5838,43 @@ describe('미리보기 — 이미지와 배경', () => {
     // 도트도 캔버스와 같은 색.
     const dots = container.querySelector('a[data-title="다크 맵"] [data-dot-grid]') as HTMLElement;
     expect(dots.style.backgroundImage).toContain(themeOf('dark').dot);
+  });
+});
+
+/**
+ * LNB가 **통째로 굴러간다**(제보: 모바일에서 일정을 펴면 스페이스로 갈 수 없다).
+ *
+ * jsdom에는 레이아웃이 없어 "정말로 넘치는가"는 여기서 잴 수 없다([F1](probe-pitfalls))
+ * — 실측은 실브라우저가 했다(412×700에서 `scrollHeight 798 > 700`, 6개짜리 스페이스
+ * 목록이 264→130으로 눌려 있던 것이 228로 돌아왔다). 여기서 지키는 것은 그 실측을
+ * 가능하게 하는 **두 규칙**이다: ① 판이 넘치면 굴러갈 수 있다 ② 스페이스 목록이
+ * 다른 구획과 같은 상한에서 스스로 굴러가고, 위가 자란다고 0까지 눌리지 않는다.
+ */
+describe('LNB 스크롤(제보 — 일정을 펴면 스페이스로 못 간다)', () => {
+  it('판은 넘치면 굴러가고, 스페이스 목록은 눌려 사라지지 않는다', async () => {
+    const { container } = renderHomeWithDocStore([]);
+    const aside = (await waitFor(() => {
+      const el = container.querySelector('aside');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    // ① 판 자신이 스크롤 상자다 — 예전에는 `overflow: hidden`이라 **한 번도** 굴러가지
+    //    않았고, 넘치는 만큼은 아래에서 잘려 나갔다(피드백·휴지통이 닿지 않는 자리).
+    expect(aside.style.overflowY).toBe('auto');
+    expect(aside.style.overflowX).toBe('hidden');
+    expect(aside.className).toContain('lnb-scroll');
+    // 끝까지 굴린 뒤의 스크롤이 뒤 화면으로 이어지지 않는다.
+    expect(aside.style.overscrollBehavior).toBe('contain');
+
+    // ② 스페이스 목록은 **줄어들지 않는다** — 판 안에서 유일하게 줄어들 수 있는 자리라
+    //    위 블록(일정 하위 메뉴)이 자라면 그 몫을 혼자 뒤집어쓰고 0까지 눌렸다.
+    const list = [...aside.querySelectorAll<HTMLElement>('.lnb-scroll')].find((el) => el !== aside && el.querySelector('.space-row, [aria-label="스페이스를 불러오는 중"]'));
+    expect(list).toBeTruthy();
+    expect(list!.style.flexShrink).toBe('0');
+    expect(list!.style.minHeight).toBe('');
+    // 대신 즐겨찾기·공유받음·휴지통과 **같은 상한**에서 스스로 굴러간다.
+    expect(list!.style.maxHeight).toBe(`${LNB_LIST_CAP}px`);
+    expect(list!.style.overflowY).toBe('auto');
   });
 });
