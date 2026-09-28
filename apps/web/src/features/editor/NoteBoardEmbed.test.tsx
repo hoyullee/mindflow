@@ -114,16 +114,20 @@ describe('공책 본문 · 보드 임베드', () => {
 
     await waitFor(() => expect(container.querySelector('[data-embed-cards]')).toBeTruthy());
     const head = container.querySelector('[data-embed-head]') as HTMLElement;
-    // 미리보기 우측 상단에 뜬다 — 카드가 그 기준면이다.
+    // 미리보기 **좌측 하단**에 뜬다(제보 6) — 우측 상단은 미리보기 자신의 단추 자리라
+    // 머리가 그것을 덮었다. 카드가 그 기준면이다.
     expect(head.style.position).toBe('absolute');
-    expect(head.style.top).toBe('8px');
-    expect(head.style.right).toBe('8px');
+    expect(head.style.bottom).toBe('8px');
+    expect(head.style.left).toBe('8px');
+    expect(head.style.top).toBe('');
+    expect(head.style.right).toBe('');
     expect((container.querySelector('[data-embed-card]') as HTMLElement).style.position).toBe('relative');
     // 마우스를 얹었을 때만 보이는 규칙은 CSS가 든다 — 클래스로 확인한다.
     expect(head.className).toContain('mf-embed-head');
-    // 담기는 것 넷: 제목 · 경로(종류·스페이스) · 업데이트 시각 · 접기+열기.
+    // 담기는 것은 셋: 제목 · 접기 · 열기. **종류·경로·업데이트 시각은 걷었다**(제보 6).
     expect(container.querySelector('[data-embed-title]')?.textContent).toBe('스프린트 보드');
-    expect(container.querySelector('[data-embed-meta]')?.textContent).toContain('칸반');
+    expect(container.querySelector('[data-embed-meta]')).toBeNull();
+    expect(head.textContent).not.toContain('업데이트');
     expect(head.querySelector('[data-embed-collapse]')).toBeTruthy();
     expect(head.querySelector('[data-embed-open]')).toBeTruthy();
   });
@@ -189,8 +193,10 @@ describe('공책 본문 · 보드 임베드', () => {
 
     await waitFor(() => expect(container.querySelector('[data-embed-state]')).toBeTruthy());
     expect(container.querySelector('[data-embed-state]')?.textContent).toContain('이 보드는 삭제됐어요');
-    // 종류를 모르는 문서를 **마인드맵이라고 적지 않는다**(기본값이 그것이라서 그렇게 보였다).
-    expect(container.querySelector('[data-embed-meta]')?.textContent).toBe('문서 · 일반');
+    // 머리에는 종류·경로를 적지 않는다(제보 6) — 종류를 모르는 문서를 「마인드맵」이라
+    // 지어내던 자리가 아예 사라졌다. 이름만 남는다.
+    expect(container.querySelector('[data-embed-meta]')).toBeNull();
+    expect(container.querySelector('[data-embed-title]')?.textContent).toBe('지워진 보드');
     fireEvent.click(container.querySelector('[data-embed-state-act]')!);
     await waitFor(() => expect(container.querySelector('[data-note-kind="link"]')).toBeNull());
   });

@@ -130,7 +130,12 @@ export function NoteSchedBlock({
               <path d="M8 3v4M16 3v4M3 10h18" />
             </svg>
           </span>
-          <span data-sched-title style={{ flex: '0 0 auto', fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: th.text }}>{schedTitle(kind, today, ym)}</span>
+          {/* 달력형에는 **제목을 걸지 않는다**(제보 10) — 바로 아래 미니 달력이 제 머리에
+              같은 달을 이미 적고 있어, 「9월 달력」이 한 뼘 위에서 같은 말을 되풀이했다.
+              목록형(오늘·이번 주·다가오는)은 무엇을 세는지 다른 데서 알 길이 없으므로 남긴다. */}
+          {kind !== 'month' && (
+            <span data-sched-title style={{ flex: '0 0 auto', fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: th.text }}>{schedTitle(kind, today, ym)}</span>
+          )}
           <span data-sched-sub style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: th.subtext }}>
             {schedSubtitle(kind, agenda.entries, today, ym)}
           </span>

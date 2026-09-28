@@ -1612,7 +1612,7 @@ describe('공책 13판 — 표 스펙(선택 5종 · 경계 링 · 채움 키 ·
     await waitFor(() => expect(saved('ntc3').pages[0].blocks[3].rows[0]).toHaveLength(3));
   });
 
-  it('표에 포커스가 있을 때 Shift+화살표가 구간을 늘리고 ⌫가 그 행을 지운다', async () => {
+  it('표에 포커스가 있을 때 Shift+화살표가 구간을 늘리고 ⌫는 **그 행의 글을 비운다**', async () => {
     localStorage.setItem('mindflow_doc_ntc4', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=ntc4&title=x');
     const box = (await waitFor(() => container.querySelector('[data-note-table-box]'))) as HTMLElement;
@@ -1625,11 +1625,19 @@ describe('공책 13판 — 표 스펙(선택 5종 · 경계 링 · 채움 키 ·
     fireEvent.keyDown(box, { key: 'ArrowDown', shiftKey: true });
     await waitFor(() => expect(picked(container)).toEqual(['0:0', '1:0']));
 
-    // 행을 고른 상태의 ⌫는 그 행을 지운다.
+    /**
+     * **행을 고른 상태의 ⌫는 그 행의 글만 비운다**(제보 3) — 줄은 남는다.
+     * 예전에는 행이 통째로 빠졌는데, 지우기 키 하나에 「값을 비운다」와 「줄을 뺀다」가
+     * 겹쳐 있었다. 줄을 빼는 일은 우클릭 메뉴(`행 삭제`)가 맡는다.
+     */
     fireEvent.click((await waitFor(() => container.querySelector('[data-note-table-rowhandle="1"]'))) as HTMLElement);
     fireEvent.keyDown(box, { key: 'Backspace' });
+    await waitFor(() => expect(container.querySelector('[data-note-table-cell="1:0"]')?.textContent).toBe(''));
     saveNow();
-    await waitFor(() => expect(saved('ntc4').pages[0].blocks[3].rows).toHaveLength(1));
+    await waitFor(() => expect(saved('ntc4').pages[0].blocks[3].rows[1].map((cell2: { t: string }[]) => cell2.map((x) => x.t).join(''))).toEqual(['', '']));
+    // 줄은 그대로 둘이고 첫 행은 손대지 않았다.
+    expect(saved('ntc4').pages[0].blocks[3].rows).toHaveLength(2);
+    expect(saved('ntc4').pages[0].blocks[3].rows[0][0][0].t).toBe('할 일');
   });
 
   it('표 밖을 누르면 선택이 풀린다 — 단 방금 고른 것은 제 클릭으로 풀리지 않는다', async () => {
@@ -2510,7 +2518,7 @@ describe('공책 21판 — 표 동작 2건(표 밖으로 끌기 · 고른 칸이
     expect(picked(container)).toEqual(['1:0']);
   });
 
-  it('고른 칸에서 ⌫는 **글자를 지우지 않는다** — 고르기만 해 둔 상태다', async () => {
+  it('고른 칸에서 ⌫는 **그 칸을 통째로 비운다** — 브라우저가 글자 하나를 지우게 두지 않는다', async () => {
     localStorage.setItem('mindflow_doc_nw3', JSON.stringify(NOTE));
     const { container } = renderEditor('/editor?map=nw3&title=x');
     const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
@@ -2518,9 +2526,12 @@ describe('공책 21판 — 표 동작 2건(표 밖으로 끌기 · 고른 칸이
     fireEvent.mouseUp(cell);
     await waitFor(() => expect(picked(container)).toEqual(['1:0']));
 
+    // 기본 동작은 **언제나** 막는다(고른 칸도 `contentEditable`이라 막지 않으면 한 글자만
+    // 지워진다). 그 자리에 우리가 하는 일이 제보 3의 「글만 지우기」다.
     const ev = createEvent.keyDown(container.querySelector('[data-note-block="b4"]')!, { key: 'Backspace' });
     fireEvent(container.querySelector('[data-note-block="b4"]')!, ev);
     expect(ev.defaultPrevented).toBe(true);
+    await waitFor(() => expect(container.querySelector('[data-note-table-cell="1:0"]')?.textContent).toBe(''));
   });
 });
 
@@ -5675,7 +5686,7 @@ describe('공책 51판 — 표: 칸의 목록 서식 · 레일 끌어 여러 줄
     fireEvent.mouseUp(document);
   });
 
-  it('여러 행을 골라 ⌫를 누르면 **한 번에 · 되돌리기도 한 번**이다(요청 10)', async () => {
+  it('여러 행을 골라 ⌫를 누르면 그 글이 **한 번에 · 되돌리기도 한 번**이다(요청 10 · 제보 3)', async () => {
     localStorage.setItem('mindflow_doc_tc5', JSON.stringify(WIDE));
     const { container } = renderEditor('/editor?map=tc5&title=x');
     const r0 = (await waitFor(() => container.querySelector('[data-note-table-rowhandle="0"]'))) as HTMLElement;
@@ -5684,11 +5695,18 @@ describe('공책 51판 — 표: 칸의 목록 서식 · 레일 끌어 여러 줄
     fireEvent.mouseUp(document);
 
     const keys = container.querySelector('[data-note-table-keys]') as HTMLElement;
+    const shot = () => [...container.querySelectorAll('[data-note-table-cell]')].map((e) => e.textContent).join('|');
+    expect(shot()).toBe('00|01|02|03|10|11|12|13|20|21|22|23');
+
+    // 두 행의 글이 **한 커밋으로** 비워진다 — 줄은 셋 그대로다(제보 3).
     fireEvent.keyDown(keys, { key: 'Backspace' });
+    await waitFor(() => expect(shot()).toBe('||||||||20|21|22|23'));
     saveNow();
-    await waitFor(() => expect(saved('tc5').pages[0].blocks[0].rows).toHaveLength(1));
-    // 남은 한 행은 **마지막 행**이다(큰 번호부터 지웠다는 증거).
-    expect(saved('tc5').pages[0].blocks[0].rows[0][0][0].t).toBe('20');
+    await waitFor(() => expect(saved('tc5').pages[0].blocks[0].rows).toHaveLength(3));
+
+    // 되돌리기도 한 번 — 여덟 칸이 함께 돌아온다.
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(shot()).toBe('00|01|02|03|10|11|12|13|20|21|22|23'));
   });
 
   it('레일 클릭 **한 번**은 여전히 한 줄이다(회귀)', async () => {
@@ -8117,7 +8135,10 @@ describe('공책 64판 — 일정 블록(스펙 2절)', () => {
   it('달력 보기는 미니 달력과 고른 날 목록을 함께 그린다(2-3)', async () => {
     const c = await open('sc5', [{ id: 'b1', kind: 'sched', sched: 'month' }]);
     await waitFor(() => expect(c.querySelector('[data-sched-block] [data-mini-cal]')).toBeTruthy());
-    expect(c.querySelector('[data-sched-title]')?.textContent).toMatch(/\d+월 달력/);
+    // **제목은 서지 않는다**(제보 10) — 미니 달력의 머리가 같은 달을 이미 적는다.
+    // 부제도 달 이름을 빼고 개수만 남는다.
+    expect(c.querySelector('[data-sched-title]')).toBeNull();
+    expect(c.querySelector('[data-sched-sub]')?.textContent).toMatch(/^\d+개$/);
   });
 
   it('`/날짜`는 블록이 아니라 **`@` 허브를 날짜만으로** 연다(2-1)', async () => {
@@ -10146,5 +10167,431 @@ describe('공책 87판 — 접기·콜아웃·달력 머리(제보 14·15·16·1
       expect(b.toneName).toBeUndefined();
       expect(b.toneColor).toBeUndefined();
     });
+  });
+});
+
+describe('공책 88판 — 표: 지우기 키·Shift+클릭·복사 점선(제보 3·4·7)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const cellOf = (t: string) => [{ t, b: false, c: null }];
+  const T3 = [
+    { id: 'tb', kind: 'table', rows: [[cellOf('A'), cellOf('B'), cellOf('C')], [cellOf('a'), cellOf('b'), cellOf('d')]] },
+  ];
+  async function open(id: string, blocks: unknown[] = T3) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-table-cell="0:0"]')).toBeTruthy());
+    return container;
+  }
+  const grid = (c: HTMLElement): string[][] => {
+    const out: string[][] = [];
+    for (let r = 0; ; r += 1) {
+      const row: string[] = [];
+      for (let k = 0; ; k += 1) {
+        const el = c.querySelector(`[data-note-table-cell="${r}:${k}"]`);
+        if (!el) break;
+        row.push(el.textContent ?? '');
+      }
+      if (!row.length) break;
+      out.push(row);
+    }
+    return out;
+  };
+  const box = (c: HTMLElement) => c.querySelector('[data-note-table-box]')!;
+  const pickCell = (c: HTMLElement, r: number, k: number, shift = false) => {
+    const el = c.querySelector(`[data-note-table-cell="${r}:${k}"]`) as HTMLElement;
+    fireEvent.mouseDown(el, { button: 0, shiftKey: shift });
+    fireEvent.mouseUp(el, { shiftKey: shift });
+  };
+
+  it('3 — 고른 **칸 하나**에서 Delete는 그 칸의 글만 지운다(행·열은 그대로)', async () => {
+    const c = await open('td1');
+    pickCell(c, 1, 1);
+    await waitFor(() => expect(picked(c)).toEqual(['1:1']));
+
+    fireEvent.keyDown(box(c), { key: 'Delete' });
+    await waitFor(() =>
+      expect(grid(c)).toEqual([
+        ['A', 'B', 'C'],
+        ['a', '', 'd'],
+      ]),
+    );
+  });
+
+  it('3 — 고른 **구역**은 그 네모의 글이 한꺼번에 비워진다', async () => {
+    const c = await open('td2');
+    pickCell(c, 0, 1);
+    pickCell(c, 1, 2, true);
+    fireEvent.keyDown(box(c), { key: 'Backspace' });
+    await waitFor(() =>
+      expect(grid(c)).toEqual([
+        ['A', '', ''],
+        ['a', '', ''],
+      ]),
+    );
+  });
+
+  it('3 — **행을 골라도 줄은 남는다** — 예전에는 그 행이 통째로 빠졌다', async () => {
+    const c = await open('td3');
+    fireEvent.click(c.querySelector('[data-note-table-rowhandle="1"]') as HTMLElement);
+    fireEvent.keyDown(box(c), { key: 'Delete' });
+    await waitFor(() =>
+      expect(grid(c)).toEqual([
+        ['A', 'B', 'C'],
+        ['', '', ''],
+      ]),
+    );
+    // 줄을 빼는 일은 메뉴가 맡는다 — 지우기 키가 되돌리기 한 번에 표를 무너뜨리지 않는다.
+    saveNow();
+    await waitFor(() => expect(saved('td3').pages[0].blocks[0].rows).toHaveLength(2));
+  });
+
+  it('4 — 칸을 Shift+클릭하면 고른 자리부터 **거기까지** 구역이 된다', async () => {
+    const c = await open('td4');
+    pickCell(c, 0, 0);
+    await waitFor(() => expect(picked(c)).toEqual(['0:0']));
+
+    pickCell(c, 1, 1, true);
+    await waitFor(() => expect(picked(c)).toEqual(['0:0', '0:1', '1:0', '1:1']));
+  });
+
+  it('4 — 열 손잡이를 Shift+클릭하면 **그 사이의 열이 모두** 골라진다', async () => {
+    const c = await open('td5');
+    const handle = (i: number) => c.querySelector(`[data-note-table-colhandle="${i}"]`) as HTMLElement;
+    fireEvent.mouseDown(handle(0), { button: 0 });
+    fireEvent.click(handle(0));
+    await waitFor(() => expect(picked(c)).toEqual(['0:0', '1:0']));
+
+    fireEvent.mouseDown(handle(2), { button: 0, shiftKey: true });
+    fireEvent.click(handle(2), { shiftKey: true });
+    await waitFor(() => expect(picked(c)).toEqual(['0:0', '0:1', '0:2', '1:0', '1:1', '1:2']));
+  });
+
+  it('4 — 행 손잡이도 같다', async () => {
+    const c = await open('td6');
+    const handle = (i: number) => c.querySelector(`[data-note-table-rowhandle="${i}"]`) as HTMLElement;
+    fireEvent.mouseDown(handle(0), { button: 0 });
+    fireEvent.click(handle(0));
+    await waitFor(() => expect(picked(c)).toEqual(['0:0', '0:1', '0:2']));
+
+    fireEvent.mouseDown(handle(1), { button: 0, shiftKey: true });
+    fireEvent.click(handle(1), { shiftKey: true });
+    await waitFor(() => expect(picked(c)).toEqual(['0:0', '0:1', '0:2', '1:0', '1:1', '1:2']));
+  });
+
+  it('7 — ⌘C를 누르면 **복사한 네모의 둘레**에 점선이 선다', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(() => Promise.resolve()) } });
+    delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
+
+    const c = await open('td7');
+    pickCell(c, 0, 1);
+    pickCell(c, 1, 2, true);
+    expect(c.querySelectorAll('[data-note-tcopy]')).toHaveLength(0);
+
+    fireEvent.keyDown(box(c), { key: 'c', metaKey: true });
+    await waitFor(() => expect([...c.querySelectorAll('[data-note-tcopy]')].map((e) => e.getAttribute('data-note-tcopy'))).toEqual(['0:1', '0:2', '1:1', '1:2']));
+
+    // 둘레만 그린다 — 안쪽으로 맞닿은 변에는 선이 없다.
+    const edge = (id: string) => (c.querySelector(`[data-note-tcopy="${id}"]`) as HTMLElement).style;
+    expect(edge('0:1').borderTopWidth).toBe('2px');
+    expect(edge('0:1').borderLeftWidth).toBe('2px');
+    expect(edge('0:1').borderRightWidth).toBe('0px');
+    expect(edge('0:1').borderBottomWidth).toBe('0px');
+    expect(edge('1:2').borderBottomWidth).toBe('2px');
+    expect(edge('1:2').borderRightWidth).toBe('2px');
+    // 고른 링(살굿빛)과 **다른 색**이라야 ⌘C가 눈에 보인다(제보 7).
+    expect(edge('0:1').borderColor).toBe('var(--mf-accent-deep)');
+  });
+
+  it('7 — Esc는 **점선부터** 거둔다 — 선택은 한 번 더 눌러야 풀린다', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(() => Promise.resolve()) } });
+    delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
+
+    const c = await open('td8');
+    pickCell(c, 1, 1);
+    fireEvent.keyDown(box(c), { key: 'c', metaKey: true });
+    await waitFor(() => expect(c.querySelectorAll('[data-note-tcopy]')).toHaveLength(1));
+
+    fireEvent.keyDown(box(c), { key: 'Escape' });
+    await waitFor(() => expect(c.querySelectorAll('[data-note-tcopy]')).toHaveLength(0));
+    expect(picked(c)).toEqual(['1:1']);
+
+    fireEvent.keyDown(box(c), { key: 'Escape' });
+    await waitFor(() => expect(picked(c)).toEqual([]));
+  });
+});
+
+describe('공책 89판 — 접기의 굵기·Shift+Enter · 코드 알약을 지운 자리(제보 8·9·11)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const r = (t: string) => [{ t, b: false, c: null }];
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  function caretIn(line: HTMLElement): void {
+    const node = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode();
+    line.focus();
+    const range = document.createRange();
+    if (node) range.setStart(node, 1);
+    else range.selectNodeContents(line);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+  }
+
+  it('8 — 접기 제목을 비웠다 다시 쓰면 **불이 꺼지고 눌린다**(그 자리는 평범한 글자다)', async () => {
+    const c = await open('bd1', [{ id: 'tg', kind: 'toggle', open: true, runs: r('머리'), items: [{ id: 'i1', runs: r('내용') }] }]);
+    const bold = () => c.querySelector('[data-note-mark="b"]') as HTMLButtonElement;
+    const head = c.querySelector('[data-note-line="tg"]') as HTMLElement;
+
+    // 평소의 제목 — 블록이 굵기를 정하므로 불이 켜지고 눌리지 않는다(제보 14의 그 자리).
+    caretIn(head);
+    await waitFor(() => expect(bold().disabled).toBe(true));
+
+    /**
+     * 비웠다 다시 쓴 자리 — 크로뮴이 남긴 `font-weight: normal` 껍질이 그 글자를
+     * 400으로 그린다(실브라우저 실측). 툴바는 **그리는 대로** 말해야 한다.
+     */
+    head.innerHTML = '<span style="font-weight: normal">새</span>';
+    caretIn(head.querySelector('span') as HTMLElement);
+    await waitFor(() => expect(bold().disabled).toBe(false));
+    expect(bold().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('9 — 접기에서 Shift+Enter는 **그 블록 아래의 평범한 줄로** 나온다', async () => {
+    const c = await open('se1', [{ id: 'tg', kind: 'toggle', open: true, runs: r('머리'), items: [{ id: 'i1', runs: r('내용') }] }]);
+    const head = c.querySelector('[data-note-line="tg"]') as HTMLElement;
+    head.focus();
+    fireEvent.keyDown(head, { key: 'Enter', shiftKey: true });
+
+    saveNow();
+    await waitFor(() => {
+      const blocks = saved('se1').pages[0].blocks;
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0].kind).toBe('toggle');
+      expect(blocks[1].kind).toBe('p');
+    });
+    // 제목은 그대로다 — 줄바꿈이 제목 안에 들어가지 않았다.
+    expect(saved('se1').pages[0].blocks[0].runs.map((x: { t: string }) => x.t).join('')).toBe('머리');
+  });
+
+  it('9 — 내용 줄에서도 같다', async () => {
+    const c = await open('se2', [{ id: 'tg', kind: 'toggle', open: true, runs: r('머리'), items: [{ id: 'i1', runs: r('내용') }] }]);
+    const body = c.querySelector('[data-note-line="tg:body"]') as HTMLElement;
+    body.focus();
+    fireEvent.keyDown(body, { key: 'Enter', shiftKey: true });
+
+    saveNow();
+    await waitFor(() => expect(saved('se2').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['toggle', 'p']));
+  });
+
+  /**
+   * 11 — **배선**을 지킨다(F28). `codeVanishesIn`의 단위 테스트는 `noteTypingStyle.test.ts`에
+   * 있고, 여기서 보는 것은 「그 판정이 지우기 키에 걸려 있고, 그 결과가 껍데기로 선다」다.
+   *
+   * jsdom은 Backspace의 **기본 동작을 하지 않으므로** 지우는 일은 손으로 흉내 낸다 —
+   * 우리가 지키는 것은 그 앞뒤의 규칙이다(키에서 적어 두고, 커밋 뒤에 걸고, 조합이
+   * 시작되면 그 자리에 색·면·글꼴을 명시한 껍데기를 세운다).
+   */
+  it('11 — 코드 알약을 지운 자리에서 조합하면 **색·면을 덮는 껍데기** 안에서 태어난다', async () => {
+    const c = await open('ck1', [{ id: 'a', kind: 'p', runs: [{ t: '앞', b: false, c: null }, { t: '코드', b: false, c: null, k: true }, { t: '뒤', b: false, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="a"]'))) as HTMLElement;
+    await waitFor(() => expect(line.querySelector('code')).toBeTruthy());
+
+    line.focus();
+    setLinearSelection(line, 1, 3); // 알약의 글자 전체
+    fireEvent.keyDown(line, { key: 'Backspace' });
+
+    // 브라우저가 할 일을 흉내 낸다 — 알약을 걷고 캐럿을 그 자리에.
+    line.querySelector('code')!.remove();
+    setLinearSelection(line, 1, 1);
+    fireEvent.input(line);
+
+    fireEvent.compositionStart(line);
+    const shell = line.querySelector('[data-armed-anchor]') as HTMLElement | null;
+    expect(shell).toBeTruthy();
+    const st = shell!.getAttribute('style') ?? '';
+    expect(st).toContain('background-color:transparent');
+    expect(st).toContain('color:inherit');
+    expect(st).toContain('font-family:inherit');
+  });
+
+  it('11 — 알약이 **남는** 지우기에서는 껍데기를 세우지 않는다(그 자리는 여전히 코드다)', async () => {
+    const c = await open('ck2', [{ id: 'a', kind: 'p', runs: [{ t: '앞', b: false, c: null }, { t: '코드', b: false, c: null, k: true }, { t: '뒤', b: false, c: null }] }]);
+    const line = (await waitFor(() => c.querySelector('[data-note-line="a"]'))) as HTMLElement;
+    await waitFor(() => expect(line.querySelector('code')).toBeTruthy());
+
+    line.focus();
+    setLinearSelection(line, 3, 3);
+    fireEvent.keyDown(line, { key: 'Backspace' }); // 두 글자 중 하나만
+    const code = line.querySelector('code')!;
+    code.textContent = '코';
+    setLinearSelection(line, 2, 2);
+    fireEvent.input(line);
+
+    fireEvent.compositionStart(line);
+    expect(line.querySelector('[data-armed-anchor]')).toBeNull();
+  });
+});
+
+describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 · 목록 Shift+클릭(제보 1·12·14)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const r = (t: string) => [{ t, b: false, c: null }];
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+
+  /** 포인터 이벤트를 **좌표·`pointerType`과 함께** 쏜다(F12 — jsdom에는 `PointerEvent`가 없다). */
+  function firePtr(target: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX: number; clientY: number }): void {
+    const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX, clientY: init.clientY });
+    Object.defineProperty(ev, 'pointerType', { value: 'touch', configurable: true });
+    Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
+    fireEvent(target, ev);
+  }
+
+  /**
+   * 14 — **칠할 때 구간을 다시 만든다**(`paint`의 머리말).
+   *
+   * 제보의 자리는 「목록 네 줄을 치고 4번 줄 끝에서 1번 줄을 Shift+클릭」인데, 그
+   * 순간 4번 줄이 커밋되며 **다시 그려져** 붙잡아 둔 `Range`가 접힌다. jsdom에는
+   * 좌표가 없어 클릭으로는 그 길을 탈 수 없으므로, 같은 일을 손으로 일으킨다:
+   * 여러 줄을 고른 **뒤** 그 줄의 `innerHTML`을 갈아 끼우고 다시 칠한다.
+   *
+   * `CSS.highlights`도 jsdom에는 없다 — 칠하는 규칙만 보면 되므로 지도 하나를 세운다.
+   */
+  it('14 — 줄이 다시 그려져도 칠이 그 줄을 **빈 구간으로** 남기지 않는다', async () => {
+    const { buildSelection, paint } = await import('./noteTextSelect');
+    class FakeHighlight {
+      readonly ranges: Range[];
+      constructor(...r: Range[]) {
+        this.ranges = r;
+      }
+      [Symbol.iterator]() {
+        return this.ranges[Symbol.iterator]();
+      }
+    }
+    const store = new Map<string, FakeHighlight>();
+    vi.stubGlobal('CSS', { highlights: store });
+    vi.stubGlobal('Highlight', FakeHighlight);
+
+    const col = document.createElement('div');
+    const mk = (key: string, text: string): HTMLElement => {
+      const el = document.createElement('div');
+      el.setAttribute('data-note-line', key);
+      el.contentEditable = 'true';
+      el.textContent = text;
+      col.appendChild(el);
+      return el;
+    };
+    const a = mk('a', '하나');
+    const d = mk('d', '넷');
+    document.body.appendChild(col);
+
+    const built = buildSelection(col, { el: d, node: d.firstChild!, offset: 2 }, { el: a, node: a.firstChild!, offset: 0 });
+    expect(built?.map((x) => [x.key, x.from, x.to])).toEqual([
+      ['a', 0, 2],
+      ['d', 0, 2],
+    ]);
+
+    // **줄을 다시 그린다** — 비제어 박스가 값에 맞춰 따라잡는 그 순간이다.
+    // 예전에는 여기서 `d`의 구간이 접혀(붙잡고 있던 텍스트 노드가 사라진다) 그 줄만
+    // 고르지 않은 것처럼 보였다.
+    d.innerHTML = '넷';
+    paint(built!);
+    expect([...(store.get('mf-note-sel') ?? [])].map((x) => x.toString())).toEqual(['하나', '넷']);
+
+    col.remove();
+    vi.unstubAllGlobals();
+  });
+
+  it('1 — 손가락은 **길게 누른 뒤 움직여야** 여러 줄이 칠해진다(짧게 스치면 스크롤)', async () => {
+    const c = await open('tm1', [
+      { id: 'a', kind: 'p', runs: r('첫 줄') },
+      { id: 'b', kind: 'p', runs: r('둘째 줄') },
+    ]);
+    const a = c.querySelector('[data-note-line="a"]') as HTMLElement;
+    const b = c.querySelector('[data-note-line="b"]') as HTMLElement;
+    // jsdom에는 `elementFromPoint`가 없다(F17) — 그 조회만 세워 준다.
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, writable: true, value: () => b });
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const painting = () => !!c.querySelector('[data-note-painting="1"]');
+
+    // ① 누르자마자 크게 움직였다 = **스크롤**. 아무것도 칠하지 않는다.
+    firePtr(a, 'pointerdown', { clientX: 10, clientY: 10 });
+    now += 40;
+    firePtr(a, 'pointermove', { clientX: 10, clientY: 200 });
+    await new Promise((ok) => setTimeout(ok, 0));
+    expect(painting()).toBe(false);
+    firePtr(a, 'pointerup', { clientX: 10, clientY: 200 });
+
+    // ② 길게 누른 **뒤** 움직였다 = 여러 줄 고르기.
+    firePtr(a, 'pointerdown', { clientX: 10, clientY: 10 });
+    now += 500;
+    firePtr(a, 'pointermove', { clientX: 10, clientY: 200 });
+    await waitFor(() => expect(painting()).toBe(true));
+    firePtr(a, 'pointerup', { clientX: 10, clientY: 200 });
+
+    clock.mockRestore();
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+  });
+
+  it('12 — 고르개는 **찾기·종류 칩·스페이스 머리**로 선다(시안)', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          { id: 's1', name: '내 공책', home: true, color: '#f0663f', maps: [{ title: '제품 회의록', docId: 'd1' }], folders: [] },
+          { id: 's2', name: '9번 계정', color: '#f0663f', maps: [{ title: 'CDC 제거 2차', docId: 'd2' }], folders: [] },
+        ],
+        mapFolders: {},
+      }),
+    );
+    const c = await open('dp1', [{ id: 'b1', kind: 'p', runs: r('여기') }]);
+    // 툴바의 「문서 링크」로 고르개를 연다.
+    fireEvent.click(c.querySelector('[data-note-insert="link"]') ?? c.querySelector('[data-note-link-pick]')!);
+    const pop = (await waitFor(() => c.querySelector('[data-note-docpick]'))) as HTMLElement;
+
+    expect(pop.querySelector('[data-note-docpick-head]')?.textContent).toBe('문서 링크');
+    expect((pop.querySelector('[data-note-docpick-q]') as HTMLInputElement).placeholder).toBe('이름으로 찾기, 또는 주소 붙여넣기');
+    // 칩 다섯 — 전체 + 종류 넷.
+    expect([...pop.querySelectorAll('[data-note-docpick-chip]')].map((e) => e.getAttribute('data-note-docpick-chip'))).toEqual(['전체', '공책', '칸반 보드', '마인드맵', '화이트보드']);
+    await waitFor(() => expect([...pop.querySelectorAll('[data-note-link-option]')]).toHaveLength(2));
+    // 스페이스마다 머리가 하나씩.
+    expect([...pop.querySelectorAll('[data-note-docpick-group]')].map((e) => e.textContent)).toEqual(['내 공책', '9번 계정']);
+    // 첫 줄에 초점이 서고, ↓로 내려간다.
+    expect(pop.querySelector('[data-note-link-option][data-focus="1"]')?.getAttribute('data-note-link-option')).toBe('d1');
+    fireEvent.keyDown(pop.querySelector('[data-note-docpick-q]')!, { key: 'ArrowDown' });
+    await waitFor(() => expect(pop.querySelector('[data-note-link-option][data-focus="1"]')?.getAttribute('data-note-link-option')).toBe('d2'));
   });
 });

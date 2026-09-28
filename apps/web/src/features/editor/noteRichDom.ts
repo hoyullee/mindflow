@@ -755,6 +755,41 @@ export function armMarksForReplace(el: HTMLElement, at: number, drop: number, ma
   announceArmed();
 }
 
+/**
+ * 이 구간을 지우면 **코드 알약이 통째로 사라지는가**(제보 11).
+ *
+ * 크로뮴은 지운 글의 **계산된 스타일**을 "다음에 칠 글자"에 물려준다(타이핑 스타일).
+ * 인라인 코드는 색·배경·글꼴을 모두 갖고 있어, 알약의 글자를 다 지운 자리에서 이어
+ * 치면 그 글자가 `<font color="#c44b40"><span style="background-color:…">`으로 되살아난다
+ * (실브라우저 실측 — 한글은 조합이 끝날 때까지 그 모습이 화면에 남아 제보가 됐다.
+ * 영문은 한 박자 만에 다음 커밋이 걷어 내 눈에 잘 띄지 않았다).
+ *
+ * 싸우는 대신 **미리 덮는다**: 이 물음이 참이면 부르는 쪽이 `k: false`를 예약하고,
+ * `openArmedAnchor`가 `color:inherit;background-color:transparent;font-family:inherit`을
+ * 명시한 껍데기를 세운다 — 인라인 선언이 타이핑 스타일을 이긴다.
+ *
+ * **알약이 남는 지우기는 거짓이다**(다섯 글자 중 하나만 지우는 경우) — 그 자리의
+ * 다음 글자는 여전히 코드라야 한다.
+ */
+export function codeVanishesIn(el: HTMLElement, from: number, to: number): boolean {
+  if (to <= from) return false;
+  const { rich } = noteBoxValue(el);
+  if (!rich || rich.length === 0) return false;
+  const flags: boolean[] = [];
+  for (const r of rich) for (let i = 0; i < r.t.length; i += 1) flags.push(!!r.k);
+  // 구간에 걸치는 코드 덩어리를 찾아, **그 덩어리가 통째로** 구간 안에 드는지 본다.
+  for (let i = Math.max(0, from); i < Math.min(flags.length, to); i += 1) {
+    if (!flags[i]) continue;
+    let a = i;
+    while (a > 0 && flags[a - 1]) a -= 1;
+    let b = i;
+    while (b + 1 < flags.length && flags[b + 1]) b += 1;
+    if (a >= from && b < to) return true;
+    i = b;
+  }
+  return false;
+}
+
 /** 예약을 버린다 — 줄을 떠나면 그 자리도 사라진다. */
 export function disarmCaretMark(el?: HTMLElement): void {
   if (!el || armed?.el === el) {

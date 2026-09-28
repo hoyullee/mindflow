@@ -857,14 +857,18 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-tscroll::-webkit-scrollbar-track {
   background: transparent;
 }
+/* 막대의 색은 **중립 회색**이다(제보 2) — 표 손잡이(`--mf-th`)와 강조색을 쓰던
+   자리인데, 그 둘은 이 팔레트에서 베이지·주황이라 스크롤 막대가 "누를 수 있는
+   것"처럼 물들어 보였다. 막대는 위치를 알리는 장치일 뿐이므로 댓글 패널의 막대와
+   같은 태도로 **글자색의 옅은 알파**를 쓴다(테마가 `--mf-note-sb`로 내려 준다). */
 .mf-note-tscroll::-webkit-scrollbar-thumb {
-  background: var(--mf-th);
+  background: var(--mf-note-sb, rgba(46, 42, 38, 0.18));
   border: 2px solid transparent;
   background-clip: padding-box;
   border-radius: 999px;
 }
 .mf-note-tscroll:hover::-webkit-scrollbar-thumb {
-  background: var(--mf-accent-mute);
+  background: var(--mf-note-sb-hover, rgba(46, 42, 38, 0.32));
   background-clip: padding-box;
 }
 .mf-note-tplus-end:hover {
@@ -1249,4 +1253,20 @@ input[type='search']::-webkit-search-results-decoration {
     transform: none;
     pointer-events: auto;
   }
+}
+
+/* 복사한 네모의 점선(제보 7) — 스프레드시트의 "행진하는 개미"를 대신하는 표시다.
+   클립보드는 눈에 보이지 않는 곳이라, 복사한 뒤 화면이 그대로면 됐는지 알 길이
+   없었다. 선을 움직이는 대신 **숨을 쉬게** 한다: 1.5px 점선을 흐렸다 또렷하게
+   되풀이하면 "지금 살아 있는 표시"로 읽히고, 스크롤·리렌더에도 어긋나지 않는다
+   (배경 위치를 움직이는 개미는 칸마다 위상이 달라져 선이 끊겨 보인다). */
+@keyframes mf-note-tcopy {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.mf-note-tcopy {
+  animation: mf-note-tcopy 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-note-tcopy { animation: none; }
 }

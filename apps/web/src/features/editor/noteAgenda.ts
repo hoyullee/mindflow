@@ -298,9 +298,11 @@ export function schedSubtitle(kind: SchedKind, entries: readonly CalendarEntry[]
     return a && b ? `${a.m}.${a.d} – ${b.m}.${b.d} · ${n}개` : `${n}개`;
   }
   if (kind === 'month') {
+    // 달력형은 **개수만** 말한다(제보 10) — 어느 달인지는 바로 아래 미니 달력의 머리가
+    // 적고 있어, 여기서 한 번 더 적으면 같은 말이 한 뼘 사이에 두 번 선다.
     const on = shown ?? at;
     const n = on ? entries.filter((e) => e.due.startsWith(`${on.y}-${String(on.m).padStart(2, '0')}`)).length : 0;
-    return on ? `${on.y}년 ${on.m}월 · ${n}개` : `${n}개`;
+    return `${n}개`;
   }
   const n = schedDays('next', entries, today).reduce((s, d) => s + d.entries.length, 0);
   return `오늘부터 가까운 ${n}개`;

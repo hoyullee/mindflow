@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { armCaretMark, armCaretMarkAs, armMarksForReplace, armedMarksOverlay, disarmCaretMark, fireCaretMark, noteBoxValue, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
+import { armCaretMark, armCaretMarkAs, armMarksForReplace, armedMarksOverlay, codeVanishesIn, disarmCaretMark, fireCaretMark, noteBoxValue, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
 import { runsToHtml, setLinearSelection } from './richtextDom';
 
 /**
@@ -569,5 +569,52 @@ describe('코드 머리의 조합 껍데기(제보 1)', () => {
     armCaretMarkAs(el, 'k', true);
     openArmedAnchor(el);
     expect(anchor(el)?.closest('code') ?? null).toBeNull();
+  });
+});
+
+/**
+ * 코드 알약을 **통째로 지우는 지우기**만 가려낸다(제보 11).
+ *
+ * 크로뮴은 지운 글의 계산된 스타일을 다음 글자에 물려주는데, 인라인 코드는 색·배경·
+ * 글꼴을 다 갖고 있어 그대로 되살아난다(실브라우저 실측:
+ * `<font color="#c44b40"><span style="background-color:rgb(244,237,228)">한</span></font>`).
+ * 그 자리에 예약(`k:false`)을 걸어 껍데기로 덮는 것이 수리인데, **알약이 남는**
+ * 지우기에서 걸면 반대로 코드가 풀린다 — 그래서 이 판정이 필요하다.
+ */
+describe('지우면 코드 알약이 사라지나(제보 11)', () => {
+  function line(runs: { t: string; k?: boolean }[]): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.innerHTML = runsToHtml({ text: runs.map((r) => r.t).join(''), rich: runs.map((r) => ({ t: r.t, b: false, c: null, ...(r.k ? { k: true } : {}) })) });
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it('알약 전체를 덮는 구간이면 참', () => {
+    const el = line([{ t: '앞' }, { t: '코드', k: true }, { t: '뒤' }]);
+    expect(codeVanishesIn(el, 1, 3)).toBe(true);
+    // 앞뒤를 더 물어도 같다 — 알약이 통째로 든다.
+    expect(codeVanishesIn(el, 0, 4)).toBe(true);
+  });
+
+  it('알약이 **남는** 지우기면 거짓 — 그 자리의 다음 글자는 여전히 코드다', () => {
+    const el = line([{ t: '앞' }, { t: '코드', k: true }, { t: '뒤' }]);
+    expect(codeVanishesIn(el, 2, 3)).toBe(false); // 두 글자 중 하나만
+    expect(codeVanishesIn(el, 1, 2)).toBe(false);
+  });
+
+  it('코드가 없거나 빈 구간이면 거짓', () => {
+    const el = line([{ t: '보통 글' }]);
+    expect(codeVanishesIn(el, 0, 3)).toBe(false);
+    const el2 = line([{ t: '앞' }, { t: '코드', k: true }]);
+    expect(codeVanishesIn(el2, 1, 1)).toBe(false);
+  });
+
+  it('알약이 둘이면 **통째로 드는 쪽** 하나만 있어도 참', () => {
+    const el = line([{ t: 'a', k: true }, { t: '사이' }, { t: 'bb', k: true }]);
+    // 첫 알약은 통째로, 둘째는 반만 — 그래도 참이다(덮을 이유가 이미 있다).
+    expect(codeVanishesIn(el, 0, 4)).toBe(true);
+    // 둘째 알약의 반만 지우는 구간은 거짓.
+    expect(codeVanishesIn(el, 3, 4)).toBe(false);
   });
 });

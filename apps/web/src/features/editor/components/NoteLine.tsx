@@ -18,7 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armCaretMark, armCaretMarkAs, armMarksForReplace, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, hasArmedAnchor, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armCaretMark, armCaretMarkAs, armMarksForReplace, armedCaretAt, armedHasMark, closeArmedAnchor, codeVanishesIn, disarmCaretMark, fireCaretMark, hasArmedAnchor, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting, type NoteMarks } from '../noteRichDom';
 import { codeEdgeStep } from '../noteCodeEdge';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
@@ -205,6 +205,11 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
    * 때문이고, 세로가 아닌 키를 누르면 그 자리에서 잊는다.
    */
   const vertX = useRef<number | undefined>(undefined);
+  /**
+   * **지우고 나서 걸 예약**(제보 11) — 코드 알약이 사라지는 지우기에서 적어 둔다.
+   * 거는 자리는 그 키가 일으킨 `input`의 커밋 **뒤**다(위 keydown의 머리말).
+   */
+  const armAfterDel = useRef<NoteMarks | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -583,6 +588,42 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      * 무엇이 지워지는가는 브라우저마다 갈린다 — 여기서 못박아야 어디서나 같다.
      * 값은 DOM을 고친 뒤 **다시 읽어** 만든다(이 화면의 저장 경로가 원래 그렇다).
      */
+    /**
+     * **코드 알약을 지운 자리에 타이핑 스타일을 미리 덮는다**(제보 11).
+     *
+     * 알약의 글자를 모두 지우고 그 자리에서 이어 치면, 크로뮴이 지운 알약의 **계산된
+     * 스타일**을 다음 글자에 물려줘 붉은 글자 + 회색 면으로 태어난다(`codeVanishesIn`의
+     * 머리말에 실측이 있다). 값은 깨끗하므로 다른 곳을 눌러 다시 그려지면 낫지만,
+     * 한글은 조합이 끝날 때까지 그 모습이 화면에 남는다 — 제보가 본 것이 그것이다.
+     *
+     * 그래서 지우는 **그 키**에서 `k: false`를 예약해 둔다: `openArmedAnchor`가
+     * `color:inherit;background-color:transparent;font-family:inherit`을 명시한 껍데기를
+     * 세우고, 첫 자모부터 그 안에서 태어난다(잔재가 생길 틈이 없다). 나머지 서식은
+     * **남는 이웃**의 것을 그대로 물려준다 — 코드 옆이 굵은 글이면 굵게 이어 쓴다.
+     *
+     * 알약이 **남는** 지우기에서는 예약하지 않는다(다섯 글자 중 하나만 지우는 경우) —
+     * 그 자리의 다음 글자는 여전히 코드라야 한다.
+     */
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing && !readOnly) {
+      const sel = window.getSelection();
+      if (sel?.focusNode && el.contains(sel.focusNode)) {
+        const at = caretOffset(el);
+        const picked = sel.isCollapsed ? null : selectedRange(el);
+        const from = picked ? picked.from : e.key === 'Backspace' ? Math.max(0, at - 1) : at;
+        const to = picked ? picked.to : e.key === 'Backspace' ? at : at + 1;
+        if (to > from && codeVanishesIn(el, from, to)) {
+          const len = lineLength(el);
+          const near = from > 0 ? noteMarksIn(el, from - 1, from) : to < len ? noteMarksIn(el, to, Math.min(len, to + 1)) : null;
+          /**
+           * **예약은 지운 다음에 건다** — 여기서 바로 걸면 이 키가 일으킬 `input`의
+           * `fireCaretMark`가 "글자가 늘지 않았다"로 읽어 곧바로 버린다(실측: 예약을
+           * 미리 걸어 두고 프로브를 돌렸더니 잔재가 그대로 남았다). 값만 적어 두고
+           * 그 커밋 **뒤에** 건다(`onInput`).
+           */
+          armAfterDel.current = { b: !!near?.b, i: !!near?.i, s: !!near?.s, u: !!near?.u, k: false, c: near?.c ?? null, hl: near?.hl ?? null };
+        }
+      }
+    }
     if ((e.key === 'Backspace' || e.key === 'Delete') && !e.nativeEvent.isComposing && !readOnly) {
       const sel = window.getSelection();
       if (sel?.isCollapsed) {
@@ -869,6 +910,14 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         // 조합 중인 코드 조각은 **칠하기로** 흉내 낸다(아래 `paintArmedCode`).
         if (composing.current) paintArmedCode();
         commit();
+        /**
+         * **코드 알약을 지운 자리의 예약**(제보 11) — 커밋이 끝난 **뒤**에 건다.
+         * 조합 중에는 걸지 않는다(그때의 지우기는 자모를 무르는 것이라 알약과 무관하다).
+         */
+        const armNow = armAfterDel.current;
+        armAfterDel.current = null;
+        const box = ref.current;
+        if (armNow && box && !composing.current) armMarksForReplace(box, caretOffset(box), 0, armNow);
         /**
          * **소프트 키보드의 `/`는 여기서 잡는다**(제보: 모바일에서 넣기 목록이 안 뜬다).
          *
