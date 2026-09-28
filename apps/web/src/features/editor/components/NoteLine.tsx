@@ -93,6 +93,11 @@ interface Props {
    */
   onSelectOut?: (dir: -1 | 1, x?: number, y?: number) => boolean;
   /**
+   * **⌘(Ctrl)+Shift+위/아래 = 캐럿에서 본문의 처음·끝까지**(제보). 브라우저는 이 편집
+   * 박스 하나 안에서만 해내므로(블록마다 박스가 따로다) 우리가 넘겨받는다.
+   */
+  onSelectDoc?: (dir: -1 | 1) => boolean;
+  /**
    * **Shift+왼쪽/오른쪽으로 줄을 넘어 고른다**(제보: 문장의 끝·처음에 닿으면 거기서
    * 멈춘다). 브라우저의 선택은 이 편집 박스 안에 갇혀 있어 이웃 줄로 이어지지 않는다 —
    * 가장자리에 닿았을 때만 넘겨받는다(위·아래의 `onSelectOut`과 같은 규칙).
@@ -161,7 +166,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectSide, onSelectAll, onTab, onSlash, onMention, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectDoc, onSelectSide, onSelectAll, onTab, onSlash, onMention, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -604,6 +609,18 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      * 한 박스 **안**에서는 브라우저가 알아서 늘린다 — 우리는 그 박스의 가장자리 줄에
      * 닿았을 때만 넘겨받아 이웃 줄까지 이어 그린다(드래그 선택과 같은 길).
      */
+    /**
+     * **⌘(Ctrl)+Shift+위/아래 = 본문의 처음·끝까지**(제보: 커서 위·아래 전체가 골라지지
+     * 않는다). OS의 관례인데 브라우저는 **이 박스 안**에서만 해낸다 — 블록마다 편집
+     * 박스가 따로라 그 줄의 처음·끝에서 멈췄다. 에디터가 이어 그린다.
+     */
+    if (e.shiftKey && (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onSelectDoc && !composing) {
+      const sel = window.getSelection();
+      if (sel?.anchorNode && el.contains(sel.anchorNode) && onSelectDoc(e.key === 'ArrowUp' ? -1 : 1)) {
+        e.preventDefault();
+        return;
+      }
+    }
     if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onSelectOut) {
       const sel = window.getSelection();
       if (sel?.focusNode && el.contains(sel.focusNode) && sel.anchorNode) {
