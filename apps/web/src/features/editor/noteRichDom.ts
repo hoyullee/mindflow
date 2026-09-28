@@ -82,6 +82,8 @@ export function openArmedAnchor(el: HTMLElement): boolean {
   if (typeof document === 'undefined') return false;
   const span = noteCaretSpan(el);
   if (!span || span.a !== span.b) return false;
+  // 코드 **안**에서 시작하는 조합은 그 알약 안에 껍데기를 세운다(제보 1 — 아래 머리말).
+  if (openCodeAnchor(el)) return true;
   /**
    * **예약이 없으면 세우지 않는다**(제보 2 — 한글 두 번째 글자가 사라진다).
    *
@@ -160,6 +162,57 @@ export function openArmedAnchor(el: HTMLElement): boolean {
   try {
     const range = sel.getRangeAt(0).cloneRange();
     placeAnchor(el, range, node);
+    const after = document.createRange();
+    after.setStart(node.firstChild as Text, 1);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+  } catch {
+    node.remove();
+    return false;
+  }
+  return true;
+}
+
+/**
+ * **코드 알약의 머리에서 시작하는 조합은 그 알약 *안*에서 한다**(제보 1).
+ *
+ * 무엇이 보였나(실브라우저 실측): 코드 안 둘째 글자에서 ←를 눌러 「머리·안」 정거장에
+ * 서면 예약이 켜지고(`codeEdgeStep` → `armCaretMarkAs`) 툴바 불도 켜진다. 그런데 거기서
+ * 한글을 치면 **조합하는 동안** 글자가 알약 **밖**(왼쪽)에 떨어져 보이고, 음절이
+ * 확정되는 순간 안으로 뛰어든다. 크로뮴이 머리 경계에서는 캐럿을 어디에 두었든 글자를
+ * 상자 밖에 넣기 때문이다(이 파일 위쪽 표). 값은 끝내 옳지만 **눈에는 글자가 상자
+ * 밖으로 튀었다 들어가는 것**이라 "깨져 보인다"가 된다. 영문은 조합 단계가 없어 그
+ * 중간이 보이지 않는다 — 제보가 한글에서만 온 이유다.
+ *
+ * `paintCode`의 칠하기로는 이 장면을 고치지 못한다. 칠은 글자 상자에만 닿아 알약의
+ * 여백·둥근 모서리를 줄 수 없으므로, 칠해도 알약과 **따로 노는 조각**으로 보인다.
+ *
+ * 그래서 조합을 시작하는 그 순간 폭 0짜리 껍데기를 **`<code>`의 첫 자식으로** 꽂고
+ * 캐럿을 그 안에 둔다. 캐럿이 더는 경계가 아니므로 브라우저는 껍데기 안에 글자를
+ * 넣고, 그 껍데기는 알약 **안**이라 첫 자모부터 진짜 알약 모양으로 보인다. 조합이
+ * 끝나면 `closeArmedAnchor`가 껍데기만 걷고 글자는 알약 안에 남는다.
+ *
+ * 스타일을 주지 않는 것이 중요하다 — 바깥 껍데기는 코드의 생김새를 지우려고 인라인
+ * 선언을 잔뜩 적지만(`openArmedAnchor`), 여기는 **물려받아야** 알약과 하나로 보인다.
+ */
+function openCodeAnchor(el: HTMLElement): boolean {
+  const mine = armed && armed.el === el ? armed : null;
+  if (!mine?.marks.some((m) => m.kind === 'k' && m.want)) return false;
+  const sel = typeof window === 'undefined' ? null : window.getSelection();
+  if (!sel || !sel.isCollapsed || !sel.focusNode || !el.contains(sel.focusNode)) return false;
+  const host = sel.focusNode.nodeType === 1 ? (sel.focusNode as HTMLElement) : sel.focusNode.parentElement;
+  const code = (host?.closest?.('code') as HTMLElement | null) ?? null;
+  // 알약 **안**의 캐럿만 맡는다 — 밖에서 켜 둔 코드는 알약이 아직 없으므로 칠하기의 일이다.
+  if (!code || !el.contains(code)) return false;
+  // 머리 경계일 때만 — 끝 경계는 크로뮴이 이미 상자 **안**에 넣는다(고칠 것이 없다).
+  const at = sel.focusNode.nodeType === 3 ? sel.focusOffset : 0;
+  if (at !== 0 || sel.focusNode !== code.firstChild) return false;
+  const node = document.createElement('span');
+  node.setAttribute(ANCHOR_ATTR, '1');
+  node.textContent = ZWSP;
+  try {
+    code.insertBefore(node, code.firstChild);
     const after = document.createRange();
     after.setStart(node.firstChild as Text, 1);
     after.collapse(true);

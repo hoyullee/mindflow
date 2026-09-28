@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { armCaretMark, armMarksForReplace, armedMarksOverlay, disarmCaretMark, fireCaretMark, noteBoxValue, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
+import { armCaretMark, armCaretMarkAs, armMarksForReplace, armedMarksOverlay, disarmCaretMark, fireCaretMark, noteBoxValue, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from './noteRichDom';
 import { runsToHtml, setLinearSelection } from './richtextDom';
 
 /**
@@ -494,5 +494,80 @@ describe('글자가 들어오는 찰나의 툴바(제보 1·2)', () => {
     setLinearSelection(el, 1, 1);
     expect(armedMarksOverlay(el).hl).toBe('yellow');
     expect(armedMarksOverlay(el).c).toBe('#d92626');
+  });
+});
+
+/**
+ * **코드 알약의 머리에서 시작하는 조합**(제보 1 — 한글에서만 보였다).
+ *
+ * 코드 안 둘째 글자에서 ←를 눌러 「머리·안」 정거장에 서면 예약이 켜진다. 거기서
+ * 한글을 치면 **조합하는 동안** 글자가 알약 밖(왼쪽)에 떨어져 보이고 음절이 확정될
+ * 때 안으로 뛰어들었다 — 크로뮴이 머리 경계에서는 캐럿을 어디에 두었든 글자를 상자
+ * 밖에 넣기 때문이다. 영문은 조합 단계가 없어 그 중간이 보이지 않는다.
+ *
+ * 그래서 껍데기를 **`<code>`의 첫 자식으로** 꽂아 캐럿을 그 안에 둔다. 캐럿이 더는
+ * 경계가 아니므로 브라우저가 껍데기 안에 글자를 넣고, 그 자리가 알약 안이라 첫
+ * 자모부터 알약 모양이다.
+ */
+describe('코드 머리의 조합 껍데기(제보 1)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** `안녕<code>안녕</code>안녕`에서 코드 **안 머리**에 캐럿을 둔다. */
+  function codeLine(): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.setAttribute('data-note-line', 'b1');
+    el.innerHTML = '안녕<code>안녕</code>안녕';
+    document.body.appendChild(el);
+    el.focus();
+    const code = el.querySelector('code')!;
+    const r = document.createRange();
+    r.setStart(code.firstChild!, 0);
+    r.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return el;
+  }
+  const anchor = (el: HTMLElement) => el.querySelector('[data-armed-anchor]') as HTMLElement | null;
+
+  it('껍데기가 **알약 안**에 선다 — 첫 자모부터 코드로 보이게', () => {
+    const el = codeLine();
+    expect(armCaretMarkAs(el, 'k', true)).toBe(true);
+    expect(openArmedAnchor(el)).toBe(true);
+    const a = anchor(el);
+    expect(a).toBeTruthy();
+    // 알약 **안**이고, 그 첫 자식이다(글자가 코드의 맨 앞에서 태어난다).
+    expect(a!.closest('code')).toBe(el.querySelector('code'));
+    expect(el.querySelector('code')!.firstChild).toBe(a);
+    // 스타일을 주지 않는다 — 코드의 생김새를 **물려받아야** 알약과 하나로 보인다.
+    expect(a!.getAttribute('style')).toBeNull();
+  });
+
+  it('폭 0 글자는 **값이 아니다** — 조합 중에 저장이 돌아도 문서에 남지 않는다', () => {
+    const el = codeLine();
+    armCaretMarkAs(el, 'k', true);
+    openArmedAnchor(el);
+    expect(noteBoxValue(el).text).toBe('안녕안녕안녕');
+  });
+
+  it('코드를 **끄는** 예약이면 알약 안에 세우지 않는다 — 그쪽은 밖으로 나가는 길이다', () => {
+    // 「머리·밖」 정거장의 상태다 — `codeEdgeStep`이 캐럿을 바깥 글자 노드에 두고 끈다.
+    const el = codeLine();
+    setLinearSelection(el, 2, 2);
+    expect(armCaretMarkAs(el, 'k', false)).toBe(true);
+    openArmedAnchor(el);
+    const a = anchor(el);
+    if (a) expect(a.closest('code')).toBeNull();
+  });
+
+  it('코드 **밖**에 캐럿이 있으면 이 길이 아니다 — 알약이 아직 없으므로 칠하기의 일이다', () => {
+    const el = codeLine();
+    setLinearSelection(el, 1, 1); // `안|녕<code>…`
+    armCaretMarkAs(el, 'k', true);
+    openArmedAnchor(el);
+    expect(anchor(el)?.closest('code') ?? null).toBeNull();
   });
 });
