@@ -34,7 +34,7 @@ import {
   displayUrl,
   fillAt,
 } from '@mindflow/mindmap-core';
-import type { EditorController } from '../useEditorState';
+import type { EditorController, LinkTarget } from '../useEditorState';
 import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
@@ -66,9 +66,9 @@ import { downloadFile } from '../download';
 import { exportDocx } from '../docx';
 import { openNotePrint } from '../notePrint';
 import { linesClipboard, selectionClipboard, writeClipboard, writeImageClipboard } from '../noteClipboard';
-import { NoteBoardEmbed } from './NoteBoardEmbed';
+import { KIND_TOKEN, KindGlyph, NoteBoardEmbed } from './NoteBoardEmbed';
 import { DropLine, useBlockDrag } from './noteBlockDrag';
-import { boardDocIdFromUrl, embedSize } from '../noteEmbed';
+import { agoLabel, boardDocIdFromUrl, embedKindName, embedKindOf, embedSize, type EmbedKind } from '../noteEmbed';
 import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { Avatar } from './commentPinShape';
@@ -77,7 +77,7 @@ import { comboLabel, keyLabel } from '../shortcutLabels';
 import { parseTableClip, readTableClip, tableClipboard, tableGridOf, type TableRect } from '../noteTableClip';
 import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, onNoteTagsChange, removeNoteTag } from '../noteTags';
 import { useIsMobile, useIsTouchDevice } from '../../../hooks/useMediaQuery';
-import { cancelTouchMenu, installTouchMenuGate, isTouchPointer, registerTouchMenuCloser } from '../noteTouchMenu';
+import { LONG_PRESS_MS, cancelTouchMenu, installTouchMenuGate, isTouchPointer, registerTouchMenuCloser } from '../noteTouchMenu';
 
 interface Props {
   controller: EditorController;
@@ -193,7 +193,9 @@ const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; 
    * 「문서 링크」와는 다른 것이다 — 그쪽은 우리 문서로 가는 **블록**이고, 이쪽은
    * 아무 주소나 거는 **글 속 링크**라 아이콘도 사슬 하나로 갈라 둔다.
    */
-  { kind: 'link-inline', name: '링크', hint: '', desc: '주소를 글에 걸기', group: '넣기', icon: (<><path d="M10 13.5a3.2 3.2 0 0 0 4.6.3l2.6-2.6a3.2 3.2 0 0 0-4.5-4.5l-1.3 1.3" /><path d="M14 10.5a3.2 3.2 0 0 0-4.6-.3l-2.6 2.6a3.2 3.2 0 0 0 4.5 4.5l1.3-1.3" /></>) },
+  // 아이콘은 **툴바의 링크 단추와 같은 사슬**이다(제보 5) — 여기서 고르면 여는 것이
+  // 바로 그 판이라, 목록과 툴바가 다른 그림을 쓰면 같은 자리로 가는 길이 둘로 보인다.
+  { kind: 'link-inline', name: '링크', hint: '', desc: '주소를 글에 걸기', group: '넣기', icon: (<><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></>) },
 ];
 
 /**
@@ -233,6 +235,9 @@ const TRASH_ICON = (
 );
 
 /** 콜아웃 어조 셋 — 디자인의 `CALLOUTS`(이름, 바탕, 잉크). */
+/** 손가락이 이만큼 움직이면 누르기가 아니다 — 길게 누르기 전이면 스크롤, 뒤면 고르기(제보 1). */
+const TOUCH_SEL_SLOP = 12;
+
 const TONES: { tone: NoteCalloutTone; name: string; bg: string; ink: string }[] = [
   { tone: 'warn', name: '주의', bg: 'var(--mf-accent-soft)', ink: 'var(--mf-accent-deep)' },
   { tone: 'decide', name: '결정', bg: 'var(--mf-success-soft)', ink: 'var(--mf-success)' },
@@ -406,6 +411,33 @@ function blockDecidesBold(page: NotePage | null | undefined, key: string): boole
   return kind === 'toggle' && !rest;
 }
 
+/**
+ * **캐럿 자리의 글자가 실제로 굵게 그려지는가** — 계산된 굵기를 그대로 읽는다(제보 8).
+ *
+ * `blockDecidesBold`만으로 불을 못박았더니 **거짓말을 하는 경우**가 생겼다: 접기 제목을
+ * 통째로 지우고 다시 쓰면 그 자리에 `font-weight: normal` 껍질이 서서(덮어쓰기 예약이
+ * `b:false`를 못박는다) 글자는 400으로 그려지는데 단추는 켜진 채였다(실브라우저 실측 —
+ * `<span style="font-weight: normal">새</span>`, 계산값 400).
+ *
+ * 그래서 못박기는 **블록이 정했고 그 결정이 아직 살아 있을 때**만 한다. 둘을 곱하면
+ * 두 제보가 모두 맞는다: 평소의 제목·접기 제목은 불이 켜지고(제보 14), 명시적으로
+ * 굵기가 풀린 자리에서는 꺼진다(제보 8 — 그때 쓰이는 글도 평범한 글자다).
+ */
+function caretDrawsBold(el: HTMLElement | null): boolean {
+  if (!el || typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return false;
+  const sel = window.getSelection();
+  const node = sel?.focusNode ?? null;
+  const host = node && el.contains(node) ? (node.nodeType === 1 ? (node as HTMLElement) : node.parentElement) : el;
+  if (!host) return false;
+  try {
+    const w = window.getComputedStyle(host).fontWeight;
+    const n = Number.parseInt(w, 10);
+    return w === 'bold' || w === 'bolder' || (Number.isFinite(n) && n >= 600);
+  } catch {
+    return false;
+  }
+}
+
 /** 인라인 서식 — 코어 `applyPartialStyle`의 종류와 1:1. */
 const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; css: CSSProperties; icon?: JSX.Element }[] = [
   { kind: 'b', label: 'B', name: '굵게', css: { fontWeight: 800 } },
@@ -469,6 +501,10 @@ export function noteTokens(t: Theme): CSSProperties {
       // 표 — 손잡이 알약과 선택(면·링·글자). 값은 스펙의 밝은 테마 색과 같은 관계를
       // 테마에서 다시 만든다(색을 박으면 다크에서 종이 위에 베이지 띠가 뜬다).
       '--mf-th': mix(t.border, 80, t.panel),
+      // 표의 가로 스크롤 막대 — **중립**이다(제보 2). 손잡이(`--mf-th`)도 강조색도
+      // 쓰지 않는다: 그 둘은 "누를 수 있는 것"의 색이라 막대가 단추처럼 읽혔다.
+      '--mf-note-sb': mix(t.text, 24, 'transparent'),
+      '--mf-note-sb-hover': mix(t.text, 42, 'transparent'),
       '--mf-tsel-bg': mix(t.accent, 20, t.panel),
       '--mf-tsel-ring': mix(t.accent, 76, t.panel),
       '--mf-tsel-text': mix(t.accent, 40, t.panel),
@@ -534,6 +570,10 @@ export function noteTokens(t: Theme): CSSProperties {
     '--mf-tip-fg': '#f7f2ea',
     '--mf-tag-on': '#fbf3ee', // 태그 메뉴에서 **고른** 태그의 면(요청 값)
     '--mf-th': '#eadfd3', // 표 손잡이 알약(스펙 값)
+    // 표의 가로 스크롤 막대 — 글자색의 옅은 알파(중립 회색). 제보 2: 예전에는
+    // `--mf-th`·`--mf-accent-mute`를 써서 베이지·주황 막대가 됐다.
+    '--mf-note-sb': 'rgba(58, 53, 47, 0.18)',
+    '--mf-note-sb-hover': 'rgba(58, 53, 47, 0.32)',
     '--mf-tsel-bg': '#fbede6', // 고른 칸의 면(스펙 값)
     '--mf-tsel-ring': '#e8845c', // 고른 구역의 바깥 링(스펙 값)
     '--mf-tsel-text': '#fbdfcc', // 표 안에서 글자를 끌어 고른 자리(스펙 값)
@@ -1157,6 +1197,16 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    */
   const dragPainted = useRef(false);
   /**
+   * **손가락으로 여러 줄을 고르는 중**(제보 1) — 길게 누른 **뒤** 움직이면 시작된다.
+   *
+   * 본문의 줄은 상자마다 따로라(그래서 우리가 `CSS.highlights`로 직접 칠한다) OS의
+   * 선택은 **한 줄을 넘지 못한다** — 손가락으로는 두 줄을 고를 길이 아예 없었다.
+   * 마우스의 끌기는 손가락에서 스크롤이므로 그대로 열 수 없고(제보 8: 화면을 굴리면
+   * 글이 칠해지고 키패드가 올라왔다), 그래서 **길게 누르기**를 문으로 쓴다 — 표의
+   * 구간 선택·그림 옮기기가 이미 쓰는 그 규칙이다.
+   */
+  const touchSel = useRef<{ el: HTMLElement; x: number; y: number; t: number; on: boolean; anchor: { el: HTMLElement; node: Node; offset: number } | null } | null>(null);
+  /**
    * **두 번 눌러 고른 낱말**(제보) — 그대로 끌면 그 낱말이 통째로 유지되어야 한다.
    *
    * 브라우저는 두 번째 누름에서 낱말을 고르는데, 그 뒤의 드래그를 우리가 이어받으면서
@@ -1168,6 +1218,8 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   useEffect(() => {
     const done = () => {
       dragFrom.current = null;
+      // 손가락 고르기도 여기서 끝난다 — 칠은 남고, 다음 누름이 새 앵커를 세운다(제보 1).
+      touchSel.current = null;
       /**
        * 끌어서 고른 뒤에는 **캐럿을 첫 줄의 시작점에 돌려 놓는다**(`paintAndHold`와
        * 같은 이유: 한글로 덮어쓸 때 첫 자모가 갈 곳이 있어야 한다). 끄는 동안에는
@@ -1947,6 +1999,75 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       return true;
     },
     [textSel, paintAndHold],
+  );
+
+  /**
+   * **손가락으로 여러 줄을 고른다**(제보 1) — 길게 누른 **뒤** 움직였을 때만.
+   *
+   * 앞의 12px은 판정의 문이다: 그 전에 움직이면 **스크롤**이고(그때 이 끌기를 통째로
+   * 접는다), 380ms를 넘겨 누르고 있다가 움직이면 **고르기**다. 문을 지나는 순간
+   * 길게 누르기로 떠 있던 우리 메뉴를 거두고, 그 뒤로는 손가락을 따라 칠한다.
+   *
+   * OS의 선택은 비운다 — 줄 상자를 넘지 못해 한 줄만 파랗게 남고 우리 칠과 두 겹으로
+   * 보인다(마우스 끌기가 이미 쓰는 처방과 같다).
+   */
+  const touchExtend = useCallback(
+    (e: { clientX: number; clientY: number }): void => {
+      const h = touchSel.current;
+      const col = colRef.current;
+      if (!h || !col) return;
+      const moved = Math.abs(e.clientX - h.x) + Math.abs(e.clientY - h.y) > TOUCH_SEL_SLOP;
+      if (!moved) return;
+      if (!h.on && Date.now() - h.t < LONG_PRESS_MS) {
+        touchSel.current = null;
+        return;
+      }
+      if (!h.on) {
+        h.on = true;
+        cancelTouchMenu();
+        const spot = caretInLine(h.el, h.x, h.y);
+        h.anchor = { el: h.el, node: spot.node, offset: spot.offset };
+        /**
+         * **이제부터 화면은 굴러가지 않는다**(블록 끌기와 같은 처방).
+         *
+         * `touch-action: none`을 미리 걸어 둘 수는 없다 — 그러면 본문 위에서는 영영
+         * 스크롤을 못 한다. 고르기가 **성립한 순간**부터 `touchmove`의 기본 동작만
+         * 막는다(그때까지 손가락은 12px 안에 있었으므로 스크롤은 아직 시작되지
+         * 않았고, 그래서 이 시점의 `preventDefault`가 먹는다).
+         */
+        const stop = (te: TouchEvent): void => {
+          if (te.cancelable) te.preventDefault();
+        };
+        window.addEventListener('touchmove', stop, { passive: false });
+        const off = (): void => {
+          window.removeEventListener('touchmove', stop);
+          window.removeEventListener('pointerup', off);
+          window.removeEventListener('pointercancel', off);
+        };
+        window.addEventListener('pointerup', off);
+        window.addEventListener('pointercancel', off);
+      }
+      const from = h.anchor;
+      if (!from) return;
+      let under: HTMLElement | null = null;
+      try {
+        under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      } catch {
+        under = null; // 좌표 조회가 없는 환경(jsdom)
+      }
+      const overLine = under?.closest?.('[data-note-line]') as HTMLElement | null;
+      const near = overLine ? null : lineNear(col, e.clientX, e.clientY);
+      const line = overLine ?? near?.el ?? null;
+      if (!line) return;
+      const at = overLine ? caretInLine(line, e.clientX, e.clientY) : { node: near!.node, offset: near!.offset };
+      const focus = { el: line, node: at.node, offset: at.offset };
+      window.getSelection()?.removeAllRanges();
+      const live = document.activeElement as HTMLElement | null;
+      if (live?.hasAttribute?.('data-note-line')) live.blur();
+      setObjSel([]);
+      setTextSel(line === from.el ? buildLineSelection(from.el, from, focus) : buildSelection(col, from, focus));
+    },
+    [],
   );
 
   /**
@@ -3030,6 +3151,13 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
              */
             if (e.pointerType === 'touch') {
               dragFrom.current = null;
+              /**
+               * **길게 누른 뒤 움직이면 여러 줄을 고른다**(제보 1) — 그 전까지는
+               * 아무 일도 하지 않는다(짧게 스치는 것은 스크롤이고, 한 줄 안의 글자
+               * 고르기는 OS가 이미 한다). 누른 자리만 적어 두고 판단은 `move`에서.
+               */
+              const t0 = (e.target as HTMLElement | null)?.closest?.('[data-note-line]') as HTMLElement | null;
+              touchSel.current = t0 ? { el: t0, x: e.clientX, y: e.clientY, t: Date.now(), on: false, anchor: null } : null;
               return;
             }
             // **Shift+누름은 넓히는 일이다**(요청 5) — 새 앵커를 세우지 않는다.
@@ -3082,6 +3210,10 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
             }
           }}
           onPointerMove={(e) => {
+            if (e.pointerType === 'touch') {
+              touchExtend(e);
+              return;
+            }
             const from = dragFrom.current;
             const col = colRef.current;
             if (!from || !col) return;
@@ -5457,8 +5589,10 @@ function FormatToolbar({
    * **상태로** 들어 함께 내려 준다.
    */
   const [lineKey, setLineKey] = useState('');
-  /** 제목·접기 제목처럼 **블록이 굵기를 정하는 줄**인가(제보 14). */
-  const boldLocked = blockDecidesBold(controller.notePage, lineKey);
+  /** 캐럿 자리가 **정말로 굵게 그려지나**(제보 8 — `caretDrawsBold`의 머리말). */
+  const [drawsBold, setDrawsBold] = useState(false);
+  /** 제목·접기 제목처럼 **블록이 굵기를 정하는 줄**이고, 그 결정이 살아 있는가(제보 14·8). */
+  const boldLocked = blockDecidesBold(controller.notePage, lineKey) && drawsBold;
   /** 칠해 둔 선택은 리스너 안에서 **지금 값**을 봐야 한다(리스너는 한 번만 붙는다). */
   const paintedRef = useRef<LineSel[] | null>(null);
   paintedRef.current = painted;
@@ -5516,6 +5650,8 @@ function FormatToolbar({
       const cell = isCellKey(key);
       setInCell((cur) => (cur === cell ? cur : cell));
       setLineKey((cur) => (cur === key ? cur : key));
+      const bold = caretDrawsBold(el);
+      setDrawsBold((cur) => (cur === bold ? cur : bold));
     };
     const onCompStart = () => {
       composing = true;
@@ -6497,6 +6633,21 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
     return true;
   };
 
+  /**
+   * **접기에서 Shift+Enter는 그 블록을 빠져나온다**(제보 9) — 아래에 평범한 문단이 선다.
+   *
+   * 접기는 제목 한 줄과 내용 한 줄로 된 **한 블록**이라(위 머리말), 그 안에서 줄을 더
+   * 만들 자리가 없다. 예전에는 Shift+Enter가 브라우저의 기본 줄바꿈으로 흘러 제목이나
+   * 내용 안에 `<br>`을 심었는데, 그 줄은 접기 제목의 굵기·내용의 들여쓰기를 그대로
+   * 물려받아 "빠져나온 것처럼 보이는데 아직 접기 안"인 자리가 됐다. Enter가 제목에서
+   * 내용으로 가는 길이므로(위), 그 다음 자리인 **블록 밖**을 Shift+Enter가 맡는다.
+   */
+  const leaveToggle = (): boolean => {
+    if (readOnly) return false;
+    setFreshId(controller.addNoteBlock('p', block.id));
+    return true;
+  };
+
   /** 맨 앞 백스페이스 — 빈 블록이면 지우고, 글이 있으면 문단으로 되돌린다. */
   /**
    * 이 블록을 지운 **다음**, 캐럿을 바로 앞 줄의 **끝**으로 보낸다(제보: 한 줄을
@@ -6754,6 +6905,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               caretToLine(`${block.id}:body`, 'end');
               return true;
             }}
+            onSoftEnter={leaveToggle}
             onBackspaceAtStart={backBlock}
             style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, lineHeight: 1.8, color: 'var(--mf-text)' }}
           />
@@ -6781,6 +6933,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
                 if (itemId) controller.setNoteItemRuns(block.id, itemId, runs);
                 else controller.addNoteItem(block.id);
               }}
+              onSoftEnter={leaveToggle}
               style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--mf-subtext)' }}
             onSlash={(at, tail) => {
                 if (readOnly) return;
@@ -7292,6 +7445,14 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    */
   const [hoverAt, setHoverAt] = useState<{ r: number; c: number } | null>(null);
   /**
+   * **방금 복사한 네모**(제보 7) — 그 둘레에 점선을 두른다(스프레드시트의 관례).
+   *
+   * 클립보드는 눈에 보이지 않는 곳이라, 복사한 뒤 화면이 그대로면 "됐는지" 알 길이
+   * 없었다(특히 행·열·표 전체처럼 선택이 그대로 남는 경우). 표시는 Esc·붙여넣기·
+   * 편집을 열 때 거둔다 — 그때는 클립보드보다 지금 하는 일이 앞선다.
+   */
+  const [copied, setCopied] = useState<TableRect | null>(null);
+  /**
    * **레일 띠 위에 마우스가 있다**(요청 7) — 그 축의 손잡이를 모두 보인다.
    *
    * 칸 위에 있을 때만 보이게 두면 손잡이로 마우스를 옮기는 **그 길에서** 사라져
@@ -7535,6 +7696,12 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     // 커밋해도 `rows` 의존성이 변하지 않아 이펙트가 재실행되지 않았다(실측).
   }, [rows, width, block.colW]);
 
+  /* 표가 줄어들어 복사한 네모가 밖으로 나가면 점선을 거둔다 — 남겨 두면 없는 칸의
+     둘레를 그리려다 엉뚱한 자리에 선이 선다(행·열을 지운 직후). */
+  useEffect(() => {
+    if (copied && (copied.r1 >= rows.length || copied.c1 >= width)) setCopied(null);
+  }, [copied, rows.length, width]);
+
   /* 표 밖을 누르면 선택이 풀린다 — 단 방금 고른 것은 제 클릭으로 풀리지 않는다. */
   useEffect(() => {
     if (!sel && !edit) return;
@@ -7543,6 +7710,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
       if (rootRef.current?.contains(e.target as HTMLElement)) return;
       setSel(null);
       setEdit(null);
+      setCopied(null);
       };
     document.addEventListener('click', onDoc);
     return () => document.removeEventListener('click', onDoc);
@@ -7586,6 +7754,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    */
   const openEdit = (r: number, c: number, at?: { x: number; y: number }, seed?: string) => {
     if (readOnly) return;
+    setCopied(null);
     wantCaret.current = { r, c, x: at?.x, y: at?.y, seed };
     setSel(null);
     setMenu(null);
@@ -7760,10 +7929,13 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
    * 지금은 고른 것을 네모로 펴서 그 격자를 TSV와 `<table>` 두 벌로 싣는다.
    */
   const copySel = (which: TableSel): void => {
-    writeClipboard(tableClipboard(tableGridOf(block.rows, selRect(which, rows.length, width))));
+    const rect = selRect(which, rows.length, width);
+    writeClipboard(tableClipboard(tableGridOf(block.rows, rect)));
+    setCopied(rect);
   };
   /** 격자를 고른 자리에 붙여넣는다 — 모자라면 표가 늘어난다(요청 8). */
   const pasteGrid = (which: TableSel, grid: RichRun[][][]): void => {
+    setCopied(null);
     const a = selAnchor(which);
     controller.pasteNoteTable(block.id, a.r, a.c, grid);
     // 붙여넣은 만큼을 골라 둔다 — 어디가 바뀌었는지 보이지 않으면 확인할 길이 없다.
@@ -7866,20 +8038,30 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     // 글 안에서 캐럿을 옮기는 화살표를 빼앗는다.
     if (e.key === 'Escape') {
       e.preventDefault();
+      // 복사 점선이 떠 있으면 **그것부터** 거둔다(제보 7) — 선택까지 함께 놓으면
+      // 「복사를 취소한다」와 「선택을 푼다」가 한 키에 겹친다.
+      if (copied) {
+        setCopied(null);
+        return;
+      }
       setSel(null);
       return;
     }
+    /**
+     * **Delete·Backspace는 글만 지운다**(제보 3) — 행·열은 남는다.
+     *
+     * 예전에는 행·열을 고른 채 누르면 그 행·열이 **통째로** 빠졌다(칸을 고른
+     * 경우에는 아무 일도 없었다). 스프레드시트의 관례는 그 반대다: 지우기 키는
+     * 값을 비우는 일이고, 줄 자체를 빼는 것은 메뉴(`행 삭제`·`열 삭제`)와
+     * ⌥+방향키가 맡는다 — 되돌리기 한 번의 무게가 둘은 다르다.
+     *
+     * **언제나 막는다** — 고른 칸은 `contentEditable`이라(한글 첫 글자를 받으려고)
+     * 막지 않으면 고르기만 해 둔 칸에서 브라우저가 글자를 하나 지운다.
+     */
     if (e.key === 'Backspace' || e.key === 'Delete') {
-      // **언제나 막는다** — 고른 칸은 이제 `contentEditable`이라(한글 첫 글자를 받으려고)
-      // 막지 않으면 고르기만 해 둔 칸에서 글자가 하나 지워진다.
       e.preventDefault();
-      if (sel.mode === 'row' && rows.length > 1) {
-        controller.removeNoteTableRow(block.id, ...axisSpan(sel.r, sel.r1));
-        setSel(null);
-      } else if (sel.mode === 'col' && width > 1) {
-        controller.removeNoteTableCol(block.id, ...axisSpan(sel.c, sel.c1));
-        setSel(null);
-      }
+      controller.clearNoteTableCells(block.id, selRect(sel, rows.length, width));
+      setCopied(null);
       return;
     }
     const step: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
@@ -8003,6 +8185,14 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                 // 터치에는 끌기가 없다 — 여기서 고르면 "첫 탭=고르기 · 둘째 탭=메뉴"가 깨진다.
                 if (readOnly || touch || e.button !== 0) return;
                 e.preventDefault(); // 끄는 동안 본문 글자가 함께 칠해지지 않게
+                // **Shift+클릭은 고른 열부터 여기까지**(제보 4) — 끌기는 시작하지 않는다.
+                if (e.shiftKey && sel?.mode === 'col') {
+                  railClick.current = true; // 뒤따르는 click이 한 열로 되돌리지 않게
+                  window.getSelection()?.removeAllRanges();
+                  pick({ mode: 'col', c: sel.c, c1: ci });
+                  focusKeys();
+                  return;
+                }
                 railClick.current = false;
                 railDown.current = { axis: 'col', i: ci, moved: false };
                 setRailing(true);
@@ -8076,6 +8266,14 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                 e.stopPropagation();
                 if (readOnly || touch || e.button !== 0) return;
                 e.preventDefault();
+                // **Shift+클릭은 고른 행부터 여기까지**(제보 4).
+                if (e.shiftKey && sel?.mode === 'row') {
+                  railClick.current = true;
+                  window.getSelection()?.removeAllRanges();
+                  pick({ mode: 'row', r: sel.r, r1: ri });
+                  focusKeys();
+                  return;
+                }
                 railClick.current = false;
                 railDown.current = { axis: 'row', i: ri, moved: false };
                 setRailing(true);
@@ -8661,6 +8859,15 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                      * 삐져나와 테두리가 잘려 보였다(열이 하나일 때도 같다).
                      */
                     const radius = `${top && first ? 12 : 0}px ${top && last ? 12 : 0}px ${bottom && last ? 12 : 0}px ${bottom && first ? 12 : 0}px`;
+                    /**
+                     * **복사한 네모의 둘레**(제보 7) — 링과 같은 셈이지만 그리는 것은
+                     * 점선이고, 선택과 **동시에** 떠 있을 수 있어 칸의 `box-shadow`를
+                     * 나눠 쓰지 않는다(겹판 하나를 따로 세운다).
+                     */
+                    const copyEdge =
+                      copied && ri >= copied.r0 && ri <= copied.r1 && ci >= copied.c0 && ci <= copied.c1
+                        ? { t: ri === copied.r0, b: ri === copied.r1, l: ci === copied.c0, r: ci === copied.c1 }
+                        : null;
                     return (
                       <td
                         key={ci}
@@ -8679,6 +8886,23 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                            * 좌표 임계 안이면 대상이 달라져도 2가 되어(행이 얇은 표에서 몇 px
                            * 옮겨 누른 경우) 엉뚱한 칸이 열린다.
                            */
+                          /**
+                           * **Shift+클릭은 고른 자리부터 여기까지**(제보 4).
+                           *
+                           * 끌어서 고르는 길은 있었지만, 넓은 표에서 한쪽 끝을 고른 뒤
+                           * 반대쪽 끝까지 끄는 것은 스크롤과 싸우는 일이다. 기준단은
+                           * 고른 것의 앵커이고(행·열·표 전체를 고른 뒤에도 같다),
+                           * 여기서 끌기를 시작하지 않는다 — 누른 자리가 곧 반대편이다.
+                           */
+                          if (e.shiftKey && sel) {
+                            if (!touch) e.preventDefault();
+                            const a = selAnchor(sel);
+                            window.getSelection()?.removeAllRanges();
+                            setEdit(null);
+                            pick(a.r === ri && a.c === ci ? { mode: 'cell', r: ri, c: ci } : { mode: 'range', r0: a.r, c0: a.c, r1: ri, c1: ci, r: a.r, c: a.c });
+                            focusKeys();
+                            return;
+                          }
                           if (e.detail >= 2 && sel?.mode === 'cell' && sel.r === ri && sel.c === ci) {
                             /**
                              * **기본 동작을 막는다**(제보: 칸의 위/아래 여백을 두 번 누르면
@@ -8839,8 +9063,36 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
                           // 고르려고 끄는 동안 글자가 함께 잡히면 둘 다 엉킨다.
                           // 고른 칸만 예외다 — 그 칸의 글자를 통째로 골라 두기 때문이다.
                           userSelect: typeable ? 'text' : 'none',
+                          // 복사 점선의 원점 — 겹판이 이 칸을 정확히 두른다(제보 7).
+                          position: 'relative',
                         }}
                       >
+                        {copyEdge && (
+                          <span
+                            aria-hidden="true"
+                            data-note-tcopy={`${ri}:${ci}`}
+                            className="mf-note-tcopy"
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              pointerEvents: 'none',
+                              borderRadius: radius,
+                              borderStyle: 'dashed',
+                              /**
+                               * **고른 링보다 진하게**(제보 7) — 복사한 네모는 대개 고른
+                               * 네모와 같은 자리라, 선택의 살굿빛 링과 같은 색으로 그리면
+                               * ⌘C를 눌러도 화면이 그대로다(프로브로 봤다). 한 톤 짙은
+                               * 점선이 그 위에 겹쳐야 "복사했다"가 눈에 남는다.
+                               */
+                              borderColor: 'var(--mf-accent-deep)',
+                              borderWidth: 0,
+                              ...(copyEdge.t ? { borderTopWidth: 2 } : null),
+                              ...(copyEdge.b ? { borderBottomWidth: 2 } : null),
+                              ...(copyEdge.l ? { borderLeftWidth: 2 } : null),
+                              ...(copyEdge.r ? { borderRightWidth: 2 } : null),
+                            }}
+                          />
+                        )}
                         <NoteLine
                           onFocusLine={focusBox}
                           lineKey={`${block.id}:r${ri}c${ci}`}
@@ -10227,11 +10479,81 @@ function ZoomKey({ label, mark, disabled, onClick, children }: { label: string; 
  * 이미 걷어낸 그 문제다), 목록이 블록 바로 아래 붙어 있어 페이지 끝에서는 잘렸다.
  * 이제 화면 한가운데 판으로 열고 **고른 뒤에야** 블록이 선다.
  */
+/** 고르개가 한 번에 종류를 물어보는 문서 수 — 더 있으면 나머지는 「문서」로 남는다. */
+const DOCPICK_KIND_MAX = 80;
+
+/** 칩의 이름은 **줄의 이름과 같은 원천**이다(`embedKindName`) — 둘이 다르면 같은 것을 두 이름으로 부른다. */
+const DOCPICK_KINDS: EmbedKind[] = ['note', 'kanban', 'map', 'board'];
+
 function DocPickPopup({ controller, onPick, onClose }: { controller: EditorController; onPick: (docId: string) => void; onClose: () => void }) {
+  const docStore = useDocStore();
   const [q, setQ] = useState('');
+  const [only, setOnly] = useState<EmbedKind | null>(null);
+  const [at, setAt] = useState(0);
   const targets = controller.linkTargets;
+  /**
+   * **종류는 판을 열 때 물어본다**(제보 12의 칩과 아이콘).
+   *
+   * 워크스페이스 목록에는 제목·스페이스뿐이라 무엇인지(`공책`인지 `칸반보드`인지)
+   * 알 길이 없다 — 링크 후보를 만드는 자리에서는 전부 `문서`다. 종류는 본문에만
+   * 있으므로 여기서 한 번 받아 둔다: 이 판은 눌러야 열리는 자리라 그때의 요청이
+   * 화면을 막지 않고, 받는 동안에는 이름 없는 타일이 서 있다가 도착하면 채워진다.
+   *
+   * 아주 많은 문서에서는 **앞의 몇만** 묻는다 — 나머지는 예전처럼 `문서`다(고르는
+   * 데는 지장이 없고, 판 하나를 열었다고 수백 번을 부르지 않는다).
+   */
+  const [kinds, setKinds] = useState<Record<string, EmbedKind>>({});
+  useEffect(() => {
+    let alive = true;
+    const ids = targets.slice(0, DOCPICK_KIND_MAX).map((t) => t.docId);
+    if (!ids.length) return;
+    void (async () => {
+      const got = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const doc = await docStore.load(id);
+            return doc ? ([id, embedKindOf(doc.doc)] as const) : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (!alive) return;
+      const next: Record<string, EmbedKind> = {};
+      for (const one of got) if (one) next[one[0]] = one[1];
+      setKinds(next);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [targets, docStore]);
+
   const needle = q.trim().toLowerCase();
-  const rows = needle ? targets.filter((t) => `${t.title} ${t.kindName} ${t.spaceName ?? ''}`.toLowerCase().includes(needle)) : targets;
+  /** 붙여넣은 **주소**도 받는다(자리 글의 약속) — 그 문서 하나로 좁힌다. */
+  const pasted = typeof window === 'undefined' ? null : boardDocIdFromUrl(q.trim(), window.location.origin);
+  const known = (id: string): EmbedKind | null => kinds[id] ?? null;
+  const rows = targets.filter((t) => {
+    if (pasted) return t.docId === pasted;
+    if (only && known(t.docId) !== only) return false;
+    if (!needle) return true;
+    const kindName = known(t.docId) ? embedKindName(known(t.docId)!) : t.kindName;
+    return `${t.title} ${kindName} ${t.spaceName ?? ''}`.toLowerCase().includes(needle);
+  });
+  /** 스페이스마다 한 덩어리 — 머리에 그 이름을 적는다(시안). 순서는 목록 그대로다. */
+  const groups: { name: string; rows: LinkTarget[] }[] = [];
+  for (const t of rows) {
+    const name = t.spaceName || '';
+    const last = groups[groups.length - 1];
+    if (last && last.name === name) last.rows.push(t);
+    else groups.push({ name, rows: [t] });
+  }
+  const flat = groups.flatMap((g) => g.rows);
+  const cur = Math.min(at, Math.max(0, flat.length - 1));
+
+  useEffect(() => {
+    setAt(0);
+  }, [q, only]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -10242,6 +10564,16 @@ function DocPickPopup({ controller, onPick, onClose }: { controller: EditorContr
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
   }, [onClose]);
+
+  /** 고른 줄이 늘 보이게 — 방향키로 목록 밖까지 내려가도 따라간다(넣기 목록과 같은 결). */
+  useEffect(() => {
+    // jsdom에는 `scrollIntoView`가 없다 — 있을 때만 부른다(그 환경에서 굴릴 것도 없다).
+    const row = document.querySelector<HTMLElement>(`[data-note-link-option][data-at="${cur}"]`);
+    row?.scrollIntoView?.({ block: 'nearest' });
+  }, [cur]);
+
+  const count = (k: EmbedKind): number => targets.filter((t) => known(t.docId) === k).length;
+
   return (
     <div
       data-note-docpick-back
@@ -10251,39 +10583,151 @@ function DocPickPopup({ controller, onPick, onClose }: { controller: EditorContr
       <div
         data-note-docpick
         onPointerDown={(e) => e.stopPropagation()}
-        style={{ ...POP, position: 'relative', inset: 'auto', width: 'min(420px, 100%)', maxHeight: '70vh', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}
+        style={{ ...POP, position: 'relative', inset: 'auto', width: 'min(520px, 100%)', maxHeight: '72vh', padding: 0, display: 'flex', flexDirection: 'column', gap: 0, borderRadius: 18 }}
       >
-        <span style={{ ...POP_HEAD, padding: '0 2px' }}>문서 링크</span>
-        <input
-          className="mf-note-field"
-          data-note-docpick-q
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Enter' && rows[0]) {
-              e.preventDefault();
-              onPick(rows[0].docId);
-            }
-          }}
-          placeholder="문서 이름으로 찾기"
-          style={LINK_INPUT}
-        />
-        <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {rows.length === 0 && (
-            <div style={{ padding: '12px 9px', fontSize: 11.5, color: 'var(--mf-faint)' }}>{targets.length ? '찾는 문서가 없어요.' : '연결할 문서가 아직 없어요.'}</div>
+        {/* 머리 — 시안의 큰 제목 한 줄. 종류 칩이 아래에서 무엇을 세는지 말해 준다. */}
+        <span data-note-docpick-head style={{ padding: '18px 20px 12px', fontSize: 15, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>문서 링크</span>
+        {/* 찾기 — 돋보기를 칸 **안**에 둔다(시안). 주소를 붙여넣어도 받는다. */}
+        <span style={{ position: 'relative', display: 'block', padding: '0 20px' }}>
+          <svg
+            aria-hidden="true"
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--mf-faint)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            style={{ position: 'absolute', left: 32, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.6-3.6" />
+          </svg>
+          <input
+            className="mf-note-field"
+            data-note-docpick-q
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setAt((i) => Math.max(0, Math.min(flat.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))));
+                return;
+              }
+              if (e.key === 'Enter' && flat[cur]) {
+                e.preventDefault();
+                onPick(flat[cur]!.docId);
+              }
+            }}
+            placeholder="이름으로 찾기, 또는 주소 붙여넣기"
+            style={{ ...LINK_INPUT, width: '100%', height: 42, borderRadius: 12, paddingLeft: 34, fontSize: 13.5 }}
+          />
+        </span>
+        {/* 종류 칩 — 「전체」는 채워진 알약, 나머지는 그 종류의 점을 단 테두리 알약(시안). */}
+        <span data-note-docpick-chips style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '12px 20px 10px' }}>
+          <DocPickChip on={!only} label="전체" count={targets.length} onClick={() => setOnly(null)} />
+          {DOCPICK_KINDS.map((k) => (
+            <DocPickChip key={k} on={only === k} label={embedKindName(k)} count={count(k)} dot={KIND_TOKEN[k]} onClick={() => setOnly(only === k ? null : k)} />
+          ))}
+        </span>
+        <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 12px 12px', display: 'flex', flexDirection: 'column' }}>
+          {flat.length === 0 && (
+            <div style={{ padding: '18px 10px', fontSize: 12.5, color: 'var(--mf-faint)' }}>{targets.length ? '찾는 문서가 없어요.' : '연결할 문서가 아직 없어요.'}</div>
           )}
-          {rows.map((t) => (
-            <button key={t.docId} type="button" data-note-link-option={t.docId} className="btn mf-note-item" onClick={() => onPick(t.docId)} style={MENU_ITEM}>
-              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 2, background: t.color, flex: '0 0 auto' }} />
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-              <span style={{ fontSize: 10.5, color: 'var(--mf-faint)' }}>{t.kindName}</span>
-            </button>
+          {groups.map((g) => (
+            <span key={g.name || '(없음)'} style={{ display: 'contents' }}>
+              {g.name && (
+                <span data-note-docpick-group style={{ padding: '12px 8px 5px', fontSize: 11, fontWeight: 700, color: 'var(--mf-faint)' }}>{g.name}</span>
+              )}
+              {g.rows.map((t) => {
+                const i = flat.indexOf(t);
+                const kind = known(t.docId);
+                const tone = kind ? KIND_TOKEN[kind] : 'var(--mf-faint2)';
+                const when = agoLabel(t.updatedAt);
+                return (
+                  <button
+                    key={t.docId}
+                    type="button"
+                    data-note-link-option={t.docId}
+                    data-at={i}
+                    data-focus={i === cur ? '1' : undefined}
+                    className="btn mf-note-item"
+                    onMouseEnter={() => setAt(i)}
+                    onClick={() => onPick(t.docId)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 11,
+                      width: '100%',
+                      padding: '9px 8px',
+                      borderRadius: 11,
+                      border: 0,
+                      background: i === cur ? 'var(--mf-note-hover)' : 'transparent',
+                      color: 'var(--mf-text)',
+                      fontFamily: 'inherit',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {/* 아이콘은 **우리 것**이다(요청) — 홈 카드의 종류 배지와 같은 글리프. */}
+                    <span
+                      aria-hidden="true"
+                      style={{ flex: '0 0 auto', width: 32, height: 32, borderRadius: 9, background: `color-mix(in srgb, ${tone} 16%, var(--mf-card))`, color: tone, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <KindGlyph kind={kind ?? 'map'} />
+                      </svg>
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+                      {when && <span style={{ fontSize: 11, color: 'var(--mf-faint)' }}>수정 {when}</span>}
+                    </span>
+                    {/* 종류 글자도 **우리 색**이다(요청) — 왼쪽 타일과 같은 토큰을 쓴다. */}
+                    <span data-note-docpick-kind style={{ flex: '0 0 auto', fontSize: 11.5, fontWeight: 700, color: tone }}>{kind ? embedKindName(kind) : t.kindName}</span>
+                    {i === cur && (
+                      <span aria-hidden="true" style={{ flex: '0 0 auto', fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, color: 'var(--mf-faint2)' }}>↵</span>
+                    )}
+                  </button>
+                );
+              })}
+            </span>
           ))}
         </div>
       </div>
     </div>
+  );
+}
+
+/** 고르개의 종류 칩 — 「전체」는 채워진 알약, 나머지는 점을 단 테두리 알약(시안). */
+function DocPickChip({ on, label, count, dot, onClick }: { on: boolean; label: string; count: number; dot?: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-note-docpick-chip={label}
+      aria-pressed={on}
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        height: 28,
+        padding: '0 11px',
+        borderRadius: 999,
+        border: `1px solid ${on ? 'transparent' : 'var(--mf-border)'}`,
+        background: on ? 'var(--mf-accent-deep)' : 'var(--mf-card)',
+        color: on ? 'var(--mf-accent-ink)' : 'var(--mf-subtext)',
+        fontFamily: 'inherit',
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: 'pointer',
+      }}
+    >
+      {dot && <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 999, background: dot }} />}
+      {label}
+      <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.7 }}>{count}</span>
+    </button>
   );
 }
 

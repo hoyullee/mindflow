@@ -36,6 +36,30 @@ export function embedKindName(kind: EmbedKind): string {
  * 것 없이 머리줄만 좁혔다(같은 뜻의 안내 줄을 본문에서 걷어 낸 것과 한 결정이다).
  * 배지는 **되는 일이 따로 있을 때만** 말한다.
  */
+/**
+ * 상대 시각 한 마디 — `방금` · `3분 전` · `2일 전`, 일주일이 넘으면 날짜.
+ *
+ * 모르면 **빈 문자열**이고, 그때 부르는 쪽은 그 줄을 아예 적지 않는다.
+ * 에포크(1970-01-01)를 걸러내는 이유: 로컬·데모 어댑터가 "수정 시각을 모른다"를
+ * `new Date(0)`으로 적는다 — 그대로 그리면 **`1. 1.`**이 떠서 모르는 것을 아는
+ * 척하게 된다(실브라우저 프로브에서 봤다).
+ */
+export function agoLabel(iso: string | undefined, now = Date.now()): string {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (Number.isNaN(t) || t < Date.parse('2000-01-01T00:00:00.000Z')) return '';
+  const m = Math.floor((now - t) / 60000);
+  if (m < 1) return '방금';
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}일 전`;
+  // 해가 다르면 연도까지 — `1. 1.`만 있으면 올해인지 재작년인지 알 수 없다.
+  const sameYear = new Date(t).getFullYear() === new Date(now).getFullYear();
+  return new Date(t).toLocaleDateString('ko-KR', { ...(sameYear ? {} : { year: 'numeric' }), month: 'numeric', day: 'numeric' });
+}
+
 export function embedRuleLabel(kind: EmbedKind, canEdit: boolean): string {
   return kind === 'kanban' && canEdit ? '열 이동만' : '';
 }

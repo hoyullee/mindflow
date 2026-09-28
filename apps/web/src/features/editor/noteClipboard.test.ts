@@ -31,16 +31,44 @@ describe('writeImageClipboard', () => {
     expect(items[0]!.data['image/png']).toBeInstanceOf(Promise);
   });
 
-  it('주소가 없거나 클립보드를 막아 둔 환경에서는 조용히 false', async () => {
+  it('주소가 없거나 클립보드를 통째로 막아 둔 환경에서는 조용히 false', async () => {
     vi.stubGlobal('navigator', { clipboard: { write: vi.fn() } });
     vi.stubGlobal('ClipboardItem', FakeItem);
     expect(await writeImageClipboard('')).toBe(false);
 
     vi.stubGlobal('navigator', { clipboard: {} });
     expect(await writeImageClipboard('blob:two')).toBe(false);
+  });
 
-    vi.stubGlobal('navigator', { clipboard: { write: vi.fn(async () => Promise.reject(new Error('denied'))) } });
+  /**
+   * **PNG를 못 실으면 주소라도**(제보 13) — 예전에는 여기서 아무 일도 일어나지 않았고,
+   * 잘라내기는 쓰기가 성공해야 지우므로 ⌘X까지 조용히 죽었다.
+   */
+  it('그림 쓰기가 거절당하면 **주소를 글자로** 싣는다', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { write: vi.fn(async () => Promise.reject(new Error('denied'))), writeText } });
+    vi.stubGlobal('ClipboardItem', FakeItem);
     vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => new Blob(['x'], { type: 'image/png' }) })));
-    expect(await writeImageClipboard('blob:three')).toBe(false);
+
+    expect(await writeImageClipboard('https://cdn.example/a.webp')).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('https://cdn.example/a.webp');
+  });
+
+  it('`ClipboardItem`을 모르는 브라우저에서도 주소로 물러선다', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    vi.stubGlobal('ClipboardItem', undefined);
+    expect(await writeImageClipboard('https://cdn.example/b.webp')).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('https://cdn.example/b.webp');
+  });
+
+  it('`data:` 주소는 **싣지 않는다** — 수백 KB짜리 글자가 클립보드에 들어간다', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { write: vi.fn(async () => Promise.reject(new Error('denied'))), writeText } });
+    vi.stubGlobal('ClipboardItem', FakeItem);
+    vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => new Blob(['x'], { type: 'image/png' }) })));
+
+    expect(await writeImageClipboard('data:image/png;base64,AAAA')).toBe(false);
+    expect(writeText).not.toHaveBeenCalled();
   });
 });

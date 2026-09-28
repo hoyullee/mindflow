@@ -201,7 +201,7 @@ function docCanvasBg(doc: Doc): string {
 
 /* ───────────────────────────── 값 ───────────────────────────── */
 
-const KIND_TOKEN: Record<EmbedKind, string> = {
+export const KIND_TOKEN: Record<EmbedKind, string> = {
   map: 'var(--mf-doc-map)',
   board: 'var(--mf-doc-board)',
   kanban: 'var(--mf-doc-kanban)',
@@ -209,7 +209,7 @@ const KIND_TOKEN: Record<EmbedKind, string> = {
 };
 
 /** 종류 아이콘 — 홈 카드의 종류 배지와 같은 글리프(같은 뜻은 같은 표식). */
-function KindGlyph({ kind }: { kind: EmbedKind }) {
+export function KindGlyph({ kind }: { kind: EmbedKind }) {
   if (kind === 'kanban') {
     return (
       <>
@@ -262,31 +262,6 @@ const PILL: CSSProperties = {
 };
 
 const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
-
-/**
- * 상대 시각 한 마디 — 머리줄 메타의 `업데이트 …`. 모르면 **빈 문자열**이고, 그때 그
- * 줄은 아예 뜨지 않는다.
- *
- * 에포크(1970-01-01)를 걸러내는 이유: 로컬·데모 어댑터가 "수정 시각을 모른다"를
- * `new Date(0)`으로 적는다. 그대로 그리면 머리줄에 **`업데이트 1. 1.`**이 떠서
- * 모르는 것을 아는 척하게 된다(실브라우저 프로브에서 봤다).
- */
-function ago(iso: string | undefined): string {
-  if (!iso) return '';
-  const t = Date.parse(iso);
-  if (Number.isNaN(t) || t < Date.parse('2000-01-01T00:00:00.000Z')) return '';
-  const now = Date.now();
-  const m = Math.floor((now - t) / 60000);
-  if (m < 1) return '방금';
-  if (m < 60) return `${m}분 전`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}시간 전`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}일 전`;
-  // 해가 다르면 연도까지 — `1. 1.`만 있으면 올해인지 재작년인지 알 수 없다.
-  const sameYear = new Date(t).getFullYear() === new Date(now).getFullYear();
-  return new Date(t).toLocaleDateString('ko-KR', { ...(sameYear ? {} : { year: 'numeric' }), month: 'numeric', day: 'numeric' });
-}
 
 /* ───────────────────────────── 본체 ───────────────────────────── */
 
@@ -480,10 +455,7 @@ export function NoteBoardEmbed({
           <EmbedHead
             kind={kind}
             title={title}
-            spaceName={target.spaceName}
-            updatedAt={target.updatedAt}
             rule={state.kind === 'ok' ? embedRuleLabel(kind, canEdit) : ''}
-            kindLabel={kindLabel}
             href={target.href}
             onCollapse={() => setView({ size: 'sm' })}
           />
@@ -598,25 +570,17 @@ export function NoteBoardEmbed({
 function EmbedHead({
   kind,
   title,
-  spaceName,
-  updatedAt,
   rule,
   href,
   onCollapse,
-  kindLabel,
 }: {
   kind: EmbedKind;
   title: string;
-  spaceName: string;
-  updatedAt: string | undefined;
   rule: string;
   href: string;
   onCollapse: () => void;
-  /** 종류 이름 — 아직 못 읽었거나 없는 문서면 `문서`다(모르는 종류를 지어내지 않는다). */
-  kindLabel: string;
 }) {
   const tone = KIND_TOKEN[kind];
-  const when = ago(updatedAt);
   return (
     <div
       data-embed-head
@@ -626,8 +590,11 @@ function EmbedHead({
       style={{
         position: 'absolute',
         zIndex: 3,
-        top: 8,
-        right: 8,
+        // **왼쪽 아래**다(제보 6) — 오른쪽 위는 미리보기 자신의 단추 자리라(칸반의
+        // 보기 전환·맵의 확대) 머리가 뜨면 그것들을 덮었다. 아래 왼쪽은 어느
+        // 미리보기에서도 비어 있는 모서리다.
+        bottom: 8,
+        left: 8,
         maxWidth: 'calc(100% - 16px)',
         display: 'flex',
         alignItems: 'center',
@@ -660,23 +627,11 @@ function EmbedHead({
           <KindGlyph kind={kind} />
         </svg>
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: '0 1 auto', minWidth: 0 }}>
-        <span data-embed-title style={{ fontSize: 12, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {title}
-        </span>
-        <span data-embed-meta style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0 }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {kindLabel}
-            {spaceName ? ` · ${spaceName}` : ''}
-          </span>
-          {when && (
-            <>
-              <span aria-hidden style={{ width: 3, height: 3, borderRadius: 999, background: 'var(--mf-faint2)', flex: '0 0 auto' }} />
-              <span aria-hidden style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--mf-note-ok)', flex: '0 0 auto' }} />
-              <span style={{ whiteSpace: 'nowrap' }}>업데이트 {when}</span>
-            </>
-          )}
-        </span>
+      {/* **제목 한 줄만** 남긴다(제보 6) — 종류·경로·업데이트 시각은 걷었다. 종류는
+          왼쪽 아이콘이 이미 말하고, 경로와 시각은 이 자리에서 하는 일(열기·작게)과
+          무관한 정보라 머리를 두 줄로 불려 아래 그림을 더 가렸다. */}
+      <span data-embed-title style={{ flex: '0 1 auto', minWidth: 0, fontSize: 12, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {title}
       </span>
       {rule && (
         <span

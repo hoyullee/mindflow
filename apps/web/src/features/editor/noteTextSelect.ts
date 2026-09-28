@@ -386,7 +386,30 @@ export function selectWholeLines(els: HTMLElement[]): LineSel[] | null {
 
 /** 고른 글자를 칠한다 — DOM은 건드리지 않는다(`::highlight(mf-note-sel)`). */
 export function paint(sel: LineSel[]): void {
-  paintRanges(sel.map((s) => s.range));
+  /**
+   * **칠할 때 구간을 다시 만든다**(제보 14) — 만들어 둔 `Range`를 그대로 쓰지 않는다.
+   *
+   * `Range`는 **노드를 붙잡는다**. 비제어 편집 박스는 값이 바뀌면 `innerHTML`을 통째로
+   * 갈아 끼우므로(`NoteLine`의 따라잡기 그리기) 그 순간 붙잡고 있던 텍스트 노드가
+   * 사라지고, 구간은 조용히 **접힌다** — 칠은 남아 있는데 길이가 0이라 그 줄만
+   * 고르지 않은 것처럼 보였다.
+   *
+   * 제보가 본 것이 정확히 그 자리다: 목록 네 줄을 치고 4번 줄 끝에서 1번 줄을
+   * Shift+클릭하면 **4번 줄만 빠졌다**. 고르는 순간 초점이 1번 줄로 옮겨 가며 4번
+   * 줄이 커밋되고, 그 값으로 4번 줄이 다시 그려진다(그 한 번이 "최초 1회"다 — 다음
+   * 부터는 그려 둔 값과 같아 다시 그리지 않는다).
+   *
+   * 글자 좌표(`from`·`to`)는 그 일과 무관하게 옳으므로, **칠하는 자리에서** 그 좌표로
+   * 구간을 새로 만든다. 값이 줄어 좌표가 넘치면 길이에 맞춰 자른다.
+   */
+  const out: Range[] = [];
+  for (const s of sel) {
+    if (!s.el.isConnected) continue;
+    const len = lineLength(s.el);
+    const made = rangeOfChars(s.el, Math.min(s.from, len), Math.min(s.to, len));
+    out.push(made ?? s.range);
+  }
+  paintRanges(out);
 }
 
 /**

@@ -121,7 +121,30 @@ export function imageToPng(src: string): Promise<Blob> {
 export async function writeImageClipboard(src: string): Promise<boolean> {
   const nav = typeof navigator === 'undefined' ? null : navigator;
   const Item = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
-  if (!src || !nav?.clipboard?.write || !Item) return false;
+  if (!src) return false;
+  /**
+   * **PNG를 못 실으면 주소라도 싣는다**(제보 13).
+   *
+   * 그림 쓰기가 막히는 길이 여럿이다: `ClipboardItem`을 모르는 브라우저 · 클립보드
+   * 권한이 없는 환경 · 그림을 받아 오지 못하는 경우(다른 출처의 저장소 주소가
+   * CORS로 막히면 `fetch`가 거절한다). 예전에는 그때 **아무 일도 일어나지 않았고**,
+   * 잘라내기는 쓰기가 성공해야 지우므로 ⌘X도 조용히 죽었다 — "복사가 안 된다"로
+   * 보이는 자리다.
+   *
+   * 주소 한 줄이라도 실리면 ⌘V가 빈손으로 끝나지 않고(우리 본문에 붙이면 그림으로
+   * 되살아난다), 잘라내기도 제 일을 마친다. `data:` 주소는 싣지 않는다 — 수백 KB짜리
+   * 글자가 클립보드에 들어가면 붙여넣는 쪽이 감당하지 못한다.
+   */
+  const fallback = async (): Promise<boolean> => {
+    if (src.startsWith('data:') || !nav?.clipboard?.writeText) return false;
+    try {
+      await nav.clipboard.writeText(src);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (!nav?.clipboard?.write || !Item) return fallback();
   const png = imageToPng(src);
   // 클립보드가 거절하면 이 약속을 **아무도 읽지 않는다** — 떠도는 거부가 되어 콘솔을
   // 채우므로(테스트에서는 실행 자체가 실패한다) 여기서 한 번 받아 둔다.
@@ -130,6 +153,6 @@ export async function writeImageClipboard(src: string): Promise<boolean> {
     await nav.clipboard.write([new Item({ 'image/png': png })]);
     return true;
   } catch {
-    return false;
+    return fallback();
   }
 }

@@ -944,6 +944,13 @@ export interface EditorController {
   setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
   /** 표에 격자를 **한 번에** 붙여넣는다 — 모자라면 행·열을 늘린다(요청 8). */
   pasteNoteTable: (blockId: string, row: number, col: number, grid: RichRun[][][]) => void;
+  /**
+   * 고른 네모 안의 **글만** 지운다(제보 3) — 행·열은 남는다.
+   *
+   * Delete·Backspace가 부르는 자리다. 표의 관례대로 "지우기"는 **값을 비우는 일**이고,
+   * 행·열 자체를 빼는 것은 메뉴(`행 삭제`·`열 삭제`)와 ⌥+방향키가 맡는다.
+   */
+  clearNoteTableCells: (blockId: string, rect: { r0: number; c0: number; r1: number; c1: number }) => void;
   /** 표에 행을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 아래. */
   addNoteTableRow: (blockId: string, at?: number) => void;
   /** 표에 열을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 오른쪽. */
@@ -7757,6 +7764,31 @@ export function useEditorState(): EditorController {
    * 두 행이 생긴다. 새로 생긴 자리의 빈 칸은 빈 런이다. 크기 값(`colW`)과 칠(`fills`)은
    * 건드리지 않는다 — 늘어난 열은 값이 없어 남은 폭을 나눠 받는다.
    */
+  const clearNoteTableCells = useCallback(
+    (blockId: string, rect: { r0: number; c0: number; r1: number; c1: number }) => {
+      if (!notePage) return;
+      commitBlock(notePage.id, blockId, (b) => {
+        const old = b.rows ?? [];
+        if (!old.length) return b;
+        let touched = false;
+        const rows = old.map((r, ri) =>
+          ri < rect.r0 || ri > rect.r1
+            ? r
+            : r.map((cell, ci) => {
+                if (ci < rect.c0 || ci > rect.c1) return cell;
+                // 이미 빈 칸은 그대로 둔다 — 새 배열을 만들면 비제어 박스가 통째로
+                // 다시 그려져, 아무것도 지우지 않았는데 캐럿이 튄다.
+                if (!runsText(cell)) return cell;
+                touched = true;
+                return textRuns('');
+              }),
+        );
+        return touched ? { ...b, rows } : b;
+      });
+    },
+    [commitBlock, notePage],
+  );
+
   const pasteNoteTable = useCallback(
     (blockId: string, row: number, col: number, grid: RichRun[][][]) => {
       if (!notePage || !grid.length) return;
@@ -8811,6 +8843,7 @@ export function useEditorState(): EditorController {
     pasteNoteText,
     setNoteCell,
     pasteNoteTable,
+    clearNoteTableCells,
     addNoteTableRow,
     addNoteTableCol,
     removeNoteTableRow,
