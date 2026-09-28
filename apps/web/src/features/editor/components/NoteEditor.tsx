@@ -108,7 +108,7 @@ interface Props {
  * 치면 「코드 블록」만 나오고, 한 낱말만 코드로 만들고 싶은 사람은 갈 곳이 없었다
  * (툴바의 `<>` 단추를 아는 사람만 썼다). 고르면 그 자리에 **서식을 켜 둔다**.
  */
-type SlashKind = NoteBlockKind | 'inline-code' | 'date';
+type SlashKind = NoteBlockKind | 'inline-code' | 'date' | 'link-inline';
 
 /**
  * **인라인 코드**와 **코드 블록**의 아이콘(시안) — 예전에는 둘 다 꺾쇠(`< >`)라
@@ -185,6 +185,14 @@ const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; 
    * 처음 여는 자리가 이 목록이다.
    */
   { kind: 'date', name: '날짜', hint: '', desc: '@ 로도 넣어요 · 올리면 그날 일정', group: '일정', icon: (<><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /></>) },
+  /**
+   * **링크**(제보 9) — 주소를 글에 거는 인라인 링크다. 블록이 아니라서 인라인 코드와
+   * 같은 자리에 두지만, 그쪽과 달리 **고른 글이 없어도 할 일이 있다**: 툴바의 링크
+   * 판을 열어 주소와 보일 글을 받아 그 자리에 넣는다(`insertNoteLink`). 바로 위의
+   * 「문서 링크」와는 다른 것이다 — 그쪽은 우리 문서로 가는 **블록**이고, 이쪽은
+   * 아무 주소나 거는 **글 속 링크**라 아이콘도 사슬 하나로 갈라 둔다.
+   */
+  { kind: 'link-inline', name: '링크', hint: '', desc: '주소를 글에 걸기', group: '넣기', icon: (<><path d="M10 13.5a3.2 3.2 0 0 0 4.6.3l2.6-2.6a3.2 3.2 0 0 0-4.5-4.5l-1.3 1.3" /><path d="M14 10.5a3.2 3.2 0 0 0-4.6-.3l-2.6 2.6a3.2 3.2 0 0 0 4.5 4.5l1.3-1.3" /></>) },
 ];
 
 /**
@@ -494,6 +502,12 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     const el = noteEditBoxInSelection();
     if (el) boxRef.current = el;
   };
+  /**
+   * **툴바의 링크 판을 여는 손잡이**(제보 9) — `/` 목록의 「링크」가 이것을 당긴다.
+   * 판은 툴바가 들고 있고(주소 다듬기·「고른 글이 있으면 거기에」 규칙이 거기 있다)
+   * 여는 길만 이 ref로 빌려 온다. 툴바가 없으면(보기 전용) 조용히 아무 일도 없다.
+   */
+  const openLinkRef = useRef<(() => void) | null>(null);
   /** 포커스가 온 줄도 기억한다 — 선택이 접혀 있거나 툴바를 먼저 눌러도 대상을 잃지 않게. */
   const focusBox = (el: HTMLElement) => {
     boxRef.current = el;
@@ -2758,6 +2772,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
           <FormatToolbar
             controller={controller}
             boxRef={boxRef}
+            openLinkRef={openLinkRef}
             rememberBox={rememberBox}
             onInserted={setFreshId}
             pickLinkDoc={setLinkPick}
@@ -3268,6 +3283,41 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                     // 자리는 **닫기 전에** 적어 둔다 — `closeSlash`가 앵커를 지운다.
                     setSchedPick({ at: blockIdOf(slashFor ?? ''), replace: !restNow.trim(), anchor: slashAt ? { x: slashAt.gx, y: slashAt.gy } : null });
                     closeSlash();
+                    return;
+                  }
+                  /**
+                   * **링크**(제보 9) — 블록이 아니라 글 속 링크라, `/질의`만 걷고 그
+                   * 자리에 캐럿을 돌려 놓은 뒤 **툴바의 링크 판**을 연다. 판을 여기서
+                   * 새로 만들지 않는 이유는 그쪽이 이미 주소 다듬기(`normalizeUrl`)와
+                   * 「고른 글이 있으면 거기에, 없으면 글을 만들어」 규칙을 들고 있어서다 —
+                   * 두 벌이 되면 한쪽만 고쳐진다.
+                   */
+                  if (kind === 'link-inline') {
+                    const at = slashAtChar;
+                    const key = slashFor ?? '';
+                    if (at !== null) dropSlashText(page, slashFor, at, slashQuery, controller);
+                    closeSlash();
+                    const go = (): void => {
+                      const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+                      if (!el) return;
+                      el.focus({ preventScroll: true });
+                      const len = lineLength(el);
+                      const spot = pointAt(el, at === null ? len : Math.max(0, Math.min(at, len)));
+                      try {
+                        const r = document.createRange();
+                        r.setStart(spot.node, spot.offset);
+                        r.collapse(true);
+                        const sel = window.getSelection();
+                        sel?.removeAllRanges();
+                        sel?.addRange(r);
+                      } catch {
+                        /* 캐럿을 못 놓아도 포커스는 갔다 */
+                      }
+                      focusBox(el);
+                      openLinkRef.current?.();
+                    };
+                    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+                    else setTimeout(go, 0);
                     return;
                   }
                   if (kind === 'inline-code') {
@@ -5164,6 +5214,7 @@ function PageHead({ controller, page }: { controller: EditorController; page: No
 function FormatToolbar({
   controller,
   boxRef,
+  openLinkRef,
   rememberBox,
   onInserted,
   pickLinkDoc,
@@ -5175,6 +5226,8 @@ function FormatToolbar({
 }: {
   controller: EditorController;
   boxRef: { current: HTMLElement | null };
+  /** `/` 목록의 「링크」가 당기는 손잡이 — 아래 `openLink`를 여기에 걸어 둔다(제보 9). */
+  openLinkRef?: { current: (() => void) | null };
   rememberBox: () => void;
   /** 문서 링크 — 고르개 팝업부터 연다(요청: 빈 「문서 고르기」 블록을 먼저 세우지 않는다). */
   pickLinkDoc: (at: { after?: string; replace?: string }) => void;
@@ -5440,6 +5493,17 @@ function FormatToolbar({
     setOpen(null);
     setLinkOpen(true);
   };
+  /**
+   * `/` 목록의 「링크」도 **이 판**을 연다(제보 9) — 여는 길만 빌려 준다.
+   * 판을 두 벌로 만들면 주소 다듬기·「고른 글이 있으면 거기에」 규칙이 갈라진다.
+   */
+  useEffect(() => {
+    if (!openLinkRef) return;
+    openLinkRef.current = openLink;
+    return () => {
+      openLinkRef.current = null;
+    };
+  });
   const applyLink = () => {
     const el = boxRef.current;
     /**
@@ -8688,6 +8752,17 @@ function TableMenu({
   const isRow = sel.mode === 'row';
   const isCol = sel.mode === 'col';
   const isAll = wholeTable;
+  /**
+   * **레일로 전부를 골랐으면 그 지우기는 「표 삭제」다**(제보 2·3).
+   *
+   * 행 레일을 끌어 모든 행을 고르고 지우면 남는 것이 없다 — 그런데 메뉴는
+   * 「행 3개 삭제」라고 적혀 있어, 무엇이 사라지는지 누르기 전에는 알 수 없었다.
+   * 게다가 `rows <= 1`로 막혀 있어 **한 행짜리 표는 그 자리에서 지울 수도 없었다**.
+   * 고른 것이 표 전부면 이름도 하는 일도 표 삭제로 바꾼다(아래 `isAll`의 그것과
+   * 같은 동작이라 자리만 다르다 — 고른 축에서 바로 누를 수 있게).
+   */
+  const allRows = isRow && rowSpan[0] === 0 && rowSpan[1] === rows - 1;
+  const allCols = isCol && colSpan[0] === 0 && colSpan[1] === cols - 1;
   /** 정렬은 어디서나 — 칸·구역은 그 열에, 행은 그 행에, 표 전체는 **모든 열**에 건다. */
   const showAlign = true;
   // 높이는 세어서 넘긴다(고정값이었다): 항목 33 + gap 1,
@@ -8754,13 +8829,13 @@ function TableMenu({
             {/* 여러 행을 골라 두었으면 **그 전부**를 지운다(요청 10) — 메뉴로 가는 순간
                 한 행으로 좁아지면 "골라 놓고 지웠는데 하나만 사라진다"가 된다. */}
             <CtxItem
-              mark="row-del"
-              name={rowSpan[1] > rowSpan[0] ? `행 ${rowSpan[1] - rowSpan[0] + 1}개 삭제` : '행 삭제'}
+              mark={allRows ? 't-del' : 'row-del'}
+              name={allRows ? '표 삭제' : rowSpan[1] > rowSpan[0] ? `행 ${rowSpan[1] - rowSpan[0] + 1}개 삭제` : '행 삭제'}
               hint="⌫"
               danger
               icon={TRASH_ICON}
-              disabled={rows <= 1}
-              onClick={run(() => controller.removeNoteTableRow(block.id, rowSpan[0], rowSpan[1]))}
+              disabled={!allRows && rows <= 1}
+              onClick={run(() => (allRows ? controller.removeNoteBlock(block.id) : controller.removeNoteTableRow(block.id, rowSpan[0], rowSpan[1])))}
             />
             <CtxRule />
           </>
@@ -8774,13 +8849,13 @@ function TableMenu({
             <CtxItem mark="col-left-move" name="열 왼쪽으로 이동" icon={<><path d="M19 12H6" /><path d="m12 6-6 6 6 6" /></>} disabled={spot.c === 0} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, -1))} />
             <CtxItem mark="col-right-move" name="열 오른쪽으로 이동" icon={<><path d="M5 12h13" /><path d="m12 6 6 6-6 6" /></>} disabled={spot.c >= cols - 1} onClick={run(() => controller.moveNoteTableCol(block.id, spot.c, 1))} />
             <CtxItem
-              mark="col-del"
-              name={colSpan[1] > colSpan[0] ? `열 ${colSpan[1] - colSpan[0] + 1}개 삭제` : '열 삭제'}
+              mark={allCols ? 't-del' : 'col-del'}
+              name={allCols ? '표 삭제' : colSpan[1] > colSpan[0] ? `열 ${colSpan[1] - colSpan[0] + 1}개 삭제` : '열 삭제'}
               hint="⌫"
               danger
               icon={TRASH_ICON}
-              disabled={cols <= 1}
-              onClick={run(() => controller.removeNoteTableCol(block.id, colSpan[0], colSpan[1]))}
+              disabled={!allCols && cols <= 1}
+              onClick={run(() => (allCols ? controller.removeNoteBlock(block.id) : controller.removeNoteTableCol(block.id, colSpan[0], colSpan[1])))}
             />
             <CtxRule />
           </>
@@ -10268,14 +10343,10 @@ function SlashMenu({
               다시 그리지 않는다**(스펙 §7 + 제보): 친 글자는 본문에 그대로 있으므로
               머리에 적든 칩에 적든 같은 글자가 두 번 보인다. */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '9px 11px', borderBottom: '1px solid var(--mf-border-soft)' }}>
+            {/* 머리는 이름 하나다(제보) — 「블록 이름을 이어서 입력하세요」를 걷었다.
+                이어 치면 좁혀지는 것은 한 번 해 보면 알고, 그 줄이 있는 동안 머리가
+                두 줄처럼 보였다. 같은 안내는 단축키 도움말에 그대로 있다. */}
             <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>블록 넣기</span>
-            {/* 안내는 **본문에서 `/`로 열었을 때만**(요청 6) — 단추로 열었을 때의
-                「넣을 블록을 고르세요」는 목록이 바로 아래에 있어 같은 말을 두 번 한다. */}
-            {!query && inline && (
-              <span style={{ minWidth: 0, fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                블록 이름을 이어서 입력하세요
-              </span>
-            )}
           </div>
           <div ref={listRef} className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : SLASH_LIST_H, overflowY: 'auto' }}>
             {groups.map((g) =>

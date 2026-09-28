@@ -877,7 +877,14 @@ describe('공책 6판 — 페이지 메뉴와 표', () => {
     expect(menu.querySelector('[data-note-ctx="t-head"]')).toBeNull();
   });
 
-  it('마지막 한 행·한 열은 지우지 못한다', async () => {
+  /**
+   * **한 행·한 열짜리 표에서 그 행을 고르면 곧 표 전체다**(제보 2·3으로 바뀐 규칙).
+   *
+   * 예전에는 「행 삭제」가 흐려진 채 놓여 있었다 — 지울 수 없다는 뜻이었는데, 사용자
+   * 눈에는 고른 것을 지우는 자리가 막혀 있는 것으로만 보였다. 이제 이름도 하는 일도
+   * 「표 삭제」다(무엇이 사라지는지 누르기 전에 읽힌다).
+   */
+  it('한 행·한 열짜리 표는 그 레일에서 **표 삭제**가 된다', async () => {
     const one = {
       ...NOTE,
       pages: [{ ...NOTE.pages[0], blocks: [{ id: 'b4', kind: 'table', rows: [[[{ t: '하나', b: false, c: null }]]] }] }, NOTE.pages[1]],
@@ -888,11 +895,16 @@ describe('공책 6판 — 페이지 메뉴와 표', () => {
 
     fireEvent.contextMenu((await waitFor(() => container.querySelector('[data-note-table-rowhandle="0"]'))) as HTMLElement);
     let menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
-    expect((menu.querySelector('[data-note-ctx="row-del"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(menu.querySelector('[data-note-ctx="row-del"]')).toBeNull();
+    let del = menu.querySelector('[data-note-ctx="t-del"]') as HTMLButtonElement;
+    expect(del.textContent).toContain('표 삭제');
+    expect(del.disabled).toBe(false);
 
     fireEvent.contextMenu((await waitFor(() => container.querySelector('[data-note-table-colhandle="0"]'))) as HTMLElement);
     menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
-    expect((menu.querySelector('[data-note-ctx="col-del"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(menu.querySelector('[data-note-ctx="col-del"]')).toBeNull();
+    del = menu.querySelector('[data-note-ctx="t-del"]') as HTMLButtonElement;
+    expect(del.textContent).toContain('표 삭제');
   });
 });
 
@@ -1855,7 +1867,7 @@ describe('공책 16판 — 표 크기 조절 · 행열 삭제 · Enter로 닫기
     expect(picked(container)).toEqual([]);
   });
 
-  it('마지막 한 행·한 열은 메뉴에서도 지우지 못한다', async () => {
+  it('한 행짜리 표의 레일 메뉴는 **표를 지운다** — 그 행을 고른 것이 곧 전부다', async () => {
     const one = {
       ...NOTE,
       pages: [{ ...NOTE.pages[0], blocks: [{ id: 'b4', kind: 'table', rows: [[[{ t: '하나', b: false, c: null }]]] }] }, NOTE.pages[1]],
@@ -1866,8 +1878,10 @@ describe('공책 16판 — 표 크기 조절 · 행열 삭제 · Enter로 닫기
     fireEvent.click(handle);
     fireEvent.contextMenu(handle);
 
-    const del = (await waitFor(() => container.querySelector('[data-note-ctx="row-del"]'))) as HTMLButtonElement;
-    expect(del.disabled).toBe(true);
+    const del = (await waitFor(() => container.querySelector('[data-note-ctx="t-del"]'))) as HTMLButtonElement;
+    expect(del.disabled).toBe(false);
+    fireEvent.click(del);
+    await waitFor(() => expect(container.querySelector('[data-note-table-cell="0:0"]')).toBeNull());
   });
 
   it('칸 편집 중 Enter는 **편집을 닫고** 그 칸을 고른다(요청)', async () => {
@@ -9761,5 +9775,103 @@ describe('공책 84판 — 우측 「일정」 탭이 공책 안에서 연다(�
     await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeTruthy());
     expect(container.querySelector('[data-note-editor]')).toBeTruthy();
     expect(container.querySelector('[data-note-agenda]')).toBeTruthy();
+  });
+});
+
+/**
+ * **A묶음 — 문구·메뉴 손질**(제보 2·3·9·12).
+ *
+ * 셋 다 "누르기 전에 무엇이 일어날지 읽히는가"의 문제다: 전부를 골라 놓고 「행 3개
+ * 삭제」를 누르는 사람은 표가 통째로 사라질 것을 모르고, `/` 목록의 머리에 있던
+ * 안내는 한 번 해 보면 아는 말을 자리만 차지하며 되풀이했다.
+ */
+describe('공책 85판 — 표 전체 선택의 「표 삭제」 · `/` 목록(제보 2·3·9·12)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  /**
+   * 레일을 **끌어** 전부를 고르는 길은 jsdom에서 흉내 낼 수 없다 — 그 끌기는 표의
+   * 실제 좌표(`geomRef`)로 어느 행에 들어왔는지를 재는데 jsdom에는 그 값이 없다.
+   * 그래서 한 축이 **하나뿐인 표**로 같은 조건을 만든다: 그 축의 레일을 한 번 누르면
+   * 그것이 곧 전부다. 판단하는 값(`rowSpan`이 0..rows-1인가)은 어느 길로 왔든 같다.
+   */
+  const ROW1 = [{ id: 'tb', kind: 'table', rows: [[[{ t: 'a', b: false, c: null }], [{ t: 'b', b: false, c: null }]]] }];
+  const COL1 = [{ id: 'tb', kind: 'table', rows: [[[{ t: 'a', b: false, c: null }]], [[{ t: 'b', b: false, c: null }]]] }];
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const rail = (c: HTMLElement, axis: 'row' | 'col', i: number) =>
+    c.querySelector(`[data-note-table-${axis}handle="${i}"]`) as HTMLElement;
+  async function menuOn(c: HTMLElement, axis: 'row' | 'col', i: number): Promise<HTMLElement> {
+    fireEvent.contextMenu((await waitFor(() => rail(c, axis, i))) as HTMLElement);
+    return (await waitFor(() => c.querySelector('[data-note-table-menu]'))) as HTMLElement;
+  }
+
+  it('2·3 — 행이 하나뿐인 표에서 그 행을 고르면 「표 삭제」다', async () => {
+    const menu = await menuOn(await open('tm1', ROW1), 'row', 0);
+    expect(menu.querySelector('[data-note-ctx="row-del"]')).toBeNull();
+    expect((menu.querySelector('[data-note-ctx="t-del"]') as HTMLElement).textContent).toContain('표 삭제');
+  });
+
+  it('2·3 — 같은 표에서 **열 하나**만 고르면 예전 그대로 「열 삭제」다', async () => {
+    const menu = await menuOn(await open('tm2', ROW1), 'col', 0);
+    expect((menu.querySelector('[data-note-ctx="col-del"]') as HTMLElement).textContent).toContain('열 삭제');
+  });
+
+  it('2·3 — 열이 하나뿐인 표에서 그 열을 고르면 「표 삭제」이고, 누르면 표가 사라진다', async () => {
+    const c = await open('tm3', COL1);
+    const menu = await menuOn(c, 'col', 0);
+    expect(menu.querySelector('[data-note-ctx="col-del"]')).toBeNull();
+    fireEvent.click(menu.querySelector('[data-note-ctx="t-del"]')!);
+    await waitFor(() => expect(c.querySelector('[data-note-table-cell="0:0"]')).toBeNull());
+  });
+
+  it('2·3 — 같은 표에서 **행 하나**만 고르면 예전 그대로 「행 삭제」다', async () => {
+    const menu = await menuOn(await open('tm4', COL1), 'row', 0);
+    expect((menu.querySelector('[data-note-ctx="row-del"]') as HTMLElement).textContent).toContain('행 삭제');
+  });
+
+  it('12 — `/` 목록 머리에 안내 문구가 없다', async () => {
+    const c = await open('sl1', [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }]);
+    const el = c.querySelector('[data-note-line="b1"]') as HTMLElement;
+    el.focus();
+    fireEvent.keyDown(el, { key: '/' });
+
+    const pop = (await waitFor(() => document.querySelector('[data-note-slash]'))) as HTMLElement;
+    expect(pop.textContent).toContain('블록 넣기');
+    expect(pop.textContent).not.toContain('블록 이름을 이어서 입력하세요');
+  });
+
+  it('9 — `/` 목록에 「링크」가 있다 — 「문서 링크」와 **따로** 선다', async () => {
+    const c = await open('sl2', [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }]);
+    const el = c.querySelector('[data-note-line="b1"]') as HTMLElement;
+    el.focus();
+    fireEvent.keyDown(el, { key: '/' });
+
+    const pop = (await waitFor(() => document.querySelector('[data-note-slash]'))) as HTMLElement;
+    const names = [...pop.querySelectorAll('[data-note-slash-item]')].map((b) => b.getAttribute('data-note-slash-item'));
+    expect(names).toContain('link-inline');
+    expect(names).toContain('link');
+  });
+
+  it('9 — 「링크」를 고르면 **툴바의 링크 판**이 열린다(새 판을 만들지 않는다)', async () => {
+    const c = await open('sl3', [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }]);
+    const el = c.querySelector('[data-note-line="b1"]') as HTMLElement;
+    el.focus();
+    fireEvent.keyDown(el, { key: '/' });
+    const pop = (await waitFor(() => document.querySelector('[data-note-slash]'))) as HTMLElement;
+
+    fireEvent.click(pop.querySelector('[data-note-slash-item="link-inline"]')!);
+
+    await waitFor(() => expect(document.querySelector('[data-note-link-pop]')).toBeTruthy());
   });
 });
