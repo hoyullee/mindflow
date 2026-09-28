@@ -9687,6 +9687,44 @@ describe('공책 83판 — 글 끝의 Shift+Enter(제보 4)', () => {
     expect(sel?.focusNode?.nodeValue).toBe('줄글');
     expect(sel?.focusOffset).toBe(0);
   });
+
+  /**
+   * **코드 블록의 Enter도 같은 자리에 선다**(제보) — 그 Enter는 새 블록이 아니라
+   * 블록 **안**의 줄바꿈이라(`enterOrBreak`) 문단의 Shift+Enter와 **같은 `softBreak`을**
+   * 지난다. 다만 그려 놓은 모양이 다르다: 문단은 `한줄글<br><br>`처럼 자식이 셋인데,
+   * 코드는 `codeHtml`이 문법 조각마다 스팬을 세워 **자식이 일곱**이고 보초 `<br>`은
+   * 그 마지막 둘이다. 자리를 자식 **인덱스**로 잡으므로(`childNodes.length - 1`)
+   * 그 수가 달라져도 같은 자리를 가리켜야 한다.
+   *
+   * 값 좌표로 닿을 수 없는 것도 똑같다 — `lineText`가 끝의 줄바꿈 하나를 걷어,
+   * 「11 + 1 = 12」가 첫 행의 끝으로 되돌아온다(`textSpotIn`이 요소 경계를 앞의 텍스트
+   * 노드로 당긴다). 그래서 이 블록에서도 우리가 직접 놓는 그 처방이 살아 있어야 한다.
+   *
+   * 실브라우저(xvfb 크로뮴 + `vite preview`)로 확인한 것: 이 자리에서 `two`를 치면
+   * DOM이 `…<span class="mf-code-nu">1</span><br>two`가 되고 그 글자의 사각형이 첫
+   * 행보다 **한 줄 높이(21.875px) 아래**, 블록의 왼쪽 끝에 선다(블록 높이도 21.875 →
+   * 43.75로 한 행 늘어난다). **`textContent`로 재면 `const a = 1two`가 나오는데 그것은
+   * 앱이 아니라 자의 문제다** — `textContent`는 `<br>`을 읽지 않는다
+   * (`docs/probe-pitfalls.md` F16).
+   */
+  it('4 — **코드 블록**의 Enter도 보초 `<br>` 사이에 선다(조각 스팬이 여럿이어도)', async () => {
+    const c = await open('sb3', [{ id: 'c1', kind: 'code', runs: [{ t: 'const a = 1', b: false, c: null }] }]);
+    const el = line(c, 'c1');
+    el.focus();
+    setLinearSelection(el, 11, 11);
+    fireEvent.keyDown(el, { key: 'Enter' });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // 문법 색칠이 조각마다 스팬을 세운다 — 보초 `<br>`은 그 뒤의 **마지막 둘**이다.
+    expect(el.innerHTML).toBe('<span class="mf-code-kw">const</span> a <span class="mf-code-op">=</span> <span class="mf-code-nu">1</span><br><br>');
+    expect(el.childNodes.length).toBe(7);
+    const sel = window.getSelection();
+    // 값 좌표로는 닿을 수 없는 자리다 — 줄 상자의 **자식 경계**(두 보초 사이)에 선다.
+    expect(sel?.focusNode).toBe(el);
+    expect(sel?.focusOffset).toBe(el.childNodes.length - 1);
+  });
 });
 
 /**
