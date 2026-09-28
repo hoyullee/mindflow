@@ -9,7 +9,7 @@ import { ReorderToggle } from './LnbReorder';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
 import { CalendarNavSection } from './CalendarNavSection';
-import { LnbListSection } from './LnbSection';
+import { LNB_LIST_CAP, LnbListSection } from './LnbSection';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -119,7 +119,8 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         />
       )}
       <aside
-        className={isMobile ? 'mf-drawer' : undefined}
+        // `lnb-scroll` — 넘치는 LNB를 **통째로** 굴린다(제보: 일정을 펴면 스페이스로 못 간다).
+        className={isMobile ? 'mf-drawer lnb-scroll' : 'lnb-scroll'}
         // LNB 우클릭: 메뉴가 있는 건 **스페이스 행 하나**뿐이고(그 행이 직접 처리하고
         // 전파를 끊는다), 나머지(즐겨찾기·휴지통·공유받음·피드백)에는 항목 단위
         // 동작이 없다. 그래서 여기서는 브라우저 기본 메뉴만 막는다 — 본문(`main`)이
@@ -140,7 +141,26 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           display: 'flex',
           flexDirection: 'column',
           padding: '14px 12px 12px',
-          overflow: 'hidden',
+          /**
+           * **LNB가 넘치면 LNB가 굴러간다**(제보: 모바일에서 일정을 펴면 스페이스로 갈 수 없다).
+           *
+           * 예전에는 `overflow: hidden`이라 이 판은 **한 번도 굴러가지 않았고**, 넘치는
+           * 만큼은 아래에서 잘려 나갔다. 화면이 짧은 폰에서 「일정」 하위 메뉴(보여 줄
+           * 캘린더)가 펴지면 그 한 블록이 200px 넘게 자라는데, 고정 블록들 사이에서
+           * 줄어들 수 있는 것은 스페이스 목록 하나뿐이라 그것이 **0까지 눌려** 사라졌다
+           * (실측: 412×700에서 6개짜리 목록이 이미 264→130으로 눌려 있었다). 목록이
+           * 사라졌으니 그 안에서 굴릴 것도 없고, 바깥은 `hidden`이라 손댈 수 없었다 —
+           * 제보의 "스크롤이 안 돼서 스페이스로 이동을 못해"가 그 자리다.
+           *
+           * 고친 뒤에는 두 겹이 각자 제 일만 한다: **구획 안의 목록**은 예전처럼 제
+           * 상한(`LNB_LIST_CAP`)에서 스스로 굴러가고, 그렇게 묶어 놔도 **합이 화면을
+           * 넘으면** 이 판이 굴러간다. 넘치지 않으면 예전과 똑같이 보인다(피드백 줄은
+           * `marginTop: auto`라 그때만 바닥에 붙고, 넘칠 때는 자연히 이어진다).
+           */
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          // 서랍을 끝까지 굴린 뒤의 스크롤이 **뒤 화면으로 이어지지 않게** 한다.
+          overscrollBehavior: 'contain',
         }}
       >
         <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
@@ -172,8 +192,13 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
 
       {/* 목록 높이는 **내용이 정한다** — 예전에는 `minHeight: 60`이라 스페이스가
           하나일 때(행 ~40px) 남는 20px이 '새 스페이스'와의 빈칸으로 보였다(제보:
-          둘일 때보다 간격이 넓다). 넘칠 때 스크롤되는 것은 그대로다. */}
-      <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
+          둘일 때보다 간격이 넓다).
+          **눌려서 사라지지는 않는다**(제보: 일정을 펴면 스페이스로 못 간다) — 예전에는
+          이 목록이 판 안에서 **유일하게 줄어들 수 있는** 자리라, 위 블록이 자라면 그
+          몫을 혼자 뒤집어쓰고 0까지 눌렸다. 이제 즐겨찾기·공유받음·휴지통과 **같은
+          상한**(`LNB_LIST_CAP`)에서 스스로 굴러가고, 그래도 합이 화면을 넘으면 바깥
+          판이 굴러간다(위 `aside`의 머리말). */}
+      <div className="lnb-scroll" style={{ flexShrink: 0, maxHeight: LNB_LIST_CAP, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
         {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
             of the seed spaces — otherwise the default 일반 스페이스 flashes before the
             user's real space list arrives (matches the map grid's skeleton). */}
