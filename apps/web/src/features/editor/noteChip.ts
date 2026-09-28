@@ -252,3 +252,42 @@ export function applyHolidayMarks(root: ParentNode, holidays: Record<string, { d
     else chip.removeAttribute('data-holiday');
   }
 }
+
+/**
+ * **줄 머리의 칩 앞에 선 캐럿**의 그릴 자리 — 없으면 `null`(뷰포트 좌표다).
+ *
+ * 줄이 칩으로 시작하면 그 **앞에는 글자 노드가 없다**. 그래서 0번 자리의 캐럿은
+ * 줄 상자 자체(`(el, 0)`)에 서고, 크로뮴은 그 자리를 그리지 못해 **칩 오른쪽**에
+ * 있는 것처럼 보인다(제보: Home을 눌러도 칩 왼쪽으로 가지 않는다). 값은 멀쩡하다 —
+ * 실측으로 그 자리에서 친 글자는 칩 **앞**에 들어간다. 틀린 것은 그림뿐이다.
+ *
+ * 그래서 인라인 코드 경계와 같은 길을 쓴다(`codeEdgeCaret`): 우리가 자리를 재어
+ * 막대를 세우고 그 동안만 기본 캐럿을 감춘다. 가로는 **칩의 왼쪽 끝**, 세로는 그
+ * 줄의 **글자 높이**다 — 칩은 알약이라 글자보다 크고, 그 높이로 그리면 캐럿이
+ * 아니라 선택처럼 보인다.
+ */
+export function headChipCaret(el: HTMLElement): { left: number; top: number; height: number } | null {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+  const sel = window.getSelection();
+  if (!sel || !sel.isCollapsed || sel.focusNode !== el || sel.focusOffset !== 0) return null;
+  const chip = el.firstChild as HTMLElement | null;
+  if (!chip || chip.nodeType !== 1 || chip.getAttribute?.('contenteditable') !== 'false') return null;
+  const box = chip.getBoundingClientRect?.();
+  if (!box || box.height <= 0) return null;
+  // 세로는 칩 **뒤**의 첫 글자에서 잰다 — 그 줄의 글자가 실제로 차지하는 높이다.
+  const after = outerTextSpot(chip, 1);
+  let line: DOMRect | null = null;
+  if (after) {
+    try {
+      const range = document.createRange();
+      range.setStart(after.node, after.offset);
+      range.collapse(true);
+      line = range.getBoundingClientRect();
+    } catch {
+      line = null;
+    }
+  }
+  const height = line && line.height > 0 ? line.height : box.height;
+  const top = line && line.height > 0 ? line.top : box.top + (box.height - height) / 2;
+  return { left: box.left, top, height };
+}

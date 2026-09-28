@@ -901,6 +901,15 @@ export function pasteNoteBlocks(
         chars: [...head, ...plainChars(keep)],
       } as Out;
     }
+    /**
+     * **목록 안에 붙여넣으면 이어지는 줄도 그 목록이다**(제보 5).
+     *
+     * 예전에는 표식이 없는 줄이 곧바로 문단이 되어, 두 줄짜리 글을 항목 하나에
+     * 붙여넣으면 둘째 줄이 **목록 밖 맨 왼쪽**으로 떨어졌다(제보의 그림이 그것이다).
+     * 붙여넣는 자리가 목록이면 그 종류·깊이를 물려받아 **형제 항목**이 된다 —
+     * 제 표식을 달고 온 줄은 그대로 제 종류를 쓴다.
+     */
+    if (!ln.kind && listed) return { kind: src.kind as 'ul' | 'ol' | 'ck', indent: itemDepth(items[j] as NoteListItem), chars: plainChars(ln.text) };
     return { kind: ln.kind, indent: ln.indent, done: ln.done, start: ln.start, chars: plainChars(ln.text) };
   });
   const lastOut = out[out.length - 1] as Out;

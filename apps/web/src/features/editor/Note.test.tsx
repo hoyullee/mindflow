@@ -9627,3 +9627,101 @@ describe('공책 82판 — 코드 경계의 불은 「다음 글자」를 말한
     await waitFor(() => expect(lamp(c)).toBe('false'));
   });
 });
+
+/**
+ * **글 끝에서 Shift+Enter를 눌러도 커서가 새 행으로 간다**(제보 4).
+ *
+ * 값이 `한줄글\n`이면 DOM은 `한줄글<br><br>`인데, 자리를 재는 자(`lineText`)는 끝의
+ * 줄바꿈 하나를 세지 않아 **그 빈 행을 가리킬 값 좌표가 없다**. 캐럿이 첫 행에 남고
+ * 이어 친 글자가 줄바꿈 앞에 들어갔다 — 아래 줄은 생겼는데 글은 위에 붙는다.
+ */
+describe('공책 83판 — 글 끝의 Shift+Enter(제보 4)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const line = (c: HTMLElement, key = 'b1') => c.querySelector(`[data-note-line="${key}"]`) as HTMLElement;
+
+  it('4 — 글 끝에서 바꾸면 캐럿이 **보초 `<br>` 사이**에 선다', async () => {
+    const c = await open('sb1', [{ id: 'b1', kind: 'p', runs: [{ t: '한줄글', b: false, c: null }] }]);
+    const el = line(c);
+    el.focus();
+    setLinearSelection(el, 3, 3);
+    fireEvent.keyDown(el, { key: 'Enter', shiftKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    expect(el.innerHTML).toBe('한줄글<br><br>');
+    const sel = window.getSelection();
+    // 값 좌표로는 닿을 수 없는 자리다 — 줄 상자의 **자식 경계**에 선다.
+    expect(sel?.focusNode).toBe(el);
+    expect(sel?.focusOffset).toBe(el.childNodes.length - 1);
+  });
+
+  it('4 — 글 **가운데**에서 바꾸면 예전 그대로 값 좌표로 간다', async () => {
+    const c = await open('sb2', [{ id: 'b1', kind: 'p', runs: [{ t: '한줄글', b: false, c: null }] }]);
+    const el = line(c);
+    el.focus();
+    setLinearSelection(el, 1, 1);
+    fireEvent.keyDown(el, { key: 'Enter', shiftKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    expect(el.innerHTML).toBe('한<br>줄글');
+    const sel = window.getSelection();
+    // 줄바꿈 **뒤**의 글자 노드 머리다 — 값 좌표 2가 가리키는 그 자리.
+    expect(sel?.focusNode).toBe(el.lastChild);
+    expect(sel?.focusNode?.nodeValue).toBe('줄글');
+    expect(sel?.focusOffset).toBe(0);
+  });
+});
+
+/**
+ * **우측 「일정」 탭의 일정을 공책 안에서 연다**(제보 1).
+ *
+ * 예전에는 일정 화면으로 건너뛰었다(`focusCalendar` + `navigate('/home')`) — 글을 읽다
+ * 일정 하나를 확인하려고 문서를 떠나야 했다. 날짜 칩 팝오버를 위해 만든 그 팝업
+ * (`NoteEventPopups`)을 이쪽에도 붙인다. 어느 상세를 여는가는 **한 자리**가 정한다
+ * (`noteEventOpenOf`) — 두 벌이 되는 순간 한쪽만 고쳐진다.
+ */
+describe('공책 84판 — 우측 「일정」 탭이 공책 안에서 연다(제보 1)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const tab = (c: HTMLElement, name: string): HTMLElement =>
+    [...c.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.trim() === name)!;
+
+  it('「이 날짜에 일정 추가」가 **공책 안에** 새 일정 창을 연다 — 화면을 떠나지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_ev1', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ev1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+
+    fireEvent.click(tab(container, '일정'));
+    const add = (await waitFor(() => document.querySelector('[data-note-agenda] [data-cal-day-new]'))) as HTMLElement;
+    fireEvent.click(add);
+
+    // 새 일정 창이 떴고 — 에디터는 그 자리에 그대로다(화면을 떠나지 않았다).
+    await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeTruthy());
+    expect(container.querySelector('[data-note-editor]')).toBeTruthy();
+    expect(container.querySelector('[data-note-agenda]')).toBeTruthy();
+  });
+});

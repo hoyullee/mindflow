@@ -152,9 +152,30 @@ export function codeEdgeStep(el: HTMLElement, dir: -1 | 1): 'in' | 'out' | 'leav
   }
   // 밖에서 껍질의 경계에 닿아 있다 — 한 걸음은 **안으로**.
   const enter = spans.find((s) => (dir === 1 ? s.start === at : s.end === at));
-  if (!enter) return null;
-  const spot = insideSpot(enter, at);
-  return spot && put(spot) ? 'in' : null;
+  if (enter) {
+    const spot = insideSpot(enter, at);
+    return spot && put(spot) ? 'in' : null;
+  }
+  /**
+   * **오른쪽에서 끝 경계로 들어오는 한 걸음은 바깥에 선다**(제보 3, 스펙 고침).
+   *
+   * 코드의 **머리**는 왼쪽에서 다가가면 크로뮴이 알아서 바깥에 세운다(경계를 위쪽
+   * 자리로 접기 때문이다 — 머리말의 표). **끝**은 그 접기가 반대로 작동해 안쪽에
+   * 세우므로, 한 걸음에 상자 **안으로 들어가 버렸다**: `안녕`코드`안X녕`에서 ←를
+   * 한 번 눌렀는데 코드 불이 켜졌다.
+   *
+   * 그래서 이쪽만 우리가 세운다. 그러면 두 방향이 같은 모양이 된다 — 바깥 정거장에
+   * 한 번, 다음 걸음에 안쪽으로. 왕복도 맞는다(→2 뒤의 ←2가 제자리로 돌아온다):
+   * 이 걸음이 없으면 돌아오는 길이 한 정거장 짧아 한 글자를 더 들어갔다(제보 3-3).
+   */
+  if (dir === -1) {
+    const tail = spans.find((s) => s.end === at - 1);
+    if (tail) {
+      const spot = outerTextSpot(tail.node, 1);
+      if (spot) return put(spot) ? 'out' : null;
+    }
+  }
+  return null;
 }
 
 /** 코드 경계에 선 캐럿의 **그릴 자리** — 뷰포트 좌표다(`position: fixed`). */

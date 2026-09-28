@@ -52,7 +52,7 @@ import { NoteDatePop } from './NoteDatePop';
 import { NoteEventPopups, type NoteEventOpen } from './NoteEventPopups';
 import { NoteProfileCard, seedNoteComment } from './NoteProfileCard';
 import type { ShareParticipant } from '../../../adapters/ports';
-import { CHIP_SELECTOR, applyHolidayMarks, caretText, chipAtCaret, outerTextSpot } from '../noteChip';
+import { CHIP_SELECTOR, applyHolidayMarks, caretText, chipAtCaret, headChipCaret, outerTextSpot } from '../noteChip';
 import { NOTE_CM_OPEN_EVENT, canCommentOn, commentSpans, newThreadId, noteCommentSites, openNoteComment, overlapsComment, threadIdOfNode } from '../noteComment';
 import { SCHED_KINDS, useNoteAgenda } from '../noteAgenda';
 import { toastShellStyle } from '../../../pwa/toastShell';
@@ -545,7 +545,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    * 하나로 접어 그려서, 상자 안에 서 있어도 밖에 서 있는 것처럼 보였다.
    * 자리를 재는 규칙은 `codeEdgeCaret`에 있다.
    */
-  const [codeCaret, setCodeCaret] = useState<(CodeCaretSpot & { key: string; inside: boolean }) | null>(null);
+  const [codeCaret, setCodeCaret] = useState<(CodeCaretSpot & { key: string; ink: 'code' | 'text' }) | null>(null);
   const openSlashAt = (lineKey: string, from?: Element | number | null, tail = '') => {
     const at = typeof from === 'number' ? from : null;
     const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
@@ -1199,12 +1199,19 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
        * 거짓말을 한다 — 캐럿을 코드 머리 안쪽에 심어 놓고 쳐 보면 크로뮴은 그 글자를
        * 코드 **밖**에 넣는다(실측).
        */
-      const want = !composing && key && live?.getAttribute('contenteditable') === 'true' ? codeEdgeMark(live, armedMarksOverlay(live).k) : null;
-      const spot = want !== null && live ? codeEdgeCaret(live, want) : null;
+      const on = !composing && key && live?.getAttribute('contenteditable') === 'true' ? live : null;
+      const want = on ? codeEdgeMark(on, armedMarksOverlay(on).k) : null;
+      /**
+       * 두 자리에 세운다 — 코드 경계와 **줄 머리의 칩 앞**(제보 2). 둘 다 크로뮴이
+       * 그리지 못하는 자리이고, 값은 이미 맞다. 코드 쪽만 잉크가 다르다(안쪽이면
+       * 코드 색으로 「다음 글자가 코드」를 알린다).
+       */
+      const spot = want !== null && on ? codeEdgeCaret(on, want) : on ? headChipCaret(on) : null;
+      const ink: 'code' | 'text' = want === true ? 'code' : 'text';
       setCodeCaret((cur) => {
         if (!spot) return cur === null ? cur : null;
-        if (cur && cur.key === key && cur.inside === want && cur.left === spot.left && cur.top === spot.top && cur.height === spot.height) return cur;
-        return { ...spot, key, inside: want === true };
+        if (cur && cur.key === key && cur.ink === ink && cur.left === spot.left && cur.top === spot.top && cur.height === spot.height) return cur;
+        return { ...spot, key, ink };
       });
     };
     /**
@@ -3165,9 +3172,9 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 // **자리가 바뀌면 다시 태어난다** — 깜빡임이 처음(켜짐)부터 시작하게.
                 // 기본 캐럿도 움직인 직후에는 늘 켜져 있다; 남은 주기를 이어받으면
                 // 방금 옮긴 캐럿이 꺼진 채로 보일 수 있다(실측으로 한 번 그랬다).
-                key={`${codeCaret.key}:${codeCaret.inside ? 'in' : 'out'}:${Math.round(codeCaret.left)}:${Math.round(codeCaret.top)}`}
+                key={`${codeCaret.key}:${codeCaret.ink}:${Math.round(codeCaret.left)}:${Math.round(codeCaret.top)}`}
                 aria-hidden
-                data-note-code-caret={codeCaret.inside ? 'in' : 'out'}
+                data-note-code-caret={codeCaret.ink === 'code' ? 'in' : 'out'}
                 style={{
                   position: 'fixed',
                   left: codeCaret.left,
@@ -3175,7 +3182,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   height: codeCaret.height,
                   width: 2,
                   borderRadius: 1,
-                  background: codeCaret.inside ? '#c44b40' : 'var(--mf-text)',
+                  background: codeCaret.ink === 'code' ? '#c44b40' : 'var(--mf-text)',
                   pointerEvents: 'none',
                   zIndex: 30,
                 }}
@@ -6189,6 +6196,35 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
     const runs = charsToRuns(chars).filter((r) => r.t);
     el.innerHTML = block.kind === 'code' ? codeHtml(text) : runsToHtml({ text, rich: runs }) + (text.endsWith('\n') ? '<br>' : '');
     controller.setNoteBlockRuns(block.id, runs);
+    /**
+     * **글 끝에서 바꾼 줄은 값 좌표로 닿을 수 없다**(제보 4: 아래 줄은 생기는데
+     * 커서가 따라가지 않는다).
+     *
+     * 값이 `한줄글\n`이면 DOM은 `한줄글<br><br>`인데, 자리를 재는 자(`lineText`)는
+     * **끝의 줄바꿈 하나를 세지 않는다** — 그래서 길이가 3이고 「3번째 글자」는
+     * `글` 뒤, 즉 **첫 행의 끝**이다. 새로 생긴 빈 행을 가리킬 수가 없다. 캐럿은
+     * 첫 행에 남고, 이어 친 글자가 줄바꿈 **앞**에 들어갔다(실측으로 그랬다).
+     *
+     * 그 자리는 보초 `<br>` 둘 **사이**다 — 요소 경계라 값 좌표에는 없지만 캐럿은
+     * 설 수 있다(실측: 거기서 친 글자가 둘째 행에 들어간다). 그래서 끝에서 바꿀
+     * 때만 우리가 직접 놓는다.
+     */
+    const kids = el.childNodes;
+    const last = kids.length - 1;
+    if (spot === chars.length - 1 && last >= 0 && kids[last]?.nodeName === 'BR') {
+      try {
+        el.focus({ preventScroll: true });
+        const range = document.createRange();
+        range.setStart(el, last);
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        return true;
+      } catch {
+        /* 못 놓으면 아래의 평소 길로 */
+      }
+    }
     caretToLine(block.id, spot + 1);
     return true;
   };
