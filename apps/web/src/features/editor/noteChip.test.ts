@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyHolidayMarks, chipAtCaret, chipRange, extendOverChips, moveOverChips } from './noteChip';
+import { applyHolidayMarks, chipAtCaret, chipRange, extendOverChips, headChipCaret, moveOverChips } from './noteChip';
 import { runsToHtml, setLinearSelection } from './richtextDom';
 import { noteMarksIn } from './noteRichDom';
 import { charOffset } from './noteTextSelect';
@@ -297,5 +297,120 @@ describe('칩을 넘어 행 머리로 캐럿 옮기기(제보 3·4)', () => {
     const sel = window.getSelection()!;
     stubModify(el, sel, outside(el));
     expect(moveOverChips(el, sel, -1)).toBe(false);
+  });
+});
+
+/**
+ * **줄 머리의 칩 앞에 선 캐럿을 우리가 그린다**(제보 2).
+ *
+ * 줄이 칩으로 시작하면 그 앞에는 글자 노드가 없어 0번 자리의 캐럿이 **줄 상자**에
+ * 선다(`(el, 0)`). 값은 멀쩡한데(실측: 그 자리에서 친 글자는 칩 앞으로 들어간다)
+ * 크로뮴이 그 자리를 그리지 못해 칩 오른쪽에 있는 것처럼 보였다 — Home을 눌러도
+ * 칩 왼쪽으로 가지 않는다는 제보가 그것이다.
+ *
+ * jsdom에는 레이아웃이 없으므로(사각형이 전부 0이고 `Range`에는 그 메서드가 아예
+ * 없다 — `probe-pitfalls` F30) 여기서 재는 것은 **언제 그리고 언제 그리지 않는가**와
+ * **어느 자리를 재는가**이다. 픽셀은 실브라우저 프로브가 본다.
+ */
+describe('줄 머리 칩 앞의 캐럿(제보 2)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function chipHead(): HTMLElement {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.innerHTML = runsToHtml({ text: '', rich: [CHIP('2026-09-30', '2026-09-30'), TEXT(' 뒤에 오는 글')] });
+    document.body.appendChild(el);
+    return el;
+  }
+  /** 캐럿을 **줄 상자 자체**에 놓는다 — 칩 앞에는 글자 노드가 없어 그리로 간다. */
+  function putAtBox(el: HTMLElement, offset: number): void {
+    const range = document.createRange();
+    range.setStart(el, offset);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+  /** 레이아웃이 없는 환경에 상자를 꽂아 준다 — 칩과 그 뒤 글자의 자리. */
+  function withRects(chip: Element, run: (seen: Node[]) => void): void {
+    const seen: Node[] = [];
+    const realEl = Element.prototype.getBoundingClientRect;
+    const realRange = Range.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function stub(this: Element) {
+      return (this === chip ? { left: 100, top: 40, height: 22, width: 90 } : { left: 0, top: 0, height: 0, width: 0 }) as DOMRect;
+    };
+    Range.prototype.getBoundingClientRect = function stub(this: Range) {
+      seen.push(this.startContainer);
+      return { left: 195, top: 43, height: 16, width: 0 } as DOMRect;
+    };
+    try {
+      run(seen);
+    } finally {
+      Element.prototype.getBoundingClientRect = realEl;
+      if (realRange) Range.prototype.getBoundingClientRect = realRange;
+      else delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
+    }
+  }
+
+  it('가로는 **칩의 왼쪽 끝**, 세로는 그 줄의 **글자 높이**다', () => {
+    const el = chipHead();
+    const chip = el.firstChild as HTMLElement;
+    putAtBox(el, 0);
+    withRects(chip, (seen) => {
+      // 칩 높이(22)가 아니라 글자 높이(16)로 그린다 — 알약 높이면 선택처럼 보인다.
+      expect(headChipCaret(el)).toEqual({ left: 100, top: 43, height: 16 });
+      // 높이는 칩 **뒤**의 첫 글자에서 잰다.
+      expect(seen.at(-1)).toBe(el.lastChild);
+    });
+  });
+
+  it('줄 머리가 아니면 그리지 않는다 — 그 자리는 브라우저의 것이다', () => {
+    const el = chipHead();
+    const chip = el.firstChild as HTMLElement;
+    putAtBox(el, 1); // 칩 **뒤**의 상자 자리
+    withRects(chip, () => expect(headChipCaret(el)).toBeNull());
+  });
+
+  it('칩으로 시작하지 않는 줄에서는 그리지 않는다', () => {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.innerHTML = runsToHtml({ text: '', rich: [TEXT('보통 줄')] });
+    document.body.appendChild(el);
+    putAtBox(el, 0);
+    withRects(el, () => expect(headChipCaret(el)).toBeNull());
+  });
+
+  /**
+   * 한 덩어리 칩이 아닌 요소 — 굵게·기울임 같은 **서식 껍질**. 그 안에는 글자 노드가
+   * 있어 크로뮴이 캐럿을 제대로 그린다. 우리가 끼어들어 기본 캐럿을 감추면 오히려
+   * 캐럿이 사라진다.
+   */
+  it('머리가 **칩이 아닌 요소**면 그리지 않는다(굵게 껍질 등)', () => {
+    const el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.innerHTML = '<b>굵게</b>뒤';
+    document.body.appendChild(el);
+    putAtBox(el, 0);
+    withRects(el.firstChild as Element, () => expect(headChipCaret(el)).toBeNull());
+  });
+
+  it('캐럿이 **글자 노드 안**이면 그리지 않는다 — 크로뮴이 제대로 그린다', () => {
+    const el = chipHead();
+    const chip = el.firstChild as HTMLElement;
+    const range = document.createRange();
+    range.setStart(el.lastChild as Text, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    withRects(chip, () => expect(headChipCaret(el)).toBeNull());
+  });
+
+  it('**못 재면 그리지 않는다** — 자리 없이 기본 캐럿까지 감추면 캐럿이 사라진다', () => {
+    const el = chipHead();
+    putAtBox(el, 0);
+    expect(headChipCaret(el)).toBeNull(); // jsdom의 사각형은 전부 0이다
   });
 });

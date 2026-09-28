@@ -46,6 +46,23 @@ export type NoteEventOpen =
    */
   | { kind: 'card'; entry: CalendarEntry; at: string };
 
+/**
+ * 달력 줄 하나를 **공책에서 열 것**으로 옮긴다 — 칩 팝오버와 우측 「일정」 탭이 함께 쓴다.
+ *
+ * 두 자리에 같은 판단이 있으면 한쪽만 고쳐진다(실제로 우측 탭은 이 팝업이 생기기 전에
+ * 만들어져 **일정 화면으로 건너뛰고 있었다** — 제보 1). 규칙은 하나다:
+ * 구글이면 구글 상세, 그리오 일정이면 그리오 상세(반복은 `id#회차`를 갈라 넘긴다),
+ * 그 밖(칸반 카드의 마감)은 읽기 전용 미니 카드.
+ */
+export function noteEventOpenOf(e: CalendarEntry, at: string): NoteEventOpen {
+  if (e.google) return { kind: 'google', id: e.cardId, at };
+  if (e.event) {
+    const [id, occ] = e.cardId.split('#');
+    return { kind: 'geurio', id: id ?? e.cardId, ...(occ ? { occ } : {}), at };
+  }
+  return { kind: 'card', entry: e, at };
+}
+
 export function NoteEventPopups({ open, isMobile, theme, onClose }: { open: NoteEventOpen | null; isMobile: boolean; theme: Theme; onClose: () => void }) {
   const at = open ? partsOf(open.at) : null;
   const agenda = useNoteAgenda(at?.y ?? 2026, at?.m ?? 1, !!open);

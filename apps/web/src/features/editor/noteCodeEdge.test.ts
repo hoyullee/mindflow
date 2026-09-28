@@ -149,6 +149,53 @@ describe('정거장은 안/밖을 말한다', () => {
  * (`codeEdgeMark`)와 **그 약속의 자리를 재는가**(`codeEdgeCaret` — 캐럿이 선 노드가
  * 아니라). 픽셀은 실브라우저 프로브가 본다.
  */
+/**
+ * 제보 3 — **오른쪽에서 끝 경계로 들어오는 한 걸음**은 상자 밖에 서야 한다.
+ *
+ * 머리 쪽은 크로뮴이 알아서 바깥에 세우는데(경계를 위쪽 자리로 접기 때문이다) 끝 쪽은
+ * 그 접기가 반대로 작동해 **한 걸음에 안으로 들어가 버렸다**. 그래서 왕복도 어긋났다:
+ * →2로 나갔다가 ←2로 돌아오면 한 글자를 더 들어갔다.
+ */
+describe('끝 경계로 들어오는 한 걸음(제보 3)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('코드 **뒤의 글자**에서 ← 는 코드 **밖**에 선다(안이 아니라)', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    const after = el.lastChild as Text;
+    put(after, 1); // `뒷X글` — 코드 끝에서 한 글자 뒤
+    expect(codeEdgeStep(el, -1)).toBe('out');
+    expect(where(el)).toEqual({ at: 4, code: false });
+  });
+
+  it('그 다음 ← 가 **안으로** 들어간다 — 정거장 둘이 한 쌍이다', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(el.lastChild as Text, 1);
+    codeEdgeStep(el, -1);
+    expect(codeEdgeStep(el, -1)).toBe('in');
+    expect(where(el)).toEqual({ at: 4, code: true });
+  });
+
+  it('→2 로 나갔다 ←2 로 돌아오면 **제자리**다(제보 3-3)', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    const inside = codeText(el);
+    put(inside, 2); // 코드 안의 끝
+    expect(codeEdgeStep(el, 1)).toBe('out'); // →1 — 상자 밖
+    expect(codeEdgeStep(el, 1)).toBeNull(); // →2 — 다음 글자는 브라우저의 것
+    put(el.lastChild as Text, 1); // 브라우저가 옮겼을 자리
+    expect(codeEdgeStep(el, -1)).toBe('out'); // ←1 — 다시 상자 밖
+    expect(codeEdgeStep(el, -1)).toBe('in'); // ←2 — 떠난 그 자리
+    expect(where(el)).toEqual({ at: 4, code: true });
+  });
+
+  it('코드가 줄의 **끝**이면 그 걸음은 없다 — 밖에 설 자리가 없다', () => {
+    const el = line([TEXT('앞'), CODE('코드')]);
+    put(el.firstChild as Text, 0);
+    expect(codeEdgeStep(el, -1)).toBeNull();
+  });
+});
+
 describe('코드 경계에 그리는 캐럿', () => {
   beforeEach(() => {
     document.body.innerHTML = '';

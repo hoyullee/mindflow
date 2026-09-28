@@ -11,19 +11,21 @@
 // 옮기려면 홈의 상태 묶음을 걷어내야 해서, 여기서는 **이 기기의 마지막 선택을 기억**하는
 // 것으로 근사한다 — 공책을 닫았다 열어도, 탭을 접었다 펴도 보던 날이 그대로다.
 //
-// ## 일정을 누르면
+// ## 일정을 누르면 — **공책 안에서 연다**(제보)
 //
-// 상세 팝업은 원천마다 다르고(그리오·구글) 저장·삭제·회의실까지 달고 있어 이 라우트에
-// 그대로 세울 수 없다. 대신 **일정 화면을 그 일정에 맞춰 연다**(`focusCalendar`) — 알림
-// 토스트가 쓰는 그 길이라 새로 만든 것이 없다.
+// 예전에는 일정 화면으로 건너뛰었다(`focusCalendar` + `navigate`). 그때는 상세 팝업을
+// 이 라우트에 세울 길이 없다고 적어 두었는데, 그 뒤 날짜 칩 팝오버를 위해 **그 길이
+// 생겼다**(`NoteEventPopups` — 일정 화면의 부품을 그대로 띄운다). 이쪽만 옛 길에
+// 남아 있어서, 글을 읽다 일정 하나를 확인하려 하면 문서를 떠났다.
+//
+// 어느 상세를 여는가는 칩 팝오버와 **같은 한 자리**가 정한다(`noteEventOpenOf`).
 
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { CalendarSide } from '../../home/calendar/CalendarSide';
 import type { CalendarEntry } from '../../home/calendar/entries';
 import { partsOf, todayISO } from '../../home/calendar/model';
-import { focusCalendar } from '../../home/calendarFocus';
 import { useNoteAgenda } from '../noteAgenda';
+import { noteEventOpenOf, type NoteEventOpen } from './NoteEventPopups';
 import type { EditorController } from '../useEditorState';
 
 /** 이 기기가 보던 날 — 스펙의 "일정 페이지와 공유"에 가장 가까운 근사(머리말). */
@@ -38,9 +40,8 @@ function readDay(): string {
   }
 }
 
-export function NoteAgendaPanel({ controller, onClose }: { controller: EditorController; onClose: () => void }) {
+export function NoteAgendaPanel({ controller, onClose, onOpenEvent }: { controller: EditorController; onClose: () => void; onOpenEvent: (open: NoteEventOpen) => void }) {
   const th = controller.uiTheme;
-  const navigate = useNavigate();
   const today = todayISO();
   const [day, setDay] = useState(readDay);
   const at = partsOf(day) ?? partsOf(today)!;
@@ -55,10 +56,6 @@ export function NoteAgendaPanel({ controller, onClose }: { controller: EditorCon
     }
   }, [day]);
 
-  const go = (focus?: { date: string; eventId?: string; source?: 'geurio' | 'google' }): void => {
-    focusCalendar(focus);
-    navigate('/home');
-  };
 
   return (
     <aside
@@ -88,13 +85,10 @@ export function NoteAgendaPanel({ controller, onClose }: { controller: EditorCon
         selectedDay={day}
         holidays={agenda.holidays}
         onPickDay={setDay}
-        onPickEntry={(e: CalendarEntry) =>
-          // 원천은 어느 칸이 채워져 있는가로 갈린다(`CalendarEntry` — 구글이면
-          // `google`, 그리오 일정이면 `event`). `cardId`가 그 일정의 id다.
-          go({ date: e.due, ...(e.google || e.event ? { eventId: e.cardId } : {}), ...(e.google ? { source: 'google' as const } : e.event ? { source: 'geurio' as const } : {}) })
-        }
+        // 그 일정이 걸린 **날**을 넘긴다 — 기간 일정은 고른 날이 기준이다(칩 팝오버와 같다).
+        onPickEntry={(e: CalendarEntry) => onOpenEvent(noteEventOpenOf(e, e.due || day))}
         onSetMonth={(y, m) => setYm({ y, m })}
-        onNewEvent={(iso) => go({ date: iso })}
+        onNewEvent={(iso) => onOpenEvent({ kind: 'new', at: iso })}
         onClose={onClose}
       />
     </aside>

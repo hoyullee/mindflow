@@ -17,6 +17,7 @@ import { ShortcutHelp } from './components/ShortcutHelp';
 import { KanbanBoard } from './components/KanbanBoard';
 import { NoteEditor, NoteTopBar, noteTokens } from './components/NoteEditor';
 import { NoteAgendaPanel } from './components/NoteAgendaPanel';
+import { NoteEventPopups, type NoteEventOpen } from './components/NoteEventPopups';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { CollabPaused } from './components/CollabPaused';
@@ -54,6 +55,12 @@ export function Editor() {
   const [notePagesOpen, setNotePagesOpen] = useState(false);
   /** 우측 「일정」 탭(스펙 5절) — 댓글과 같은 고정 열에 선다. */
   const [noteAgendaOpen, setNoteAgendaOpen] = useState(false);
+  /**
+   * 우측 「일정」 탭에서 고른 일정 — **공책을 떠나지 않고** 여기서 연다(제보 1).
+   * 상태가 이 컴포넌트에 있는 이유는 그 탭이 여기 붙어 있어서다(본문 쪽 팝오버는
+   * `NoteEditor`가 제 것을 따로 든다 — 둘은 서로 다른 자리에서 열린다).
+   */
+  const [noteEvent, setNoteEvent] = useState<NoteEventOpen | null>(null);
   // 가로로 돌린 폰 — 속성 시트가 바텀에서 사이드로 바뀐다(`panelWrapStyle`).
   const isShort = useIsShortScreen();
 
@@ -227,7 +234,8 @@ export function Editor() {
             {/* 일정 — 스펙 5절. 댓글과 **같은 고정 열**에 선다(사용자 결정: 기록만
                 모달로 남긴다). 둘 다 켜면 일정이 안쪽(본문 쪽)이다 — 글을 쓰다 날짜를
                 보는 일이 댓글을 읽는 일보다 잦다. */}
-            {noteAgendaOpen && <NoteAgendaPanel controller={controller} onClose={() => setNoteAgendaOpen(false)} />}
+            {noteAgendaOpen && <NoteAgendaPanel controller={controller} onClose={() => setNoteAgendaOpen(false)} onOpenEvent={setNoteEvent} />}
+            {noteEvent && <NoteEventPopups open={noteEvent} isMobile={isMobile} theme={th} onClose={() => setNoteEvent(null)} />}
             </div>
           </div>
         ) : controller.isKanban ? (

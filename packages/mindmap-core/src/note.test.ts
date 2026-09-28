@@ -511,6 +511,38 @@ describe('평문을 본문에 붙여넣는다 — 표식을 살려서', () => {
     expect(out?.at).toBe(1); // 꼬리 앞
   });
 
+  /**
+   * 제보 5 — 목록 항목에 **두 줄짜리 글**을 붙이면 둘째 줄이 목록 밖 맨 왼쪽으로
+   * 떨어졌다. 표식이 없는 줄이 곧바로 문단이 됐기 때문이다.
+   */
+  it('목록 안에 붙이면 **표식 없는 줄도 그 목록의 항목**이다(제보 5)', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'ol', items: [{ id: 'i1', runs: textRuns(''), indent: 1 }] }];
+    // 사용자가 겪은 그대로 — 우리 목록에서 복사한 글이라 들여쓴 `d.`가 앞에 붙어 있다.
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 0, to: 0 }, '  d. 첫 줄\n(둘째 줄)');
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ol']);
+    expect(out?.blocks[0]?.items?.map((x) => runsText(x.runs))).toEqual(['첫 줄', '(둘째 줄)']);
+    // 깊이도 그 항목을 따른다 — 둘째 줄이 목록 밖 맨 왼쪽으로 나가지 않는다.
+    expect(out?.blocks[0]?.items?.map((x) => x.indent ?? 0)).toEqual([1, 1]);
+  });
+
+  it('표식으로 읽히지 않는 글머리는 **글자 그대로** 남는다 — 그래도 목록 안이다', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'ol', items: [{ id: 'i1', runs: textRuns('') }] }];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 0, to: 0 }, 'd. 첫 줄\n(둘째 줄)');
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ol']);
+    expect(out?.blocks[0]?.items?.map((x) => runsText(x.runs))).toEqual(['d. 첫 줄', '(둘째 줄)']);
+  });
+
+  it('제 표식을 달고 온 줄은 **그 종류 그대로**다 — 목록 안이라도', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('') }] }];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 0, to: 0 }, '- 하나\n1. 둘');
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ul', 'ol']);
+  });
+
+  it('문단에 붙이면 예전 그대로 — 표식 없는 줄은 문단이다', () => {
+    const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '- 하나\n사이');
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ul', 'p', 'p']);
+  });
+
   it('목록 항목 안에 같은 종류를 붙이면 **그 목록에 이어진다**', () => {
     const blocks: NoteBlock[] = [
       { id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('') }, { id: 'i2', runs: textRuns('끝') }] },
@@ -522,13 +554,19 @@ describe('평문을 본문에 붙여넣는다 — 표식을 살려서', () => {
     expect(out?.blocks[0]?.items?.[0]?.id).toBe('i1');
   });
 
-  it('목록 항목 안에 평범한 글을 붙이면 목록이 **갈린다**', () => {
+  /**
+   * **예전에는 목록이 갈렸다**(`['ul','p','ul']`) — 제보 5로 뒤집었다. 표식 없는
+   * 줄을 문단으로 떨어뜨리면 두 줄짜리 글 하나가 목록을 두 동강 낸다.
+   */
+  it('목록 항목 안에 평범한 글을 붙여도 목록은 **한 덩어리로 이어진다**(제보 5)', () => {
     const blocks: NoteBlock[] = [
       { id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('') }, { id: 'i2', runs: textRuns('끝') }] },
     ];
     const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 0, to: 0 }, '하나\n둘');
-    expect(out?.blocks.map((b) => b.kind)).toEqual(['ul', 'p', 'ul']);
-    expect(out?.blocks[2]?.items?.map((x) => x.id)).toEqual(['i2']);
+    expect(out?.blocks.map((b) => b.kind)).toEqual(['ul']);
+    expect(out?.blocks[0]?.items?.map((x) => runsText(x.runs))).toEqual(['하나', '둘', '끝']);
+    // 원래 항목의 id는 그대로다(댓글·링크가 잡고 있을 수 있다).
+    expect(out?.blocks[0]?.items?.map((x) => x.id)).toEqual(['i1', expect.any(String), 'i2']);
   });
 
   it('들여쓴 단계도 따라온다', () => {

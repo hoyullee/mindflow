@@ -9,7 +9,7 @@ import type { CalendarEntry } from '../../home/calendar/entries';
 import { chipTimeLabel, entryChip, isAllDayEntry, markStyle } from '../../home/calendar/chips';
 import { dayProgress, entriesOn, partsOf } from '../../home/calendar/model';
 import { useNoteAgenda } from '../noteAgenda';
-import type { NoteEventOpen } from './NoteEventPopups';
+import { noteEventOpenOf, type NoteEventOpen } from './NoteEventPopups';
 import type { Theme } from '../theme';
 
 const DOW_FULL = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
@@ -157,16 +157,9 @@ export function NoteDatePop({
               data-datepop-entry={e.cardId}
               className="mf-note-sched-row"
               onClick={() => {
-                // 반복 회차의 키는 `id#회차시작일`이다 — 삭제 범위(이 일정만/이후)의
-                // 기준이라 상세까지 그대로 넘긴다(일정 화면과 같은 규칙).
-                if (e.google) go({ kind: 'google', id: e.cardId, at: iso });
-                else if (e.event) {
-                  const [id, occ] = e.cardId.split('#');
-                  go({ kind: 'geurio', id: id ?? e.cardId, ...(occ ? { occ } : {}), at: iso });
-                }
-                // 칸반 카드의 마감 — 읽기 전용 미니 카드로 연다(제보 1). 예전에는
-                // 이 갈래가 없어 **아무 일도 일어나지 않았다**(「종일」로 보이던 그 줄이다).
-                else go({ kind: 'card', entry: e, at: iso });
+                // 어느 상세를 여는가는 한 자리에서 정한다(`noteEventOpenOf`) —
+                // 우측 「일정」 탭도 같은 규칙을 쓴다.
+                go(noteEventOpenOf(e, iso));
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '6px 8px', borderRadius: 8, border: 0, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}
             >
