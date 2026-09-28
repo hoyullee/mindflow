@@ -942,6 +942,8 @@ export interface EditorController {
    */
   pasteNoteText: (key: string, from: number, to: number, text: string) => NotePaste | null;
   setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
+  /** 표에 격자를 **한 번에** 붙여넣는다 — 모자라면 행·열을 늘린다(요청 8). */
+  pasteNoteTable: (blockId: string, row: number, col: number, grid: RichRun[][][]) => void;
   /** 표에 행을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 아래. */
   addNoteTableRow: (blockId: string, at?: number) => void;
   /** 표에 열을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 오른쪽. */
@@ -1016,7 +1018,7 @@ export interface EditorController {
   saveOtherDoc: (docId: string, doc: Doc, prevVersion: number) => Promise<SaveResult>;
   /** 문서 링크 블록이 고를 수 있는 문서들(공책일 때만 채워진다). */
   linkTargets: LinkTarget[];
-  setNoteCalloutTone: (blockId: string, tone: NoteCalloutTone) => void;
+  setNoteCalloutTone: (blockId: string, tone: NoteCalloutTone, custom?: { name?: string | null; color?: string | null }) => void;
   /** 가로 정렬 — 왼쪽이면 칸을 지운다(기본값은 적지 않는다). */
   setNoteBlockAlign: (blockId: string, align: 'left' | 'center' | 'right') => void;
   /** 들여쓰기 단계를 `delta`만큼(0..4로 자른다). */
@@ -1984,7 +1986,7 @@ export function useEditorState(): EditorController {
    * something — the React-hook counterpart of `Component#recordHistory`
    * (MindFlow.dc.html:551), driven explicitly per-action instead of a
    * `componentDidUpdate` diff (this hook has no equivalent lifecycle to diff against). */
-  const commitDoc = useCallback((updater: (d: Doc) => Doc, continuous = false) => {
+  const commitDoc = useCallback((updater: (d: Doc) => Doc, continuous = false, scope?: string) => {
     if (readOnlyRef.current) return; // 보기 전용(#22) — 모든 문서 변이의 chokepoint
     // 공유 맵인데 실시간이 끊겼다 — 지금 만드는 편집은 상대 것과 갈라질 수 있고,
     // 병합에서 한쪽이 조용히 사라진다(core `crdt/divergence.test.ts`). 그래서 유예
@@ -2015,6 +2017,7 @@ export function useEditorState(): EditorController {
         historyRef.current!.record(
           { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [], pages: next.pages ?? [], cover: next.cover ?? null },
           continuous,
+          scope,
         );
         setHistoryTick((t) => t + 1);
       }
@@ -6778,7 +6781,7 @@ export function useEditorState(): EditorController {
 
   /** 페이지 본문을 고친다 — `updatedAt`을 함께 찍어 목록의 "몇 분 전"이 맞게 한다. */
   const commitPage = useCallback(
-    (pageId: string, updater: (pg: NotePage) => NotePage, continuous = false) => {
+    (pageId: string, updater: (pg: NotePage) => NotePage, continuous = false, scope?: string) => {
       commitDoc((d) => {
         const pages = d.pages ?? [];
         let touched = false;
@@ -6790,14 +6793,21 @@ export function useEditorState(): EditorController {
           return { ...out, updatedAt: new Date().toISOString() };
         });
         return touched ? { ...d, pages: next } : d;
-      }, continuous);
+      }, continuous, scope);
     },
     [commitDoc],
   );
 
-  /** 블록 하나를 고친다(가장 잦은 경로 — 글자 입력이 여기로 온다). */
+  /**
+   * 블록 하나를 고친다(가장 잦은 경로 — 글자 입력이 여기로 온다).
+   *
+   * `scope`는 **뭉치기의 울타리**다(제보 11 — `HistoryStack.record`의 머리말).
+   * 기본은 그 블록이고, 한 블록 안에 여러 줄이 있는 것(목록 항목·표 칸)은 부르는
+   * 쪽이 더 잘게 준다 — 다른 줄로 옮겨 이어 쳤는데 한 단계로 붙으면 ⌘Z 한 번이
+   * 두 줄을 함께 지운다.
+   */
   const commitBlock = useCallback(
-    (pageId: string, blockId: string, updater: (b: NoteBlock) => NoteBlock, continuous = true) => {
+    (pageId: string, blockId: string, updater: (b: NoteBlock) => NoteBlock, continuous = true, scope?: string) => {
       commitPage(
         pageId,
         (pg) => {
@@ -6814,6 +6824,7 @@ export function useEditorState(): EditorController {
         // 글자 입력은 **한 덩이의 undo**여야 한다 — 한 글자마다 단계를 만들면
         // ⌘Z 한 번이 한 글자를 지운다(노드 편집과 같은 규칙).
         continuous,
+        scope ?? `${pageId}:${blockId}`,
       );
     },
     [commitPage],
@@ -6822,7 +6833,7 @@ export function useEditorState(): EditorController {
   /** 페이지 제목. 빈 제목을 허용한다 — 목록이 `제목 없는 페이지`로 보여 준다. */
   const setNotePageTitle = useCallback(
     (pageId: string, title: string) => {
-      commitPage(pageId, (pg) => (pg.title === title ? pg : { ...pg, title }), true);
+      commitPage(pageId, (pg) => (pg.title === title ? pg : { ...pg, title }), true, `${pageId}:title`);
     },
     [commitPage],
   );
@@ -7590,10 +7601,14 @@ export function useEditorState(): EditorController {
       const next = normalizeRuns(runs);
       const cur = notePage.blocks.find((b) => b.id === blockId)?.items?.find((it) => it.id === itemId)?.runs;
       if (sameRuns(cur, next)) return;
-      commitBlock(notePage.id, blockId, (b) => ({
-        ...b,
-        items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, runs: next } : it)),
-      }));
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => ({ ...b, items: (b.items ?? []).map((it) => (it.id === itemId ? { ...it, runs: next } : it)) }),
+        true,
+        // 항목마다 따로 뭉친다 — 다음 항목으로 옮겨 이어 쳐도 undo가 한 걸음씩 간다(제보 11).
+        `${notePage.id}:${blockId}:${itemId}`,
+      );
     },
     [commitBlock, notePage],
   );
@@ -7720,8 +7735,41 @@ export function useEditorState(): EditorController {
       if (!notePage) return;
       // 바뀐 것이 없으면 커밋하지 않는다(`setNoteBlockRuns` 머리말).
       if (sameRuns(notePage.blocks.find((b) => b.id === blockId)?.rows?.[row]?.[col], normalizeRuns(runs))) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => ({ ...b, rows: (b.rows ?? []).map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? normalizeRuns(runs) : c)) : r)) }),
+        true,
+        // 칸마다 따로 뭉친다 — 옆 칸으로 옮겨 이어 쳐도 undo가 한 걸음씩 간다(제보 11).
+        `${notePage.id}:${blockId}:r${row}c${col}`,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  /**
+   * 고른 자리에서 시작해 **격자를 통째로** 붙여넣는다(요청 8).
+   *
+   * 한 커밋으로 끝낸다 — `setNoteCell`을 칸마다 부르면 되돌리기가 칸 수만큼 쌓여
+   * 한 번의 붙여넣기를 되돌리는 데 ⌘Z를 수십 번 눌러야 한다.
+   *
+   * **모자라면 늘린다**(엑셀·시트와 같다): 3행짜리를 마지막 행에 붙여넣으면 아래로
+   * 두 행이 생긴다. 새로 생긴 자리의 빈 칸은 빈 런이다. 크기 값(`colW`)과 칠(`fills`)은
+   * 건드리지 않는다 — 늘어난 열은 값이 없어 남은 폭을 나눠 받는다.
+   */
+  const pasteNoteTable = useCallback(
+    (blockId: string, row: number, col: number, grid: RichRun[][][]) => {
+      if (!notePage || !grid.length) return;
       commitBlock(notePage.id, blockId, (b) => {
-        const rows = (b.rows ?? []).map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? normalizeRuns(runs) : c)) : r));
+        const old = b.rows ?? [];
+        const height = Math.max(old.length, row + grid.length);
+        const width = Math.max(old[0]?.length ?? 0, col + Math.max(...grid.map((r) => r.length)));
+        const rows = Array.from({ length: height }, (_, ri) =>
+          Array.from({ length: width }, (_, ci) => {
+            const from = grid[ri - row]?.[ci - col];
+            return from ? normalizeRuns(from) : (old[ri]?.[ci] ?? textRuns(''));
+          }),
+        );
         return { ...b, rows };
       });
     },
@@ -8087,10 +8135,34 @@ export function useEditorState(): EditorController {
   );
 
   /** 콜아웃 어조(주의·결정·질문). */
+  /**
+   * 콜아웃의 어조 — 미리 만든 셋 가운데 하나와, 사람이 고쳐 적은 이름·색(요청 16).
+   *
+   * `custom`을 주지 않으면 이름·색은 **그대로 둔다**(어조만 돌리는 예전 길). 값으로
+   * `null`을 주면 지운다 — 그러면 그 어조의 기본 이름·색으로 돌아간다. 기본값은
+   * 문서에 적지 않는다(`setNoteBlockAlign`과 같은 규칙 — 옛 문서와 골든이 같게 남는다).
+   */
   const setNoteCalloutTone = useCallback(
-    (blockId: string, tone: NoteCalloutTone) => {
+    (blockId: string, tone: NoteCalloutTone, custom?: { name?: string | null; color?: string | null }) => {
       if (!notePage) return;
-      commitBlock(notePage.id, blockId, (b) => ({ ...b, tone }), false);
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const next: NoteBlock = { ...b, tone };
+          if (custom && 'name' in custom) {
+            const name = custom.name?.trim();
+            if (name) next.toneName = name;
+            else delete next.toneName;
+          }
+          if (custom && 'color' in custom) {
+            if (custom.color) next.toneColor = custom.color;
+            else delete next.toneColor;
+          }
+          return next;
+        },
+        false,
+      );
     },
     [commitBlock, notePage],
   );
@@ -8738,6 +8810,7 @@ export function useEditorState(): EditorController {
     deleteNoteTextRange,
     pasteNoteText,
     setNoteCell,
+    pasteNoteTable,
     addNoteTableRow,
     addNoteTableCol,
     removeNoteTableRow,

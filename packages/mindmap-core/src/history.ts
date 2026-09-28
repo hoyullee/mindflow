@@ -43,6 +43,16 @@ export class HistoryStack<T> {
   private redoStack: T[] = [];
   private lastContinuous = false;
   private lastRecordAt = 0;
+  /**
+   * 직전 기록이 **무엇을 고치고 있었는가**(선택) — 뭉치기의 울타리다(제보 11).
+   *
+   * 뭉치기는 원래 "이어지는 변화인가"와 시간만 봤다. 그런데 공책은 문서 전체가
+   * 편집 박스들이라 **다른 줄로 옮겨 이어 치는 일**이 흔하고, 그 둘이 1.2초 안에
+   * 들어오면 한 단계로 붙어 ⌘Z 한 번이 두 줄을 함께 지웠다(실측: 세 줄을 빠르게
+   * 고치고 ⌘Z를 누르니 셋이 한꺼번에 돌아갔다). 고치던 대상이 달라지면 뭉치지
+   * 않는다 — 주지 않으면(`undefined`) 예전 그대로다(캔버스·칸반의 끌기).
+   */
+  private lastScope: string | undefined;
   private readonly coalesceWindowMs: number;
   private readonly maxEntries: number;
 
@@ -90,6 +100,7 @@ export class HistoryStack<T> {
     this.redoStack = [];
     this.lastContinuous = false;
     this.lastRecordAt = 0;
+    this.lastScope = undefined;
   }
 
   /**
@@ -123,20 +134,25 @@ export class HistoryStack<T> {
    *
    * The very first call after construction/`reset` only seeds the baseline
    * (mirrors `if (!this._snapCur) { ...; return; }`) and pushes nothing.
+   *
+   * `scope`는 원본에 없던 칸이다(제보 11) — **무엇을 고치고 있는가**를 실어 보내면
+   * 대상이 달라질 때 뭉치기가 끊긴다. 주지 않으면 예전 산수 그대로다.
    */
-  record(next: T, continuous: boolean): void {
+  record(next: T, continuous: boolean, scope?: string): void {
     if (this.snapCur === undefined) {
       this.snapCur = next;
+      this.lastScope = scope;
       return;
     }
     const now = this.clock.now();
-    const coalesce = continuous && this.lastContinuous && now - this.lastRecordAt < this.coalesceWindowMs;
+    const coalesce = continuous && this.lastContinuous && scope === this.lastScope && now - this.lastRecordAt < this.coalesceWindowMs;
     if (!coalesce) {
       this.undoStack.push(this.snapCur);
       if (this.undoStack.length > this.maxEntries) this.undoStack.shift();
       this.redoStack = [];
     }
     this.lastContinuous = continuous;
+    this.lastScope = scope;
     this.lastRecordAt = now;
     this.snapCur = next;
   }

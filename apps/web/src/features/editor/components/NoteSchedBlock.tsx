@@ -130,9 +130,9 @@ export function NoteSchedBlock({
               <path d="M8 3v4M16 3v4M3 10h18" />
             </svg>
           </span>
-          <span data-sched-title style={{ flex: '0 0 auto', fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: th.text }}>{schedTitle(kind, today)}</span>
+          <span data-sched-title style={{ flex: '0 0 auto', fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: th.text }}>{schedTitle(kind, today, ym)}</span>
           <span data-sched-sub style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: th.subtext }}>
-            {schedSubtitle(kind, agenda.entries, today)}
+            {schedSubtitle(kind, agenda.entries, today, ym)}
           </span>
           {!controller.readOnly && (
             <span style={{ flex: '0 0 auto', display: 'inline-flex', gap: 2, padding: 2, borderRadius: 9, background: 'var(--mf-note-chip-pill)' }}>
@@ -210,6 +210,10 @@ export function NoteSchedBlock({
                 holidays={agenda.holidays}
                 onPickDay={(iso) => {
                   setDay(iso);
+                  // 앞뒤 달의 칸을 눌렀으면 **보는 달도 따라간다** — 머리와 목록이
+                  // 서로 다른 달을 말하지 않게 한다(제보 17).
+                  const p = partsOf(iso);
+                  if (p && (p.y !== ym.y || p.m !== ym.m)) setYm({ y: p.y, m: p.m });
                   controller.setNoteBlockSched(block.id, 'month', iso);
                 }}
                 onSetMonth={(y, m) => setYm({ y, m })}

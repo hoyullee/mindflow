@@ -70,6 +70,16 @@ describe('머리의 제목과 부제(스펙 2-3의 2·3)', () => {
     expect(schedSubtitle('month', list, TODAY)).toBe('2026년 9월 · 2개');
     expect(schedSubtitle('next', list, TODAY)).toBe('오늘부터 가까운 2개');
   });
+
+  it('달력은 **보고 있는 달**을 말한다 — 달을 넘기면 머리도 따라간다(제보 17)', () => {
+    const list = [ent(TODAY, '오늘것'), ent('2026-10-05', '다음달'), ent('2026-10-20', '다음달2')];
+    expect(schedTitle('month', TODAY, { y: 2026, m: 10 })).toBe('10월 달력');
+    expect(schedSubtitle('month', list, TODAY, { y: 2026, m: 10 })).toBe('2026년 10월 · 2개');
+    // 다른 해를 보고 있으면 해까지 적는다 — 그러지 않으면 어느 해인지 말할 길이 없다.
+    expect(schedTitle('month', TODAY, { y: 2027, m: 3 })).toBe('2027년 3월 달력');
+    // 주지 않으면 예전 그대로 오늘이 속한 달이다.
+    expect(schedTitle('month', TODAY)).toBe('9월 달력');
+  });
 });
 
 describe('고르는 목록(2-2)', () => {

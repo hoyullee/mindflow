@@ -162,3 +162,58 @@ describe('HistoryStack.amend', () => {
     expect(hs.undo()).toBe('s0');
   });
 });
+
+/**
+ * 제보 11 — ⌘Z가 "진행한 순서대로" 한 걸음씩 돌아가지 않았다. 공책은 문서 전체가
+ * 편집 박스들이라 다른 줄로 옮겨 이어 치는 일이 흔한데, 그 둘이 1.2초 안에 들어오면
+ * 뭉치기가 한 단계로 붙여 ⌘Z 한 번이 두 줄을 함께 지웠다(실브라우저 실측).
+ */
+describe('뭉치기의 울타리(`scope`) — 제보 11', () => {
+  it('고치던 대상이 달라지면 **뭉치지 않는다** — 시간 안이라도', () => {
+    const clock = new FakeClock();
+    const hs = new HistoryStack<string>(clock);
+    hs.reset('s0');
+    hs.record('a1', true, 'A');
+    clock.advance(50);
+    hs.record('b1', true, 'B');
+    clock.advance(50);
+    hs.record('c1', true, 'C');
+    expect(hs.undoDepth).toBe(3);
+    expect(hs.undo()).toBe('b1');
+    expect(hs.undo()).toBe('a1');
+    expect(hs.undo()).toBe('s0');
+  });
+
+  it('같은 대상이면 예전 그대로 한 덩이다 — 한 글자마다 단계를 만들지 않는다', () => {
+    const clock = new FakeClock();
+    const hs = new HistoryStack<string>(clock);
+    hs.reset('s0');
+    hs.record('a1', true, 'A');
+    clock.advance(50);
+    hs.record('a2', true, 'A');
+    clock.advance(50);
+    hs.record('a3', true, 'A');
+    expect(hs.undoDepth).toBe(1);
+    expect(hs.undo()).toBe('s0');
+  });
+
+  it('울타리를 주지 않으면 예전 산수 그대로다(캔버스·칸반의 끌기)', () => {
+    const clock = new FakeClock();
+    const hs = new HistoryStack<string>(clock);
+    hs.reset('s0');
+    hs.record('s1', true);
+    clock.advance(50);
+    hs.record('s2', true);
+    expect(hs.undoDepth).toBe(1);
+  });
+
+  it('시간을 넘기면 같은 대상이라도 갈린다 — 창(1200ms)은 그대로다', () => {
+    const clock = new FakeClock();
+    const hs = new HistoryStack<string>(clock);
+    hs.reset('s0');
+    hs.record('a1', true, 'A');
+    clock.advance(1300);
+    hs.record('a2', true, 'A');
+    expect(hs.undoDepth).toBe(2);
+  });
+});

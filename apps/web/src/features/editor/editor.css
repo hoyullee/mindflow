@@ -815,7 +815,8 @@ input[type='search']::-webkit-search-results-decoration {
     background 0.12s ease;
 }
 /* 경계선 그립 — 평소에는 보이지 않고, 표에 마우스를 얹으면 잡을 수 있음을 알린다.
-   보이는 선은 2px이고 잡는 자리는 6px다(시각 요소보다 히트 영역이 크다). */
+   보이는 선은 2px이고 잡는 자리는 6px다(시각 요소보다 히트 영역이 크다).
+   **열에만 있다**(요청) — 행 높이는 그 행의 글이 정한다. */
 .mf-note-tgrip::after {
   content: '';
   position: absolute;
@@ -828,24 +829,16 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-note-tgrip[data-note-table-grip^='col']::after {
   width: 2px;
 }
-.mf-note-tgrip[data-note-table-grip^='row']::after {
-  height: 2px;
-}
 .mf-note-table:hover .mf-note-tgrip:hover::after {
   background: var(--mf-accent);
 }
-/* 마지막 행·열의 그립은 잡는 자리를 **안쪽으로 6px** 당겨 두었다(넘치면 모든 표에
+/* 마지막 열의 그립은 잡는 자리를 **안쪽으로 6px** 당겨 두었다(넘치면 모든 표에
    유령 스크롤바가 생긴다). 그래서 가운데에 그린 선이 경계선보다 3px 앞에 섰다
    (제보) — 보이는 선만 끝으로 되돌린다. 잡는 자리는 그대로다. */
 .mf-note-tgrip[data-note-table-grip-end='col']::after {
   left: auto;
   right: 0;
   margin: auto 0 auto auto;
-}
-.mf-note-tgrip[data-note-table-grip-end='row']::after {
-  top: auto;
-  bottom: 0;
-  margin: auto auto 0 auto;
 }
 /* 표의 가로 스크롤 — **표 바깥, 그 아래**에 둔다(제보: 스크롤이 생기면 표의 마지막
    줄 UI가 깨진다 → "표 UI 하단에 따로 두는 건 어떤가"). 막대를 상자 **안**에 두면
@@ -1228,5 +1221,32 @@ input[type='search']::-webkit-search-results-decoration {
 @media (prefers-reduced-motion: reduce) {
   [data-note-code-caret] {
     animation: none;
+  }
+}
+
+/* 임베드의 머리 — **미리보기 위에 얹고 마우스를 얹었을 때만** 보인다(요청 10).
+   예전에는 카드 맨 위에 한 줄을 차지해, 본문에 넣은 보드가 늘 제 이름표를 달고
+   있었다(제목·경로·시각·단추). 보는 동안에는 그림만 남기고, 무엇인지·어디로
+   가는지는 필요할 때 손이 부르게 한다. 손가락에는 hover가 없으므로 늘 보인다. */
+.mf-embed-head {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+  pointer-events: none;
+}
+[data-embed-card]:hover .mf-embed-head,
+[data-embed-card]:focus-within .mf-embed-head,
+[data-embed-picked='1'] .mf-embed-head {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .mf-embed-head {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
   }
 }

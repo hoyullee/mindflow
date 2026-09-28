@@ -464,6 +464,8 @@ export function NoteBoardEmbed({
           data-embed-card
           ref={setCard}
           style={{
+            // 머리가 이 안에서 뜬다(요청 10) — 미리보기 우측 상단, 마우스를 얹었을 때만.
+            position: 'relative',
             background: 'var(--mf-card)',
             border: '1px solid var(--mf-border)',
             borderRadius: 14,
@@ -491,7 +493,7 @@ export function NoteBoardEmbed({
           <div
             key={state.kind === 'ok' ? `ok:${kind}` : state.kind}
             className="mf-embed-in"
-            style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 9 }}
+            style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}
           >
             {state.kind === 'ok' && kind === 'kanban' && (
               <KanbanBody
@@ -591,7 +593,7 @@ export function NoteBoardEmbed({
   );
 }
 
-/* ───────────────────────────── 머리줄 ───────────────────────────── */
+/* ─────────────────────── 미리보기 위에 얹는 머리 ─────────────────────── */
 
 function EmbedHead({
   kind,
@@ -616,14 +618,37 @@ function EmbedHead({
   const tone = KIND_TOKEN[kind];
   const when = ago(updatedAt);
   return (
-    <div data-embed-head style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px 10px 12px', minWidth: 0 }}>
+    <div
+      data-embed-head
+      className="mf-embed-head"
+      // 미리보기 **위에** 뜬다 — 눌러도 판이 오브젝트로 골라지지 않게 여기서 끊는다.
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute',
+        zIndex: 3,
+        top: 8,
+        right: 8,
+        maxWidth: 'calc(100% - 16px)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '5px 6px 5px 8px',
+        borderRadius: 12,
+        // **불투명하게** — 반투명이면 아래 그림이 글자 사이로 비쳐 읽히지 않는다
+        // (프로브 스크린샷에서 진행률 막대와 겹쳐 흐릿했다).
+        background: 'var(--mf-card)',
+        border: '1px solid var(--mf-border-soft)',
+        boxShadow: '0 10px 24px -16px rgba(46,42,38,.6)',
+        minWidth: 0,
+      }}
+    >
       <span
         aria-hidden="true"
         style={{
-          width: 28,
-          height: 28,
+          width: 22,
+          height: 22,
           flex: '0 0 auto',
-          borderRadius: 9,
+          borderRadius: 7,
           background: `color-mix(in srgb, ${tone} 16%, var(--mf-card))`,
           color: tone,
           display: 'inline-flex',
@@ -631,15 +656,15 @@ function EmbedHead({
           justifyContent: 'center',
         }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <KindGlyph kind={kind} />
         </svg>
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <span data-embed-title style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: '0 1 auto', minWidth: 0 }}>
+        <span data-embed-title style={{ fontSize: 12, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </span>
-        <span data-embed-meta style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--mf-muted)', minWidth: 0 }}>
+        <span data-embed-meta style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0 }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {kindLabel}
             {spaceName ? ` · ${spaceName}` : ''}
@@ -647,7 +672,7 @@ function EmbedHead({
           {when && (
             <>
               <span aria-hidden style={{ width: 3, height: 3, borderRadius: 999, background: 'var(--mf-faint2)', flex: '0 0 auto' }} />
-              <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--mf-note-ok)', flex: '0 0 auto' }} />
+              <span aria-hidden style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--mf-note-ok)', flex: '0 0 auto' }} />
               <span style={{ whiteSpace: 'nowrap' }}>업데이트 {when}</span>
             </>
           )}
@@ -656,7 +681,7 @@ function EmbedHead({
       {rule && (
         <span
           data-embed-rule
-          style={{ flex: '0 0 auto', height: 22, padding: '0 8px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center' }}
+          style={{ flex: '0 0 auto', height: 20, padding: '0 7px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}
         >
           {rule}
         </span>
@@ -668,9 +693,9 @@ function EmbedHead({
         title="작게 보기"
         aria-label="작게 보기"
         onClick={onCollapse}
-        style={{ flex: '0 0 auto', width: 28, height: 28, borderRadius: 8, border: 0, background: 'transparent', color: 'var(--mf-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+        style={{ flex: '0 0 auto', width: 24, height: 24, borderRadius: 7, border: 0, background: 'transparent', color: 'var(--mf-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 4v5H4M15 20v-5h5" />
           <path d="M9 9 3.5 3.5M15 15l5.5 5.5" />
         </svg>
@@ -678,7 +703,7 @@ function EmbedHead({
       <a
         data-embed-open
         href={href}
-        style={{ ...PILL, flex: '0 0 auto', height: 28, padding: '0 11px', fontSize: 11.5, fontWeight: 800, textDecoration: 'none', gap: 5 }}
+        style={{ ...PILL, flex: '0 0 auto', height: 24, padding: '0 9px', fontSize: 11, fontWeight: 800, textDecoration: 'none', gap: 4 }}
       >
         열기
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
