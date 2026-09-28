@@ -4133,7 +4133,9 @@ describe('공책 37판 — 목록 복사·붙여넣기와 칸 안의 목록', ()
     saveNow();
 
     await waitFor(() => expect(saved('w3').pages[0].blocks[1].items).toHaveLength(3));
-    expect(saved('w3').pages[0].blocks[1].items.map((x: { runs: { t: string }[] }) => runsOf(x))).toEqual(['하나- 가', '나', '둘']);
+    // 표식은 **글자로 남지 않는다**(제보 13) — 항목은 이미 제 마커를 그리므로 `- `가 한
+    // 겹 더 들어갈 이유가 없다. 예전에는 줄 한가운데라 `adopt`가 서지 못해 `하나- 가`였다.
+    expect(saved('w3').pages[0].blocks[1].items.map((x: { runs: { t: string }[] }) => runsOf(x))).toEqual(['하나가', '나', '둘']);
   });
 
   it('칠해 둔 여러 줄 위에 붙여넣으면 **먼저 지우고** 그 자리에 선다', async () => {
