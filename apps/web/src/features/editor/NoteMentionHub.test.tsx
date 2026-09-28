@@ -238,3 +238,48 @@ describe('dateOnly의 Enter 우선순위', () => {
     expect(onPick).toHaveBeenCalledWith({ kind: 'date', iso: '2026-08-26', label: '8월 26일 수' });
   });
 });
+
+/**
+ * **달력 칸이 말하는 것 둘**(요청) — 일정이 있는 날의 점, 그리고 요일·공휴일 색.
+ *
+ * 일정 페이지의 달력(`MonthGrid`)이 세운 규칙 그대로다: 일요일·쉬는 날은 붉게,
+ * 토요일은 파랗게. 값은 **밖에서 받는다**(`counts`·`holidays`) — 이 부품은 시계도
+ * 네트워크도 만지지 않는다.
+ */
+describe('다른 날짜 고르기 달력 — 점과 요일색', () => {
+  /** 달력 모드로 들어간다(`다른 날짜 고르기…` 행을 고른다). */
+  function openCalendar(overrides: Partial<ComponentProps<typeof NoteMentionHub>> = {}) {
+    const utils = setup(overrides);
+    fireEvent.click(screen.getByText('다른 날짜 고르기…'));
+    return utils;
+  }
+  const day = (iso: string) => document.querySelector(`[data-hub-day="${iso}"]`) as HTMLElement | null;
+
+  it('일정이 있는 날에만 점이 선다', () => {
+    openCalendar({ counts: { '2026-08-27': 2 } });
+    expect(day('2026-08-27')?.getAttribute('data-hub-day-has')).toBe('1');
+    expect(day('2026-08-26')?.getAttribute('data-hub-day-has')).toBeNull();
+    // 읽어 주는 이름에도 실린다 — 눈으로만 보이는 값을 두지 않는다.
+    expect(day('2026-08-27')?.getAttribute('aria-label')).toContain('일정 2');
+  });
+
+  it('일요일은 붉게, 토요일은 파랗게', () => {
+    openCalendar();
+    // 2026-08-30은 일요일, 2026-08-29는 토요일.
+    expect(day('2026-08-30')?.getAttribute('data-hub-day-off')).toBe('1');
+    expect(day('2026-08-30')?.style.color).toContain('--mf-danger');
+    expect(day('2026-08-29')?.getAttribute('data-hub-day-sat')).toBe('1');
+    expect(day('2026-08-29')?.style.color).toContain('--mf-info');
+  });
+
+  it('**쉬는 날이면 평일도** 일요일 색이다 — 값은 밖에서 받는다', () => {
+    openCalendar({ holidays: { '2026-08-27': { name: '임시공휴일', dayOff: true } } });
+    expect(day('2026-08-27')?.getAttribute('data-hub-day-off')).toBe('1');
+    expect(day('2026-08-27')?.style.color).toContain('--mf-danger');
+  });
+
+  it('쉬지 않는 기념일은 색이 바뀌지 않는다 — 달이 통째로 붉어지지 않게', () => {
+    openCalendar({ holidays: { '2026-08-27': { name: '칠석', dayOff: false } } });
+    expect(day('2026-08-27')?.getAttribute('data-hub-day-off')).toBeNull();
+  });
+});

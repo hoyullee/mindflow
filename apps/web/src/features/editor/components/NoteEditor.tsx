@@ -3014,6 +3014,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 pages={hubPages}
                 dateOnly={atDateOnly}
                 counts={hubCounts}
+                holidays={hubAgenda.holidays}
                 onPick={pickMention}
                 onClose={closeMention}
               />

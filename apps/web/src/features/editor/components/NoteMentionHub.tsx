@@ -15,6 +15,7 @@ import { dateHits, wantsCalendarRow } from '../noteDateQuery';
 import type { DateHit } from '../noteDateQuery';
 import { mentionInitial, mentionTone } from '../mentionChip';
 import { DOW, addDays, isoOf, monthCells, monthLabel, partsOf } from '../../home/calendar/model';
+import type { HolidayInfo } from '../../home/calendar/entries';
 
 // ── 공개 계약 — 호출부가 이 모양 그대로 부른다 ──────────────────────────────
 
@@ -59,6 +60,13 @@ interface HubProps {
    * 시계·네트워크 없이 돌고, 같은 값을 이미 읽고 있는 쪽(에디터)이 넘겨 주면 된다.
    */
   counts?: Record<string, number>;
+  /**
+   * **쉬는 날**(구글 공휴일 캘린더) — 달력 칸의 숫자를 일요일 색으로 그린다(요청).
+   *
+   * `counts`와 같은 규칙으로 **밖에서 받는다**: 이 부품은 시계·네트워크 없이 돌아야
+   * 테스트가 순수하게 유지되고, 같은 값을 이미 읽고 있는 쪽(에디터)이 넘겨 주면 된다.
+   */
+  holidays?: Record<string, HolidayInfo>;
   onPick: (pick: HubPick) => void;
   onClose: () => void;
 }
@@ -278,7 +286,7 @@ function HubRow({
 // ── 본체 ────────────────────────────────────────────────────────────────
 
 export function NoteMentionHub(props: HubProps): JSX.Element | null {
-  const { anchor, query, today, people, pages, dateOnly, counts, onPick, onClose } = props;
+  const { anchor, query, today, people, pages, dateOnly, counts, holidays, onPick, onClose } = props;
 
   const [cursor, setCursor] = useState(0);
   const [calendarMode, setCalendarMode] = useState(false);
@@ -333,7 +341,8 @@ export function NoteMentionHub(props: HubProps): JSX.Element | null {
   const hint = calendarVisible ? '←→↑↓ 날짜 이동 · Enter' : '↑↓ 이동 · Enter';
 
   const calParts = safeParts(calFocusIso, today);
-  const cells = monthCells(calParts.y, calParts.m, [], today);
+  // 쉬는 날을 함께 넘긴다 — `cell.dayOff`가 그 값이고, 숫자 색이 그것으로 갈린다.
+  const cells = monthCells(calParts.y, calParts.m, [], today, 2, 6, holidays ?? {});
 
   function pickRow(row: Row): void {
     if (row.kind === 'calendar') {
@@ -550,28 +559,58 @@ export function NoteMentionHub(props: HubProps): JSX.Element | null {
             ))}
             {cells.map((cell) => {
               const focused = cell.iso === calFocusIso;
+              /**
+               * **요일·공휴일 색은 일정 달력과 같은 규칙**(요청) — 일요일·쉬는 날은
+               * 붉게, 토요일은 파랗게. 이웃 달 칸도 같은 색을 쓴다(그 칸이 이웃 달임은
+               * 흐린 농도가 이미 말한다 — `MonthGrid`가 세운 그 규칙 그대로다).
+               */
+              const dayInk = cell.dow === 0 || cell.dayOff ? 'var(--mf-danger)' : cell.dow === 6 ? 'var(--mf-info)' : null;
+              const has = (counts?.[cell.iso] ?? 0) > 0;
               return (
                 <button
                   key={cell.iso}
                   type="button"
                   data-hub-day={cell.iso}
+                  data-hub-day-off={cell.dow === 0 || cell.dayOff ? '1' : undefined}
+                  data-hub-day-sat={cell.dow === 6 && !cell.dayOff ? '1' : undefined}
+                  data-hub-day-has={has ? '1' : undefined}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pickDay(cell.iso)}
                   aria-current={focused ? 'date' : undefined}
-                  aria-label={`${cell.n}일`}
+                  aria-label={`${cell.n}일${has ? ` · 일정 ${counts?.[cell.iso] ?? 0}` : ''}`}
                   style={{
-                    height: 24,
+                    position: 'relative',
+                    height: 26,
                     borderRadius: 7,
                     border: 0,
                     cursor: 'pointer',
                     fontFamily: 'inherit',
                     fontSize: 11,
                     fontWeight: cell.isToday ? 800 : 600,
+                    lineHeight: 1,
+                    paddingBottom: 4,
                     background: focused ? 'var(--mf-accent)' : 'transparent',
-                    color: focused ? '#fff' : cell.inMonth ? 'var(--mf-text)' : 'var(--mf-faint)',
+                    color: focused ? '#fff' : (dayInk ?? (cell.inMonth ? 'var(--mf-text)' : 'var(--mf-faint)')),
+                    opacity: cell.inMonth || focused ? 1 : 0.55,
                   }}
                 >
                   {cell.n}
+                  {/* **일정이 있는 날엔 점** — 고른 칸에서는 흰 점이라 면 위에서도 보인다. */}
+                  {has && (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute',
+                        left: '50%',
+                        bottom: 3,
+                        transform: 'translateX(-50%)',
+                        width: 3,
+                        height: 3,
+                        borderRadius: 999,
+                        background: focused ? '#fff' : (dayInk ?? 'var(--mf-accent)'),
+                      }}
+                    />
+                  )}
                 </button>
               );
             })}
