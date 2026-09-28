@@ -39,6 +39,8 @@ import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
 import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armMarksForReplace, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, noteMarksIn, sameMarks, type NoteFormatKind, type NoteMarks } from '../noteRichDom';
+import { codeEdgeCaret, codeEdgeMark, type CodeCaretSpot } from '../noteCodeEdge';
+
 import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
@@ -400,6 +402,16 @@ const TONE_TOKENS = {
 } as const;
 
 /** 상대 밝기(0~1) — 종이 팔레트를 쓸지 테마에서 만들지 가르는 기준. */
+
+/**
+ * 툴바가 보여 줄 **코드 불**을 경계에서 한 번 더 고른다 — 그리는 캐럿과 같은 원천.
+ * 경계가 아니면 읽은 값 그대로다.
+ */
+function withCodeEdge(el: HTMLElement, marks: NoteMarks): NoteMarks {
+  const side = codeEdgeMark(el, armedMarksOverlay(el).k);
+  return side === null || side === marks.k ? marks : { ...marks, k: side };
+}
+
 function luma(hex: string): number {
   const h = hex.replace('#', '');
   const v = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
@@ -528,6 +540,12 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    * 굵기·색까지 함께 지우는 수밖에). 그래서 그 자리에 작은 판을 띄운다.
    */
   const [linkAt, setLinkAt] = useState<{ key: string; a: number; b: number; href: string; rect: DOMRect } | null>(null);
+  /**
+   * **코드 경계에 선 캐럿을 우리가 그린다**(제보) — 크로뮴은 그 두 자리를 위쪽
+   * 하나로 접어 그려서, 상자 안에 서 있어도 밖에 서 있는 것처럼 보였다.
+   * 자리를 재는 규칙은 `codeEdgeCaret`에 있다.
+   */
+  const [codeCaret, setCodeCaret] = useState<(CodeCaretSpot & { key: string; inside: boolean }) | null>(null);
   const openSlashAt = (lineKey: string, from?: Element | number | null, tail = '') => {
     const at = typeof from === 'number' ? from : null;
     const el = typeof from === 'number' || !from ? document.querySelector(`[data-note-line="${lineKey}"]`) : from;
@@ -1157,6 +1175,83 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       window.removeEventListener('resize', read);
     };
   }, []);
+
+  /**
+   * **코드 경계의 캐럿을 우리가 그린다**(제보 — 자리·불은 맞는데 막대가 반대쪽이다).
+   *
+   * 크로뮴은 「보이기에 같은」 두 자리를 **위쪽 하나로** 접어 그린다: 코드 **머리**의
+   * 안·밖은 둘 다 상자 밖에, **끝**의 안·밖은 둘 다 상자 안에 선다. 좌표는 갈리는데
+   * (실측 7px — 코드의 좌우 여백·테두리·마진) 그 값으로 그리지 않을 뿐이다.
+   * 그래서 경계에 선 짧은 동안만 **그 줄의 기본 캐럿을 감추고** 우리가 세운다.
+   *
+   * 못 재면(`null`) 아무것도 하지 않는다 — 감추기는 세울 자리가 있을 때만이다.
+   */
+  useEffect(() => {
+    let composing = false;
+    let frame = 0;
+    const read = () => {
+      const live = document.activeElement as HTMLElement | null;
+      const key = live?.getAttribute?.('data-note-line') ?? '';
+      /**
+       * 어느 쪽에 세울지는 `codeEdgeMark`가 정한다 — 예약이 있으면 그것, 없으면
+       * 크로뮴이 실제로 글자를 넣는 쪽(머리면 밖, 끝이면 안)이다. **툴바의 코드
+       * 불도 같은 값을 쓴다**(`withCodeEdge`). 우리가 한쪽을 임의로 고르면 막대가
+       * 거짓말을 한다 — 캐럿을 코드 머리 안쪽에 심어 놓고 쳐 보면 크로뮴은 그 글자를
+       * 코드 **밖**에 넣는다(실측).
+       */
+      const want = !composing && key && live?.getAttribute('contenteditable') === 'true' ? codeEdgeMark(live, armedMarksOverlay(live).k) : null;
+      const spot = want !== null && live ? codeEdgeCaret(live, want) : null;
+      setCodeCaret((cur) => {
+        if (!spot) return cur === null ? cur : null;
+        if (cur && cur.key === key && cur.inside === want && cur.left === spot.left && cur.top === spot.top && cur.height === spot.height) return cur;
+        return { ...spot, key, inside: want === true };
+      });
+    };
+    /**
+     * 글자가 들어온 **뒤**에 잰다 — `input`이 오는 시점의 DOM은 아직 옛 자리다.
+     * (경계를 벗어나면 `read`가 `null`을 내어 그림이 걷힌다.)
+     */
+    const later = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(read);
+    };
+    const onCompStart = () => {
+      composing = true;
+      read();
+    };
+    const onCompEnd = () => {
+      composing = false;
+      later();
+    };
+    read();
+    document.addEventListener('selectionchange', read);
+    // 예약은 선택을 바꾸지 않는다 — 따로 알려 온다(툴바가 쓰는 그 신호다).
+    document.addEventListener(NOTE_ARMED_EVENT, read);
+    document.addEventListener('input', later, true);
+    document.addEventListener('compositionstart', onCompStart, true);
+    document.addEventListener('compositionend', onCompEnd, true);
+    document.addEventListener('scroll', read, true);
+    window.addEventListener('resize', read);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('selectionchange', read);
+      document.removeEventListener(NOTE_ARMED_EVENT, read);
+      document.removeEventListener('input', later, true);
+      document.removeEventListener('compositionstart', onCompStart, true);
+      document.removeEventListener('compositionend', onCompEnd, true);
+      document.removeEventListener('scroll', read, true);
+      window.removeEventListener('resize', read);
+    };
+  }, []);
+
+  /** 우리가 그리는 동안에만 그 줄의 **기본 캐럿을 감춘다** — 두 개가 보이면 안 된다. */
+  useEffect(() => {
+    if (!codeCaret) return;
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${codeCaret.key}"]`);
+    if (!el) return;
+    el.classList.add('mf-caret-pinned');
+    return () => el.classList.remove('mf-caret-pinned');
+  }, [codeCaret]);
 
   /**
    * 찾는 말을 **본문에서도** 칠한다(요청 5) — 목록에서 고른 그 페이지의 글이다.
@@ -3060,6 +3155,29 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                     if (runs) commitLine(controller, linkAt.key, runs);
                   }
                   setLinkAt(null);
+                }}
+              />
+            )}
+            {/* **코드 경계의 캐럿** — 안쪽은 코드 잉크, 바깥쪽은 본문 잉크다(제보:
+                안·밖이 구별되지 않는다). 자리는 `codeEdgeCaret`이 잰 뷰포트 좌표. */}
+            {codeCaret && (
+              <span
+                // **자리가 바뀌면 다시 태어난다** — 깜빡임이 처음(켜짐)부터 시작하게.
+                // 기본 캐럿도 움직인 직후에는 늘 켜져 있다; 남은 주기를 이어받으면
+                // 방금 옮긴 캐럿이 꺼진 채로 보일 수 있다(실측으로 한 번 그랬다).
+                key={`${codeCaret.key}:${codeCaret.inside ? 'in' : 'out'}:${Math.round(codeCaret.left)}:${Math.round(codeCaret.top)}`}
+                aria-hidden
+                data-note-code-caret={codeCaret.inside ? 'in' : 'out'}
+                style={{
+                  position: 'fixed',
+                  left: codeCaret.left,
+                  top: codeCaret.top,
+                  height: codeCaret.height,
+                  width: 2,
+                  borderRadius: 1,
+                  background: codeCaret.inside ? '#c44b40' : 'var(--mf-text)',
+                  pointerEvents: 'none',
+                  zIndex: 30,
                 }}
               />
             )}
@@ -5155,7 +5273,13 @@ function FormatToolbar({
              * 알 길이 없었다. 예약(`armedMarksOverlay`)을 덮어 쓴다: 굵은 글 안에서
              * **꺼 둔** 상태도 그대로 보인다(그쪽이 `want: false`로 온다).
              */
-            { ...noteActiveMarks(el), ...armedMarksOverlay(el) }
+            /**
+             * 코드 불만은 **경계에서 한 번 더** 고른다(제보) — `codeEdgeMark`가
+             * 「다음 글자가 코드인가」의 단일 원천이고, 우리가 그리는 캐럿도 그
+             * 값으로 선다. DOM만 읽으면 크로뮴이 자리를 접어 놓은 탓에 불과 실제
+             * 입력이 어긋난다(코드 머리 안쪽에 캐럿을 심어도 글자는 밖에 떨어진다).
+             */
+            withCodeEdge(el, { ...noteActiveMarks(el), ...armedMarksOverlay(el) })
           : { b: false, i: false, s: false, u: false, k: false, c: null, hl: null };
       setMarks((cur) => (sameMarks(cur, next) ? cur : next));
       const key = el?.getAttribute('data-note-line') ?? '';

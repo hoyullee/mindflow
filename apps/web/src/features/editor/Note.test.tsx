@@ -9554,3 +9554,76 @@ describe('공책 81판 — ⌘+Shift+위/아래로 본문의 처음·끝까지(�
     sel?.addRange(range);
   }
 });
+
+/**
+ * **코드 경계의 캐럿을 우리가 그린다**(제보 — 자리·불·친 글자는 맞는데 막대가 반대다).
+ *
+ * 그림 자체는 좌표가 있어야 서므로 jsdom에서는 나타나지 않는다(`Range`에
+ * `getBoundingClientRect`가 없다 — 실브라우저 프로브가 픽셀을 본다). 여기서 지키는
+ * 것은 그 아래의 계약이다: **툴바의 코드 불이 「다음 글자가 코드인가」와 같은 원천을
+ * 읽는다**(`codeEdgeMark`). 불과 막대가 다른 것을 보면 사용자에게는 그것이 곧 버그다.
+ */
+describe('공책 82판 — 코드 경계의 불은 「다음 글자」를 말한다(제보)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string) {
+    localStorage.setItem(
+      `mindflow_doc_${id}`,
+      JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [
+        { id: 'b1', kind: 'p', runs: [
+          { t: '안녕', b: false, c: null },
+          { t: '안녕하세요', b: false, c: null, k: true },
+          { t: '안녕', b: false, c: null },
+        ] },
+      ] }] }),
+    );
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const line = (c: HTMLElement) => c.querySelector('[data-note-line="b1"]') as HTMLElement;
+  const codeText = (c: HTMLElement) => line(c).querySelector('code')!.firstChild as Text;
+  const lamp = (c: HTMLElement) => c.querySelector('[data-note-mark="k"]')?.getAttribute('aria-pressed');
+
+  function put(el: HTMLElement, node: Node, offset: number): void {
+    el.focus();
+    const range = document.createRange();
+    range.setStart(node, offset);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent(document, new Event('selectionchange'));
+  }
+
+  /**
+   * 크로뮴은 코드 **머리** 경계에서 캐럿이 상자 안에 있어도 글자를 **밖**에 넣는다
+   * (실측). DOM만 읽던 불은 그 자리에서 켜져 있어 **거짓말**을 했다.
+   */
+  it('코드 머리에 캐럿을 심어도 불은 꺼져 있다 — 글자가 밖에 떨어지므로', async () => {
+    const c = await open('ce1');
+    put(line(c), codeText(c), 0);
+    await waitFor(() => expect(lamp(c)).toBe('false'));
+  });
+
+  it('코드 **끝** 경계에서는 켜져 있다 — 그쪽은 글자가 안에 떨어진다', async () => {
+    const c = await open('ce2');
+    put(line(c), codeText(c), 5);
+    await waitFor(() => expect(lamp(c)).toBe('true'));
+  });
+
+  it('경계가 아닌 자리는 읽은 그대로다 — 코드 가운데는 켜짐, 본문은 꺼짐', async () => {
+    const c = await open('ce3');
+    put(line(c), codeText(c), 2);
+    await waitFor(() => expect(lamp(c)).toBe('true'));
+    put(line(c), line(c).firstChild as Text, 1);
+    await waitFor(() => expect(lamp(c)).toBe('false'));
+  });
+});

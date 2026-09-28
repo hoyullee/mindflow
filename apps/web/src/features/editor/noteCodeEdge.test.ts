@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { codeEdgeStep } from './noteCodeEdge';
+import { codeEdgeCaret, codeEdgeMark, codeEdgeStep } from './noteCodeEdge';
 import { runsToHtml } from './richtextDom';
 import { charOffset } from './noteTextSelect';
 
@@ -137,5 +137,99 @@ describe('정거장은 안/밖을 말한다', () => {
     put(codeText(el), 2); // 코드 안 끝
     expect(codeEdgeStep(el, 1)).toBe('out'); // 그 밖
     expect(codeEdgeStep(el, -1)).toBe('in'); // 되돌아오면 다시 안
+  });
+});
+
+/**
+ * **그려지는 캐럿**(제보 — 자리·불·친 글자는 맞는데 막대가 반대쪽에 선다).
+ *
+ * 크로뮴은 「보이기에 같은」 두 자리를 위쪽 하나로 접어 **그린다** — 머리 경계의
+ * 안·밖은 둘 다 상자 밖에, 끝 경계의 안·밖은 둘 다 상자 안에. jsdom에는 그 엔진도
+ * 레이아웃도 없으므로 여기서 재는 것은 둘이다: **어느 쪽을 약속했는가**
+ * (`codeEdgeMark`)와 **그 약속의 자리를 재는가**(`codeEdgeCaret` — 캐럿이 선 노드가
+ * 아니라). 픽셀은 실브라우저 프로브가 본다.
+ */
+describe('코드 경계에 그리는 캐럿', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('예약이 있으면 **그 값**이 약속이다 — 캐럿이 어느 노드에 있든', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 0); // 머리 경계 · DOM으로는 코드 **안**
+    expect(codeEdgeMark(el, false)).toBe(false); // 예약이 「밖」이면 밖이다
+    expect(codeEdgeMark(el, true)).toBe(true);
+  });
+
+  it('예약이 없으면 **크로뮴이 글자를 넣는 쪽** — 머리는 밖, 끝은 안', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 0); // 머리 경계
+    expect(codeEdgeMark(el, undefined)).toBe(false);
+    put(codeText(el), 2); // 끝 경계
+    expect(codeEdgeMark(el, undefined)).toBe(true);
+  });
+
+  it('경계가 아니면 `null`이다 — 그 자리는 브라우저의 것이다', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 1); // 코드 가운데
+    expect(codeEdgeMark(el, undefined)).toBeNull();
+    expect(codeEdgeMark(el, true)).toBeNull();
+    put(el.firstChild as Text, 1); // 코드와 멀리 떨어진 본문
+    expect(codeEdgeMark(el, undefined)).toBeNull();
+  });
+
+  it('코드 **블록** 안에서는 그리지 않는다 — 거기엔 상자가 없다', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    const box = document.createElement('div');
+    box.setAttribute('data-note-kind', 'code');
+    el.parentElement!.appendChild(box);
+    box.appendChild(el);
+    put(codeText(el), 0);
+    expect(codeEdgeMark(el, true)).toBeNull();
+    expect(codeEdgeCaret(el, true)).toBeNull();
+  });
+
+  it('**약속한 쪽**의 자리를 잰다 — 캐럿이 선 노드가 아니라', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 0); // 머리 경계 · 캐럿은 코드 **안**
+    const seen: { node: Node; offset: number }[] = [];
+    const real = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = function stub(this: Range) {
+      seen.push({ node: this.startContainer, offset: this.startOffset });
+      return { left: 10, top: 20, height: 16, width: 0 } as DOMRect;
+    };
+    try {
+      expect(codeEdgeCaret(el, false)).toEqual({ left: 10, top: 20, height: 16 });
+      // 잰 자리는 코드 **밖**의 글자 노드여야 한다(캐럿이 든 코드 글자가 아니라).
+      expect(seen.at(-1)!.node).toBe(el.firstChild);
+      expect(codeEdgeCaret(el, true)).toEqual({ left: 10, top: 20, height: 16 });
+      expect(seen.at(-1)!.node).toBe(codeText(el));
+    } finally {
+      Range.prototype.getBoundingClientRect = real;
+    }
+  });
+
+  /**
+   * **못 재면 그리지 않는다.** 호출부는 그림이 설 때만 기본 캐럿을 감추므로, 여기서
+   * `null`을 내는 것이 곧 "캐럿이 통째로 사라지지 않는다"이다. 못 재는 길은 둘이다.
+   */
+  it('사각형을 물을 수 없으면 `null` — jsdom에는 `Range.getBoundingClientRect`가 없다', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 0);
+    expect(Range.prototype.getBoundingClientRect).toBeUndefined();
+    expect(codeEdgeCaret(el, true)).toBeNull();
+  });
+
+  it('높이 0도 「못 쟀다」로 본다 — 요소 경계의 사각형이 그렇게 온다', () => {
+    const el = line([TEXT('안녕'), CODE('코드'), TEXT('뒷글')]);
+    put(codeText(el), 0);
+    const real = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = () => ({ left: 10, top: 20, height: 0, width: 0 }) as DOMRect;
+    try {
+      expect(codeEdgeCaret(el, true)).toBeNull();
+    } finally {
+      if (real) Range.prototype.getBoundingClientRect = real;
+      else delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
+    }
   });
 });

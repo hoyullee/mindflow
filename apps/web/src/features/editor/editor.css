@@ -1203,3 +1203,30 @@ input[type='search']::-webkit-search-results-decoration {
     animation: none;
   }
 }
+
+/* **코드 경계의 캐럿**(제보) — 크로뮴이 그 두 자리를 위쪽 하나로 접어 그려서,
+   상자 안에 서 있어도 밖에 선 것처럼 보였다. 우리가 잰 자리에 직접 세우고
+   그 동안만 기본 캐럿을 감춘다(`NoteEditor`의 `codeCaret`). 깜빡임 주기는
+   크로뮴과 같은 1초(0.5초 켜고 0.5초 끈다). */
+.mf-note-line.mf-caret-pinned {
+  caret-color: transparent;
+}
+[data-note-code-caret] {
+  animation: mf-code-caret-blink 1s step-end infinite;
+}
+@keyframes mf-code-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+/* 움직임을 줄여 달라는 설정이면 깜빡이지 않는다 — 자리는 그대로 보여 준다. */
+@media (prefers-reduced-motion: reduce) {
+  [data-note-code-caret] {
+    animation: none;
+  }
+}
