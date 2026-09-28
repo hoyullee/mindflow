@@ -78,42 +78,28 @@ export function noteBoxValue(el: HTMLElement): { text: string; rich: RichRun[] |
  * 못하기 때문이다. 그 글자는 **값이 아니다**: 읽는 자리(`noteBoxValue`)가 걷어 내고,
  * 조합이 끝나면 DOM에서도 지운다(`closeArmedAnchor`).
  */
-/**
- * 브라우저가 **다음 글자에 물려줄 스타일**을 들고 있는가 — 값이 말하는 것과 다르면 참.
- *
- * 크로뮴은 지운 글의 계산된 스타일을 기억했다가 다음 글자에 입힌다(인라인 코드를
- * 지운 자리에서 색·배경·글꼴 셋을 전부 물려준다 — 실측). 예약이 없어도 그 상태라면
- * 껍데기를 세워 **덮어야** 한다: 그러지 않으면 첫 글자만 그 서식으로 보였다가
- * 확정될 때 걷혀(`stripBrowserFormatting`) "적용됐다가 풀린다"가 된다(제보 6).
- *
- * 읽을 수 없는 환경(jsdom·옛 브라우저)에서는 거짓이다 — 모르면 세우지 않는다.
- */
-function hasBrowserTypingStyle(eff: { c: string | null; hl: string | null }): boolean {
-  if (typeof document === 'undefined' || typeof document.queryCommandValue !== 'function') return false;
-  try {
-    const back = document.queryCommandValue('backColor');
-    const font = document.queryCommandValue('fontName');
-    // 배경은 **형광을 켜 둔 것이 아닐 때만** 잔재다(형광은 우리가 준 배경이다).
-    const bgJunk = !eff.hl && !!back && !/transparent|rgba\(0, 0, 0, 0\)/.test(back);
-    // 고정폭 글꼴은 본문에 쓰지 않는다 — 인라인 코드를 지운 자리의 흔적이다.
-    const fontJunk = /mono/i.test(font || '');
-    return bgJunk || fontJunk;
-  } catch {
-    return false;
-  }
-}
-
 export function openArmedAnchor(el: HTMLElement): boolean {
   if (typeof document === 'undefined') return false;
   const span = noteCaretSpan(el);
   if (!span || span.a !== span.b) return false;
   /**
-   * **예약이 없어도 세울 때가 있다**(제보 6) — 브라우저가 지운 글의 스타일을 들고
-   * 있을 때다. 예전에는 예약이 있을 때만 세웠는데, 인라인 코드를 지운 자리에는
-   * 예약이 없고 잔재만 있어 첫 글자가 코드처럼 보였다가 확정될 때 풀렸다.
-   * 그때 그리는 것은 **주변 값 그대로**이므로 잔재가 덮이고 값은 변하지 않는다.
+   * **예약이 없으면 세우지 않는다**(제보 2 — 한글 두 번째 글자가 사라진다).
+   *
+   * 한동안은 "브라우저가 지운 글의 스타일을 들고 있을 때"도 세웠다(제보 6:
+   * `hasBrowserTypingStyle`). 그런데 껍데기를 세우는 자리는 `compositionstart`이고
+   * 걷는 자리는 `compositionend`인데, **한글 IME는 앞 음절을 확정하는 그 키에서
+   * 곧바로 다음 조합을 시작한다** — 그 틈에 우리가 노드를 꽂거나(`insertNode`)
+   * 걷으면서 `normalize()`·선택 복원까지 하면, IME가 붙잡아 둔 자리가 사라져
+   * 이어지는 자모가 갈 곳을 잃는다. macOS에서 "아하 그렇구나"가 "아 그ㅎ구나"가
+   * 된 제보가 그 모양이다(리눅스 크로뮴·CDP 흉내로는 재현되지 않는다 — 프로브
+   * 함정 F24와 같은 계열: 흉내 낸 IME는 이 크로뮴의 순서일 뿐이다).
+   *
+   * 잔재는 **값에서** 걷는다 — `NoteLine.commit`이 조합 경계에서는 사본에 대고
+   * `stripBrowserFormatting`을 돌린다. 잃는 것은 조합하는 **동안**의 겉모습뿐이고,
+   * 확정된 글자는 처음부터 깨끗하다.
    */
   const mine = armed && armed.el === el && span.a === armed.at ? armed : null;
+  if (!mine) return false;
   /**
    * 껍데기가 그리는 것은 **예약을 얹은 뒤의 모습**이다 — 켠 것만이 아니라 끈 것까지.
    *
@@ -150,7 +136,7 @@ export function openArmedAnchor(el: HTMLElement): boolean {
    * 전부 명시했다(`font-family:inherit`·`background-color:transparent`·`color:inherit`).
    */
   for (const m of mine?.marks ?? []) if (m.kind === 'k' && !m.want) touched = true;
-  if (!touched && !hasBrowserTypingStyle(eff)) return false;
+  if (!touched) return false;
   const deco = [eff.s ? 'line-through' : '', eff.u ? 'underline' : ''].filter(Boolean).join(' ');
   const hlColor = eff.hl ? noteHighlightColor(eff.hl) : null;
   /**

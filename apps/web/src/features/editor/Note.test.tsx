@@ -9333,3 +9333,105 @@ function pointAtIn(el: HTMLElement, at: number): { node: Node; offset: number } 
   }
   return { node: el, offset: kids.length };
 }
+
+describe('공책 80판 — 한 줄 덮어쓰기의 서식, 조합 이음매의 DOM(제보 2·4)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  async function open(id: string, blocks: unknown[]) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const line = (c: HTMLElement, key: string) => c.querySelector(`[data-note-line="${key}"]`) as HTMLElement;
+
+  /**
+   * 제보 4 — **한 줄 안**의 덮어쓰기도 시작 서식으로 이어 써야 한다. 여러 줄 길은
+   * 이미 그렇고(`replaceWithTyping`), 한 줄은 브라우저가 정하고 있었다: 크로뮴은
+   * 첫 글자에만 물려준다.
+   */
+  it('4 — 한 줄을 통째로 골라 덮어쓰면 **끝까지** 그 서식이다', async () => {
+    const c = await open('ov2', [{ id: 'b1', kind: 'p', runs: [{ t: '굵은 줄', b: true, c: null }] }]);
+    const el = line(c, 'b1');
+    el.focus();
+    setLinearSelection(el, 0, 4); // 줄 전체
+    fireEvent(document, new Event('selectionchange'));
+
+    fireEvent.keyDown(el, { key: '가' });
+    // 브라우저가 그 선택을 **평문**으로 갈아 끼웠다고 치자(최악의 경우).
+    el.innerHTML = '가';
+    setLinearSelection(el, 1, 1);
+    fireEvent.input(el);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    expect([...el.querySelectorAll<HTMLElement>('span[style*="font-weight"]')].map((e) => e.textContent).join('')).toBe('가');
+  });
+
+  it('4 — Backspace·방향키는 그 길을 타지 않는다(예약이 서지 않는다)', async () => {
+    const c = await open('ov3', [{ id: 'b1', kind: 'p', runs: [{ t: '굵은 줄', b: true, c: null }] }]);
+    const el = line(c, 'b1');
+    el.focus();
+    setLinearSelection(el, 0, 4);
+    fireEvent(document, new Event('selectionchange'));
+    fireEvent.keyDown(el, { key: 'Backspace' });
+    el.innerHTML = '';
+    setLinearSelection(el, 0, 0);
+    fireEvent.input(el);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    // 지운 자리에 예약이 남아 있으면 이어 치는 글자가 굵어진다 — 그건 「지우기」가 아니다.
+    el.innerHTML = '가';
+    setLinearSelection(el, 1, 1);
+    fireEvent.input(el);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    expect(el.querySelector('span[style*="font-weight"]')).toBeNull();
+  });
+
+  /**
+   * 제보 2 — **조합이 막 끝난 한 박자에는 살아 있는 DOM을 건드리지 않는다.**
+   *
+   * 한글 IME는 앞 음절을 확정하는 그 키에서 곧바로 다음 조합을 시작한다. 그 틈에
+   * 노드를 풀거나 걷으면 이어지는 자모가 갈 곳을 잃는다(macOS 제보). 값은 사본에서
+   * 걷으므로 깨끗하고, 화면의 잔재는 다음 커밋이 치운다.
+   */
+  it('2 — 조합이 끝난 커밋은 **DOM을 그대로 두고** 값만 깨끗이 한다', async () => {
+    const c = await open('ime1', [{ id: 'b1', kind: 'p', runs: [{ t: '앞글', b: false, c: null }] }]);
+    const el = line(c, 'b1');
+    el.focus();
+    // 크로뮴이 남긴 잔재를 그대로 만든다 — `<font>`로 감싼 글자.
+    el.innerHTML = '앞글<font color="#c44b40" face="monospace">가</font>';
+    setLinearSelection(el, 3, 3);
+    fireEvent.compositionStart(el);
+    fireEvent.input(el);
+    fireEvent.compositionEnd(el);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+    });
+    // **살아 있는 DOM은 그대로** — IME가 붙잡아 둔 자리를 흔들지 않았다.
+    expect(el.querySelector('font')).toBeTruthy();
+  });
+
+  it('2 — 조합이 아닌 커밋은 잔재를 **화면에서도** 치운다', async () => {
+    const c = await open('ime2', [{ id: 'b1', kind: 'p', runs: [{ t: '앞글', b: false, c: null }] }]);
+    const el = line(c, 'b1');
+    el.focus();
+    el.innerHTML = '앞글<font color="#c44b40" face="monospace">가</font>';
+    setLinearSelection(el, 3, 3);
+    fireEvent.input(el);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+    });
+    expect(el.querySelector('font')).toBeNull();
+  });
+});

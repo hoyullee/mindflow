@@ -18,7 +18,7 @@ import type { RichRun } from '@mindflow/mindmap-core';
 import { applyAutoLinks, charsToRuns, runsToChars, runsText, textRuns } from '@mindflow/mindmap-core';
 import { domToRuns, liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { codeHtml } from '../noteCode';
-import { NOTE_EDIT_ATTR, armCaretMark, armCaretMarkAs, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, hasArmedAnchor, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
+import { NOTE_EDIT_ATTR, armCaretMark, armCaretMarkAs, armMarksForReplace, armedCaretAt, armedHasMark, closeArmedAnchor, disarmCaretMark, fireCaretMark, hasArmedAnchor, noteMarksIn, openArmedAnchor, resetTypingStyle, stripBrowserFormatting } from '../noteRichDom';
 import { codeEdgeStep } from '../noteCodeEdge';
 import { caretMetrics, charOffset, hasRowBeyond, lineBoundaryAt, lineLength, lineText, paintCode, pointAt, rangeOfChars, rowStepInLine } from '../noteTextSelect';
 import { cellListBackspace, cellListBreak, cellListHtml, cellListSync, cellListTab } from '../noteCellList';
@@ -166,6 +166,16 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
   /**
+   * **조합이 막 끝난 그 커밋인가** — 살아 있는 DOM을 건드리면 안 되는 한 박자다.
+   *
+   * 한글 IME는 앞 음절을 **확정하는 그 키에서 곧바로 다음 조합을 시작한다**. 그
+   * 사이에 우리가 노드를 갈아 끼우면 IME가 붙잡아 둔 자리가 사라져 이어지는 자모가
+   * 갈 곳을 잃는다 — macOS 제보의 "아하 그렇구나"가 "아 그ㅎ구나"가 된 모양이다.
+   * "조합 중에는 DOM을 건드리지 않는다"는 이 파일의 규칙을 **조합이 끝난 직후까지**
+   * 늘린 것이다.
+   */
+  const justComposed = useRef(false);
+  /**
    * **세로로 오르내리는 동안 지킬 목표 칸**(화면 좌표 x) — 브라우저의 "desired column"과
    * 같은 것을 우리가 든다. 짧은 행을 지날 때 칸이 그 행의 끝으로 줄어들면 안 되기
    * 때문이고, 세로가 아닌 키를 누르면 그 자리에서 잊는다.
@@ -225,6 +235,22 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
     } else {
       el.innerHTML = runsToHtml(value);
     }
+  };
+
+  /**
+   * 값을 읽는다 — **살아 있는 DOM을 건드려도 되는 때에만** 잔재를 거기서 걷는다.
+   *
+   * 못 건드리는 때(조합 중·조합이 막 끝난 한 박자)는 **사본**에 대고 걷어 값만 얻는다.
+   * 사본은 문서에 붙이지 않는다 — `domToRuns`는 계산된 스타일을 읽지 않고 태그와
+   * 인라인 선언만 보므로 떨어져 있어도 같은 값이 나온다.
+   */
+  const readValue = (el: HTMLElement): { text: string; rich: RichRun[] | null } => {
+    if (!composing.current && !justComposed.current) {
+      stripBrowserFormatting(el);
+      return domToRuns(el);
+    }
+    const copy = el.cloneNode(true) as HTMLElement;
+    return stripBrowserFormatting(copy) ? domToRuns(copy) : domToRuns(el);
   };
 
   /**
@@ -328,11 +354,16 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      *
      * 크로뮴은 지운 글의 계산된 스타일을 "다음에 칠 글자"에 물려주는데, 인라인 코드는
      * 색·배경·글꼴을 다 갖고 있어 `<font color="#c44b40">…`으로 되살아난다. 그대로
-     * 읽으면 그 색이 **값**(`RichRun.c`)이 되어 붉은 글자로 저장된다. 조합 중에는
-     * 건드리지 않는다 — IME가 빚고 있는 노드를 갈아 끼우면 조합이 깨진다.
+     * 읽으면 그 색이 **값**(`RichRun.c`)이 되어 붉은 글자로 저장된다.
+     *
+     * **걷는 자리가 둘이다**(제보 2). 조합 중이거나 조합이 **막 끝난** 커밋에서는
+     * 살아 있는 DOM을 건드리지 않는다 — 그때 IME는 다음 음절을 빚을 자리를 이미
+     * 붙잡고 있어, 노드를 풀거나(`<font>` 언랩) 스팬을 걷으면 이어지는 자모가 갈
+     * 곳을 잃는다(`justComposed` 머리말). 그 한 박자에는 **사본에서** 걷어 값만
+     * 깨끗이 하고, 화면의 잔재는 **다음 커밋**(공백·지우기·줄을 떠날 때)이 치운다.
+     * 값이 언제나 깨끗하다는 것이 이 함수가 지켜야 할 전부다.
      */
-    if (!composing.current) stripBrowserFormatting(el);
-    const { text, rich } = domToRuns(el);
+    const { text, rich } = readValue(el);
     /**
      * **줄이 비면 브라우저의 타이핑 스타일도 비운다**(제보: 줄을 통째로 지운 뒤 다시
      * 치면 서식이 살아나 끌 방법이 없다). 우리 모델은 비었는데 크로뮴은 지운 선택의
@@ -395,6 +426,28 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         e.preventDefault();
         e.stopPropagation();
         return;
+      }
+    }
+    /**
+     * **고른 것을 글자로 덮어쓴다 — 시작 서식을 못박는다**(제보 4).
+     *
+     * 여러 줄을 덮어쓰는 길은 이미 그렇게 한다(`replaceWithTyping` → `armMarksForReplace`).
+     * **한 줄 안**은 그 길을 지나지 않아 브라우저가 정하고 있었고, 크로뮴은 첫 글자에만
+     * 지워진 자리의 서식을 물려준다 — 제보의 "첫 글자만 서식이 적용되고 두 번째부터는
+     * 풀린다"가 그것이다. 두 길을 같은 규칙으로 모은다.
+     *
+     * 조건은 셋이다: **글자를 넣는 키**(한 글자짜리 `key` 또는 IME의 조합 시작) ·
+     * 수정 키가 없을 것 · 이 줄 안에 **범위 선택**이 있을 것. Backspace·Enter·방향키는
+     * `key.length === 1`이 아니라 걸리지 않는다.
+     */
+    if (!readOnly && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key.length === 1 || e.nativeEvent.isComposing || e.keyCode === 229)) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.focusNode && el.contains(sel.focusNode)) {
+        const span = selectedRange(el);
+        if (span.to > span.from) {
+          const len = lineLength(el);
+          armMarksForReplace(el, span.from, span.to - span.from, noteMarksIn(el, span.from, Math.min(len, span.from + 1)));
+        }
       }
     }
     /**
@@ -779,10 +832,17 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         dirty.current = true;
         paintCode(null);
         // 껍데기의 폭 0 글자를 먼저 걷는다 — 그 뒤의 `fireCaretMark`가 세는 자리와
-        // 값이 어긋나지 않게(`commit` 안에서 돈다).
+        // 값이 어긋나지 않게(`commit` 안에서 돈다). 껍데기는 **예약이 있을 때만**
+        // 서므로(`openArmedAnchor`), 평범한 타이핑에서는 이 줄이 아무 일도 하지 않는다.
         const el = ref.current;
         if (el) closeArmedAnchor(el);
-        commit();
+        // 이 커밋은 **조합 경계**다 — 살아 있는 DOM을 건드리지 않는다(`justComposed`).
+        justComposed.current = true;
+        try {
+          commit();
+        } finally {
+          justComposed.current = false;
+        }
       }}
       onKeyUp={() => {
         // 캐럿이 마커 **안**에 떨어지면 내용 쪽으로 물린다 — 그 스팬에 친 글자는

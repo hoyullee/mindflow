@@ -238,10 +238,28 @@ describe('조합 껍데기가 그리는 것(제보 2·3·6)', () => {
     expect(st).toContain('font-family:inherit');
   });
 
-  it('예약도 잔재도 없으면 **세우지 않는다** — 쓸데없이 DOM을 늘리지 않는다', () => {
+  /**
+   * **예약이 없으면 세우지 않는다**(제보 2). 한동안은 "브라우저가 잔재를 들고 있을
+   * 때"도 세웠는데, 껍데기를 꽂고 걷는 자리가 조합의 시작·끝이라 한글 IME의 음절
+   * 이음매에서 자모가 사라졌다(macOS 제보). 잔재는 값에서 걷는다.
+   */
+  it('예약이 없으면 **세우지 않는다** — 조합 이음매에서 DOM을 건드리지 않는다', () => {
     const el = line();
     expect(openArmedAnchor(el)).toBe(false);
     expect(anchor(el)).toBeNull();
+  });
+
+  it('브라우저가 **잔재를 들고 있다고 답해도** 세우지 않는다', () => {
+    const el = line();
+    // 크로뮴이 지운 인라인 코드의 글꼴·배경을 들고 있는 상태를 흉내 낸다.
+    (document as unknown as { queryCommandValue: unknown }).queryCommandValue = (cmd: string) =>
+      cmd === 'fontName' ? 'ui-monospace, monospace' : cmd === 'backColor' ? 'rgb(244, 238, 232)' : '';
+    try {
+      expect(openArmedAnchor(el)).toBe(false);
+      expect(anchor(el)).toBeNull();
+    } finally {
+      delete (document as unknown as { queryCommandValue?: unknown }).queryCommandValue;
+    }
   });
 
   it('껍데기의 폭 0 글자는 **값이 아니다** — 조합 중에 저장돼도 문서에 남지 않는다', () => {
