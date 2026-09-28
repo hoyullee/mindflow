@@ -6208,6 +6208,14 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
      * 그 자리는 보초 `<br>` 둘 **사이**다 — 요소 경계라 값 좌표에는 없지만 캐럿은
      * 설 수 있다(실측: 거기서 친 글자가 둘째 행에 들어간다). 그래서 끝에서 바꿀
      * 때만 우리가 직접 놓는다.
+     *
+     * **코드 블록도 이 처방이 덮는다**(제보를 받고 실브라우저로 확인했다 — 앱은
+     * 결백했다). 자리를 자식 **인덱스**(`childNodes.length - 1`)로 잡기 때문이다:
+     * 문단은 `한줄글<br><br>`로 자식이 셋이고 코드는 `codeHtml`이 조각마다 스팬을
+     * 세워 일곱이지만, 보초 둘은 언제나 **마지막 둘**이라 같은 자리를 가리킨다.
+     * 재 볼 때 조심할 것 하나 — `textContent`는 `<br>`을 읽지 않아 두 행이 붙어
+     * 보인다(`const a = 1two`). 행은 `innerHTML`이나 사각형으로 센다
+     * (`docs/probe-pitfalls.md` F16).
      */
     const kids = el.childNodes;
     const last = kids.length - 1;
