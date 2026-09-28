@@ -1745,6 +1745,57 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   }, []);
 
   /**
+   * **⌘(Ctrl)+Shift+위/아래 = 캐럿에서 본문의 처음·끝까지**(제보).
+   *
+   * OS의 관례다 — 맥은 ⌘⇧↑·⌘⇧↓, 윈도·리눅스는 Ctrl+Shift+Home·End와 같은 뜻이다.
+   * 브라우저는 이것을 **편집 박스 하나 안에서만** 해낸다: 우리 본문은 블록마다 박스가
+   * 따로라(그래서 `CSS.highlights`로 직접 칠한다) 그 줄의 처음·끝에서 멈췄다.
+   *
+   * 앵커는 `extendSelection`과 같은 셋에서 고른다 — 칠해 둔 선택의 앵커가 있으면 그것,
+   * 없으면 지금 캐럿. 초점만 **첫 줄의 0** 또는 **마지막 줄의 끝**으로 한 번에 옮긴다.
+   * 결과가 한 줄 안이면(본문이 한 줄이거나 첫 줄에서 ↑) 우리 칠을 걷고 브라우저의
+   * 선택으로 되돌린다 — `shiftExtend`·`extendSelection`이 이미 쓰는 규칙이다.
+   */
+  const selectToEnd = useCallback(
+    (dir: -1 | 1): boolean => {
+      const col = colRef.current;
+      if (!col) return false;
+      const lines = [...col.querySelectorAll<HTMLElement>('[data-note-line]')].filter((el) => el.getAttribute('contenteditable') === 'true');
+      const edge = dir === -1 ? lines[0] : lines[lines.length - 1];
+      if (!edge) return false;
+      let anchor = selAnchor.current;
+      if (!anchor || !col.contains(anchor.el)) {
+        const sel = window.getSelection();
+        const live = document.activeElement as HTMLElement | null;
+        anchor = live?.hasAttribute?.('data-note-line') && sel?.anchorNode && live.contains(sel.anchorNode) ? { el: live, node: sel.anchorNode, offset: sel.anchorOffset } : null;
+      }
+      if (!anchor || !col.contains(anchor.el)) return false;
+      const spot = pointAt(edge, dir === -1 ? 0 : lineLength(edge));
+      const focus = { el: edge, node: spot.node, offset: spot.offset };
+      selAnchor.current = anchor;
+      selFocus.current = focus;
+      // 세로 목표 칸은 **잊는다** — 다음 Shift+위/아래는 새 초점에서 다시 잡는다.
+      selX.current = undefined;
+      selY.current = undefined;
+      setObjSel([]);
+      const built = buildSelection(col, anchor, focus);
+      if (!built) {
+        setTextSel(null);
+        try {
+          anchor.el.focus({ preventScroll: true });
+          window.getSelection()?.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
+        } catch {
+          /* 선택을 못 세워도 포커스는 갔다 */
+        }
+        return true;
+      }
+      paintAndHold(built);
+      return true;
+    },
+    [paintAndHold],
+  );
+
+  /**
    * **평문 붙여넣기** — 목록 표식을 살려 블록으로 세운다(제보: 복사한 번호 매기기를
    * 붙이면 글만 들어간다). 처리했으면 `true`(브라우저의 기본 붙여넣기를 막는다).
    *
@@ -1999,6 +2050,12 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
         const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
         const back = e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'Home';
+        // **⌘(Ctrl)+Shift+위/아래는 본문의 처음·끝까지** — 칠해 둔 선택을 이어서 넓힌다.
+        if (e.shiftKey && vertical && (e.metaKey || e.ctrlKey) && !e.altKey) {
+          e.preventDefault();
+          selectToEnd(e.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
         if (e.shiftKey && vertical && !e.metaKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
           extendSelection(e.key === 'ArrowUp' ? -1 : 1);
@@ -2104,7 +2161,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('paste', onPaste);
     };
-  }, [textSel, page, controller, readOnly, extendSelection, extendSide, selectAllBody]);
+  }, [textSel, page, controller, readOnly, extendSelection, extendSide, selectAllBody, selectToEnd]);
 
   /**
    * **클립보드의 그림을 붙여넣으면 이미지 블록이 된다**(요청 10) — 단추로 고른 것과
@@ -2898,6 +2955,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                   setFreshId={setFreshId}
                   selectOut={extendSelection}
                   selectAll={selectAllBody}
+                  selectDoc={selectToEnd}
                   selectSide={(dir) => extendSide(dir, 'char')}
                   pasteText={pasteText}
                   pickLinkDoc={setLinkPick}
@@ -5761,6 +5819,7 @@ interface BlockProps {
   selectOut: (dir: -1 | 1, x?: number, y?: number) => boolean;
   /** ⌘A 두 번째 — 본문 전체 고르기. */
   selectAll: () => boolean;
+  selectDoc: (dir: -1 | 1) => boolean;
   /** Shift+왼쪽/오른쪽으로 줄을 넘어 고르기 — 루트가 그림을 들고 있다. */
   selectSide: (dir: -1 | 1) => boolean;
   /** 평문 붙여넣기 — 목록 표식을 살려 블록으로 세운다. 처리했으면 `true`. */
@@ -5897,7 +5956,7 @@ function ExportMenu({ controller, stop }: { controller: EditorController; stop: 
   );
 }
 
-function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, openMention, pickObject, picked, onlyPicked }: BlockProps) {
+function BlockView({ controller, block, index, freshId, setFreshId, selectOut, selectAll, selectDoc, selectSide, pasteText, pickLinkDoc, selecting, rememberBox, focusBox, openSlash, openMention, pickObject, picked, onlyPicked }: BlockProps) {
   const readOnly = controller.readOnly;
   const shape = noteBlockShape(block.kind);
   /**
@@ -6317,6 +6376,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSelectOut={selectOut}
       onSelectSide={selectSide}
       onSelectAll={selectAll}
+      onSelectDoc={selectDoc}
       selecting={selecting}
               onChange={(runs) => {
                 const itemId = block.items?.[0]?.id;
@@ -6421,6 +6481,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSelectOut={selectOut}
       onSelectSide={selectSide}
       onSelectAll={selectAll}
+      onSelectDoc={selectDoc}
       selecting={selecting}
               onChange={(runs) => controller.setNoteItemRuns(block.id, item.id, runs)}
               onPasteText={(t, from, to) => pasteText(`${block.id}:${item.id}`, t, from, to)}
@@ -6596,6 +6657,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSelectOut={selectOut}
       onSelectSide={selectSide}
       onSelectAll={selectAll}
+      onSelectDoc={selectDoc}
       onPasteText={(t, from, to) => pasteText(block.id, t, from, to)}
       selecting={selecting}
       onSlash={(at, tail) => {

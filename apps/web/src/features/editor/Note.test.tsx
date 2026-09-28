@@ -9435,3 +9435,122 @@ describe('공책 80판 — 한 줄 덮어쓰기의 서식, 조합 이음매의 D
     expect(el.querySelector('font')).toBeNull();
   });
 });
+
+/**
+ * **⌘(Ctrl)+Shift+위/아래 = 캐럿에서 본문의 처음·끝까지**(제보 5).
+ *
+ * 브라우저는 이것을 **편집 박스 하나 안**에서만 해낸다 — 우리 본문은 블록마다
+ * 박스가 따로라(그래서 `CSS.highlights`로 직접 칠한다) 그 줄의 처음·끝에서 멈췄다.
+ */
+describe('공책 81판 — ⌘+Shift+위/아래로 본문의 처음·끝까지(제보 5)', () => {
+  beforeEach(() => {
+    clearNoteAgendaPrefCache();
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    vi.useRealTimers();
+  });
+  afterEach(cleanup);
+
+  const THREE = [
+    { id: 'b1', kind: 'p', runs: [{ t: '첫째 줄', b: false, c: null }] },
+    { id: 'b2', kind: 'p', runs: [{ t: '둘째 줄', b: false, c: null }] },
+    { id: 'b3', kind: 'p', runs: [{ t: '셋째 줄', b: false, c: null }] },
+  ];
+
+  async function open(id: string, blocks: unknown[] = THREE) {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-editor]')).toBeTruthy());
+    return container;
+  }
+  const line = (c: HTMLElement, key: string) => c.querySelector(`[data-note-line="${key}"]`) as HTMLElement;
+  const picked = (c: HTMLElement) => [...c.querySelectorAll<HTMLElement>('[data-note-blockwrap][data-selected]')].map((e) => e.getAttribute('data-note-blockwrap'));
+
+  it('5 — 첫 줄에서 ⌘+Shift+↓는 **마지막 줄의 끝까지** 고른다', async () => {
+    const c = await open('md1');
+    const el = line(c, 'b1');
+    el.focus();
+    setLinearSelection(el, 2, 2); // `첫째` 뒤
+
+    fireEvent.keyDown(el, { key: 'ArrowDown', shiftKey: true, metaKey: true });
+
+    await waitFor(() => expect(picked(c)).toEqual(['b1', 'b2', 'b3']));
+  });
+
+  it('5 — 마지막 줄에서 ⌘+Shift+↑는 **첫 줄의 처음까지** 고른다', async () => {
+    const c = await open('md2');
+    const el = line(c, 'b3');
+    el.focus();
+    setLinearSelection(el, 2, 2);
+
+    fireEvent.keyDown(el, { key: 'ArrowUp', shiftKey: true, metaKey: true });
+
+    await waitFor(() => expect(picked(c)).toEqual(['b1', 'b2', 'b3']));
+  });
+
+  it('5 — 윈도·리눅스의 Ctrl+Shift+아래도 같다', async () => {
+    const c = await open('md3');
+    const el = line(c, 'b1');
+    el.focus();
+    setLinearSelection(el, 2, 2);
+
+    fireEvent.keyDown(el, { key: 'ArrowDown', shiftKey: true, ctrlKey: true });
+
+    await waitFor(() => expect(picked(c)).toEqual(['b1', 'b2', 'b3']));
+  });
+
+  /**
+   * 칠해 둔 선택 위에서는 편집 박스에 초점이 없어 줄 부품의 키 처리가 오지 않는다 —
+   * 그때는 **문서 리스너**가 이어받는다(같은 규칙을 두 자리에 둔 이유다).
+   */
+  it('5 — 이미 고른 상태에서 눌러도 **끝까지** 넓어진다(문서 리스너)', async () => {
+    const c = await open('md4');
+    const el = line(c, 'b1');
+    caretAtEnd(el);
+    fireEvent.keyDown(el, { key: 'ArrowDown', shiftKey: true });
+    await waitFor(() => expect(picked(c)).toEqual(['b1', 'b2']));
+
+    fireEvent.keyDown(document, { key: 'ArrowDown', shiftKey: true, metaKey: true });
+
+    await waitFor(() => expect(picked(c)).toEqual(['b1', 'b2', 'b3']));
+  });
+
+  it('5 — 수정 키 없는 Shift+↓는 그대로 **한 줄씩**이다(넘겨받지 않는다)', async () => {
+    const c = await open('md5');
+    const el = line(c, 'b1');
+    caretAtEnd(el);
+
+    fireEvent.keyDown(el, { key: 'ArrowDown', shiftKey: true });
+
+    await waitFor(() => expect(picked(c)).toEqual(['b1', 'b2']));
+  });
+
+  it('5 — 본문이 한 줄뿐이면 우리 칠은 서지 않는다(브라우저의 선택이 낫다)', async () => {
+    const c = await open('md6', [{ id: 'b1', kind: 'p', runs: [{ t: '외줄', b: false, c: null }] }]);
+    const el = line(c, 'b1');
+    el.focus();
+    setLinearSelection(el, 1, 1);
+
+    fireEvent.keyDown(el, { key: 'ArrowDown', shiftKey: true, metaKey: true });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    expect(picked(c)).toEqual([]);
+    // 대신 그 줄 안의 브라우저 선택으로 끝까지 늘어나 있다.
+    expect(window.getSelection()?.isCollapsed).toBe(false);
+  });
+
+  function caretAtEnd(el: HTMLElement): void {
+    el.focus();
+    const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode() as Text | null;
+    const range = document.createRange();
+    if (text) range.setStart(text, (text.nodeValue ?? '').length);
+    else range.setStart(el, 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+});
