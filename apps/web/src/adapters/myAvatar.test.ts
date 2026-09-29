@@ -41,11 +41,13 @@ describe('myAvatar — 내 사진의 한 원천', () => {
     expect(resolveMyAvatar('me@x.com', GOOGLE)).toBe(MINE);
   });
 
-  it('화면이 여럿이어도 서버 조회는 탭에 한 번이다', async () => {
+  it('**동시에** 뜬 화면들은 요청 하나를 나눠 쓰고, 끝난 뒤 다시 서면 다시 묻는다', async () => {
     const auth = authWith(MINE);
     await Promise.all([refreshMyAvatar(auth, 'me@x.com'), refreshMyAvatar(auth, 'me@x.com'), refreshMyAvatar(auth, 'ME@x.com')]);
-    await refreshMyAvatar(auth, 'me@x.com');
     expect(auth.getProfileAvatar).toHaveBeenCalledTimes(1);
+    // 다른 기기에서 바꾼 사진이 이 탭에도 와야 한다 — 다음 화면이 서면 다시 묻는다.
+    await refreshMyAvatar(auth, 'me@x.com');
+    expect(auth.getProfileAvatar).toHaveBeenCalledTimes(2);
   });
 
   it('바꾸면 **떠 있는 모든 화면**이 받고, 다음 방문의 첫 페인트도 그 값이다', () => {

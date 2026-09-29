@@ -13,7 +13,7 @@
 //   ① 서버가 이번 탭에서 알려 준 값(`null` = 지웠다 → 기본 얼굴) — 가장 믿을 만하다
 //   ② 계정별 캐시(`mf_profile_avatars` — 마지막으로 확인·변경한 값, 첫 페인트용)
 //   ③ 세션의 `avatarUrl` — 서버도 캐시도 모를 때만(첫 로그인 직후·로컬 모드)
-// 서버 조회는 탭에 한 번이다(화면 여럿이 동시에 떠도 요청은 하나). 바꾸면
+// 서버 조회는 화면이 설 때마다 한다(동시에 여럿이 떠도 요청은 하나). 바꾸면
 // `publishMyAvatar`가 캐시를 고치고 살아 있는 모든 구독자에게 밀어 준다 — 다른 탭은
 // `storage` 이벤트로 같은 값을 받는다.
 
@@ -57,7 +57,7 @@ export function publishMyAvatar(email: string, url: string | null): void {
   notify();
 }
 
-/** 서버에 한 번 묻는다(탭당 한 번 · 동시에 여럿이 불러도 요청은 하나). */
+/** 서버에 묻는다 — 화면이 설 때마다 부르되, **동시에** 여럿이 부르면 요청은 하나다. */
 export function refreshMyAvatar(auth: AuthProvider, email: string): Promise<void> {
   const k = keyOf(email);
   const busy = inflight.get(k);
@@ -70,6 +70,11 @@ export function refreshMyAvatar(auth: AuthProvider, email: string): Promise<void
     })
     .catch(() => {
       /* 오프라인·일시 실패 — 가진 값을 그대로 쓴다 */
+    })
+    .finally(() => {
+      // 끝나면 비운다 — 묶는 것은 **동시에 뜬 화면끼리**뿐이다. 탭에 한 번으로 묶으면 다른
+      // 기기에서 바꾼 사진이 이 탭을 새로 고칠 때까지 오지 않는다(홈은 들어올 때마다 물었다).
+      if (inflight.get(k) === p) inflight.delete(k);
     });
   inflight.set(k, p);
   return p;
