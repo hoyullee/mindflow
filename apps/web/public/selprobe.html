@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>선택 프로브 (스파이크 · 임시)</title>
+<style>
+  :root { color-scheme: light; }
+  body { font: 16px/1.7 -apple-system, "Pretendard", system-ui, sans-serif; margin: 0; padding: 16px 16px 60px; color: #2c241d; background: #fffdfb; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .sub { font-size: 12.5px; color: #7c6d60; margin: 0 0 14px; }
+  .bar { position: sticky; top: 0; background: #fffdfb; padding: 10px 0; border-bottom: 1px solid #e8e0d8; z-index: 5; }
+  button { font: inherit; font-size: 14px; font-weight: 700; padding: 10px 14px; border-radius: 999px; border: 1px solid #e0d6cc; background: #fff; color: #2c241d; }
+  button[aria-pressed="true"] { background: #f0663f; border-color: #f0663f; color: #fff; }
+  #col { margin: 14px 0; padding: 4px 0; outline: none; }
+  .line { outline: none; padding: 5px 2px; }
+  .h2 { font-size: 19px; font-weight: 800; }
+  .li { padding-left: 22px; position: relative; }
+  .li::before { content: "•"; position: absolute; left: 6px; color: #b3a596; }
+  #out { font: 12.5px/1.6 ui-monospace, monospace; white-space: pre-wrap; background: #f7f3ee; border: 1px solid #e8e0d8; border-radius: 10px; padding: 10px; margin-top: 10px; }
+  ol { font-size: 13.5px; color: #55493f; padding-left: 20px; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<h1>선택 프로브 — 블록을 넘는 네이티브 선택</h1>
+<p class="sub">공책 본문의 구조(줄마다 편집 박스)를 그대로 흉내 낸 페이지입니다. 앱이 아니라 시험용이에요.</p>
+
+<div class="bar">
+  <button id="tog" aria-pressed="false">승격: 꺼짐 (지금 앱과 같음)</button>
+</div>
+
+<div id="col">
+  <div class="line h2" contenteditable="true">제목 줄입니다</div>
+  <div class="line" contenteditable="true">첫 번째 문단이에요. 여기서 시작해서 아래로 끌어 보세요.</div>
+  <div class="line" contenteditable="true">두 번째 문단입니다. 한글도 영어도 섞여 있어요 mixed text.</div>
+  <div class="line li" contenteditable="true">목록 항목 하나</div>
+  <div class="line li" contenteditable="true">목록 항목 둘</div>
+  <div class="line" contenteditable="true">마지막 문단입니다.</div>
+</div>
+
+<div id="out">선택한 것이 없습니다.</div>
+
+<ol>
+  <li><b>승격 꺼짐</b>에서 글자를 두 번 눌러 고른 뒤, 손잡이를 <b>아래 줄까지</b> 끌어 보세요 → 줄을 못 넘습니다(지금 앱).</li>
+  <li><b>승격 켜짐</b>으로 바꾸고 같은 걸 해 보세요 → 줄을 넘어야 합니다.</li>
+  <li>그때 <b>잘라내기·복사·붙여넣기 알약 툴바가 뜨는지</b>가 이 시험의 목적입니다.</li>
+</ol>
+
+<script>
+(function () {
+  var col = document.getElementById('col');
+  var out = document.getElementById('out');
+  var tog = document.getElementById('tog');
+  var lines = function () { return [].slice.call(document.querySelectorAll('.line')); };
+  var on = false;
+
+  tog.addEventListener('click', function () {
+    on = !on;
+    if (on) col.setAttribute('contenteditable', 'true');
+    else col.removeAttribute('contenteditable');
+    tog.setAttribute('aria-pressed', String(on));
+    tog.textContent = on ? '승격: 켜짐 (컬럼이 한 편집 박스)' : '승격: 꺼짐 (지금 앱과 같음)';
+    report();
+  });
+
+  function idxOf(node) {
+    var ls = lines();
+    for (var i = 0; i < ls.length; i++) if (ls[i].contains(node)) return i;
+    return -1;
+  }
+  function report() {
+    var s = window.getSelection();
+    var a = document.activeElement;
+    var active = a === col ? '컬럼(col)' : (a && a.classList && a.classList.contains('line')) ? '줄 ' + idxOf(a) : (a ? a.tagName : '없음');
+    if (!s || !s.rangeCount) { out.textContent = '승격: ' + (on ? '켜짐' : '꺼짐') + '\n선택 없음\n포커스: ' + active; return; }
+    var txt = s.toString();
+    // **줄을 넘었는가는 글자로 판정한다** — 앵커·포커스가 다른 줄을 가리켜도
+    // 브라우저가 한 줄에서 잘라 내면 `toString()`은 그 줄만 돌려준다(그게 진실이다).
+    var crossed = txt.indexOf('\n') >= 0;
+    out.textContent =
+      '승격: ' + (on ? '켜짐' : '꺼짐') +
+      '\n판정: ' + (txt.length === 0 ? '선택 없음' : crossed ? '✅ 줄을 넘었다' : '❌ 한 줄에 갇힘') +
+      '\n고른 글자 수: ' + txt.length +
+      '\n미리보기: ' + JSON.stringify(txt.slice(0, 60)) +
+      '\n포커스: ' + active;
+  }
+  document.addEventListener('selectionchange', report);
+  report();
+})();
+</script>
+</body>
+</html>
