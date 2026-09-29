@@ -5,8 +5,9 @@
 // 갈릴 자리가 셋이었다(우클릭 메뉴·NavCard와 같은 계열의 드리프트). 첨부 디자인이
 // 그 판을 걷어내고 **왼쪽 세로선(rail)**으로 바꾸므로, 이 참에 한 곳으로 모은다.
 //
-// **머리는 펼쳤을 때만 칠한다** — 틴트의 뜻을 "열려 있다"로 못박는다(일정 카드가
-// 활성일 때만 칠하는 것과 같은 규칙: 늘 칠하면 "언제나 활성"으로 읽힌다는 제보).
+// **머리는 칠하지 않는다**(스펙: 홈·LNB 변경 3 — 헤더 배경 항상 투명). 열려 있다는 것은
+// 셰브론의 방향과 굵어진 이름, 그리고 아래로 펼쳐진 rail이 이미 말한다 — 면까지 깔면
+// 셋 중 하나만 열 수 있게 된 뒤로(아코디언) 열린 구획이 늘 하나씩 칠해져 LNB가 얼룩져 보인다.
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -116,9 +117,6 @@ export function LnbListSection({ open, onToggle, glyph, label, action, meta, row
         role="button"
         tabIndex={0}
         aria-expanded={open}
-        // hover가 틴트를 회색으로 갈아 끼우지 않게 하는 표식 — 손을 얹은 순간
-        // "펼쳐져 있다"가 꺼진 것처럼 보이면 안 된다(`home.css`의 `[data-tinted]`).
-        data-tinted={open ? '1' : undefined}
         data-lnb-section={label}
         onClick={onToggle}
         onKeyDown={(e) => {
@@ -138,7 +136,7 @@ export function LnbListSection({ open, onToggle, glyph, label, action, meta, row
           fontSize: 13,
           fontWeight: open ? 600 : 500,
           color: open ? 'var(--mf-text)' : 'var(--mf-subtext)',
-          background: open ? 'var(--mf-accent-soft)' : 'transparent',
+          background: 'transparent',
           flexShrink: 0,
         }}
       >

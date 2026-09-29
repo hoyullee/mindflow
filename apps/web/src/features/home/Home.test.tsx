@@ -1442,8 +1442,9 @@ describe('Home', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
-    // 프로필명 변경은 팝오버에서 사라지고(요청) 설정 모달로 옮겨졌다.
-    expect(screen.queryByRole('button', { name: '프로필명 변경' })).toBeNull();
+    // 계정 메뉴에 프로필명 변경이 **돌아왔다**(스펙: 홈·LNB 변경 5 — 예전 요청으로 뺐던
+    // 것을 이번 스펙이 다시 넣었다). 설정 › 프로필 설정의 진입점도 그대로 남는다.
+    expect(screen.getByRole('button', { name: '프로필명 변경' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: '설정' }));
     const dialog = screen.getByRole('dialog', { name: '설정' });
     // 첫 화면은 진입 행 둘 + 색상 테마이고, 테마가 **가장 아래**다(요청).
@@ -2573,7 +2574,7 @@ describe('Home', () => {
   // 첨부 디자인(요청 ④) — 세 구획(즐겨찾기·공유받음·휴지통)이 한 껍데기를 쓰고,
   // 펼친 목록은 **가라앉은 판이 아니라 왼쪽 rail**에 든다. 값이 갈릴 자리를 하나로
   // 모은 것이라(예전엔 세 곳에 인라인) 이 계약이 깨지면 곧 서로 달라 보인다.
-  it('세 구획은 같은 껍데기를 쓴다 — 펼치면 머리가 칠해지고 목록은 왼쪽 rail에 든다(첨부 디자인)', async () => {
+  it('세 구획은 같은 껍데기를 쓴다 — 머리는 칠하지 않고 아코디언으로 펴며 목록은 왼쪽 rail에 든다(스펙 3)', async () => {
     const user = userEvent.setup();
     const { container } = renderHomeWithDocStore([
       { id: 'doc-f1', title: '즐겨찾는 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
@@ -2585,16 +2586,27 @@ describe('Home', () => {
     const head = (label: string) => aside.querySelector(`[data-lnb-section="${label}"]`) as HTMLElement;
     for (const label of ['즐겨찾기', '공유받음', '휴지통']) {
       expect(head(label)).toBeTruthy();
-      // 접힌 머리는 칠하지 않는다 — 틴트의 뜻은 "펼쳐져 있다"다(일정 카드와 같은 규칙).
       expect(head(label).style.background).toBe('transparent');
       expect(head(label).getAttribute('aria-expanded')).toBe('false');
     }
 
     await user.click(head('즐겨찾기'));
-    await waitFor(() => expect(head('즐겨찾기').style.background).toBe('var(--mf-accent-soft)'));
-    // hover가 틴트를 회색으로 갈아 끼우지 않게 하는 표식.
-    expect(head('즐겨찾기').dataset.tinted).toBe('1');
-    expect(head('즐겨찾기').getAttribute('aria-expanded')).toBe('true');
+    await waitFor(() => expect(head('즐겨찾기').getAttribute('aria-expanded')).toBe('true'));
+    // 머리는 **펼쳐도 칠하지 않는다**(스펙: 홈·LNB 변경 3 — 헤더 배경 항상 투명). 열림은
+    // 셰브론·굵어진 이름·rail이 말한다.
+    expect(head('즐겨찾기').style.background).toBe('transparent');
+    expect(head('즐겨찾기').dataset.tinted).toBeUndefined();
+    expect(head('즐겨찾기').style.fontWeight).toBe('600');
+
+    // **아코디언**(스펙) — 다른 구획을 펴면 앞의 것은 접힌다. 접는 것은 제 것만 접는다.
+    await user.click(head('휴지통'));
+    await waitFor(() => expect(head('휴지통').getAttribute('aria-expanded')).toBe('true'));
+    expect(head('즐겨찾기').getAttribute('aria-expanded')).toBe('false');
+    await user.click(head('휴지통'));
+    await waitFor(() => expect(head('휴지통').getAttribute('aria-expanded')).toBe('false'));
+    expect(head('즐겨찾기').getAttribute('aria-expanded')).toBe('false');
+    await user.click(head('즐겨찾기'));
+    await waitFor(() => expect(head('즐겨찾기').getAttribute('aria-expanded')).toBe('true'));
 
     // 목록은 rail(왼쪽 세로선) 안이고, 예전의 가라앉은 판은 없다.
     const row = within(aside).getByText('즐겨찾는 맵').closest('.mf-trash-row') as HTMLElement;
@@ -2602,6 +2614,29 @@ describe('Home', () => {
     expect(rail).toBeTruthy();
     expect(rail.style.borderLeft).toContain('var(--mf-border-soft)');
     expect(rail.style.background).toBe('');
+  });
+
+  it('휴지통은 다섯 줄까지 먼저 보이고 `N개 더 보기`가 **그 자리에서** 나머지를 편다 — 접으면 다시 다섯 줄(스펙 3)', async () => {
+    const user = userEvent.setup();
+    const docs = Array.from({ length: 7 }, (_, i) => ({ id: `doc-t${i}`, title: `휴지통 맵 ${i}`, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: `2026-01-0${i + 1}T00:00:00.000Z` }));
+    const { container } = renderHomeWithDocStore(docs);
+    const aside = container.querySelector('aside') as HTMLElement;
+    const head = () => aside.querySelector('[data-lnb-section="휴지통"]') as HTMLElement;
+    const rows = () => [...aside.querySelectorAll('[data-lnb-section="휴지통"] + div .mf-trash-row')];
+    await waitFor(() => expect(rows()).toHaveLength(5));
+    const more = aside.querySelector('[data-trash-more]') as HTMLElement;
+    expect(more.textContent).toBe('2개 더 보기 →');
+    // 휴지통 화면이 따로 없으므로 어디로 데려가지 않는다 — 이 목록을 편다.
+    await user.click(head());
+    await waitFor(() => expect(head().getAttribute('aria-expanded')).toBe('true'));
+    await user.click(aside.querySelector('[data-trash-more]') as HTMLElement);
+    await waitFor(() => expect(rows()).toHaveLength(7));
+    expect(aside.querySelector('[data-trash-more]')).toBeNull();
+    // 접었다 다시 펴면 다섯 줄로 돌아온다.
+    await user.click(head());
+    await waitFor(() => expect(head().getAttribute('aria-expanded')).toBe('false'));
+    await user.click(head());
+    await waitFor(() => expect(rows()).toHaveLength(5));
   });
 
   it('empties the whole trash via the header 비우기 action', async () => {
@@ -3825,16 +3860,25 @@ describe('맵 카드의 마지막 수정자', () => {
 // 피드백 보내기(홈 진입점) — LNB 최하단 고정 항목으로 모달이 열린다(사용자
 // 요청으로 프로필 메뉴에서 이동).
 describe('피드백 보내기 (홈 진입점)', () => {
-  it('LNB 최하단의 피드백 보내기 → 모달 → 제출 (프로필 메뉴에는 없다)', async () => {
+  it('화면 오른쪽 아래의 **떠 있는 단추** → 모달 → 제출 (LNB·계정 메뉴에는 없다 — 스펙 7)', async () => {
     const user = userEvent.setup();
-    renderHome();
-    // 프로필 메뉴에서는 빠졌다 — 진입점은 LNB 하나.
+    const { container } = renderHome();
+    // 계정 메뉴에도, LNB에도 없다 — 진입점은 떠 있는 단추 하나.
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
-    const popover = screen.getByRole('button', { name: '설정' }).parentElement as HTMLElement;
-    expect(within(popover).queryByRole('button', { name: '피드백 보내기' })).toBeNull();
-    await user.click(screen.getByRole('button', { name: '피드백 보내기' })); // LNB 최하단
+    const menu = document.querySelector('[data-account-menu]') as HTMLElement;
+    expect(within(menu).queryByRole('button', { name: '피드백 보내기' })).toBeNull();
+    await user.keyboard('{Escape}');
+    const aside = container.querySelector('aside') as HTMLElement;
+    expect(within(aside).queryByRole('button', { name: '피드백 보내기' })).toBeNull();
+
+    const fab = await screen.findByRole('button', { name: '피드백 보내기' });
+    expect(fab.hasAttribute('data-feedback-fab')).toBe(true);
+    expect(fab.className).toContain('mf-feedback-fab');
+    await user.click(fab);
     const dialog = await screen.findByRole('dialog', { name: '피드백 보내기' });
     expect(dialog).toBeTruthy();
+    // 모달이 떠 있는 동안 단추는 비켜 선다 — 막 위에 떠 있으면 그 팝업의 일부처럼 보인다.
+    expect(document.querySelector('[data-feedback-fab]')).toBeNull();
     // 로컬(데모) 백엔드 — 안내 문구가 뜨고, 제출은 mf_feedback에 쌓인다.
     expect(screen.getByText(/데모 모드예요/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText('피드백 내용'), { target: { value: '홈에서 보냄' } });
@@ -3842,6 +3886,41 @@ describe('피드백 보내기 (홈 진입점)', () => {
     expect(await screen.findByText('전달됐어요, 고마워요!')).toBeTruthy();
     const saved = JSON.parse(localStorage.getItem('mf_feedback')!) as Array<Record<string, unknown>>;
     expect(saved[0]).toMatchObject({ page: 'home', message: '홈에서 보냄' });
+  });
+
+  it('**어느 모달이든** 떠 있으면 단추가 물러서고, 닫히면 돌아온다 — 모달 이름을 늘어놓지 않는다(스펙 7)', async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await screen.findByRole('button', { name: '피드백 보내기' });
+    // 설정 — 피드백과 상관없는 모달이어도 같다(모달 껍데기가 센다: `useAnyModalOpen`).
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    await screen.findByRole('dialog', { name: '설정' });
+    expect(document.querySelector('[data-feedback-fab]')).toBeNull();
+    await user.click(screen.getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '설정' })).toBeNull());
+    expect(await screen.findByRole('button', { name: '피드백 보내기' })).toBeTruthy();
+  });
+
+  it('단추가 마지막 카드를 덮지 않게 본문 아래 여백이 그만큼 있다 · 모양은 CSS가 든다', async () => {
+    const { container } = renderHome();
+    const main = await waitFor(() => {
+      const el = container.querySelector('main');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 46px 단추가 바닥에서 22px — 끝까지 굴렸을 때 카드의 오른쪽 아래가 그 밑에 깔리지 않게.
+    expect(main.style.padding.split(' ')[2]).toBe('84px');
+    const { readFileSync, existsSync } = await import('node:fs');
+    const cssPath = ['src/features/home/home.css', 'apps/web/src/features/home/home.css'].find((f) => existsSync(f))!;
+    const css = readFileSync(cssPath, 'utf8');
+    const rule = css.slice(css.indexOf('.mf-home .mf-feedback-fab {'));
+    const body = rule.slice(0, rule.indexOf('}'));
+    expect(body).toContain('position: fixed');
+    expect(body).toContain('right: 22px');
+    expect(body).toContain('width: 46px');
+    expect(body).toContain('z-index: 60');
+    expect(css).toMatch(/\.mf-feedback-fab:active\s*\{\s*transform: scale\(0\.96\)/);
   });
 });
 
@@ -5661,13 +5740,15 @@ describe('홈 리디자인 계약', () => {
     // 공유받음과 휴지통 사이에는 구분선이 있다(요청) — 성격이 다른 묶음이다
     const sharedRow = shared.closest('.nav-item') as HTMLElement;
     const trashRow = trash.closest('.nav-item') as HTMLElement;
-    const between = [...aside.children].filter((el) => {
+    // 구획들은 판의 **굴러가는 위 칸** 안에 선다(프로필은 그 밖, 바닥 고정 — 스펙 1).
+    const scroller = aside.querySelector('[data-lnb-scroll]') as HTMLElement;
+    const between = [...scroller.children].filter((el) => {
       const after = sharedRow.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING;
       const before = trashRow.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING;
       return after && before;
     });
     expect(between.some((el) => (el as HTMLElement).style.height === '1px')).toBe(true);
-    // 세 구분선(스페이스↔즐겨찾기 / 공유받음↔휴지통 / 피드백 위)은 **같은 값**이다
+    // 구분선(스페이스↔모아보기 / 공유받음↔휴지통)은 **같은 값**이다
     // (제보: 굵기가 달라 보였다 — 원인은 flexShrink였다. 선은 눌리는 여백이 아니다).
     const lines = [...aside.querySelectorAll('[data-lnb-divider]')] as HTMLElement[];
     expect(lines.length).toBeGreaterThanOrEqual(2);
@@ -5680,7 +5761,7 @@ describe('홈 리디자인 계약', () => {
     // 스페이스 목록은 내용 높이만 쓴다 — 하나일 때 '새 스페이스'와의 빈칸이 벌어지던 원인.
     // 이제 바닥을 `minHeight: 0`으로 여는 대신 **눌리지 않게**(flexShrink 0) 두고 상한만
     // 건다 — 넘치면 굴러가는 것은 LNB 판 전체다(제보: 일정을 펴면 스페이스로 못 간다).
-    const spaceList = aside.querySelector('.lnb-scroll') as HTMLElement;
+    const spaceList = aside.querySelector('[data-lnb-spaces]') as HTMLElement;
     expect(spaceList.style.minHeight).toBe('');
     expect(spaceList.style.flexShrink).toBe('0');
     expect(spaceList.style.maxHeight).toBe(`${LNB_LIST_CAP}px`);
@@ -5694,8 +5775,10 @@ describe('홈 리디자인 계약', () => {
     });
     expect(rail.style.borderLeft).toContain('--mf-border-soft');
     expect(rail.style.background).toBe('');
-    // 펼친 머리는 칠해진다 — 틴트의 뜻이 "펼쳐져 있다"임을 못박는다.
-    expect((shared.closest('.nav-item') as HTMLElement).style.background).toBe('var(--mf-accent-soft)');
+    // 펼친 머리도 **칠하지 않는다**(스펙 3 — 헤더 배경 항상 투명). 열림은 aria와 rail이 말한다.
+    const sharedHead = shared.closest('.nav-item') as HTMLElement;
+    expect(sharedHead.style.background).toBe('transparent');
+    expect(sharedHead.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('마우스 오버 애니메이션 — 카드가 3px 떠오르고 그늘·경계가 바뀐다(CSS 계약)', () => {
@@ -5761,7 +5844,7 @@ describe('홈 리디자인 계약', () => {
 });
 
 describe('홈 디자인 후속 6건', () => {
-  it('프로필 팝업·설정 모달 디자인(첨부 이미지): 잉크 아바타(호율)·인셋 머리·로그아웃 구분선·모달 560', async () => {
+  it('계정 메뉴·설정 모달 디자인(스펙 5·6): 잉크 아바타(호율)·면 없는 머리 + 플랜 알약·세 항목·모달 512·원형 견본', async () => {
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
     localStorage.setItem('mf_profile_names', JSON.stringify({ 'hoyul.lee@wantedlab.com': '이호율' }));
     const user = userEvent.setup();
@@ -5772,6 +5855,9 @@ describe('홈 디자인 후속 6건', () => {
     const trigger = screen.getByRole('button', { name: '계정 메뉴' });
     expect(trigger.textContent).toContain('호율');
     expect(trigger.textContent).not.toContain('이호율호율'); // 아바타가 이름 앞에 선다
+    // 프로필 카드는 LNB **바닥 고정** 칸에 선다(스펙 4) — 굴러가는 위 칸 밖이다.
+    expect(trigger.closest('[data-lnb-foot]')).toBeTruthy();
+    expect(trigger.closest('[data-lnb-scroll]')).toBeNull();
 
     await user.click(trigger);
     // 팝오버는 포털로 body 밑에 그려진다(Radix) — 컨테이너 안이 아니다.
@@ -5780,36 +5866,88 @@ describe('홈 디자인 후속 6건', () => {
       expect(el).toBeTruthy();
       return el;
     })) as HTMLElement;
-    // 머리는 accent-soft 인셋 블록, 로그아웃 앞에는 구분선.
+    // 머리는 **면 없이** 이름·이메일 + 플랜 알약(예전의 코랄 인셋 카드는 걷었다).
     const head = pop.firstElementChild as HTMLElement;
-    expect(head.style.background).toContain('--mf-accent-soft');
-    expect(head.style.margin).toBeTruthy();
-    // 프로필명 변경이 설정 모달로 옮겨져(요청) 팝오버는 [설정][로그아웃] 두 행이다.
-    const rows = pop.querySelectorAll('.menu-row');
-    expect(rows).toHaveLength(2);
-    const dividerBeforeLogout = rows[0]!.nextElementSibling as HTMLElement;
+    expect(head.style.background).toBe('');
+    expect(head.style.borderBottom).toContain('var(--mf-border-soft)');
+    expect(head.querySelector('[data-plan-pill]')!.textContent).toBe('무료 플랜');
+    // 항목은 [프로필명 변경][설정] — 구분선 — [로그아웃].
+    const rows = [...pop.querySelectorAll('.menu-row')] as HTMLElement[];
+    expect(rows.map((r) => r.textContent)).toEqual(['프로필명 변경', '설정', '로그아웃']);
+    const dividerBeforeLogout = rows[1]!.nextElementSibling as HTMLElement;
     expect(dividerBeforeLogout.getAttribute('aria-hidden')).toBe('true');
+    // 로그아웃은 글자만 경고 톤 — 빨간 면이 없다. 브라우저가 가로채는 `⇧⌘Q`는 적지 않는다.
+    expect(rows[2]!.style.color).toBe('var(--mf-accent-strong)');
+    expect(rows[2]!.style.background).toBe('transparent');
+    expect(pop.textContent).not.toContain('⌘');
 
-    // 설정 모달 — 560 폭, 계정 행 accent-soft, 테마 스와치는 원, 탈퇴 행 문구.
+    // 설정 모달 — 512 폭·라운드 24, 머리는 면 없는 둥근 아바타, 테마는 원형 견본.
     await user.click(screen.getByRole('button', { name: '설정' }));
     const dialog = await screen.findByRole('dialog', { name: '설정' });
-    expect(dialog.style.width).toBe('560px');
-    const accountRow = [...dialog.querySelectorAll('div')].find((d) => (d as HTMLElement).style.background.includes('--mf-accent-soft') && d.textContent?.includes('이호율')) as HTMLElement;
-    expect(accountRow).toBeTruthy();
-    // 테마 칸의 미리보기(첨부 이미지) — 그 테마의 면 위에 강조색 점·막대를 얹은
-    // **알약**이다(예전의 동그라미 하나로는 "모노"·"다크"의 면이 보이지 않았다).
+    expect(dialog.style.width).toBe('512px');
+    expect(dialog.style.borderRadius).toBe('24px');
+    const settingsHead = dialog.querySelector('[data-settings-head]') as HTMLElement;
+    expect(settingsHead.style.background).toBe('');
+    expect(settingsHead.textContent).toContain('이호율');
+    expect((settingsHead.firstElementChild as HTMLElement).style.borderRadius).toBe('999px'); // 56px 원
+    expect(settingsHead.querySelector('[data-plan-badge]')!.tagName).toBe('SPAN'); // 갈 화면이 없어 정적
+    // 테마 견본(스펙 6.2 ⑤) — 34px **원**을 그 테마의 강조색으로 채우고, 고른 것만 체크 + 고리.
     const chip = within(dialog).getByRole('radio', { name: '코랄 테마' });
     const preview = chip.querySelector('[data-theme-preview]') as HTMLElement;
-    expect(preview.style.borderRadius).toBe('10px');
-    expect(preview.style.background).toBe('rgb(252, 252, 251)');
-    expect((preview.firstElementChild as HTMLElement).style.borderRadius).toBe('50%'); // 강조색 점
+    expect(preview.style.width).toBe('34px');
+    expect(preview.style.borderRadius).toBe('999px');
+    expect(preview.style.background).toBe('rgb(240, 102, 63)');
+    expect(preview.style.boxShadow).toContain('0 0 0 4px');
     expect(chip.querySelector('[data-theme-check]')).toBeTruthy(); // 고른 칸에만 체크
-    expect(within(dialog).getByText('개인정보처리방침').getAttribute('href')).toBe('/privacy');
-    // 탈퇴는 '계정 설정'(두 번째 화면) **발치 링크**다(첨부 이미지) — 행 목록에
-    // 두면 routine 항목과 나란히 서서 실수로 눌린다.
-    await user.click(dialog.querySelector('[data-account-detail-row]') as HTMLElement);
+    const dark = within(dialog).getByRole('radio', { name: '다크 테마' });
+    // 다크는 먹빛 원 가운데 강조색 점 — 강조색만 칠하면 코랄과 구별이 안 된다.
+    expect((dark.querySelector('[data-theme-preview]') as HTMLElement).style.background).toContain('radial-gradient');
+    expect(dark.querySelector('[data-theme-check]')).toBeNull();
+    // 발치는 본문 **밖**, 모달의 바닥이다(스펙 6.1).
+    const body = dialog.querySelector('[data-settings-body]') as HTMLElement;
     const footer = dialog.querySelector('[data-settings-footer]') as HTMLElement;
-    expect(footer.querySelector('[data-delete-account-link]')?.textContent).toBe('회원 탈퇴');
+    expect(body.contains(footer)).toBe(false);
+    expect(within(footer).getByText('개인정보처리방침').getAttribute('href')).toBe('/privacy');
+    expect(footer.querySelector('[data-delete-account-link]')).toBeNull(); // 첫 화면에는 탈퇴가 없다
+    // 탈퇴는 '계정 설정'(두 번째 화면) **발치 링크**다 — 행 목록에 두면 routine 항목과
+    // 나란히 서서 실수로 눌린다.
+    await user.click(dialog.querySelector('[data-account-detail-row]') as HTMLElement);
+    const footer2 = dialog.querySelector('[data-settings-footer]') as HTMLElement;
+    expect(footer2.querySelector('[data-delete-account-link]')?.textContent).toBe('회원 탈퇴');
+  });
+
+  it('설정 첫 화면은 **헤어라인 목록**이다 — 타일 없는 행 셋 · 시작 화면 · 버전 · 테마 순, 알림은 켬/끔(스펙 6.2)', async () => {
+    const user = userEvent.setup();
+    renderHomeWithDocStore([]);
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const dialog = await screen.findByRole('dialog', { name: '설정' });
+    const body = dialog.querySelector('[data-settings-body]') as HTMLElement;
+    // 카드 묶음(`data-settings-group`)은 첫 화면에 없다 — 선으로 가른다.
+    expect(body.querySelector('[data-settings-group]')).toBeNull();
+    const order = ['[data-profile-detail-row]', '[data-account-detail-row]', '[data-notify-detail-row]', '[data-landing-group]', '[data-version-detail-row]', '[data-theme-group]'].map((q) => body.querySelector(q) as HTMLElement);
+    order.forEach((el) => expect(el).toBeTruthy());
+    for (let i = 1; i < order.length; i += 1) expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 행: 56px, 아이콘 **타일 없음**(18px 선 아이콘이 바로 선다), 한 겹 안으로 가면 캐럿.
+    const profile = order[0]!;
+    expect(profile.style.minHeight).toBe('56px');
+    expect(profile.firstElementChild!.tagName.toLowerCase()).toBe('svg');
+    expect(profile.textContent).toContain('사진과 표시 이름');
+    expect(profile.textContent).not.toContain('커서 색'); // 아직 고를 수 없는 것은 약속하지 않는다
+    // 알림 — 부제는 **지금 상태**, 오른쪽은 일정 알림 스위치의 켬/끔.
+    expect(order[2]!.querySelector('[data-settings-status]')!.textContent).toMatch(/^(켬|끔)$/);
+    // 시작 화면 — 알약 두 칸(일정 · 스페이스), 행 자체는 눌리지 않는다(캐럿 없음).
+    const seg = dialog.querySelector('[data-landing-seg]') as HTMLElement;
+    expect([...seg.querySelectorAll('[role="radio"]')].map((b) => b.textContent)).toEqual(['일정', '스페이스']);
+    expect(seg.style.borderRadius).toBe('99px');
+    expect(order[3]!.querySelector('[role="button"]')).toBeNull();
+    // 버전 — 판 + 상태 점. **언제나 눌린다**(한 겹 안에 지금 확인하기·빌드 커밋이 있다).
+    const version = order[4]!;
+    expect(version.querySelector('[data-version-value]')).toBeTruthy();
+    expect(version.querySelector('[data-version-dot]')).toBeTruthy();
+    expect(version.getAttribute('role')).toBe('button');
+    await user.click(version);
+    await waitFor(() => expect(dialog.querySelector('[data-settings-title]')!.textContent).toBe('버전 확인'));
   });
 
   it('그리드 카드 hover 그림자도 같은 기하로 진해지기만 한다 + ⋯ 버튼에 클릭 효과가 있다(요청)', () => {
@@ -6033,17 +6171,27 @@ describe('LNB 스크롤(제보 — 일정을 펴면 스페이스로 못 간다)'
       return el;
     })) as HTMLElement;
 
-    // ① 판 자신이 스크롤 상자다 — 예전에는 `overflow: hidden`이라 **한 번도** 굴러가지
-    //    않았고, 넘치는 만큼은 아래에서 잘려 나갔다(피드백·휴지통이 닿지 않는 자리).
-    expect(aside.style.overflowY).toBe('auto');
-    expect(aside.style.overflowX).toBe('hidden');
-    expect(aside.className).toContain('lnb-scroll');
+    // ① 판의 **위 칸**이 스크롤 상자다 — 예전에는 판 전체가 `overflow: hidden`이라 **한 번도**
+    //    굴러가지 않았고, 넘치는 만큼은 아래에서 잘려 나갔다(휴지통이 닿지 않는 자리).
+    //    프로필이 바닥에 고정되면서(스펙 1) 굴리는 자리가 위 칸으로 내려왔다 — 판은 굴리지
+    //    않는다(굴리면 프로필이 함께 밀려 올라간다).
+    const scroller = aside.querySelector('[data-lnb-scroll]') as HTMLElement;
+    expect(scroller).toBeTruthy();
+    expect(scroller.style.overflowY).toBe('auto');
+    expect(scroller.style.overflowX).toBe('hidden');
+    expect(scroller.style.minHeight).toBe('0'); // flex 자식이 줄어들 수 있어야 굴러간다
+    expect(scroller.className).toContain('lnb-scroll');
+    expect(aside.style.overflow).toBe('hidden');
     // 끝까지 굴린 뒤의 스크롤이 뒤 화면으로 이어지지 않는다.
-    expect(aside.style.overscrollBehavior).toBe('contain');
+    expect(scroller.style.overscrollBehavior).toBe('contain');
+    // 프로필 칸은 그 밖이고 줄어들지 않는다.
+    const foot = aside.querySelector('[data-lnb-foot]') as HTMLElement;
+    expect(scroller.contains(foot)).toBe(false);
+    expect(foot.style.flexShrink).toBe('0');
 
     // ② 스페이스 목록은 **줄어들지 않는다** — 판 안에서 유일하게 줄어들 수 있는 자리라
     //    위 블록(일정 하위 메뉴)이 자라면 그 몫을 혼자 뒤집어쓰고 0까지 눌렸다.
-    const list = [...aside.querySelectorAll<HTMLElement>('.lnb-scroll')].find((el) => el !== aside && el.querySelector('.space-row, [aria-label="스페이스를 불러오는 중"]'));
+    const list = aside.querySelector<HTMLElement>('[data-lnb-spaces]');
     expect(list).toBeTruthy();
     expect(list!.style.flexShrink).toBe('0');
     expect(list!.style.minHeight).toBe('');

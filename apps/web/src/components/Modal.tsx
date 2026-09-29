@@ -13,8 +13,34 @@
 // "닫힌 모달이 DOM에 남아 접근성 트리·테스트 조회에 걸리던" 문제가 사라진다.
 
 import type { CSSProperties, ReactNode, Ref, RefCallback } from 'react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+
+/**
+ * **지금 떠 있는 모달이 있는가** — 화면 위에 얹힌 부품(홈의 피드백 버튼)이 모달이 뜬 동안
+ * 비켜 서려고 묻는다(요청: 설정·공유·문서 링크 같은 모달이 열려 있을 때 숨긴다).
+ *
+ * 목록을 따로 두지 않고 **여기서 센다**: 앱의 모달은 전부 이 껍데기를 지나므로(열두 벌을
+ * 한 곳으로 모은 것이 이 파일의 이유다), 상태 플래그를 하나씩 나열하면 새 모달이 생길 때마다
+ * 빠뜨리지만 여기서 세면 저절로 따라온다.
+ */
+let openModals = 0;
+const modalListeners = new Set<() => void>();
+function bumpOpenModals(delta: number): void {
+  openModals = Math.max(0, openModals + delta);
+  modalListeners.forEach((l) => l());
+}
+function subscribeModals(l: () => void): () => void {
+  modalListeners.add(l);
+  return () => modalListeners.delete(l);
+}
+export function useAnyModalOpen(): boolean {
+  return useSyncExternalStore(
+    subscribeModals,
+    () => openModals > 0,
+    () => false,
+  );
+}
 
 export interface ModalProps {
   open: boolean;
@@ -53,6 +79,12 @@ export function Modal({ open, onClose, label, dim, card, cardAttrs, cardClass, d
   // 모달의 트리거에 초점을 주는데, 우리 모달은 메뉴·행·단축키 등 온갖 곳에서 열려
   // 트리거가 없다 — 그래서 열리는 순간의 활성 요소를 직접 기억한다.
   const restoreRef = useRef<HTMLElement | null>(null);
+  // 열린 동안만 센다(`useAnyModalOpen`) — 닫히거나 언마운트되면 되돌린다.
+  useEffect(() => {
+    if (!open) return;
+    bumpOpenModals(1);
+    return () => bumpOpenModals(-1);
+  }, [open]);
   /** 열기 직전의 초점 자리를 기억한다. **effect가 아니라 `onOpenAutoFocus`**에서 재는
    * 이유: 자식(Radix Content)의 effect가 부모보다 먼저 돌아 이미 카드 안으로 초점이
    * 옮겨진 뒤라, effect에서 재면 "카드 안의 첫 버튼"을 기억하게 된다(닫는 순간 그

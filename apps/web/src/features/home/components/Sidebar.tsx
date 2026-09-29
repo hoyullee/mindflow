@@ -24,11 +24,14 @@ const DRAWER_EXIT_MS = 280;
  */
 const SHOW_DRIVE_LNB = false;
 
-/** LNB 구획 구분선 — 세 줄(스페이스↔즐겨찾기 / 공유받음↔휴지통 / 피드백 위)이
- * **같은 값**을 쓴다. 굵기가 달라 보인다는 제보의 원인은 `flexShrink`였다: 기본값
+/** LNB 구획 구분선 — 두 줄(스페이스↔모아보기 / 공유받음↔휴지통)과 오늘 묶음의 아래 선,
+ * 프로필 카드의 위 선이 **같은 값**을 쓴다. 굵기가 달라 보인다는 제보의 원인은 `flexShrink`였다: 기본값
  * 1이면 세로 공간이 빠듯할 때 1px 선이 0.x px로 눌려 더 옅게 그려진다(사이드바는
  * flex 열이다). 눌리지 않게 0으로 못박는다 — 선은 줄어들 수 있는 여백이 아니다. */
 const LNB_DIVIDER = { height: 1, background: 'var(--mf-border-soft)', flexShrink: 0 } as const;
+
+/** 휴지통을 펼쳤을 때 먼저 보여 줄 행 수(스펙) — 그 뒤는 `N개 더 보기`로 이어 편다. */
+export const TRASH_PEEK = 5;
 
 interface Props {
   state: HomeState;
@@ -86,6 +89,12 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
     return () => document.removeEventListener('keydown', onKey);
   }, [isMobile, isOpen, onClose]);
 
+  // 휴지통의 `N개 더 보기`를 눌렀는가 — 목록을 접으면 다시 다섯 줄로 돌아간다.
+  const [trashAll, setTrashAll] = useState(false);
+  useEffect(() => {
+    if (!state.trashOpen) setTrashAll(false);
+  }, [state.trashOpen]);
+
   if (isMobile && !mounted) return null;
 
   const asideStyle = isMobile
@@ -119,10 +128,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         />
       )}
       <aside
-        // `lnb-scroll` — 넘치는 LNB를 **통째로** 굴린다(제보: 일정을 펴면 스페이스로 못 간다).
-        className={isMobile ? 'mf-drawer lnb-scroll' : 'lnb-scroll'}
+        className={isMobile ? 'mf-drawer' : undefined}
         // LNB 우클릭: 메뉴가 있는 건 **스페이스 행 하나**뿐이고(그 행이 직접 처리하고
-        // 전파를 끊는다), 나머지(즐겨찾기·휴지통·공유받음·피드백)에는 항목 단위
+        // 전파를 끊는다), 나머지(즐겨찾기·휴지통·공유받음·프로필)에는 항목 단위
         // 동작이 없다. 그래서 여기서는 브라우저 기본 메뉴만 막는다 — 본문(`main`)이
         // 이미 우클릭을 앱 메뉴로 쓰고 있어서, LNB만 브라우저 메뉴가 뜨면 같은 화면
         // 안에서 우클릭의 뜻이 갈린다(사용자 요청).
@@ -141,49 +149,48 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           display: 'flex',
           flexDirection: 'column',
           padding: '14px 12px 12px',
-          /**
-           * **LNB가 넘치면 LNB가 굴러간다**(제보: 모바일에서 일정을 펴면 스페이스로 갈 수 없다).
-           *
-           * 예전에는 `overflow: hidden`이라 이 판은 **한 번도 굴러가지 않았고**, 넘치는
-           * 만큼은 아래에서 잘려 나갔다. 화면이 짧은 폰에서 「일정」 하위 메뉴(보여 줄
-           * 캘린더)가 펴지면 그 한 블록이 200px 넘게 자라는데, 고정 블록들 사이에서
-           * 줄어들 수 있는 것은 스페이스 목록 하나뿐이라 그것이 **0까지 눌려** 사라졌다
-           * (실측: 412×700에서 6개짜리 목록이 이미 264→130으로 눌려 있었다). 목록이
-           * 사라졌으니 그 안에서 굴릴 것도 없고, 바깥은 `hidden`이라 손댈 수 없었다 —
-           * 제보의 "스크롤이 안 돼서 스페이스로 이동을 못해"가 그 자리다.
-           *
-           * 고친 뒤에는 두 겹이 각자 제 일만 한다: **구획 안의 목록**은 예전처럼 제
-           * 상한(`LNB_LIST_CAP`)에서 스스로 굴러가고, 그렇게 묶어 놔도 **합이 화면을
-           * 넘으면** 이 판이 굴러간다. 넘치지 않으면 예전과 똑같이 보인다(피드백 줄은
-           * `marginTop: auto`라 그때만 바닥에 붙고, 넘칠 때는 자연히 이어진다).
-           */
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          // 서랍을 끝까지 굴린 뒤의 스크롤이 **뒤 화면으로 이어지지 않게** 한다.
-          overscrollBehavior: 'contain',
+          // 판은 **두 칸**이다(스펙: 홈·LNB 변경 1) — 굴러가는 위 칸 + 바닥에 고정된
+          // 프로필 카드. 판 자체는 굴리지 않는다(굴리면 프로필이 함께 밀려 올라간다).
+          overflow: 'hidden',
         }}
       >
-        <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
+        {/*
+          **위 칸이 굴러간다**(제보: 모바일에서 일정을 펴면 스페이스로 갈 수 없다).
 
-      {/* 알림 — 프로필 바로 아래(요청: 어느 영역에서든 확인할 수 있게 LNB로).
-          "나에게 무슨 일이 있었나"는 스페이스·대시보드 같은 **그릇**이 아니라 내
-          정체성에 딸린 것이라 그 블록과 붙여 둔다(Notion·Linear·Slack의 자리).
-          예전에는 스페이스 툴바에만 있어 대시보드·일정 화면에는 아예 없었다. */}
-      {/* 상단 바로가기 블록 — 알림 · 일정.
-          둘 다 **하나뿐인 목적지**이고 "나"에 딸린 것이라, 여럿을 담는 구획
-          (대시보드·스페이스)과 격이 다르다. 그래서 같은 두 줄 카드로 그리고
-          프로필 밑에 모아 둔 뒤 아래를 구분선으로 끊는다.
-          예전에는 `일정`이 두 라벨 구획 **사이**에 한 줄로 홀로 서서 라벨을
-          빠뜨린 항목처럼 읽혔다(제보). 이 블록에 라벨을 달지 않은 이유는
-          한 줄짜리 구획의 라벨이 그 줄의 이름과 같으면(일정 위에 "일정")
-          같은 말을 두 번 하는 셈이기 때문이다 — 자리와 모양이 대신 말한다. */}
-      <div style={{ flexShrink: 0, paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          예전에는 판 전체가 `overflow: hidden`이라 **한 번도 굴러가지 않았고**, 넘치는
+          만큼은 아래에서 잘려 나갔다(실측: 412×700에서 6개짜리 스페이스 목록이 264→130으로
+          눌렸다). 그 뒤 판 전체를 굴리게 고쳤고, 이번에 프로필이 바닥에 고정되면서 굴리는
+          자리가 이 칸으로 내려왔다 — 하는 일은 같다: **구획 안의 목록**은 제 상한
+          (`LNB_LIST_CAP`)에서 스스로 굴러가고, 그렇게 묶어 놔도 합이 칸을 넘으면 이 칸이
+          굴러간다. 좌우 4px을 음수 여백으로 넓혀 두는 이유는 hover 면이 스크롤 막대에
+          붙지 않게(행의 모서리가 잘려 보인다).
+        */}
+        <div
+          className="lnb-scroll"
+          data-lnb-scroll
+          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            // 서랍을 끝까지 굴린 뒤의 스크롤이 **뒤 화면으로 이어지지 않게** 한다.
+            overscrollBehavior: 'contain',
+            margin: '0 -4px',
+            padding: '0 4px',
+          }}
+        >
+      {/* 오늘 묶음 — 알림 · 일정(스펙 2). 둘 다 **하나뿐인 목적지**이고 "나"에 딸린
+          것이라, 여럿을 담는 구획(스페이스·모아보기)과 격이 다르다. 그래서 라벨 없이
+          LNB 맨 위에 두 줄을 한 블록으로 모으고 아래를 선으로 끊는다. 라벨을 달지 않은
+          이유는 한 줄짜리 구획의 라벨이 그 줄의 이름과 같으면(일정 위에 "일정") 같은
+          말을 두 번 하는 셈이기 때문이다 — 자리와 모양이 대신 말한다.
+          선은 LNB의 다른 구분선과 **같은 값**이다(`LNB_DIVIDER`의 색). */}
+      <div data-lnb-today style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 1, paddingBottom: 12, borderBottom: `1px solid ${LNB_DIVIDER.background}` }}>
         <NotificationBell isMobile={isMobile} onOpenVersion={controller.openVersionSetup} />
-        <CalendarNavSection state={state} controller={controller} isMobile={isMobile} brief={view.calendarBrief} />
+        <CalendarNavSection state={state} controller={controller} isMobile={isMobile} brief={view.calendarBrief} next={view.calendarNext} />
       </div>
-      {/* 구분선은 LNB의 다른 구분선과 **같은 것**(`LNB_DIVIDER`)이다 — 값을 따로
-          적으면(hairline 등) 같은 사이드바 안에서 선이 두 종류로 보인다. */}
-      <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px 0' }} />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 9px 7px' }}>
         <span style={SECTION_LABEL}>스페이스</span>
@@ -198,7 +205,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           몫을 혼자 뒤집어쓰고 0까지 눌렸다. 이제 즐겨찾기·공유받음·휴지통과 **같은
           상한**(`LNB_LIST_CAP`)에서 스스로 굴러가고, 그래도 합이 화면을 넘으면 바깥
           판이 굴러간다(위 `aside`의 머리말). */}
-      <div className="lnb-scroll" style={{ flexShrink: 0, maxHeight: LNB_LIST_CAP, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
+      <div className="lnb-scroll" data-lnb-spaces style={{ flexShrink: 0, maxHeight: LNB_LIST_CAP, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
         {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
             of the seed spaces — otherwise the default 일반 스페이스 flashes before the
             user's real space list arrives (matches the map grid's skeleton). */}
@@ -432,10 +439,14 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           ) : undefined
         }
         meta={<span style={{ ...META_MONO, marginLeft: view.trashItems.length > 0 ? 0 : 'auto' }}>{view.trashCount}</span>}
-        rows={view.trashItems.length}
+        // 폴백 높이(jsdom)는 **보이는 줄 수**로 잰다 — 다섯 줄 + `더 보기` 한 줄.
+        rows={trashAll || view.trashItems.length <= TRASH_PEEK ? view.trashItems.length : TRASH_PEEK + 1}
         isMobile={isMobile}
       >
-        {view.trashItems.map((t) => (
+        {/* 다섯 줄까지만 먼저 보인다(스펙) — 휴지통은 쌓이기 쉬워서 그대로 펴면 한 구획이
+            LNB를 통째로 차지한다. 휴지통 화면이 따로 없으므로 `더 보기`는 **이 자리에서**
+            나머지를 편다(어디로 데려가는 척하지 않는다). */}
+        {(trashAll ? view.trashItems : view.trashItems.slice(0, TRASH_PEEK)).map((t) => (
           // Keyed by docId when present — the trash may hold two entries with
           // the same TITLE (different docs), which a title key would collapse.
           // Row anatomy: [kind glyph] [title — takes ALL free width, ellipsis]
@@ -484,36 +495,28 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             </button>
           </div>
         ))}
+        {!trashAll && view.trashItems.length > TRASH_PEEK && (
+          <button
+            type="button"
+            className="nav-item"
+            data-trash-more
+            onClick={() => setTrashAll(true)}
+            style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '5px 7px', minHeight: isMobile ? 44 : undefined, border: 'none', borderRadius: 9, background: 'transparent', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--mf-muted)', textAlign: 'left', cursor: 'pointer' }}
+          >
+            {view.trashItems.length - TRASH_PEEK}개 더 보기 →
+          </button>
+        )}
         {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>휴지통이 비어 있습니다</div>}
       </LnbListSection>
 
-      {/* 피드백 보내기 — LNB 최하단 고정(사용자 요청: 프로필 메뉴에서 이동).
-          `marginTop: auto`가 남는 공간을 밀어 올려 항상 바닥에 붙는다(공간이
-          모자라면 휴지통 아래로 자연히 이어진다). 색상 테마는 여기 있다가
-          사용자 요청으로 설정 모달(`AccountSettingsModal`)로 옮겼다. */}
-      <div style={{ marginTop: 'auto', flexShrink: 0, paddingTop: 8 }}>
-        <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '0 4px 8px' }} />
-
-        <div
-          className="nav-item"
-          role="button"
-          tabIndex={0}
-          aria-label="피드백 보내기"
-          onClick={controller.openFeedback}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              controller.openFeedback();
-            }
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>{' '}
-          피드백 보내기
         </div>
-      </div>
+
+        {/* 바닥 고정 — 프로필 카드(스펙 4). 굴러가는 위 칸 **밖**이라 목록이 아무리 길어도
+            늘 같은 자리에 있다. 메뉴는 위로 열린다(`SettingsPopover`).
+            피드백은 여기서 빠졌다 — 화면 우하단의 떠 있는 단추로 옮겼다(`FeedbackFab`). */}
+        <div data-lnb-foot style={{ flexShrink: 0, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${LNB_DIVIDER.background}` }}>
+          <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
+        </div>
     </aside>
     </>
   );

@@ -309,58 +309,65 @@ describe('일정 화면', () => {
     seedSpaces();
   });
 
-  it('LNB `일정`은 프로필·알림과 함께 상단 바로가기 카드다 — 요약이 지금 급한 것을 말한다(제보)', async () => {
+  it('LNB `일정`은 알림과 함께 오늘 묶음이다 — 지난 마감이 있으면 그것부터, 경고색으로(제보·스펙 2.3)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const nav = document.querySelector('[data-cal-nav]') as HTMLElement;
-    // 둘째 줄은 급한 것부터 — 지난 마감(1) · 오늘(1). 완료 열은 빠진다.
-    expect(nav.querySelector('[data-cal-summary]')!.textContent).toBe('지난 마감 1건 · 오늘 1건');
-    // 지난 마감은 경고색 알약으로도 선다.
-    expect(nav.querySelector('[data-cal-overdue]')!.textContent).toBe('1');
-    // 알림과 **같은 껍데기**(두 줄 카드)라 나란히 서도 서로 달라 보이지 않는다.
+    // 둘째 줄은 급한 것부터 — 지난 마감(1) · 오늘(1). 완료 열은 빠진다. 다음 마감의 이름이
+    // 이 자리를 차지하면 "이미 늦은 것이 있다"가 가려지므로 이때는 개수를 말한다.
+    const sum = nav.querySelector('[data-cal-summary]') as HTMLElement;
+    expect(sum.textContent).toBe('지난 마감 1건 · 오늘 1건');
+    // 알약을 걷어낸 자리에서 **경고색**이 그 급함을 말한다.
+    expect(sum.dataset.urgent).toBe('1');
+    expect(sum.style.color).toBe('var(--mf-danger)');
+    expect(nav.querySelector('[data-cal-overdue]')).toBeNull();
+    // 알림과 **같은 껍데기**(44px 두 줄 행)라 나란히 서도 서로 달라 보이지 않는다.
     expect(nav.querySelector('[data-nav-card-summary]')).toBeTruthy();
-    expect(nav.style.minHeight).toBe('50px');
-    // 자리: 알림 **바로 아래**, 스페이스 구획보다 **앞**.
-    //       예전에는 두 라벨 구획 사이에 홀로 서서 라벨을 빠뜨린 항목처럼 읽혔다.
+    expect(nav.style.minHeight).toBe('44px');
+    // 자리: 알림 **바로 아래**, 스페이스 구획보다 **앞** — 둘이 한 블록(`data-lnb-today`)이다.
     const bell = document.querySelector('[data-notification-nav]')!;
+    const today = document.querySelector('[data-lnb-today]')!;
     const spaceLabel = screen.getByText('스페이스');
+    expect(today.contains(bell) && today.contains(nav)).toBe(true);
     expect(bell.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(nav.compareDocumentPosition(spaceLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('LNB `일정` 카드는 알림과 갈린다 — 테두리 타일에 [가로 바 + 오늘 날짜], 면은 활성일 때만 칠한다(제보)', async () => {
-    // 제보: 두 카드가 너무 똑같이 보인다. 껍데기(크기·간격)는 나눠 쓰되 **뜻이
-    // 다른 부분**을 갈랐다 — 알림은 채운 코랄 타일 + 개수 배지, 일정은 테두리
-    // 타일 + 오늘 날짜 + 연동 표식.
+  it('LNB `일정` 글리프는 **상자 없는 날짜 숫자 + 요일**이다 — 일정 화면에서는 강조색, 면은 활성일 때만(스펙 2.3)', async () => {
+    // 제보(두 카드가 너무 똑같다)는 여전히 글리프가 가른다 — 알림은 원 안의 벨,
+    // 일정은 상자·테두리 없이 오늘 날짜와 요일 글자.
     renderHome([META('d1', '스프린트 보드')], BODIES());
     await openCalendar();
     const nav = document.querySelector('[data-cal-nav]') as HTMLElement;
     const tile = nav.querySelector('[data-nav-card-glyph]') as HTMLElement;
-    expect(tile.dataset.navCardTile).toBe('plain');
-    expect(tile.style.background).toBe('var(--mf-card)');
-    expect(tile.style.border).toContain('var(--mf-border)');
-    // 달력 아이콘 하나보다 이 자리에서 더 말이 되는 값 — 오늘 며칠인가. 그 위의
-    // **가로 바**가 달력의 머리 띠 노릇을 한다(제보 ②: 디자인에 그 선이 있다).
-    const date = nav.querySelector('[data-cal-date]') as HTMLElement;
-    expect(date.textContent).toBe(String(new Date().getDate()));
-    expect(date.querySelector('[data-cal-date-bar]')).toBeTruthy();
-    // 알림 카드와 타일이 갈린다(같은 껍데기여도 한눈에 구별된다).
-    const bellTile = document.querySelector('[data-notification-nav] [data-nav-card-glyph]') as HTMLElement;
-    expect(bellTile.dataset.navCardTile).toBe('accent');
-    // 면은 **일정 화면을 보고 있을 때만** 칠한다(제보 ①: 늘 칠하면 "언제나 활성"으로
-    // 읽힌다) — 그 틴트가 곧 활성 신호라 링을 겹쳐 두지 않는다.
-    expect(nav.style.background).toBe('var(--mf-accent-soft)');
-    expect(nav.dataset.tinted).toBe('1');
-    expect(nav.style.boxShadow).toBe('');
-    // 연동 표식은 **연동됐을 때만** — 이 환경에는 클라이언트 ID가 없어 아무것도 없다
-    // (모르는 것을 칠하지 않는다).
+    expect(tile.style.background).toBe('');
+    expect(tile.style.border).toBe('');
+    const now = new Date();
+    const num = nav.querySelector('[data-cal-date-num]') as HTMLElement;
+    const dow = nav.querySelector('[data-cal-date-dow]') as HTMLElement;
+    expect(num.textContent).toBe(String(now.getDate()));
+    expect(dow.textContent).toBe(['일', '월', '화', '수', '목', '금', '토'][now.getDay()]);
+    expect(num.style.fontFamily).toContain('JetBrains Mono');
+    expect(num.style.fontSize).toBe('17px');
+    expect(dow.style.fontSize).toBe('8.5px');
+    // 일정 화면을 보는 중 — 숫자·요일이 강조색으로 선다(옆의 면과 함께 두 겹).
+    expect(num.style.color).toBe('var(--mf-accent-strong)');
+    expect(dow.style.color).toBe('var(--mf-accent)');
+    // 알림 쪽은 원이다(같은 껍데기여도 한눈에 구별된다).
+    expect(document.querySelector('[data-notification-nav] [data-notification-glyph]')).toBeTruthy();
+    // 면은 **일정 화면을 보고 있을 때만**(제보 ①: 늘 칠하면 "언제나 활성"으로 읽힌다).
+    expect(nav.style.background).toBe('var(--mf-panel2)');
+    expect(nav.getAttribute('aria-current')).toBe('page');
+    // 연동 경고 점은 **권한이 만료됐을 때만** — 이 환경에는 클라이언트 ID가 없어 캐럿조차 없다
+    // (펼칠 것이 없는 단추는 두지 않는다).
+    expect(document.querySelector('[data-cal-caret]')).toBeNull();
     expect(nav.querySelector('[data-cal-link]')).toBeNull();
 
-    // 다른 화면으로 가면 틴트가 걷힌다 — 그것이 "지금 이 화면"의 유일한 표시다.
+    // 다른 화면으로 가면 면이 걷히고 숫자가 본문색으로 돌아온다.
     const spaceRow = [...document.querySelectorAll('aside [role="button"], aside button')].find((e) => e.textContent?.trim().startsWith('업무')) as HTMLElement;
     fireEvent.click(spaceRow);
     await waitFor(() => expect((document.querySelector('[data-cal-nav]') as HTMLElement).style.background).toBe('transparent'));
-    expect((document.querySelector('[data-cal-nav]') as HTMLElement).dataset.tinted).toBeUndefined();
+    expect((document.querySelector('[data-cal-date-num]') as HTMLElement).style.color).toBe('var(--mf-text)');
   });
 
   it('전 스페이스의 칸반 마감을 그리고, 완료 열은 빼고, 기간 일정은 칩이 아니라 바로 그린다', async () => {

@@ -1,8 +1,10 @@
-// LNB `일정` — 상단 바로가기 카드 + **하위 메뉴**.
+// LNB `일정` — 오늘 묶음의 둘째 줄 + **하위 메뉴**(보여 줄 캘린더).
 //
-// 하위 메뉴는 일정 화면이 열려 있을 때만 펼친다(요청: "일정을 누르면 노출").
-// 별도 토글 상태를 두지 않은 이유: 이 목록은 그 화면에 딸린 설정이라, 화면을
-// 떠나면 접히는 것이 맞고 "열렸는데 화면은 다른 곳"이라는 상태를 만들 수 없다.
+// 하위 메뉴는 **행 안의 캐럿**으로 여닫는다(스펙: 홈·LNB 변경 2.3 — 기본 접힘). 행을
+// 누르면 일정 화면으로 가고, 캐럿을 누르면 목록만 펼친다 — 두 동작을 한 번의 클릭에
+// 묶으면(예전: 일정 화면에 들어가면 저절로 펼쳐졌다) 화면을 보러 왔을 뿐인데 LNB가
+// 200px 넘게 자라 스페이스 목록을 밀어냈다. 어느 화면에서든 펼칠 수 있다: 이 목록은
+// 일정 화면에서 보일 캘린더를 고르는 곳이라, 고르고 들어가도 결과는 같다.
 //
 // 무엇을 담는가는 연동 상태가 정한다:
 //   ① 클라이언트 ID가 없는 배포 → **아무것도 그리지 않는다**(눌러도 아무 일 없는
@@ -13,47 +15,25 @@
 //   ③ 권한이 만료됨 → `다시 연결`. 고른 캘린더는 그대로다.
 //   ④ 연동됨 → `보여 줄 캘린더` 체크 목록(설정 화면의 그 목록과 같은 값·같은 동작).
 
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
-import { calendarBriefLine, type CalendarBrief } from '../calendar/model';
+import { todayISO, type CalendarBrief } from '../calendar/model';
 import { CalendarGlyph } from '../calendar/CalendarView';
 import { isManagedHolidayId } from '../calendar/googleCalendar';
 import { googlePrefsOf, useGoogleCalendar } from '../calendar/useGoogleCalendar';
 import { CalendarColorPicker } from '../calendar/CalendarColorPicker';
 import { NavCard } from './NavCard';
 import { LnbCollapse, LnbRail } from './LnbSection';
+import { MONO_FONT } from '../chrome';
+import { calendarRowLine, weekdayKo, type CalendarNext } from '../viewModel';
 
-/** 연동 상태 표식(첨부 디자인) — **스위치가 아니다**: 켜고 끄는 일은 설정의 연동
- * 구획이 맡는다(같은 동작의 진입점을 둘로 두면 어느 쪽이 진짜인지 흐려진다).
- * 그래서 점을 알약 **가운데**에 두고 눌리지 않는 `span`으로 그린다.
- * 연동됨 = 초록, 권한 만료 = 경고, 연동 전 = 아무것도 그리지 않는다(모르는 것을
- * 칠하지 않는다 — 이 앱의 "정직한 표식" 규칙). */
-function LinkPill({ tone }: { tone: 'ok' | 'warn' }) {
-  const ok = tone === 'ok';
-  return (
-    <span
-      data-cal-link={tone}
-      aria-hidden="true"
-      style={{
-        width: 22,
-        height: 14,
-        borderRadius: 999,
-        background: ok ? 'var(--mf-success-soft)' : 'var(--mf-danger-soft)',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}
-    >
-      <span style={{ width: 6, height: 6, borderRadius: 999, background: ok ? 'var(--mf-success)' : 'var(--mf-danger)', display: 'block' }} />
-    </span>
-  );
-}
-
-export function CalendarNavSection({ state, controller, isMobile, brief }: { state: HomeState; controller: HomeController; isMobile: boolean; brief: CalendarBrief }) {
+export function CalendarNavSection({ state, controller, isMobile, brief, next }: { state: HomeState; controller: HomeController; isMobile: boolean; brief: CalendarBrief; next: CalendarNext | null }) {
   const active = state.activeCal;
-  const line = calendarBriefLine(brief);
+  const today = todayISO();
+  const { text: line, urgent } = calendarRowLine(brief, next, today);
+  /** 보여 줄 캘린더를 펼쳤는가 — **기본 접힘**(스펙). 서랍(폰)이 닫히면 함께 잊는다. */
+  const [open, setOpen] = useState(false);
   // 목록만 필요하다(`list`) — 일정은 일정 화면의 훅이 받는다. 하위 메뉴가 접혀
   // 있으면 `off`라 조회가 아예 나가지 않는다.
   const google = useGoogleCalendar(
@@ -61,7 +41,7 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
     1,
     googlePrefsOf(state.google),
     controller.setGoogleCalendars,
-    active ? 'list' : 'off',
+    open ? 'list' : 'off',
   );
 
   // 연동 상태 — 켜져 있고 끊긴 바 없으면 초록, 권한이 만료되면 경고.
@@ -80,67 +60,92 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
   const rows = google.calendars.filter((c) => !isManagedHolidayId(c.id));
   // 감춘 캘린더 수 — `모두 보기`가 이 값으로 뜨고 사라진다.
   const hidden = rows.filter((c) => !google.pickedIds.includes(c.id)).length;
+  const now = new Date();
 
   return (
     <>
-      <NavCard
-        data-cal-nav
-        isMobile={isMobile}
-        // **테두리 타일 + 오늘 날짜**(첨부 디자인) — 알림의 채운 코랄 타일과 갈린다.
-        tile="plain"
-        // 면은 **일정 화면을 보고 있을 때만** 칠한다(제보: 늘 칠하면 "언제나 활성"
-        // 으로 읽힌다) — 그 틴트가 곧 "지금 이 화면"이라, 링을 따로 두지 않는다.
-        tone={active ? 'hot' : 'quiet'}
-        expanded={active && google.available}
-        aria-current={active ? 'page' : undefined}
-        aria-label={`일정 · ${line}${linkTone === 'ok' ? ' · Google 캘린더 연동됨' : linkTone === 'warn' ? ' · Google 캘린더 권한 만료' : ''}`}
-        title={line}
-        onClick={controller.openCalendar}
-        label="일정"
-        // 오늘 며칠인가 — 달력 아이콘 하나보다 이 자리에서 더 말이 된다(자리를
-        // 늘리지 않고 정보를 하나 더 얹는다). 숫자 위의 **가로 바**가 달력의 머리
-        // 띠 노릇을 해서 이 타일이 "달력 한 장"으로 읽힌다(첨부 디자인).
-        glyph={
-          <span data-cal-date style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2.5, lineHeight: 1 }}>
-            <span data-cal-date-bar aria-hidden="true" style={{ width: 13, height: 1.8, borderRadius: 1, background: 'currentColor', flexShrink: 0 }} />
-            <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em' }}>{new Date().getDate()}</span>
-          </span>
-        }
-        trailing={linkTone ? <LinkPill tone={linkTone} /> : undefined}
-        badge={
-          brief.overdue > 0 ? (
-            <span
-              data-cal-overdue
-              aria-hidden="true"
-              style={{
-                minWidth: 18,
-                height: 18,
-                padding: '0 5px',
-                borderRadius: 999,
-                background: 'var(--mf-danger-soft)',
-                color: 'var(--mf-danger)',
-                fontSize: 10.5,
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxSizing: 'border-box',
-                flexShrink: 0,
-              }}
-            >
-              {brief.overdue > 9 ? '9+' : brief.overdue}
+      {/* 행과 캐럿은 **형제**다 — 버튼 안에 버튼을 둘 수 없고(HTML), 두 동작(화면 이동 ·
+          목록 펼치기)이 갈려야 한다. 캐럿은 행의 오른쪽 안쪽 여백(40px) 위에 얹힌다. */}
+      <div data-cal-row style={{ position: 'relative', flexShrink: 0 }}>
+        <NavCard
+          data-cal-nav
+          isMobile={isMobile}
+          // 면은 **일정 화면을 보고 있을 때만** 깐다(제보: 늘 칠하면 "언제나 활성"으로
+          // 읽힌다) — 그 면이 곧 "지금 이 화면"이라 링을 따로 두지 않는다.
+          active={active}
+          padRight={google.available ? 40 : 8}
+          aria-current={active ? 'page' : undefined}
+          aria-label={`일정 · ${line}${linkTone === 'ok' ? ' · Google 캘린더 연동됨' : linkTone === 'warn' ? ' · Google 캘린더 권한 만료' : ''}`}
+          title={line}
+          onClick={controller.openCalendar}
+          label="일정"
+          // **상자 없는 날짜 숫자 + 요일**(스펙) — 달력 아이콘 하나보다 이 자리에서 더
+          // 말이 된다(자리를 늘리지 않고 "오늘이 며칠인가"를 얹는다). 일정 화면에서는
+          // 강조색으로 선다 — 옆의 면과 함께 "지금 이 화면"을 두 겹으로 말한다.
+          glyph={
+            <span data-cal-date aria-hidden="true" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+              <span data-cal-date-num style={{ fontFamily: MONO_FONT, fontSize: 17, fontWeight: 700, letterSpacing: '-.06em', color: active ? 'var(--mf-accent-strong)' : 'var(--mf-text)' }}>
+                {now.getDate()}
+              </span>
+              <span data-cal-date-dow style={{ marginTop: 2, fontSize: 8.5, fontWeight: 800, letterSpacing: '.04em', color: active ? 'var(--mf-accent)' : 'var(--mf-muted)' }}>
+                {weekdayKo(today)}
+              </span>
             </span>
-          ) : undefined
-        }
-        summary={<span data-cal-summary style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{line}</span>}
-      />
+          }
+          summary={
+            <span data-cal-summary data-urgent={urgent ? '1' : undefined} style={{ display: 'block', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', color: urgent ? 'var(--mf-danger)' : undefined }}>
+              {line}
+            </span>
+          }
+        />
+        {/* 펼칠 것이 없는 배포(클라이언트 ID 없음)에는 캐럿이 없다 — 눌러도 아무 일
+            없는 단추는 없느니만 못하다(이 앱의 규칙). */}
+        {google.available && (
+          <button
+            type="button"
+            className="mf-cal-caret"
+            data-cal-caret
+            data-on={open || active ? '1' : undefined}
+            aria-expanded={open}
+            aria-label={open ? '보여 줄 캘린더 접기' : '보여 줄 캘린더 펼치기'}
+            title="보여 줄 캘린더"
+            onClick={() => setOpen((v) => !v)}
+            style={{
+              position: 'absolute',
+              right: 6,
+              top: '50%',
+              marginTop: -13,
+              width: 26,
+              height: 26,
+              padding: 0,
+              border: 'none',
+              borderRadius: 8,
+              background: 'transparent',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .17s ease' }}>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+            {/* 권한이 만료됐으면 캐럿 모서리에 경고 점 — 연동 알약을 걷어낸 자리에서
+                **다시 연결이 필요하다**만은 접힌 채로도 보여야 한다(펼치면 그 행이 있다).
+                잘 연결된 상태는 따로 칠하지 않는다(스펙: 행 오른쪽에는 캐럿뿐). */}
+            {linkTone === 'warn' && (
+              <span data-cal-link="warn" aria-hidden="true" style={{ position: 'absolute', top: 3, right: 3, width: 6, height: 6, borderRadius: 999, background: 'var(--mf-danger)', boxShadow: '0 0 0 1.5px var(--mf-card)' }} />
+            )}
+          </button>
+        )}
+      </div>
       {google.available && (
         // 가라앉은 판이 아니라 **왼쪽 rail**이다(첨부 디자인) — 즐겨찾기·공유받음·
         // 휴지통과 같은 결이라 같은 부품을 쓴다. 열고 닫히는 것도 **그 셋과 같은
         // 상자**(`LnbCollapse`)가 맡는다(요청: 일정도 같은 효과로) — 그래서 조건부로
         // 넣었다 빼는 대신 늘 그려 두고 높이로 접는다(그래야 닫는 동작에도
         // 애니메이션이 걸린다).
-        <LnbCollapse open={active}>
+        <LnbCollapse open={open}>
           <LnbRail cap={false} attrs={{ 'data-cal-sub': '' }}>
             {google.connected ? (
               <>

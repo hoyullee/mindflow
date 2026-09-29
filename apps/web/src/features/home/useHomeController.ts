@@ -920,6 +920,20 @@ export function useHomeController() {
   // 진입점이 프로필 팝오버 → **설정 모달**로 옮겨졌다(요청). 설정은 열어 둔다 —
   // 이름을 고친 뒤 돌아갈 자리가 그 화면이다.
   const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false, accountSettingsOpen: true, settingsView: 'profile' });
+  /**
+   * 계정 메뉴의 **프로필명 변경**(스펙: 홈·LNB 변경 5) — 설정 › 프로필 설정을 먼저 세우고
+   * **다음 틱에** 이름 팝업을 그 위에 얹는다.
+   *
+   * 한 번에 둘을 열면 안 된다(실측 — 테스트가 이름 팝업을 찾지 못했다): 같은 커밋에 모달
+   * 둘이 서면 나중에 효과를 거는 쪽(설정)이 다른 창을 `aria-hidden`으로 가려, 눈에는
+   * 보이는 이름 팝업이 보조 기술에게는 사라진다. 설정 안의 `프로필명 변경` 행이 늘 그래
+   * 왔듯 **먼저 선 창 위에 나중 창이** 얹혀야 가림의 방향이 맞다.
+   */
+  const openProfileNameFromMenu = () => {
+    const draft = state.userName;
+    patch({ settingsOpen: false, accountSettingsOpen: true, settingsView: 'profile' });
+    setTimeout(() => patch({ profileNameOpen: true, profileNameDraft: draft }), 0);
+  };
   const onProfileNameInput = (v: string) => patch({ profileNameDraft: (v || '').slice(0, 20) });
   const submitProfileName = () => {
     const fallback = state.userEmail ? state.userEmail.split('@')[0] || 'mine' : 'mine';
@@ -1657,8 +1671,11 @@ export function useHomeController() {
       });
     }
   };
-  const toggleFavList = () => patch({ favOpen: !state.favOpen });
-  const toggleSharedList = () => patch({ sharedOpen: !state.sharedOpen });
+  // 모아보기의 셋(즐겨찾기·공유받음·휴지통)은 **아코디언**이다(스펙: 홈·LNB 변경 3) —
+  // 하나를 펴면 나머지는 접힌다. 셋을 다 펼칠 수 있을 때는 한 번에 LNB가 700px 넘게
+  // 자라 아래 구획을 찾으려 굴려야 했다. 접는 것은 제 것만 접는다.
+  const toggleFavList = () => patch(state.favOpen ? { favOpen: false } : { favOpen: true, sharedOpen: false, trashOpen: false });
+  const toggleSharedList = () => patch(state.sharedOpen ? { sharedOpen: false } : { sharedOpen: true, favOpen: false, trashOpen: false });
   /**
    * ☰ 버튼과 우클릭이 **같은 메뉴**를 연다(요청). 다른 점은 자리뿐이라, 여는 쪽이
    * 좌표를 주고 메뉴는 그 자리에 뜬다(화면 밖으로 나가면 안쪽으로 당긴다).
@@ -1776,7 +1793,7 @@ export function useHomeController() {
       });
     }
   };
-  const toggleTrashList = () => patch({ trashOpen: !state.trashOpen });
+  const toggleTrashList = () => patch(state.trashOpen ? { trashOpen: false } : { trashOpen: true, favOpen: false, sharedOpen: false });
   const toggleRecentList = () => patch({ recentOpen: !state.recentOpen });
   const askRestore = (title: string, docId?: string) => patch({ confirmRestore: title, confirmRestoreDocId: docId ?? null });
   const cancelRestore = () => patch({ confirmRestore: null, confirmRestoreDocId: null });
@@ -2964,6 +2981,7 @@ export function useHomeController() {
     disconnectDrive,
     toggleSettings,
     openProfileNameEdit,
+    openProfileNameFromMenu,
     changeAvatar,
     removeAvatar,
     onProfileNameInput,

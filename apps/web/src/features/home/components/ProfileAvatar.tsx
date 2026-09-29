@@ -8,6 +8,11 @@ interface Props {
   fontSize: number;
   /** Extra styles for the outer box (shadows etc. from the call sites). */
   boxShadow?: string;
+  /**
+   * 위가 조금 밝은 **세로 그라디언트**(스펙: LNB 프로필 카드·설정 머리의 아바타).
+   * 색을 따로 적지 않고 잉크 토큰에서 섞는다 — 다크에서도 뒤집힌 잉크 그대로 선다.
+   */
+  gradient?: boolean;
 }
 
 /**
@@ -18,7 +23,7 @@ interface Props {
  * `onError` just hides the img. `referrerPolicy="no-referrer"` matters:
  * googleusercontent photo URLs reject requests carrying a cross-site referrer.
  */
-export function ProfileAvatar({ initial, avatarUrl, size, radius, fontSize, boxShadow }: Props) {
+export function ProfileAvatar({ initial, avatarUrl, size, radius, fontSize, boxShadow, gradient = false }: Props) {
   return (
     <div
       style={{
@@ -28,7 +33,10 @@ export function ProfileAvatar({ initial, avatarUrl, size, radius, fontSize, boxS
         borderRadius: radius,
         // 디자인 개정(첨부 이미지): 강조색 그라디언트 → **잉크색 사각**에 밝은 글자.
         // 다크에서는 토큰이 뒤집혀 밝은 면에 어두운 글자가 된다(대비 유지).
-        background: 'var(--mf-text)',
+        backgroundColor: 'var(--mf-text)',
+        // 섞기(`color-mix`)를 모르는 엔진은 이 한 줄만 버리고 위의 단색으로 선다 —
+        // 배경을 한 속성(`background`)으로 적으면 통째로 버려져 투명해진다.
+        ...(gradient ? { backgroundImage: 'linear-gradient(180deg, color-mix(in srgb, var(--mf-text) 76%, var(--mf-card)), var(--mf-text))' } : {}),
         color: 'var(--mf-card)',
         display: 'flex',
         alignItems: 'center',

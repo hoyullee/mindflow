@@ -164,11 +164,21 @@ describe('프로필 이미지 변경', () => {
     expect(JSON.parse(localStorage.getItem('mf_profile_avatars') || '{}')['me@example.com']).toBeUndefined();
   });
 
-  it("프로필명 변경 진입점은 설정 → '프로필 설정'이다 — 팝오버·첫 화면에는 없다(요청)", async () => {
+  it("프로필명 변경 진입점은 둘이다 — 계정 메뉴(스펙 5)와 설정 → '프로필 설정' · 설정 첫 화면에는 없다", async () => {
     const user = userEvent.setup();
     renderHome(new LocalAuth());
+    // ① 계정 메뉴의 항목 — 이름 바꾸기 팝업이 **설정 › 프로필 설정 위에** 열린다(돌아갈 자리).
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
-    expect(screen.queryByRole('button', { name: '프로필명 변경' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    expect(await screen.findByRole('dialog', { name: '프로필명 변경' })).toBeTruthy();
+    // 설정은 그 **아래**에 서 있다(위 창이 떠 있는 동안 보조 기술에게는 가려지는 게 맞다 — `hidden`).
+    expect(screen.getByRole('dialog', { name: '설정', hidden: true }).querySelector('[data-settings-title]')!.textContent).toBe('프로필 설정');
+    await user.click(screen.getByRole('button', { name: '취소' }));
+    await user.click(screen.getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '설정' })).toBeNull());
+
+    // ② 설정 → 프로필 설정 — 예전 길은 그대로다.
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
     const dialog = screen.getByRole('dialog', { name: '설정' });
     // 첫 화면은 진입 행만 — 손보는 항목은 한 겹 안에 있다.

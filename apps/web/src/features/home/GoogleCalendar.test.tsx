@@ -318,6 +318,20 @@ async function openCalendar(container: HTMLElement, user: ReturnType<typeof user
 }
 
 /**
+ * LNB 일정 행의 **캐럿**으로 `보여 줄 캘린더`를 편다(스펙: 홈·LNB 변경 2.3 — 기본 접힘).
+ * 행을 누르는 것(화면 이동)과 갈렸다 — 예전에는 일정 화면에 들어가면 저절로 펼쳐졌다.
+ */
+async function openCalendarSub(user: ReturnType<typeof userEvent.setup>) {
+  const caret = await waitFor(() => {
+    const el = document.querySelector('[data-cal-caret]');
+    expect(el).toBeTruthy();
+    return el as HTMLElement;
+  });
+  if (caret.getAttribute('aria-expanded') !== 'true') await user.click(caret);
+  await waitFor(() => expect(document.querySelector('[data-cal-caret]')!.getAttribute('aria-expanded')).toBe('true'));
+}
+
+/**
  * 계정 설정 → `Google 캘린더 연동` 행. **글자가 아니라 마커로 찾는다** — 같은 글자가
  * LNB 일정 하위 메뉴에도 있다(접혀 있어도 DOM에는 남는다 — `LnbCollapse`).
  */
@@ -399,6 +413,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     await openCalendar(container, user);
+    await openCalendarSub(user);
     const row = await waitFor(() => {
       const el = document.querySelector('[data-cal-sub-item="me@example.com"]');
       expect(el).toBeTruthy();
@@ -449,6 +464,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     await openCalendar(container, user);
+    await openCalendarSub(user);
     const row = await waitFor(() => {
       const el = document.querySelector('[data-cal-sub-item="me@example.com"]');
       expect(el).toBeTruthy();
@@ -489,7 +505,13 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
 
     // 체크를 풀면 거울에서도 빠진다 — 숨긴 캘린더의 일정이 알림으로 뜨면 화면과 어긋난다.
-    const row = document.querySelector('[data-cal-sub-item="me@example.com"]') as HTMLElement;
+    // (거울은 하위 목록을 펴지 않아도 적힌다 — 위의 단정이 그것이다.)
+    await openCalendarSub(user);
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-item="me@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
     await user.click(row.querySelector('input') as HTMLInputElement);
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem('mf_gcal_remind_cals') ?? '[]')).toEqual([]);
@@ -512,7 +534,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       return el as HTMLElement;
     });
 
-    // 일정 화면이 아닐 때 — 내용은 남아 있고(그래야 닫는 전이가 보인다) 높이만 0이다.
+    // 접혀 있을 때(기본) — 내용은 남아 있고(그래야 닫는 전이가 보인다) 높이만 0이다.
     const box = await waitFor(() => {
       const el = document.querySelector('[data-cal-sub]')?.parentElement?.parentElement;
       expect(el).toBeTruthy();
@@ -525,8 +547,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const closing = box.style.transition;
     expect(closing).toContain('max-height');
 
-    // 펼치면 같은 상자가 열린다 — 전이 선언은 그대로다(즐겨찾기 구획과 같은 값).
-    await user.click(within(aside).getByText('일정'));
+    // 캐럿으로 펼치면 같은 상자가 열린다 — 전이 선언은 그대로다(즐겨찾기 구획과 같은 값).
+    await openCalendarSub(user);
     await waitFor(() => expect(box.style.maxHeight).not.toBe('0px'));
     expect(box.style.visibility).toBe('visible');
     // 즐겨찾기 구획과 **같은 선언**이다(visibility 지연만 열림/닫힘에 따라 갈린다).
@@ -535,14 +557,15 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(shape(fav)).toBe(shape(box));
   });
 
-  it('LNB `일정`을 누르면 하위 메뉴가 펼쳐진다 — 연동 전에는 연동 항목, 연동 뒤에는 보여 줄 캘린더(요청)', async () => {
-    // ① 클라이언트 ID가 없는 배포 — 하위 메뉴 자체를 그리지 않는다(눌러도 아무 일
-    //    없는 항목을 두지 않는다는 규칙, 설정의 연동 구획과 같다).
+  it('LNB `일정`의 **캐럿**이 하위 메뉴를 편다 — 행 클릭(화면 이동)과 갈리고 기본은 접힘 · 연동 전엔 연동 항목, 뒤엔 보여 줄 캘린더(스펙 2.3)', async () => {
+    // ① 클라이언트 ID가 없는 배포 — 하위 메뉴도 캐럿도 그리지 않는다(눌러도 아무 일
+    //    없는 단추를 두지 않는다는 규칙, 설정의 연동 구획과 같다).
     seed();
     const user = userEvent.setup();
     const first = renderHome();
     await openCalendar(first.container, user);
     expect(document.querySelector('[data-cal-sub]')).toBeNull();
+    expect(document.querySelector('[data-cal-caret]')).toBeNull();
     cleanup();
 
     // ② 연동 전 — `Google 캘린더 연동` 한 행. 누르면 동의 창이 아니라 **설정의
@@ -553,6 +576,12 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     stubFetch();
     const second = renderHome();
     await openCalendar(second.container, user);
+    // 화면에 들어왔다고 펼쳐지지 않는다 — 목록이 LNB를 200px 넘게 밀어내지 않게(기본 접힘).
+    const caret = document.querySelector('[data-cal-caret]') as HTMLElement;
+    expect(caret.getAttribute('aria-expanded')).toBe('false');
+    // 일정 화면에서는 캐럿이 또렷하다(`data-on` — 평소엔 반쯤 물러서 있다).
+    expect(caret.getAttribute('data-on')).toBe('1');
+    await openCalendarSub(user);
     const connectRow = await waitFor(() => {
       const el = document.querySelector('[data-cal-sub-connect]');
       expect(el).toBeTruthy();
@@ -572,6 +601,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     stubFetch();
     const third = renderHome();
     await openCalendar(third.container, user);
+    await openCalendarSub(user);
     await waitFor(() => expect(document.querySelector('[data-cal-sub-item="me@example.com"]')).toBeTruthy());
     const row = document.querySelector('[data-cal-sub-item="me@example.com"]') as HTMLElement;
     expect((row.querySelector('input') as HTMLInputElement).checked).toBe(true);
@@ -4784,8 +4814,9 @@ describe('구글 캘린더 색 바꾸기(요청)', () => {
     clientId = 'test-client.apps.googleusercontent.com';
     const user = userEvent.setup();
     const { container } = renderHome();
-    // 하위 목록은 일정 화면을 보고 있을 때만 펼쳐진다.
+    // 하위 목록은 캐럿으로 편다(기본 접힘).
     await openCalendar(container, user);
+    await openCalendarSub(user);
     const row = await waitFor(() => {
       const el = document.querySelector('[data-cal-sub-item="me@example.com"]');
       expect(el).toBeTruthy();

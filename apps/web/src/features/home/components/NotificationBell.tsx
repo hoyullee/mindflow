@@ -30,6 +30,7 @@ import { MONO_FONT } from '../chrome';
 import { useNotifications } from './NotificationsContext';
 import { avatarLabel } from './ProfileAvatar';
 import { NavCard } from './NavCard';
+import { MarqueeText } from './MarqueeText';
 import { useUnreadCount } from './unreadCount';
 import { useMergedUpdate } from '../../../pwa/updateControl';
 import { updateNoticeOf } from '../../../platform/shellUpdate';
@@ -193,15 +194,15 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
     overflow: 'hidden',
   };
 
-  // LNB의 **두 줄 카드**(요청, 첨부 디자인) — 위: 코랄 타일에 담긴 흰 벨 + `알림`,
-  // 오른쪽 끝에 개수 배지, 아래: 가장 최근 알림 한 줄(`종류 · 내용 · 시간`).
-  // 셰브론은 두지 않는다 — 이 카드는 하위 메뉴를 펼치는 것이 아니라 **패널을
-  // 띄운다**(그 자리를 개수 배지가 쓴다). 상태가 셋이다:
-  //   ① 안 읽음 → 강조색 틴트 면 + 코랄 배지 + 요약이 **본문 톤**(따뜻한 갈색)
-  //   ② 다 읽음 → 배지가 사라지고 면도 없이 요약만 **흐린 회색**으로 남는다
-  //   ③ 아무것도 없음 → `아직 받은 알림이 없어요`
+  // LNB **오늘 묶음**의 첫 줄(스펙: 홈·LNB 변경 2.2) — 왼쪽 32px 원 안의 벨 + `알림`,
+  // 오른쪽 끝에 안 읽은 수(면 없는 등폭 숫자), 아래: 가장 최근 알림 한 줄
+  // (`종류 · 내용 · 시간` — 넘치면 흐른다). 셰브론은 두지 않는다 — 이 행은 하위 메뉴를
+  // 펼치는 것이 아니라 **패널을 띄운다**. 상태가 셋이다:
+  //   ① 안 읽음 → 채운 알림색 원 + 모서리 점 + 오른쪽 숫자
+  //   ② 다 읽음 → 옅은 원 + 흐린 벨, 숫자 없음 — 요약은 그대로 남는다
+  //   ③ 아무것도 없음 → `새 알림이 없어요`
   // 요약을 늘 보여 주는 이유: 이 줄이 있으면 패널을 열지 않고도 "무엇이 왔는지"를
-  // 알 수 있다(배지 숫자만으로는 열어 봐야 안다).
+  // 알 수 있다(숫자만으로는 열어 봐야 안다).
   //
   // 최근 것은 **안 읽은 것 중 최신**을 먼저 고른다 — 배지가 가리키는 것과 문구가
   // 어긋나면 안 된다(새 알림이 있는데 이미 읽은 옛 알림을 요약하는 꼴).
@@ -216,7 +217,7 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
       ? { head: `업데이트 · ${notice.title}`, time: '' }
       : items[0]
         ? summaryOf(items[0])
-        : { head: '아직 받은 알림이 없어요', time: '' };
+        : { head: '새 알림이 없어요', time: '' };
   const summary = time ? `${head} · ${time}` : head;
   // 새 버전도 **하나로 센다**(요청: 하나의 창구) — 열어도 사라지지 않으므로 적용·설치
   // 전까지 배지가 남는다. 그게 맞다: 눌러야 끝나는 일이다.
@@ -225,57 +226,67 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
   const hot = count > 0;
 
   const bell = (
-    // 껍데기는 **일정 카드와 같은 것**(`NavCard`)이다 — 나란히 선 두 카드가
-    // 서로 달라 보이지 않게 값을 한 곳에 둔다. 진짜 `<button>`이라 Enter·Space
-    // 활성화가 공짜이고, Radix `asChild`가 이 요소를 그대로 트리거로 쓴다.
+    // 껍데기는 **일정 행과 같은 것**(`NavCard`)이다 — 나란히 선 두 행이 서로 달라
+    // 보이지 않게 값을 한 곳에 둔다. 진짜 `<button>`이라 Enter·Space 활성화가 공짜이고,
+    // Radix `asChild`가 이 요소를 그대로 트리거로 쓴다.
     <NavCard
       data-notification-nav
       isMobile={isMobile}
-      tone={hot ? 'hot' : 'quiet'}
-      // 채운 코랄 타일 + 흰 벨(첨부 디자인) — 일정 카드의 **테두리 타일**과 갈린다.
-      tile="accent"
-      // 안 읽음이 있으면 타일 모서리에 점 — 개수를 읽기 전에 먼저 눈에 든다.
-      tileDot={hot}
-      chevron={false}
+      // 창이 열린 동안 행에 옅은 면(스펙) — 무엇이 이 창을 열었는지 짚어 준다.
+      active={open}
       // 요약까지 접근 이름에 담는다 — 보이는 글자와 읽히는 글자가 같아야 한다.
       aria-label={`${hot ? `알림 ${count}개` : '알림'} · ${summary}`}
       title={summary}
       label="알림"
       glyph={
-        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
+        // 32px **원**(스펙) — 안 읽은 것이 있으면 채운 알림색 + 흰 벨 + 오른쪽 위 점,
+        // 없으면 옅은 면 + 흐린 벨. 알림색은 테마와 무관하게 고정이다(`UNREAD_BADGE_BG`
+        // — 무엇을 강조하느냐가 아니라 "새것이 왔다"를 말하는 색, #376).
+        <span
+          data-notification-glyph={hot ? 'unread' : 'read'}
+          aria-hidden="true"
+          style={{
+            position: 'relative',
+            width: 32,
+            height: 32,
+            borderRadius: 999,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: hot ? UNREAD_BADGE_BG : 'var(--mf-panel2)',
+            color: hot ? UNREAD_BADGE_INK : 'var(--mf-muted)',
+            boxShadow: hot ? '0 5px 12px -6px rgba(240,102,63,.9)' : 'none',
+          }}
+        >
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          {hot && (
+            // 점을 둘러싼 링은 **놓이는 면**의 색이라 원 모서리에서 오려낸 것처럼 보인다.
+            <span
+              data-notification-dot
+              style={{ position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: 999, background: UNREAD_BADGE_BG, boxShadow: '0 0 0 2px var(--mf-card)' }}
+            />
+          )}
+        </span>
       }
       trailing={
         hot ? (
+          // 배지 면 없이 **숫자만**(스펙) — 등폭 글자라 자릿수가 바뀌어도 폭이 흔들리지 않는다.
           <span
             data-notification-count
             aria-hidden="true"
-            style={{
-              minWidth: 20,
-              height: 20,
-              padding: '0 6px',
-              borderRadius: 999,
-              background: UNREAD_BADGE_BG,
-              color: UNREAD_BADGE_INK,
-              fontSize: 10.5,
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxSizing: 'border-box',
-              flexShrink: 0,
-            }}
+            style={{ flexShrink: 0, marginRight: 8, fontFamily: MONO_FONT, fontSize: 11, fontWeight: 700, color: UNREAD_BADGE_BG }}
           >
             {count > 9 ? '9+' : count}
           </span>
         ) : undefined
       }
       summary={
-        <span data-notification-summary style={{ display: 'contents' }}>
-          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{head}</span>
-          {time && <span style={{ flexShrink: 0 }}>{` · ${time}`}</span>}
+        // 넘치면 흐르는 한 줄(스펙 2.2) — 말줄임이면 정작 **무슨 말이었는지**가 잘린다.
+        <span data-notification-summary style={{ display: 'block', minWidth: 0 }}>
+          <MarqueeText text={summary} />
         </span>
       }
     />

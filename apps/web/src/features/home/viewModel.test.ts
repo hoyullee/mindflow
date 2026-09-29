@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { deriveHomeView } from './viewModel';
+import { calendarNextOf, calendarRowLine, deriveHomeView, weekdayKo } from './viewModel';
+import type { CalendarEntry } from './calendar/entries';
 import { initialHomeState } from './types';
 
 describe('deriveHomeView — favorites', () => {
@@ -475,5 +476,43 @@ describe('recentTrayDocIds', () => {
     // docA는 휴지통 — 제외. '주간 계획'(제목 별칭)은 첫 스페이스 규칙으로 docA를
     // 가리키지만 그것도 휴지통이라 제외. docB만 남는다.
     expect(ids).toEqual(['docB']);
+  });
+});
+
+/**
+ * LNB `일정` 행의 부제(스펙: 홈·LNB 변경 2.3) — **다음 마감의 이름**을 부른다.
+ * 날짜는 문자열로 못박는다(오늘을 앵커로 — 시계에 기대지 않는다, `docs/probe-pitfalls.md` F5).
+ */
+describe('LNB 일정 부제 — 이번 주의 다음 마감', () => {
+  // 2026-09-29(화) 기준 — 그 주는 일요일 09-27 ~ 토요일 10-03.
+  const TODAY = '2026-09-29';
+  const entry = (due: string, title: string): CalendarEntry => ({ docId: 'd', cardId: `c-${due}-${title}`, title, due, colId: 'todo', colName: '할 일', colIndex: 0, tag: '', boardName: '보드', spaceName: '업무' }) as CalendarEntry;
+  const brief = (overdue = 0) => ({ overdue, today: 0, week: 0, upcoming: 0 });
+
+  it('이번 주 안에서 **가장 이른** 마감을 고른다 — 지난 것과 다음 주는 넘긴다', () => {
+    const next = calendarNextOf([entry('2026-10-05', '다음 주'), entry('2026-10-01', '목요일 일'), entry('2026-09-28', '어제 일'), entry('2026-09-30', '내일 일')], TODAY);
+    expect(next).toEqual({ due: '2026-09-30', title: '내일 일' });
+    expect(calendarNextOf([entry('2026-10-04', '다음 주 일요일')], TODAY)).toBeNull();
+    // 같은 날이면 먼저 모인 것(수집 순)을 지킨다.
+    expect(calendarNextOf([entry('2026-09-30', '첫째'), entry('2026-09-30', '둘째')], TODAY)!.title).toBe('첫째');
+  });
+
+  it('오늘 · 내일 · 그 밖은 요일로 부른다 — 없으면 `이번 주 일정 없음`', () => {
+    expect(calendarRowLine(brief(), { due: '2026-09-29', title: '회의록' }, TODAY)).toEqual({ text: '오늘 · 회의록', urgent: false });
+    expect(calendarRowLine(brief(), { due: '2026-09-30', title: '카드 상세 팝업 마감' }, TODAY)).toEqual({ text: '내일 · 카드 상세 팝업 마감', urgent: false });
+    expect(calendarRowLine(brief(), { due: '2026-10-02', title: '배포' }, TODAY).text).toBe('금요일 · 배포');
+    expect(calendarRowLine(brief(), { due: '2026-10-02', title: '  ' }, TODAY).text).toBe('금요일 · 제목 없는 카드');
+    expect(calendarRowLine(brief(), null, TODAY)).toEqual({ text: '이번 주 일정 없음', urgent: false });
+  });
+
+  it('**지난 마감이 있으면 그쪽이 먼저**다 — 다음 마감의 이름이 "이미 늦은 것"을 가리지 않게', () => {
+    const line = calendarRowLine({ overdue: 2, today: 1, week: 1, upcoming: 1 }, { due: '2026-09-30', title: '내일 일' }, TODAY);
+    expect(line).toEqual({ text: '지난 마감 2건 · 오늘 1건', urgent: true });
+  });
+
+  it('요일은 한 글자다', () => {
+    expect(weekdayKo('2026-09-29')).toBe('화');
+    expect(weekdayKo('2026-10-04')).toBe('일');
+    expect(weekdayKo('not-a-date')).toBe('');
   });
 });

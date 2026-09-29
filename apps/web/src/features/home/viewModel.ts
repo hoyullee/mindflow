@@ -4,8 +4,8 @@ import { miniBoardPreview, miniKanbanPreview, miniPreview, previewSkeleton, prev
 import type { PreviewSurface } from './mapPreview';
 import { docSearchHits, docSearchText, matchesQuery, snippetAround } from './searchIndex';
 import type { SearchHitKind } from './searchIndex';
-import { calendarEntries, type CalendarSource } from './calendar/entries';
-import { calendarBrief, todayISO, type CalendarBrief } from './calendar/model';
+import { calendarEntries, type CalendarEntry, type CalendarSource } from './calendar/entries';
+import { calendarBrief, calendarBriefLine, daysBetween, partsOf, todayISO, weekEndISO, type CalendarBrief } from './calendar/model';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
 import type { Doc, NoteSketch } from '@mindflow/mindmap-core';
@@ -233,6 +233,8 @@ export interface HomeViewModel {
   recentCollapsed: boolean;
   /** LNB `일정` 행의 개수 — 다가오는 마감(오늘 포함) 수. */
   calendarBrief: CalendarBrief;
+  /** LNB `일정` 행의 부제가 이름을 부를 **이번 주의 다음 마감**(오늘 포함) — 없으면 null. */
+  calendarNext: CalendarNext | null;
   /** 폴더 안일 때만 — 그리드 첫 칸의 "상위 폴더" 타일. */
   parentTile: ParentTileViewData | null;
   foldersSectionVisible: boolean;
@@ -1022,7 +1024,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     recentCollapsed: !!state.search,
     // 일정 개수 — 화면을 열지 않아도 LNB에 뜨므로 여기서 센다. 본문이 아직 없는
     // 문서는 세지 못한다(0으로 보인다) — 프리페치가 도착하면 함께 오른다.
-    calendarBrief: calendarBriefOf(state),
+    ...calendarBriefOf(state),
     parentTile,
     // 상위 폴더 타일도 이 구획에 서므로 폴더 카드가 없어도 구획이 열린다.
     foldersSectionVisible: !loading && !searching && (folderCards.length > 0 || !!parentTile),
@@ -1044,8 +1046,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
 
 export { hexA, mapId };
 
-/** LNB `일정` 카드의 요약 수치 — 지난 마감·오늘·이번 주·다가오는 것. */
-function calendarBriefOf(state: HomeState): CalendarBrief {
+/** LNB `일정` 행의 요약 — 지난 마감·오늘·이번 주·다가오는 것의 수와 **이번 주의 다음 마감**.
+ * 둘을 한 번에 만드는 이유: 같은 목록(`calendarEntries`)을 두 번 훑지 않게. */
+function calendarBriefOf(state: HomeState): { calendarBrief: CalendarBrief; calendarNext: CalendarNext | null } {
   const sources: CalendarSource[] = [];
   for (const sp of state.spaces) {
     if (sp.id === 'drive') continue;
@@ -1055,5 +1058,48 @@ function calendarBriefOf(state: HomeState): CalendarBrief {
   }
   for (const sm of state.sharedMaps) sources.push({ docId: sm.docId, boardName: sm.title, spaceName: '공유받음' });
   const today = todayISO();
-  return calendarBrief(calendarEntries(sources, state.previewDocs), today);
+  const entries = calendarEntries(sources, state.previewDocs);
+  return { calendarBrief: calendarBrief(entries, today), calendarNext: calendarNextOf(entries, today) };
+}
+
+/** LNB `일정` 행이 부를 마감 하나 — 이번 주(오늘 ~ 토요일) 안에서 **가장 이른 것**. */
+export interface CalendarNext {
+  due: string;
+  title: string;
+}
+
+export function calendarNextOf(entries: readonly CalendarEntry[], todayIso: string): CalendarNext | null {
+  const end = weekEndISO(todayIso);
+  let best: CalendarEntry | null = null;
+  for (const e of entries) {
+    if (e.due < todayIso || e.due > end) continue;
+    // 같은 날이면 먼저 모인 것(수집 순 — 달력 칸의 순서와 같다)을 지킨다.
+    if (!best || e.due < best.due) best = e;
+  }
+  return best ? { due: best.due, title: best.title } : null;
+}
+
+const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토'] as const;
+
+/** 그 날의 요일 한 글자(`화`) — LNB 일정 글리프와 부제가 같이 쓴다. */
+export function weekdayKo(iso: string): string {
+  const p = partsOf(iso);
+  return p ? WEEKDAY_KO[new Date(p.y, p.m - 1, p.d).getDay()]! : '';
+}
+
+/**
+ * LNB `일정` 행의 부제(스펙: 홈·LNB 변경 2.3) — **다음 마감의 이름**을 부른다
+ * (`내일 · 카드 상세 팝업 마감`). 예전에는 개수만 말했는데(`오늘 1건 · 이번 주 3건`),
+ * 그러면 무엇이 다가오는지는 화면을 열어야 알았다.
+ *
+ * **지난 마감이 있으면 그쪽이 먼저다** — 놓친 일은 다가오는 일보다 급하고, 다음 마감의
+ * 이름이 그 자리를 차지하면 "이미 늦은 것이 있다"가 가려진다. 그때는 예전 문장
+ * (`지난 마감 1건 · 오늘 1건`)을 그대로 쓰고 호출부가 경고색으로 칠한다(`urgent`).
+ */
+export function calendarRowLine(brief: CalendarBrief, next: CalendarNext | null, todayIso: string): { text: string; urgent: boolean } {
+  if (brief.overdue > 0) return { text: calendarBriefLine(brief), urgent: true };
+  if (!next) return { text: '이번 주 일정 없음', urgent: false };
+  const gap = daysBetween(todayIso, next.due);
+  const day = gap <= 0 ? '오늘' : gap === 1 ? '내일' : `${weekdayKo(next.due)}요일`;
+  return { text: `${day} · ${next.title.trim() || '제목 없는 카드'}`, urgent: false };
 }
