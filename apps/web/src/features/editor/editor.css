@@ -496,7 +496,11 @@ input[type='search']::-webkit-search-results-decoration {
 /* 본문 목록의 마커도 같은 계약이다 — 마커는 편집기가 그리는 장식이라 **고를 수 없다**
    (표 칸의 마커는 글자라 위 규칙, 본문의 마커는 편집 박스 바깥의 형제 요소다).
    왼쪽에서 끌면 이 스팬이 선택에 물려 13px 모노스페이스 조각이 함께 복사됐다. */
-[data-note-bullet]::selection,
+/* `::-moz-selection`과 **한 목록에 두지 않는다** — 크로뮴은 목록에 모르는 의사 요소가
+   하나라도 있으면 규칙 전체를 버린다(그래서 이 규칙은 크로뮴에서 한 번도 걸린 적이 없다). */
+[data-note-bullet]::selection {
+  background: transparent;
+}
 [data-note-bullet]::-moz-selection {
   background: transparent;
 }
@@ -1106,6 +1110,18 @@ input[type='search']::-webkit-search-results-decoration {
 [data-note-editor] .mf-note-table td[data-armed='1']::selection,
 [data-note-editor] .mf-note-table td[data-armed='1'] ::selection {
   background: transparent !important;
+}
+/* **승격된 동안에는 본문 단 전체의 브라우저 칠을 끈다**(제보: 목록 번호·글머리표가 물든다).
+   승격 전에는 브라우저 선택이 한 줄 안에 갇혀 있어 줄 밖의 장식(번호·글머리표·체크 칸)에
+   닿을 일이 없었다. 승격하면 선택이 블록을 넘으므로 그 사이의 장식이 **브라우저 선택에
+   들어오고**, 위의 `[data-note-editor] ::selection`이 강조색으로 칠한다. 글자는 우리가 줄마다
+   칠하므로(`nativeLineSel`) 여기서는 브라우저 칠을 **모두** 끈다 — 표의 칸도 그 안의 줄로
+   우리가 칠하므로 두 겹이 되지 않게 함께 끈다(그래서 표 규칙보다 세기가 높다).
+   `data-note-hl`이 없으면(하이라이트를 모르는 브라우저) 걸리지 않는다 — 그때는 우리 칠이
+   없으니 브라우저 칠이라도 남아야 한다. */
+[data-note-editor][data-note-hl='1'] [data-note-col][data-note-promoted] ::selection,
+[data-note-editor][data-note-hl='1'] [data-note-col][data-note-promoted]::selection {
+  background: transparent;
 }
 
 /* 구분선 — 고를 수 있는 블록(제보: 넣고 나면 지울 방법이 없다).

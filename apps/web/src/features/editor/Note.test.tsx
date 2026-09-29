@@ -10718,6 +10718,29 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     }
   });
 
+  /**
+   * **승격된 동안 번호·글머리표가 물들지 않는다**(제보 — 실기기 재현 이미지).
+   *
+   * 승격하면 브라우저 선택이 블록을 넘으므로 줄 밖의 장식(번호·글머리표)이 **브라우저
+   * 선택에 들어오고**, `[data-note-editor] ::selection`이 강조색으로 칠했다. jsdom은
+   * `::selection`을 계산하지 않으므로 규칙의 모양을 지킨다 — 계산값은 크로뮴 프로브로
+   * 쟀다(수정 전 번호 `24% 강조색` → 수정 후 `transparent`).
+   */
+  it('승격된 동안에는 본문 단의 브라우저 칠을 모두 끈다 — 번호·글머리표가 물들지 않게', () => {
+    const src = readFileSync(['src/features/editor/editor.css', 'apps/web/src/features/editor/editor.css'].find((f) => existsSync(f))!, 'utf8');
+    const rule = /\[data-note-editor\]\[data-note-hl='1'\] \[data-note-col\]\[data-note-promoted\] ::selection,[^{]*\{([^}]*)\}/.exec(src)?.[1] ?? '';
+    expect(rule).toMatch(/background:\s*transparent/);
+    /**
+     * **크로뮴은 선택자 목록에 모르는 의사 요소가 하나라도 있으면 규칙 전체를 버린다** —
+     * `::selection`과 `::-moz-selection`을 한 목록에 두면 크로뮴에서는 그 규칙이 없는 것과
+     * 같다(글머리표 규칙이 그렇게 한 번도 걸리지 않았다).
+     */
+    for (const m of src.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{/g)) {
+      const sel = m[1]!;
+      if (sel.includes('::-moz-selection')) expect(sel.includes('::selection'), sel.trim()).toBe(false);
+    }
+  });
+
   it('선택이 접히면 승격을 걷는다 — 그대로 두면 글쇠가 줄에 들어가지 않는다', async () => {
     const { col } = await promotedByTouch('sg1b');
     window.getSelection()?.removeAllRanges();
