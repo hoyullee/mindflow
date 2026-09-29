@@ -10697,6 +10697,39 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     await waitFor(() => expect(write).toHaveBeenCalledWith('첫 줄'));
   });
 
+  /**
+   * **앵커는 잡을 때 한 번만 정한다**(제보: 끄는 동안 범위 밖 글자에 배경이 생겼다 사라진다).
+   *
+   * 예전에는 움직일 때마다 **지금 칠해진 선택**에서 반대쪽 끝을 다시 읽었다. 그러면 끌던
+   * 끝이 앵커를 지나가는 순간 문서 순서가 뒤집혀(`buildSelection`은 늘 순서대로 돌려준다)
+   * 「반대쪽 끝」이 **방금 손가락이 있던 자리**로 바뀐다 — 앵커가 손가락을 따라다니며 매
+   * 프레임 다른 구간이 칠해졌다(실브라우저 실측: `줄입니다 여기` → ` 여기` → `를` →
+   * ` 고른다`). 여기서는 **머리를 아랫줄로 끌었다 되돌아오는** 것으로 같은 일을 만든다.
+   */
+  it('끌던 끝이 앵커를 지나가도 **앵커는 제자리다**(깜빡임의 원인)', async () => {
+    const { c, a, b } = await pickedByTouch('sg6');
+    const head = (await waitFor(() => {
+      const el = c.querySelector('[data-note-selgrip="head"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    const picked = () => c.querySelectorAll('[data-note-blockwrap][data-selected="1"]').length;
+
+    // ① 머리를 아랫줄로 — 두 줄이 걸린다(앵커는 첫 줄의 `to`).
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, writable: true, value: () => b });
+    firePtr(head, 'pointerdown', { clientX: 40, clientY: 104 });
+    firePtr(head, 'pointermove', { clientX: 60, clientY: 150 });
+    await waitFor(() => expect(picked()).toBe(2));
+
+    // ② 손가락을 첫 줄로 되돌린다 — 앵커가 따라갔다면 **여전히 두 줄**이다.
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, writable: true, value: () => a });
+    firePtr(head, 'pointermove', { clientX: 60, clientY: 108 });
+    await waitFor(() => expect(picked()).toBe(1));
+    firePtr(head, 'pointerup', { clientX: 60, clientY: 108 });
+
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+  });
+
   it('그냥 톡 누르면 칠해 둔 선택을 **놓는다**(손가락)', async () => {
     const { c, a } = await pickedByTouch('sg3');
     await waitFor(() => expect(c.querySelector('[data-note-selgrip="head"]')).toBeTruthy());
