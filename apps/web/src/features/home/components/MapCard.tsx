@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
-import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { useRef } from 'react';
+import type { CSSProperties, DragEvent, MouseEvent } from 'react';
 import { formatFullDateTime, formatLastEdited } from '../timeFormat';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useCardActivation } from './useCardActivation';
+import { useLongPressSelect } from './useLongPressSelect';
 import { dotGridStyle } from '../chrome';
 import { useVisibleOnce } from '../useVisibleOnce';
 import type { NoteSketch } from '@mindflow/mindmap-core';
@@ -448,11 +449,6 @@ function NoteCompactCover({ card, grey }: { card: CardViewData; grey: boolean })
   );
 }
 
-/** 모바일 선택 모드 진입 — 누르고 있어야 하는 시간(iOS·안드로이드의 길게 누르기와 같은 길이). */
-const LONG_PRESS_MS = 500;
-/** 누르는 동안 허용하는 흔들림(px, 직선 거리) — 이보다 크면 스크롤 의도로 본다. */
-const LONG_PRESS_SLOP = 10;
-
 /** Home.dc.html:251-303 `<sc-for list="{{ allCards }}">` — a single map/Drive-file card. */
 export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
   // 한 번 = 선택 / 두 번 = 열기. 규칙과 그 함정들은 `useCardActivation`에.
@@ -470,51 +466,17 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
   const selectMode = controller.state.selectMode;
 
   // ---- 모바일 선택 모드: 길게 누르기(요청) ----
-  // 시간을 **직접 잰다**(칸반 카드 드래그의 `beginPointerDrag`와 같은 골격):
-  // 브라우저의 길게 누르기(=`contextmenu`)는 기기·브라우저마다 발화 여부가 갈리고,
-  // iOS는 `-webkit-touch-callout: none`을 걸면 아예 오지 않기도 한다. 둘 중 **먼저
-  // 오는 쪽**이 모드를 켜고, 나머지는 이미 켜져 있으므로 아무 일도 하지 않는다.
-  const holdTimer = useRef<number | undefined>(undefined);
-  const holdStart = useRef<{ x: number; y: number } | null>(null);
-  /** 이번 제스처가 터치였는가 — `contextmenu`가 우클릭인지 길게 누르기인지 가른다. */
-  const wasTouch = useRef(false);
-  /** 길게 누르기로 모드에 들어간 직후 따라오는 클릭 한 번을 삼킨다. */
-  const swallowClick = useRef(false);
-
-  const cancelHold = () => {
-    if (holdTimer.current !== undefined) window.clearTimeout(holdTimer.current);
-    holdTimer.current = undefined;
-    holdStart.current = null;
-  };
-  useEffect(() => cancelHold, []);
-
-  /** 길게 누르기가 실제로 성립했을 때 — 두 경로(타이머·contextmenu)가 함께 쓴다. */
-  const beginSelectMode = () => {
-    cancelHold();
-    swallowClick.current = true;
-    if (controller.state.selectMode) return;
-    // 메뉴가 손가락 **아래에서** 뜨는 것과 같은 이유로 시각만으로는 알아채기 늦다.
-    navigator.vibrate?.(12);
-    controller.enterSelectMode(card.key);
-  };
-
-  const onPointerDown = (e: ReactPointerEvent<HTMLAnchorElement>) => {
-    wasTouch.current = e.pointerType === 'touch';
-    // 새 제스처의 시작 — 앞선 제스처가 남긴 억제 플래그를 여기서 푼다(클릭이 끝내
-    // 오지 않은 경우에도 다음 탭이 먹히도록).
-    swallowClick.current = false;
-    cancelHold();
-    if (!wasTouch.current || !isMobile || compact || selectMode) return;
-    const t = e.target as HTMLElement;
-    if (t.closest && t.closest('.menu-btn,.fav-btn')) return;
-    holdStart.current = { x: e.clientX, y: e.clientY };
-    holdTimer.current = window.setTimeout(beginSelectMode, LONG_PRESS_MS);
-  };
-  const onPointerMove = (e: ReactPointerEvent<HTMLAnchorElement>) => {
-    const s = holdStart.current;
-    if (!s) return;
-    if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > LONG_PRESS_SLOP) cancelHold();
-  };
+  // 기계는 폴더 카드와 **같은 것**을 쓴다(`useLongPressSelect`) — 폴더도 다중 선택
+  // 대상이 된 뒤로 같은 제스처가 두 곳에 필요해졌고, 베껴 두면 한쪽만 고쳐진다.
+  const hold = useLongPressSelect({
+    cardKey: card.key,
+    armed: isMobile && !compact && !selectMode,
+    active: selectMode,
+    onEnter: controller.enterSelectMode,
+    skip: '.menu-btn,.fav-btn',
+  });
+  const { wasTouch, swallowClick } = hold;
+  const beginSelectMode = hold.begin;
 
   const onOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
@@ -671,10 +633,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       onClick={onOpen}
       onDoubleClick={onDblOpen}
       onContextMenu={onContextMenu}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={cancelHold}
-      onPointerCancel={cancelHold}
+      onPointerDown={hold.onPointerDown}
+      onPointerMove={hold.onPointerMove}
+      onPointerUp={hold.onPointerUp}
+      onPointerCancel={hold.onPointerCancel}
       draggable={draggableEnabled}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}

@@ -20,6 +20,7 @@ import { calendarBriefLine, type CalendarBrief } from '../calendar/model';
 import { CalendarGlyph } from '../calendar/CalendarView';
 import { isManagedHolidayId } from '../calendar/googleCalendar';
 import { googlePrefsOf, useGoogleCalendar } from '../calendar/useGoogleCalendar';
+import { CalendarColorPicker } from '../calendar/CalendarColorPicker';
 import { NavCard } from './NavCard';
 import { LnbCollapse, LnbRail } from './LnbSection';
 
@@ -197,6 +198,24 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
                               공휴일
                             </span>
                           )}
+                          {/*
+                            **색을 바꾸는 자리도 여기다**(요청: 각 구글 캘린더의 색을
+                            바꿀 방법이 없을까). 색을 보고 있는 자리에서 바꾸는 것이
+                            맞아 설정 목록과 **같은 부품·같은 값**을 그대로 쓴다(진입점이
+                            둘이어도 하는 일이 하나면 흐려지지 않는다 — 여기 체크는
+                            켜진 캘린더만 칠하므로 꺼 둔 캘린더의 색은 이 점에서만 보인다).
+                            `<label>` 안의 `<button>`은 체크를 건드리지 않는다(HTML: 상호작용
+                            자손을 누르면 라벨은 아무 일도 하지 않는다).
+                          */}
+                          <CalendarColorPicker
+                            id={c.id}
+                            summary={c.summary}
+                            color={c.color}
+                            palette={google.eventColors}
+                            custom={!!google.calendarColors[c.id]}
+                            onPick={(hex) => google.setCalendarColor(c.id, hex)}
+                            dot={8}
+                          />
                         </label>
                       );
                     })}

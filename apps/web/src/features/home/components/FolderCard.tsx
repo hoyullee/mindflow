@@ -3,6 +3,8 @@ import type { HomeController } from '../useHomeController';
 import type { FolderCardViewData } from '../viewModel';
 import { folderCardKey } from '../viewModel';
 import { useCardActivation } from './useCardActivation';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { useLongPressSelect } from './useLongPressSelect';
 
 interface Props {
   folder: FolderCardViewData;
@@ -14,11 +16,22 @@ export function FolderCard({ folder, controller }: Props) {
   // 맵 카드와 같은 규칙 — 한 번 = 선택 / 두 번 = 진입(사용자 요청). 폴더만 한 번에
   // 들어가면 같은 그리드 안에서 카드마다 클릭의 뜻이 달라진다.
   const activation = useCardActivation();
-  // 모바일 선택 모드에서는 폴더가 **반응하지 않는다**(흐리게 표시). 폴더는 다중 선택
-  // 대상이 아니라서, 여기서 `selectCard`가 돌면 맵 선택이 비워진 채 모드만 남아
-  // "0개 선택" 바가 뜬다. 진입도 마찬가지 — 고른 맵을 두고 다른 목록으로 넘어가면
-  // 무엇을 고르고 있었는지 흐려진다. 먼저 선택을 끝내고(또는 ✕) 폴더로 간다.
+  // **모바일 선택 모드에서도 폴더를 고른다**(요청: 폴더도 다중 선택). 예전에는 폴더가
+  // 다중 선택 대상이 아니라서 모드 안에서는 흐리게 죽여 뒀다 — 그 이유가 사라졌다.
+  // 모드 안의 탭은 맵과 똑같이 **체크 토글**이고, 진입(더블탭)은 그대로 꺼진다:
+  // 고른 것을 두고 다른 목록으로 넘어가면 무엇을 고르고 있었는지 흐려진다.
   const selectMode = controller.state.selectMode;
+  const key = folderCardKey(folder.id);
+  // 선택 모드는 **모바일 레이아웃에서만** 켠다 — 선택 바가 모바일 툴바 자리를 쓰기
+  // 때문이다(맵 카드와 같은 판단·같은 기계).
+  const isMobile = useIsMobile();
+  const hold = useLongPressSelect({
+    cardKey: key,
+    armed: isMobile && !selectMode,
+    active: selectMode,
+    onEnter: controller.enterSelectMode,
+    skip: '.menu-btn,.menu-row',
+  });
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -34,21 +47,46 @@ export function FolderCard({ folder, controller }: Props) {
   };
   const enter = () => (folder.isDrive ? controller.openDriveFolder(folder.id) : controller.openFolder(folder.id));
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
-    if (selectMode) return;
     const target = e.target as HTMLElement;
     if (target.closest && target.closest('.menu-btn,.menu-row')) return;
+    // 길게 누르기로 방금 모드에 들어왔다 — 손을 떼며 따라오는 이 클릭은 토글이 아니다.
+    if (hold.swallowClick.current) {
+      hold.swallowClick.current = false;
+      return;
+    }
+    // 선택 모드 안의 탭 = 체크 토글(맵 카드와 같은 규칙).
+    if (selectMode) {
+      controller.toggleCardSelected(key);
+      return;
+    }
+    // 수정 키를 쥔 클릭은 **선택을 고치는 동작**이지 여는 동작이 아니다(맵 카드와
+    // 같은 규칙) — 여기서 활성화 판정을 태우면 Ctrl+클릭 두 번이 폴더를 열어 버린다.
+    const additive = e.ctrlKey || e.metaKey;
+    const range = e.shiftKey;
+    if (additive || range) {
+      controller.selectCard(key, { additive, range });
+      return;
+    }
     if (activation.click() === 'activate') {
       enter();
       return;
     }
-    controller.selectCard(folderCardKey(folder.id)); // 선택 → ☰ 메뉴가 이 폴더의 것으로 드러난다
+    controller.selectCard(key); // 선택 → ☰ 메뉴가 이 폴더의 것으로 드러난다
   };
   // 우클릭 = ☰과 같은 메뉴, 커서 자리에(요청).
   const onContextMenu = (e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    // 터치의 `contextmenu`는 곧 **길게 누르기**다 — 그 뜻은 선택 모드 진입이고,
+    // 폴더 메뉴는 ⋯이 맡는다(맵 카드와 같은 규칙).
+    if (hold.wasTouch.current && isMobile) {
+      hold.begin();
+      return;
+    }
     if (selectMode) return;
-    controller.selectCard(folderCardKey(folder.id));
+    // 여러 개를 골라 두고 그중 하나를 우클릭하면 **선택을 그대로 두고** 일괄 메뉴를
+    // 연다(맵 카드와 같은 규칙) — 선택 밖에서 왔으면 그 폴더 하나로 바꾼다.
+    if (!controller.state.selectedCards.includes(key)) controller.selectCard(key);
     controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'folder', id: folder.id });
   };
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -64,9 +102,16 @@ export function FolderCard({ folder, controller }: Props) {
       className="map-card"
       role="button"
       tabIndex={0}
+      // 마퀴(드래그 사각형)·Shift 범위·Ctrl+A가 **화면에 그려진 순서**를 이 표식으로
+      // 읽는다(맵 카드와 같은 이름) — 폴더가 다중 선택에 끼려면 여기 있어야 한다.
+      data-card-key={key}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      onPointerDown={hold.onPointerDown}
+      onPointerMove={hold.onPointerMove}
+      onPointerUp={hold.onPointerUp}
+      onPointerCancel={hold.onPointerCancel}
       onKeyDown={(e) => {
         // 키보드는 Enter/Space 한 번으로 진입한다 — 포인터의 "두 번"에 대응하는
         // 관용구가 없고, 접근성 관점에서도 활성화 키는 곧 실행이다.
@@ -84,8 +129,7 @@ export function FolderCard({ folder, controller }: Props) {
         outlineOffset: 2,
         borderRadius: 16,
         background: folder.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
-        cursor: selectMode ? 'default' : 'pointer',
-        opacity: selectMode ? 0.45 : 1,
+        cursor: 'pointer',
         // transition은 home.css의 `.map-card` 규칙이 정한다(transform 포함 — 인라인로
         // 덮으면 hover 떠오름이 전이 없이 툭 바뀐다).
         position: 'relative',
@@ -98,6 +142,37 @@ export function FolderCard({ folder, controller }: Props) {
         boxShadow: folder.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : 'var(--mf-card-shadow)',
       }}
     >
+
+      {/* 선택 모드의 체크 표시 — 맵 카드와 같은 동그라미·같은 자리(왼쪽 위).
+          카드 전체가 이미 터치 타깃이라 이것은 누르는 버튼이 아니라 **상태 표시**다. */}
+      {selectMode && (
+        <div
+          data-select-check
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: 10,
+            zIndex: 4,
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            background: folder.selected ? 'var(--mf-accent)' : 'var(--mf-panel-veil)',
+            border: `1.5px solid ${folder.selected ? 'var(--mf-accent)' : 'var(--mf-border)'}`,
+            color: 'var(--mf-accent-ink)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 6px rgba(0,0,0,.12)',
+          }}
+        >
+          {folder.selected && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+        </div>
+      )}
 
       {/* 아이콘 타일 — 옅은 세로 그라디언트 + 선 아이콘(디자인 원본). 강조색을 쓰지
           않는 이유: 폴더는 강조 대상이 아니라 담는 그릇이고, 강조색은 지금 "선택"과

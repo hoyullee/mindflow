@@ -21,6 +21,7 @@ import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore } from '../../adapters/ports';
 import { isoOf, partsOf } from './calendar/model';
 import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_DIRECTORY, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
+import { GOOGLE_EVENT_COLORS } from './calendar/googleCalendar';
 import { clearGoogleSessionCache, googlePrefsOf, useGoogleCalendar } from './calendar/useGoogleCalendar';
 import { onCalendarChanged } from '../reminders/calendarChanged';
 
@@ -218,7 +219,7 @@ function stubFetch(): ReturnType<typeof vi.fn> {
   return f as unknown as ReturnType<typeof vi.fn>;
 }
 
-function seed(google?: { calendars: string[]; extra?: { id: string; name: string }[] }): void {
+function seed(google?: { calendars: string[]; extra?: { id: string; name: string }[]; calendarColors?: Record<string, string> }): void {
   localStorage.setItem(
     'mf_spaces',
     JSON.stringify({
@@ -4675,5 +4676,182 @@ describe('구글 캘린더 — 받아 왔는가(eventsServed)', () => {
     }
     render(<Probe />);
     expect(served).toBe(true);
+  });
+});
+
+/**
+ * 캘린더 색 바꾸기(요청) — LNB 일정 하위에 뜨는 구글 캘린더마다 색이 붙는데 그걸
+ * 바꿀 길이 없었다.
+ *
+ * 바뀌는 것은 **그리오에서 보이는 색**이다: 구글 목록의 색을 고치려면
+ * `calendar.calendarlist` 쓰기 스코프가 필요한데 우리가 받은 것은 읽기뿐이고, 넓히면
+ * 민감 스코프 검수를 다시 받아야 한다. 그래서 값은 워크스페이스 블롭에 남는다
+ * (기기를 옮겨도 따라오고, 구글 캘린더 앱의 색은 그대로다).
+ */
+describe('구글 캘린더 색 바꾸기(요청)', () => {
+  beforeEach(() => mockMatchMedia(false));
+
+  /** 고를 색 하나 — `/colors`를 스텁하지 않았으므로 팔레트는 폴백 표다. */
+  const PICK = GOOGLE_EVENT_COLORS['11'] as string;
+  /** jsdom은 인라인 `background`를 `rgb(...)`로 되돌려 준다 — hex를 그 꼴로 맞춘다. */
+  function rgb(hex: string): string {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+  }
+  /** 그 캘린더의 색 점이 지금 그리는 색. */
+  function dotColor(id: string): string {
+    return (document.querySelector(`[data-cal-color="${id}"] span`) as HTMLElement | null)?.style.background ?? '';
+  }
+
+  async function openIntegration(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    await user.click(await screen.findByText('계정 설정'));
+    await openCalendarDetail(user);
+    return waitFor(() => {
+      const el = document.querySelector('[data-google-section]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+  }
+
+  function blobColors(): Record<string, string> | undefined {
+    const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendarColors?: Record<string, string> } };
+    return ws.google?.calendarColors;
+  }
+
+  it('목록의 색 점을 눌러 색을 고르면 블롭에 남고 화면의 색이 바뀐다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+
+    // 점이 곧 단추다 — 이름이 있어야 글자 없는 동그라미를 스크린리더가 읽는다.
+    const dot = document.querySelector('[data-cal-color="me@example.com"]') as HTMLElement;
+    expect(dot).toBeTruthy();
+    expect(dot.getAttribute('aria-label')).toBe('내 캘린더 색 바꾸기');
+    await user.click(dot);
+    const panel = await waitFor(() => {
+      const el = document.querySelector('[data-cal-color-panel="me@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 구글에는 쓰지 않는다는 것을 판이 직접 말한다(구글 캘린더를 열어 보고 "안 바뀌었다"가 되지 않게).
+    expect(panel.querySelector('[data-cal-color-note]')?.textContent).toContain('Google 캘린더의 색은 그대로');
+    // 아직 바꾼 적이 없으면 **기본** 칸이 켜져 있다.
+    expect(panel.querySelector('[data-cal-color-swatch="기본"]')?.getAttribute('aria-checked')).toBe('true');
+
+    await user.click(panel.querySelector(`[data-cal-color-swatch="${PICK}"]`) as HTMLElement);
+    await waitFor(() => expect(blobColors()).toEqual({ 'me@example.com': PICK }));
+    // 화면의 점도 그 색이다 — 목록이 화면으로 나가는 한 자리에서 갈아 끼우므로
+    // LNB·월 격자·시간표까지 같은 색을 본다.
+    await waitFor(() => expect(dotColor('me@example.com')).toBe(rgb(PICK)));
+  });
+
+  it('「기본」을 고르면 구글이 준 색으로 되돌아간다 — 블롭에서도 지워진다', async () => {
+    seed({ calendars: ['me@example.com'], calendarColors: { 'me@example.com': PICK } });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    await waitFor(() => expect(dotColor('me@example.com')).toBe(rgb(PICK)));
+
+    await user.click(document.querySelector('[data-cal-color="me@example.com"]') as HTMLElement);
+    const panel = await waitFor(() => {
+      const el = document.querySelector('[data-cal-color-panel="me@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 바꿔 둔 색이 켜져 있다.
+    expect(panel.querySelector(`[data-cal-color-swatch="${PICK}"]`)?.getAttribute('aria-checked')).toBe('true');
+    await user.click(panel.querySelector('[data-cal-color-swatch="기본"]') as HTMLElement);
+
+    await waitFor(() => expect(blobColors()).toBeUndefined());
+    // 구글이 준 색(`backgroundColor`)으로 되돌아간다.
+    await waitFor(() => expect(dotColor('me@example.com')).toBe('rgb(66, 133, 244)'));
+  });
+
+  it('LNB 일정 하위 목록에서도 바로 바꾼다 — 색을 보고 있는 자리가 곧 고치는 자리', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    // 하위 목록은 일정 화면을 보고 있을 때만 펼쳐진다.
+    await openCalendar(container, user);
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-item="me@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(row.querySelector('[data-cal-color]') as HTMLElement);
+    const panel = await waitFor(() => {
+      const el = document.querySelector('[data-cal-color-panel="me@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(panel.querySelector(`[data-cal-color-swatch="${PICK}"]`) as HTMLElement);
+    await waitFor(() => expect(blobColors()).toEqual({ 'me@example.com': PICK }));
+    // 색 점을 눌러도 **체크는 그대로**다 — 라벨 안의 단추는 라벨을 활성화하지 않는다.
+    expect(row.querySelector('input')).toHaveProperty('checked', true);
+  });
+
+  it('체크를 옮겨도 바꿔 둔 색은 남는다 — 저장마다 함께 실어 보낸다', async () => {
+    seed({ calendars: ['me@example.com'], calendarColors: { 'me@example.com': PICK } });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    const row = await waitFor(() => {
+      const el = document.querySelector(`[data-google-cal="${SHARED_ID}"]`);
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(row.querySelector('input') as HTMLElement);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
+      expect(ws.google?.calendars).toContain(SHARED_ID);
+    });
+    // `holiday`와 같은 결의 사고(체크 한 번에 옆 설정이 사라진다)를 막는다.
+    expect(blobColors()).toEqual({ 'me@example.com': PICK });
+  });
+});
+
+/**
+ * 막을 눌러 닫기(제보) — 「그리오 일정 팝업은 닫히는데 구글 캘린더 일정 팝업은
+ * 닫히지 않는다」. 원인은 `EventDetail`이 **보기 전용일 때만** 막 클릭을 받았던 것이라,
+ * 고칠 수 있는 구글 일정이 반응하지 않았다(새 일정 팝업은 그대로 안 닫힌다).
+ */
+describe('구글 일정 상세 — 막을 누르면 닫힌다(제보)', () => {
+  beforeEach(() => mockMatchMedia(false));
+
+  it('고칠 수 있는 구글 일정도 막 클릭으로 닫힌다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(await waitFor(() => screen.getAllByText(/구글 회의/)[0] as HTMLElement));
+    const pop = await waitFor(() => {
+      const el = document.querySelector('[data-google-detail]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 보기 전용이 아니다 — 예전에는 이 조건에서만 막이 닫아 줬다.
+    expect(pop.querySelector('[data-event-notice]')).toBeNull();
+    // Radix는 `pointerdown`으로 '바깥'을 판정한다(막이 카드의 부모다).
+    fireEvent.pointerDown(pop.parentElement!, { bubbles: true });
+    await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
   });
 });

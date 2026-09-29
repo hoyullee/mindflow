@@ -100,9 +100,9 @@ export interface FolderCardViewData {
   menuOpen: boolean;
   dragOver: boolean;
   isDrive: boolean;
-  /** 맵 카드와 같은 "한 번 = 선택" 표시. 선택 상태는 맵과 **한 칸**(`selectedCard`)을
-   * 나눠 쓰므로 폴더를 고르면 맵 선택이 풀리고 그 반대도 같다 — 그리드 안에서
-   * 선택된 것은 언제나 하나다. */
+  /** 맵 카드와 같은 "한 번 = 선택" 표시. **폴더도 여럿을 함께 고를 수 있다**(요청:
+   * Shift+클릭·드래그) — 그래서 맵과 같은 칸(`selectedCards`)을 나눠 쓰고, 키는
+   * `folder:` 접두로 갈린다. */
   selected: boolean;
 }
 
@@ -628,7 +628,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
           count: DRIVE_FILES.filter((file) => dmf[file.name] === f.id && !state.deleted[file.name]).length,
           menuOpen: state.ctxMenu?.target.kind === 'folder' && state.ctxMenu.target.id === f.id,
           dragOver: state.dragOverFolder === f.id,
-          selected: state.selectedCard === folderCardKey(f.id),
+          selected: state.selectedCards.includes(folderCardKey(f.id)),
           isDrive: true,
         }))
       : [];
@@ -654,7 +654,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             count: cnt,
             menuOpen: state.ctxMenu?.target.kind === 'folder' && state.ctxMenu.target.id === f.id,
             dragOver: state.dragOverFolder === f.id,
-            selected: state.selectedCard === folderCardKey(f.id),
+            selected: state.selectedCards.includes(folderCardKey(f.id)),
             isDrive: false,
           };
         })

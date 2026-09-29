@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import type { HomeState, SpaceData } from '../types';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
+import { FOLDER_CARD_PREFIX, folderCardKey } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import type { NoteSketch } from '@mindflow/mindmap-core';
 import { NOTE_COVERS } from '@mindflow/mindmap-core';
@@ -417,17 +418,23 @@ function SpaceDot({ color }: { color: string }) {
 // ── 대상별 항목 ───────────────────────────────────────────────────────────
 function buildItems(target: NonNullable<HomeState['ctxMenu']>['target'], state: HomeState, view: HomeViewModel, controller: HomeController): HomeMenuItem[] {
   if (target.kind === 'map') {
-    // 여러 장을 골라 두고 그중 하나를 우클릭 → 일괄 메뉴(요청). 우클릭이 선택 밖에서
+    // 여러 개를 골라 두고 그중 하나를 우클릭 → 일괄 메뉴(요청). 우클릭이 선택 밖에서
     // 오면 `MapCard`가 먼저 그 카드 하나로 선택을 바꾸므로 여기서는 늘 참이다.
     const sel = state.selectedCards;
     if (sel.length > 1 && sel.includes(target.key)) {
-      const cards = sel.map((k) => findCard(view, k)).filter((c): c is CardViewData => !!c);
-      if (cards.length > 1) return multiItems(cards, controller);
+      const picked = selectedPicks(sel, view);
+      if (picked.length > 1) return multiItems(picked, controller);
     }
     const card = findCard(view, target.key);
     return card ? mapItems(card, controller) : [];
   }
   if (target.kind === 'folder') {
+    // **폴더도 일괄 메뉴에 낀다**(요청: 폴더도 다중 선택) — 맵과 같은 규칙이다.
+    const sel = state.selectedCards;
+    if (sel.length > 1 && sel.includes(folderCardKey(target.id))) {
+      const picked = selectedPicks(sel, view);
+      if (picked.length > 1) return multiItems(picked, controller);
+    }
     const folder = view.folderCards.find((f) => f.id === target.id);
     return folder ? folderItems(folder, controller) : [];
   }
@@ -436,6 +443,30 @@ function buildItems(target: NonNullable<HomeState['ctxMenu']>['target'], state: 
     return space ? spaceItems(space, state, controller) : [];
   }
   return bgItems(controller);
+}
+
+/**
+ * 고른 것들을 **화면의 데이터로** 되찾는다 — 맵 카드거나 폴더 카드다(요청: 폴더도
+ * 다중 선택). 못 찾은 키는 버린다(방금 지워진 카드 등).
+ */
+type Pick = { key: string; card: CardViewData } | { key: string; folder: FolderCardViewData };
+
+function isFolderPick(p: Pick): p is { key: string; folder: FolderCardViewData } {
+  return 'folder' in p;
+}
+
+function selectedPicks(sel: readonly string[], view: HomeViewModel): Pick[] {
+  const out: Pick[] = [];
+  for (const key of sel) {
+    if (key.startsWith(FOLDER_CARD_PREFIX)) {
+      const folder = view.folderCards.find((f) => folderCardKey(f.id) === key);
+      if (folder) out.push({ key, folder });
+      continue;
+    }
+    const card = findCard(view, key);
+    if (card) out.push({ key, card });
+  }
+  return out;
 }
 
 function findCard(view: HomeViewModel, key: string): CardViewData | undefined {
@@ -457,32 +488,38 @@ function findCard(view: HomeViewModel, key: string): CardViewData | undefined {
  * 유효해서, 전역 검색 결과처럼 여러 스페이스가 섞이면 미아가 생긴다(단일 카드
  * 메뉴의 `showMoveRow` 규칙과 같은 이유).
  */
-function multiItems(cards: CardViewData[], controller: HomeController): HomeMenuItem[] {
+function multiItems(picked: Pick[], controller: HomeController): HomeMenuItem[] {
   const items: HomeMenuItem[] = [];
+  const n = picked.length;
+  // **폴더가 섞여 있으면 이동 계열은 내주지 않는다**(요청: 폴더도 다중 선택) — 폴더를
+  // 폴더·스페이스로 옮기는 길이 아직 없어서, 내주면 맵만 조용히 움직인다. 남는 것은
+  // 두 종류 모두에 뜻이 있는 **삭제**다.
+  const cards = picked.filter((p): p is { key: string; card: CardViewData } => !isFolderPick(p)).map((p) => p.card);
+  const hasFolder = picked.some(isFolderPick);
   const keys = cards.map((c) => c.key);
-  const n = cards.length;
-  // 모두 같은 목록에서 왔고 그 목록이 폴더 이동을 내주는 경우에만.
-  const first = cards[0]!;
-  const sameTargets = cards.every((c) => c.showMoveRow && c.moveTargets.length === first.moveTargets.length && c.moveTargets.every((t, i) => t.id === first.moveTargets[i]?.id));
-  if (sameTargets && first.moveTargets.length) {
-    items.push({
-      key: 'move',
-      icon: FolderIcon,
-      label: '폴더로 이동',
-      submenu: first.moveTargets.map((ft) => ({ key: `move-${ft.id}`, icon: FolderIcon, label: ft.name, onSelect: () => controller.moveMapsToFolder(keys, ft.id) })),
-    });
-  }
-  const spaceTargets = cards.every((c) => c.showSpaceMoveRow) ? first.spaceMoveTargets : [];
-  if (spaceTargets.length) {
-    items.push({
-      key: 'space',
-      icon: SpaceMoveIcon,
-      label: '스페이스로 이동',
-      submenu: spaceTargets.map((sp) => ({ key: `space-${sp.id}`, icon: <SpaceDot color={sp.color} />, label: sp.name, onSelect: () => controller.moveMapsToSpace(keys, sp.id) })),
-    });
-  }
-  if (cards.every((c) => c.showUnfolderRow)) {
-    items.push({ key: 'unfolder', icon: FolderOutIcon, label: '폴더에서 꺼내기', onSelect: () => controller.moveMapsToFolder(keys, null) });
+  const first = cards[0];
+  if (!hasFolder && first) {
+    const sameTargets = cards.every((c) => c.showMoveRow && c.moveTargets.length === first.moveTargets.length && c.moveTargets.every((t, i) => t.id === first.moveTargets[i]?.id));
+    if (sameTargets && first.moveTargets.length) {
+      items.push({
+        key: 'move',
+        icon: FolderIcon,
+        label: '폴더로 이동',
+        submenu: first.moveTargets.map((ft) => ({ key: `move-${ft.id}`, icon: FolderIcon, label: ft.name, onSelect: () => controller.moveMapsToFolder(keys, ft.id) })),
+      });
+    }
+    const spaceTargets = cards.every((c) => c.showSpaceMoveRow) ? first.spaceMoveTargets : [];
+    if (spaceTargets.length) {
+      items.push({
+        key: 'space',
+        icon: SpaceMoveIcon,
+        label: '스페이스로 이동',
+        submenu: spaceTargets.map((sp) => ({ key: `space-${sp.id}`, icon: <SpaceDot color={sp.color} />, label: sp.name, onSelect: () => controller.moveMapsToSpace(keys, sp.id) })),
+      });
+    }
+    if (cards.every((c) => c.showUnfolderRow)) {
+      items.push({ key: 'unfolder', icon: FolderOutIcon, label: '폴더에서 꺼내기', onSelect: () => controller.moveMapsToFolder(keys, null) });
+    }
   }
   if (items.length) items.push({ key: 'sep-1', label: '' });
   items.push({
@@ -490,7 +527,10 @@ function multiItems(cards: CardViewData[], controller: HomeController): HomeMenu
     icon: TrashIcon,
     label: `삭제하기 (${n}개)`,
     danger: true,
-    onSelect: () => controller.askDeleteMany(cards.map((c) => ({ key: c.key, title: c.title, docId: c.docId }))),
+    onSelect: () =>
+      controller.askDeleteMany(
+        picked.map((p) => (isFolderPick(p) ? { key: p.key, title: p.folder.name, folderId: p.folder.id } : { key: p.key, title: p.card.title, docId: p.card.docId })),
+      ),
   });
   return items;
 }
