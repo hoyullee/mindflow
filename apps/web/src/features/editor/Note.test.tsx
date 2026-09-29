@@ -10730,6 +10730,78 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
   });
 
+  /**
+   * **끄는 동안 손잡이는 좌표 조회에 걸리지 않는다**(제보: 범위 밖 글자가 깜빡인다).
+   *
+   * 캐럿이 가야 할 자리가 곧 손잡이가 선 자리라, 손가락 아래에는 늘 우리 손잡이가 있다.
+   * 그 손잡이의 DOM은 리액트 한 박자 뒤에 움직이므로 프레임마다 「손잡이가 걸렸다 /
+   * 줄이 걸렸다」가 갈렸고, 두 길의 답이 달라 칠이 앞뒤로 튀었다(실브라우저 실측:
+   * 한 프레임씩 `34 ↔ 47`을 오갔다).
+   */
+  it('손잡이를 잡는 동안에는 **좌표 조회에 걸리지 않는다**(`pointer-events`)', async () => {
+    const { c, b } = await pickedByTouch('sg7');
+    const head = (await waitFor(() => {
+      const el = c.querySelector('[data-note-selgrip="head"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    const grips = () => [...c.querySelectorAll<HTMLElement>('[data-note-selgrip]')];
+    expect(grips().map((g) => g.style.pointerEvents)).toEqual(['', '']);
+
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, writable: true, value: () => b });
+    firePtr(head, 'pointerdown', { clientX: 40, clientY: 104 });
+    // 잡은 **그 순간부터** 꺼진다 — 첫 움직임이 오기 전에 이미 투명해야 한다.
+    expect(grips().map((g) => g.style.pointerEvents)).toEqual(['none', 'none']);
+    firePtr(head, 'pointermove', { clientX: 60, clientY: 150 });
+    await waitFor(() => expect(c.querySelectorAll('[data-note-blockwrap][data-selected="1"]').length).toBe(2));
+    firePtr(head, 'pointerup', { clientX: 60, clientY: 150 });
+    // 손을 떼면 되돌린다(다시 잡을 수 있어야 한다).
+    await waitFor(() => expect(grips().map((g) => g.style.pointerEvents)).toEqual(['', '']));
+
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+  });
+
+  /**
+   * **세로 자리를 글자 행 안으로 접는다**(같은 제보의 두 번째 결).
+   *
+   * 줄 상자에는 글자 위아래로 여백이 있다. 그 여백을 짚으면 크로뮴이 「이 줄의 맨 앞」을
+   * 돌려주므로 선택이 그 줄의 처음으로 접힌다 — 실측으로 같은 줄에서 `off` 15 → **0** →
+   * 15가 한 프레임씩 섞였다. 여기서는 그 크로뮴의 답을 흉내 내어(행 밖이면 요소 경계,
+   * 행 안이면 글자) **무엇을 묻는가**를 지킨다.
+   */
+  it('줄의 **여백**을 짚어도 그 줄의 맨 앞으로 접히지 않는다', async () => {
+    const { c, b } = await pickedByTouch('sg8');
+    const head = (await waitFor(() => {
+      const el = c.querySelector('[data-note-selgrip="head"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    const text = document.createTreeWalker(b, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    // 줄 상자는 140~164, 글자 행은 그 가운데다 — 152가 아닌 높이는 **여백**이다.
+    const rowY = 152;
+    const doc = document as unknown as { caretRangeFromPoint?: (x: number, y: number) => unknown; elementFromPoint?: unknown };
+    doc.elementFromPoint = () => b;
+    // 크로뮴이 실제로 준 답을 흉내 낸다 — 행 밖이면 **그 줄의 첫 글자 0번**이다
+    // (요소 경계가 아니라 글자 노드라, 「글자냐」만 보아서는 걸러지지 않는다).
+    doc.caretRangeFromPoint = (_x: number, y: number) =>
+      ({ startContainer: text, startOffset: Math.round(y) === rowY ? 3 : 0 });
+
+    firePtr(head, 'pointerdown', { clientX: 40, clientY: 104 });
+    firePtr(head, 'pointermove', { clientX: 300, clientY: 142 }); // 글자 행 **위**의 여백
+    await waitFor(() => expect(c.querySelectorAll('[data-note-blockwrap][data-selected="1"]').length).toBe(2));
+    firePtr(head, 'pointerup', { clientX: 300, clientY: 142 });
+
+    /**
+     * 손잡이가 선 자리로 읽는다 — jsdom에는 글자의 사각형이 없어 `caretRectAt`이 줄
+     * 상자로 물러서므로, **0번 자리면 왼끝 · 그 뒤면 오른끝**이다. 접혔다면 왼끝에 선다.
+     */
+    const tail = c.querySelector('[data-note-selgrip="tail"]') as HTMLElement;
+    expect(parseFloat(tail.style.left)).toBeGreaterThan(200);
+
+    delete (document as unknown as { caretRangeFromPoint?: unknown }).caretRangeFromPoint;
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+  });
+
   it('그냥 톡 누르면 칠해 둔 선택을 **놓는다**(손가락)', async () => {
     const { c, a } = await pickedByTouch('sg3');
     await waitFor(() => expect(c.querySelector('[data-note-selgrip="head"]')).toBeTruthy());
