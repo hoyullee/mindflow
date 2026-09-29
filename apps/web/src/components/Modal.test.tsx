@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Modal, useCardMorph } from './Modal';
+import { Modal, useAnyModalOpen, useCardMorph } from './Modal';
 
 afterEach(cleanup);
 
@@ -205,5 +205,46 @@ describe('Modal (Radix Dialog)', () => {
     vi.advanceTimersByTime(300);
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+});
+
+/**
+ * **떠 있는 모달이 있는가**(`useAnyModalOpen`) — 홈의 피드백 단추가 이 값으로 비켜 선다.
+ * 모달 이름을 늘어놓지 않고 껍데기가 **센다**: 둘이 겹쳐 떠도 하나가 닫힐 때 꺼지면 안 된다.
+ */
+describe('useAnyModalOpen — 껍데기가 센다', () => {
+  function Probe() {
+    return <span data-probe>{useAnyModalOpen() ? 'open' : 'none'}</span>;
+  }
+  function Two({ a, b }: { a: boolean; b: boolean }) {
+    return (
+      <>
+        <Probe />
+        <Modal open={a} onClose={() => {}} label="첫 모달">
+          <button>가</button>
+        </Modal>
+        <Modal open={b} onClose={() => {}} label="둘째 모달">
+          <button>나</button>
+        </Modal>
+      </>
+    );
+  }
+  const probe = () => document.querySelector('[data-probe]')!.textContent;
+
+  it('열리면 켜지고, 겹친 둘 중 하나만 닫혀도 켜져 있고, 다 닫히면 꺼진다', () => {
+    const { rerender, unmount } = render(<Two a={false} b={false} />);
+    expect(probe()).toBe('none');
+    rerender(<Two a b={false} />);
+    expect(probe()).toBe('open');
+    rerender(<Two a b />);
+    rerender(<Two a={false} b />);
+    expect(probe()).toBe('open');
+    rerender(<Two a={false} b={false} />);
+    expect(probe()).toBe('none');
+    // 열린 채로 사라져도(화면 전환) 셈이 남지 않는다.
+    rerender(<Two a b={false} />);
+    unmount();
+    render(<Probe />);
+    expect(probe()).toBe('none');
   });
 });

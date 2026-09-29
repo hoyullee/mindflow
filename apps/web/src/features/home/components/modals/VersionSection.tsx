@@ -281,7 +281,7 @@ declare const __APP_VERSION__: string;
  * 부제는 **커밋 7자**다. 번호만으로는 "정확히 어느 커밋이 떠 있나"를 못 짚는데,
  * 프리뷰는 커밋마다 주소가 따로라 옛 주소를 열어 둔 탭이 실제로 있었다.
  */
-function buildLabel(): { label: string; sub: string } {
+export function buildLabel(): { label: string; sub: string } {
   const version = typeof __APP_VERSION__ === 'string' && __APP_VERSION__ ? __APP_VERSION__ : '';
   const sha = typeof __BUILD_SHA__ === 'string' && __BUILD_SHA__ ? __BUILD_SHA__ : '';
   if (!version) return { label: 'dev', sub: '개발 서버에서 돌고 있어요' };

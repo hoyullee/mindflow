@@ -1,87 +1,43 @@
-// LNB 최상단 **바로가기 카드** — 알림·일정이 함께 쓰는 껍데기.
+// LNB 최상단 **오늘 묶음**의 한 줄 — 알림·일정이 함께 쓰는 껍데기(스펙: 홈·LNB 변경 2.1).
 //
-// 두 항목은 아래의 목록 행(대시보드·스페이스)과 성격이 다르다: 여럿 중 하나가
-// 아니라 **하나뿐인 목적지**이고, 둘 다 그릇이 아니라 "나"에 딸린 것이다. 그래서
-// 한 줄 행이 아니라 두 줄 카드로 그려 격을 달리하고, 프로필 바로 아래에 모아 둔다.
+// 두 항목은 아래의 목록 행(스페이스·모아보기)과 성격이 다르다: 여럿 중 하나가 아니라
+// **하나뿐인 목적지**이고, 둘 다 그릇이 아니라 "나"에 딸린 것이다. 그래서 두 줄(제목 +
+// 부제)로 그려 격을 달리하고 LNB 맨 위에 한 묶음으로 모은다.
 //
-// 껍데기를 한 곳에 두는 이유는 드리프트다 — 값을 각자 적어 두면 나란히 선 두
-// 카드가 곧 서로 달라 보인다(우클릭 메뉴에서 겪은 것과 같은 계열).
+// 이번 판에서 **카드를 걷어냈다**(스펙): 면·테두리·그림자 없이 44px 행 둘이 1px 틈으로
+// 붙어 선다. 무엇이 무엇인지는 왼쪽 32px 자리의 **글리프**가 말한다 — 알림은 채운 원 안의
+// 벨, 일정은 상자 없는 날짜 숫자 + 요일. 그 글리프는 뜻이 달라 호출부가 그린다.
 //
-// 다만 **두 카드가 똑같이 보이면 안 된다**(제보: 일정이 알림과 너무 같다) — 그래서
-// 껍데기는 나누고 갈래를 프롭으로 받는다: 왼쪽 글리프의 **타일**(채운/테두리),
-// 오른쪽 **꼬리 슬롯**(개수 배지·상태 표식), 셰브론 유무. 값은 여전히 여기 하나뿐이라
-// 크기·간격·틴트는 갈리지 않고, 갈리는 것은 뜻이 다른 부분만이다.
+// 껍데기를 한 곳에 두는 이유는 드리프트다 — 값을 각자 적어 두면 나란히 선 두 행이 곧
+// 서로 달라 보인다(우클릭 메뉴에서 겪은 것과 같은 계열).
 
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
-import { UNREAD_BADGE_BG } from '../theme';
 
 export interface NavCardProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** 왼쪽 글리프 — **언제나 강조색**이다. 여기가 무슨 자리인지를 상태와 무관하게 말한다. */
+  /** 왼쪽 32×32 자리 — 알림은 원 안의 벨, 일정은 날짜 숫자 + 요일. */
   glyph: ReactNode;
-  /** 글리프를 담는 타일. `accent`=채운 강조색 면(흰 글리프), `plain`=카드 면 + 테두리.
-   *  두 카드를 한눈에 가르는 가장 큰 신호라 뜻이 다른 자리는 다른 타일을 쓴다. */
-  tile?: 'accent' | 'plain';
-  /** 타일 모서리의 알림 점 — "새로 온 것이 있다"를 배지보다 먼저 알린다. */
-  tileDot?: boolean;
   label: string;
-  /** 이름 오른쪽 알약(지난 마감 수 등). 색은 호출부가 정한다 — 뜻이 다르다. */
-  badge?: ReactNode;
-  /** 둘째 줄. 한 조각이 아니라 노드인 이유: 잘리면 안 되는 부분(시간)을
-   *  호출부가 따로 묶을 수 있어야 한다. */
+  /** 둘째 줄 — 노드인 이유: 알림은 넘치면 흐르는 한 줄(`MarqueeText`)을 넣는다. */
   summary: ReactNode;
-  /** 오른쪽 끝(셰브론 앞) 슬롯 — 개수 배지·상태 표식. 이름 옆이 아니라 여기에
-   *  두면 이름이 길어도 자리를 다투지 않고, 두 카드의 오른쪽 끝이 한 열에 선다. */
+  /** 오른쪽 끝 슬롯 — 안 읽은 수 같은 것. */
   trailing?: ReactNode;
-  /** 셰브론(오른쪽 화살표) — 하위 메뉴나 다음 화면이 있을 때만. 아무것도 열리지
-   *  않는 카드에 두면 "누르면 펼쳐진다"는 거짓 약속이 된다. */
-  chevron?: boolean;
-  /** hot = 눈에 띄어야 하는 상태(안 읽음 · 지금 보는 화면) → 이름이 굵어지고
-   *  요약이 본문 톤으로 올라온다. */
-  tone?: 'hot' | 'quiet';
-  /** 하위 메뉴가 펼쳐졌는가 — 오른쪽 셰브론이 아래를 가리킨다(디스클로저 관례). */
-  expanded?: boolean;
+  /** 지금 이 자리가 활성인가(알림 창이 열림 · 일정 화면을 보는 중) — 옅은 면을 깐다. */
+  active?: boolean;
+  /** 오른쪽 안쪽 여백 — 행 **위에** 따로 얹는 단추(일정의 캐럿)가 쓸 자리. */
+  padRight?: number;
   isMobile?: boolean;
 }
 
-/** 둘째 줄의 색 — hot은 따뜻한 갈색(본문 아래 단계), quiet은 흐린 회색.
- * **틴트 면 위에서는 흐린 회색을 쓰지 않는다** — 코랄 틴트(`#fdeee7`) 위의
- * `--mf-muted`는 11.5px 글자에 대비가 2.8:1로 모자란다(실측). */
-export function navCardSummaryColor(tone: 'hot' | 'quiet', tinted = false): string {
-  return tone === 'hot' || tinted ? 'var(--mf-subtext)' : 'var(--mf-muted)';
-}
-
 export const NavCard = forwardRef<HTMLButtonElement, NavCardProps>(function NavCard(
-  {
-    glyph,
-    tile = 'accent',
-    tileDot = false,
-    label,
-    badge,
-    summary,
-    trailing,
-    chevron = true,
-    tone = 'quiet',
-    expanded = false,
-    isMobile = false,
-    style,
-    ...rest
-  },
+  { glyph, label, summary, trailing, active = false, padRight, isMobile = false, style, ...rest },
   ref,
 ) {
-  const hot = tone === 'hot';
-  // 칠하는 뜻은 하나다: **지금 눈여겨봐야 하는 상태**(알림=안 읽음 / 일정=이 화면).
-  // 늘 칠하면 "언제나 활성"으로 읽힌다는 제보로 `surface` 프롭을 걷어냈다.
-  const tinted = hot;
-  const accentTile = tile === 'accent';
   return (
     <button
       ref={ref}
       type="button"
-      className="nav-item"
-      // hover가 틴트를 회색으로 갈아 끼우지 않게 하는 표식 — 손을 얹은 순간
-      // "안 읽음/지금 이 화면"이 꺼진 것처럼 보이면 안 된다(달력 칩·켜진 알약에서
-      // 이미 겪은 계열). 규칙은 `home.css`의 `.nav-item[data-tinted]`가 든다.
-      data-tinted={tinted ? '1' : undefined}
+      className="nav-item mf-today-row"
+      data-active={active ? '1' : undefined}
       {...rest}
       style={{
         width: '100%',
@@ -91,96 +47,30 @@ export const NavCard = forwardRef<HTMLButtonElement, NavCardProps>(function NavC
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: '9px 11px',
-        minHeight: isMobile ? 56 : 50,
-        borderRadius: 12,
+        // 44px = 위아래 6 + 내용 32(스펙). 손가락에서도 44는 최소 터치 크기를 넘는다.
+        padding: `6px ${padRight ?? 8}px 6px 8px`,
+        minHeight: isMobile ? 48 : 44,
+        boxSizing: 'border-box',
+        borderRadius: 13,
         cursor: 'pointer',
-        letterSpacing: '-.01em',
-        background: tinted ? 'var(--mf-accent-soft)' : 'transparent',
+        // 활성 면은 hover 면과 **같은 값**이다 — 손을 얹어도 꺼진 것처럼 보이지 않고
+        // (`home.css`의 `.nav-item:hover`), 틴트가 "언제나 활성"으로 읽히지도 않는다.
+        background: active ? 'var(--mf-panel2)' : 'transparent',
         color: 'var(--mf-text)',
-        transition: 'background .14s ease',
+        transition: 'background .15s ease',
         ...style,
       }}
     >
-      <span
-        data-nav-card-glyph
-        data-nav-card-tile={tile}
-        style={{
-          position: 'relative',
-          width: 32,
-          height: 32,
-          borderRadius: 10,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-          background: accentTile ? 'var(--mf-accent)' : 'var(--mf-card)',
-          border: accentTile ? 'none' : '1px solid var(--mf-border)',
-          color: accentTile ? 'var(--mf-accent-ink)' : 'var(--mf-accent)',
-        }}
-      >
+      <span data-nav-card-glyph style={{ position: 'relative', width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         {glyph}
-        {tileDot && (
-          // 점을 둘러싼 링은 **놓이는 면**의 색이라 타일 모서리에서 오려낸 것처럼
-          // 보인다. 이 점이 뜨는 카드는 언제나 틴트 면이다(안 읽음 = hot).
-          <span
-            data-nav-card-tile-dot
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              top: -3,
-              right: -3,
-              width: 10,
-              height: 10,
-              borderRadius: 999,
-              background: UNREAD_BADGE_BG,
-              border: '2px solid var(--mf-accent-soft)',
-              boxSizing: 'border-box',
-            }}
-          />
-        )}
       </span>
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {/* 이름 줄의 높이를 못박는다 — 배지가 있고 없고에 따라 카드 높이가
-            2px씩 달라지면 나란히 선 두 카드가 어긋나 보인다(실측). */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 18 }}>
-          <span style={{ fontSize: 13, fontWeight: hot ? 700 : 600, color: 'var(--mf-text)' }}>{label}</span>
-          {badge}
-        </span>
-        <span
-          data-nav-card-summary
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            minWidth: 0,
-            fontSize: 11.5,
-            fontWeight: 500,
-            color: navCardSummaryColor(tone, tinted),
-            whiteSpace: 'nowrap',
-          }}
-        >
+        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-.015em', lineHeight: '16px', color: 'var(--mf-text)' }}>{label}</span>
+        <span data-nav-card-summary style={{ display: 'block', minWidth: 0, height: 14, lineHeight: '14px', fontSize: 11, fontWeight: 400, color: 'var(--mf-subtext)', whiteSpace: 'nowrap', overflow: 'hidden' }}>
           {summary}
         </span>
       </span>
       {trailing}
-      {chevron && (
-        <span
-          data-nav-card-chevron
-          style={{
-            display: 'inline-flex',
-            color: hot ? 'var(--mf-accent)' : 'var(--mf-faint)',
-            flexShrink: 0,
-            // 펼치면 아래를 가리킨다 — 같은 글리프가 "연다"와 "펼쳤다"를 겸한다.
-            transform: expanded ? 'rotate(90deg)' : undefined,
-            transition: 'transform .16s ease',
-          }}
-          aria-hidden="true"
-        >
-          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </span>
-      )}
     </button>
   );
 });

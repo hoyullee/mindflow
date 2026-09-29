@@ -18,6 +18,7 @@ import { Modals } from './components/modals/Modals';
 import { AccountSettingsModal } from './components/modals/AccountSettingsModal';
 import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
 import { FeedbackModal } from '../../components/FeedbackModal';
+import { FeedbackFab } from './components/FeedbackFab';
 import { ShareModal } from '../../components/ShareModal';
 import { ChangePasswordModal } from './components/modals/ChangePasswordModal';
 import { SetPasswordModal } from './components/modals/SetPasswordModal';
@@ -177,7 +178,10 @@ export function Home() {
           flexDirection: 'column',
           overflowY: state.activeCal ? 'hidden' : 'auto',
           scrollbarGutter: 'stable',
-          padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px',
+          // 아래 여백은 **떠 있는 피드백 단추**(46px, 바닥에서 22px)가 마지막 줄의 카드를
+          // 덮지 않을 만큼이다 — 끝까지 굴렸을 때 카드의 오른쪽 아래가 단추 밑에 깔리면
+          // 거기 있는 것을 누를 수 없다.
+          padding: state.activeCal ? 0 : isMobile ? '16px 14px 84px' : '24px 32px 84px',
           minWidth: 0,
           backgroundColor: 'var(--mf-page)',
           ...(isSpaceView(state) ? { backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px' } : {}),
@@ -264,7 +268,10 @@ export function Home() {
       <ChangePasswordModal state={state} controller={controller} />
       <SetPasswordModal state={state} controller={controller} />
       <DeleteAccountModal state={state} controller={controller} />
-      {/* 피드백(사용자 의견 수집) — LNB 최하단에서 연다. */}
+      {/* 피드백(사용자 의견 수집) — 화면 오른쪽 아래의 떠 있는 단추에서 연다(스펙: 홈·LNB
+          변경 7). 폰에서 서랍이 열려 있으면 비켜 선다 — 서랍의 막 위에 떠 있으면 서랍의
+          일부처럼 보인다. 모달이 떠 있을 때는 단추가 스스로 물러선다. */}
+      <FeedbackFab onOpen={controller.openFeedback} hidden={isMobile && navOpen} />
       <FeedbackModal open={state.feedbackOpen} onClose={controller.closeFeedback} page="home" theme={modalTheme} />
       {/* 공유 — 카드 메뉴에서 연다(요청). 에디터와 **같은 모달**이고 색만 홈 테마다.
           그리드의 카드는 언제나 내 맵이라 보기 전용이 아니다(공유받은 맵은 LNB에만). */}

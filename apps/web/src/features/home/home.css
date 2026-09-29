@@ -936,3 +936,119 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-home .mf-note-card .menu-btn:hover {
   background: var(--mf-wash);
 }
+
+/* ── 홈·LNB 변경(스펙 2026-09-30) ─────────────────────────────────────────── */
+
+/* 알림 부제 — **넘칠 때만** 흐른다(`MarqueeText`). 처음 약 1초 멈췄다가 왼쪽으로 흐르고,
+   두 번째 벌이 첫 자리에 오는 순간이 곧 처음 모습이라 끊김 없이 되풀이된다. */
+@keyframes mf-marquee {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(-50%);
+  }
+}
+.mf-home .mf-marquee-track {
+  animation: mf-marquee 9s cubic-bezier(0.44, 0, 0.56, 1) infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-home .mf-marquee-track {
+    animation: none;
+  }
+}
+
+/* 일정 행의 캐럿 — 평소엔 반쯤 물러서 있다가(행의 주인은 "일정 화면으로 가기"다)
+   행에 손을 얹거나, 펼쳤거나, 일정 화면을 보는 중이면 또렷해진다. */
+.mf-home .mf-cal-caret {
+  color: var(--mf-faint);
+  opacity: 0.55;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.mf-home .mf-cal-caret[data-on='1'],
+.mf-home [data-cal-row]:hover .mf-cal-caret,
+.mf-home .mf-cal-caret:focus-visible {
+  opacity: 1;
+}
+/* 행의 hover 면(`panel2`) 위에서도 갈려 보이도록 한 단계 짙은 면. */
+.mf-home .mf-cal-caret:hover {
+  background: var(--mf-border-soft);
+  color: var(--mf-text);
+}
+
+/* 피드백 떠 있는 단추(`FeedbackFab`). hover·press는 전이가 필요해 CSS가 든다
+   (인라인으로 두면 transform 전이가 덮인다 — 카드에서 겪은 함정). */
+.mf-home .mf-feedback-fab {
+  position: fixed;
+  right: 22px;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--mf-border);
+  background: var(--mf-card);
+  color: var(--mf-subtext);
+  box-shadow:
+    0 10px 26px -14px rgba(46, 42, 38, 0.45),
+    0 1px 2px rgba(46, 42, 38, 0.06);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.mf-home .mf-feedback-fab:hover {
+  background: var(--mf-panel2);
+  color: var(--mf-text);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px -14px rgba(46, 42, 38, 0.5);
+}
+.mf-home .mf-feedback-fab:active {
+  transform: scale(0.96);
+}
+.mf-home .mf-feedback-fab:focus-visible {
+  outline: 2px solid var(--mf-accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-home .mf-feedback-fab {
+    transition: none;
+  }
+}
+
+/* 설정 팝업의 닫기 — hover에 강조 톤(스펙 6.1). 인라인 면은 기본값만 든다. */
+.mf-settings-x:hover {
+  background: var(--mf-accent-soft) !important;
+  color: var(--mf-accent-strong) !important;
+}
+/* 발치의 회원 탈퇴 — 가장 옅게 서 있다가 손을 얹으면 경고 톤. */
+.mf-delete-link {
+  color: var(--mf-faint2);
+  transition: color 0.15s ease;
+}
+.mf-delete-link:hover {
+  color: var(--mf-danger);
+}
+/* 계정 메뉴·설정 첫 화면의 행 hover — 둘 다 **body로 포털된** 창이라 위의
+   `.mf-home .menu-row:hover`가 닿지 않는다. 그래서 제 클래스로 따로 건다. */
+.mf-acct-item:hover,
+.mf-list-row:hover {
+  background: var(--mf-panel2) !important;
+}
+.mf-acct-item:focus-visible,
+.mf-list-row:focus-visible {
+  outline: 2px solid var(--mf-accent);
+  outline-offset: -2px;
+}

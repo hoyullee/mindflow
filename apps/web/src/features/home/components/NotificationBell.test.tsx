@@ -124,10 +124,11 @@ describe('알림 센터', () => {
     seed([{}]);
     renderBell(true);
     const bell = await screen.findByRole('button', { name: /^알림 1개 ·/ });
-    // LNB 행이다 — 툴바의 박스형 아이콘 버튼이 아니다. 두 줄 카드라 폰에서는 56px.
+    // LNB 행이다 — 툴바의 박스형 아이콘 버튼이 아니다. 44px 두 줄 행(스펙 2.1)이고
+    // 폰에서는 손가락 크기를 넉넉히 48px.
     expect(bell.hasAttribute('data-notification-nav')).toBe(true);
     expect(bell.className).toContain('nav-item');
-    expect(bell.style.minHeight).toBe('56px');
+    expect(bell.style.minHeight).toBe('48px');
     expect(bell.textContent).toContain('알림');
     fireEvent.click(bell);
     const panel = await screen.findByRole('region', { name: '알림 센터' });
@@ -174,77 +175,92 @@ describe('알림 센터', () => {
     expect(css).not.toMatch(/\n\.notif-scroll \{/); // 최상위 표준 속성 규칙 없음
   });
 
-  it('LNB 행은 세 상태를 말한다 — 안 읽음(배지+갈색 요약) · 다 읽음(배지 없이 흐린 회색) · 없음(요청)', async () => {
+  it('LNB 행은 세 상태를 말한다 — 안 읽음(채운 원+점+숫자) · 다 읽음(옅은 원) · 없음(스펙 2.2)', async () => {
     // ③ 아무것도 없을 때 — 요약 자리가 비어 있지 않고 그 사실을 말한다.
     const { unmount } = renderBell();
-    let sum = (await screen.findByRole('button', { name: /^알림 ·/ })).querySelector('[data-nav-card-summary]') as HTMLElement;
-    expect(sum.textContent).toBe('아직 받은 알림이 없어요');
-    expect(sum.style.color).toBe('var(--mf-muted)');
+    let bell = await screen.findByRole('button', { name: /^알림 ·/ });
+    let sum = bell.querySelector('[data-nav-card-summary]') as HTMLElement;
+    expect(sum.textContent).toBe('새 알림이 없어요');
+    expect((bell.querySelector('[data-notification-glyph]') as HTMLElement).dataset.notificationGlyph).toBe('read');
     unmount();
     cleanup();
 
-    // ① 안 읽음 — 강조색 틴트 면 + 개수 배지 + `종류 · 내용 · 시간`이 본문 톤으로.
+    // ① 안 읽음 — 채운 원 + 모서리 점 + 오른쪽 숫자, 요약은 `종류 · 내용 · 시간`.
     seed([{ kind: 'mention', preview: '제가 바꿀게요', createdAt: new Date(Date.now() - 2 * 3600_000).toISOString() }]);
     renderBell();
-    let bell = await screen.findByRole('button', { name: /^알림 1개 ·/ });
-    expect(bell.style.background).toBe('var(--mf-accent-soft)');
-    expect(within(bell).getByText('1')).toBeTruthy();
+    bell = await screen.findByRole('button', { name: /^알림 1개 ·/ });
+    // 행 면은 **창이 열렸을 때만** 깐다 — 안 읽음은 원이 말한다(카드 틴트는 걷어냈다).
+    expect(bell.style.background).toBe('transparent');
+    expect((bell.querySelector('[data-notification-glyph]') as HTMLElement).dataset.notificationGlyph).toBe('unread');
+    expect(bell.querySelector('[data-notification-dot]')).not.toBeNull();
+    expect(bell.querySelector('[data-notification-count]')!.textContent).toBe('1');
     sum = bell.querySelector('[data-nav-card-summary]') as HTMLElement;
     expect(sum.textContent).toBe('멘션 · 제가 바꿀게요 · 2시간 전');
-    expect(sum.style.color).toBe('var(--mf-subtext)');
     cleanup();
 
-    // ② 다 읽음 — 배지도 면도 사라지고 같은 요약이 흐린 회색으로 남는다.
+    // ② 다 읽음 — 숫자·점이 사라지고 원이 옅어진다. 요약은 그대로 남는다.
     seed([{ kind: 'mention', preview: '제가 바꿀게요', createdAt: new Date(Date.now() - 2 * 3600_000).toISOString(), readAt: new Date().toISOString() }]);
     renderBell();
     bell = await screen.findByRole('button', { name: /^알림 ·/ });
-    expect(bell.style.background).toBe('transparent');
     expect(bell.querySelector('[data-notification-count]')).toBeNull();
+    expect(bell.querySelector('[data-notification-dot]')).toBeNull();
+    expect((bell.querySelector('[data-notification-glyph]') as HTMLElement).dataset.notificationGlyph).toBe('read');
     sum = bell.querySelector('[data-nav-card-summary]') as HTMLElement;
     expect(sum.textContent).toBe('멘션 · 제가 바꿀게요 · 2시간 전');
-    expect(sum.style.color).toBe('var(--mf-muted)');
   });
 
-  it('내용이 길어도 시간은 잘리지 않는다 — 말줄임은 내용 쪽이 진다', async () => {
-    // 한 문자열로 이으면 꼬리(시간)부터 사라진다 — 시간은 짧고 언제나 읽혀야 한다.
+  it('창이 열린 동안 행에 옅은 면을 깐다 — 무엇이 이 창을 열었는지 짚어 준다(스펙 2.2)', async () => {
+    seed([{}]);
+    renderBell();
+    const bell = await screen.findByRole('button', { name: /^알림 1개 ·/ });
+    expect(bell.style.background).toBe('transparent');
+    fireEvent.click(bell);
+    await screen.findByRole('region', { name: '알림 센터' });
+    await waitFor(() => expect(bell.style.background).toBe('var(--mf-panel2)'));
+  });
+
+  it('내용이 길어도 시간까지 읽힌다 — 요약은 말줄임이 아니라 **넘치면 흐르는 한 줄**이다(스펙 2.2)', async () => {
+    // 예전에는 내용과 시간을 따로 두고 내용 쪽만 말줄임했다. 이제 한 줄이 통째로
+    // `MarqueeText`에 들어가 넘치면 흐른다 — 흐를지는 폭을 재서 정한다(jsdom은 0이라
+    // 멈춰 있다; 흐르는 규칙 자체는 `MarqueeText.test.tsx`가 지킨다).
     seed([{ preview: '아주 긴 댓글 내용이라 한 줄에 다 들어가지 않습니다 확인 부탁드립니다', createdAt: new Date(Date.now() - 3600_000).toISOString() }]);
     renderBell();
     const bell = await screen.findByRole('button', { name: /^알림 1개 ·/ });
     const sum = bell.querySelector('[data-notification-summary]') as HTMLElement;
-    const [content, when] = [...sum.children] as HTMLElement[];
-    expect(content!.style.textOverflow).toBe('ellipsis');
-    expect(when!.textContent).toBe(' · 1시간 전');
-    expect(when!.style.flexShrink).toBe('0'); // 줄지 않는다
+    const marquee = sum.querySelector('[data-marquee-text]') as HTMLElement;
+    expect(marquee).toBeTruthy();
+    expect(marquee.textContent).toBe('멘션 · 아주 긴 댓글 내용이라 한 줄에 다 들어가지 않습니다 확인 부탁드립니다 · 1시간 전');
   });
 
-  it('벨 타일은 읽었든 안 읽었든 늘 채운 강조색이다(요청) — 개수는 오른쪽 끝, 셰브론은 없다', async () => {
-    // 읽음 여부는 **타일 모서리의 점**과 개수 배지·요약 색이 말한다 — 타일까지
-    // 함께 흐려지면 "알림 자리"라는 표식이 사라진다.
+  it('벨은 32px **원**이다 — 안 읽음은 채운 알림색, 다 읽음은 옅은 면(스펙 2.2) · 숫자는 오른쪽 끝', async () => {
+    // 읽음 여부를 원의 면이 말한다 — 예전에는 늘 채운 강조색 타일이었고 모서리 점만
+    // 갈렸다. 스펙이 안 읽은 것이 없을 때 원을 옅게 가라앉혀 "올 것이 없다"를 한눈에.
     seed([{ readAt: new Date().toISOString() }]);
     const { unmount } = renderBell();
     let card = await screen.findByRole('button', { name: /^알림 ·/ });
-    let tile = card.querySelector('[data-nav-card-glyph]') as HTMLElement;
-    expect(tile.dataset.navCardTile).toBe('accent');
-    expect(tile.style.background).toBe('var(--mf-accent)');
-    expect(tile.style.color).toBe('var(--mf-accent-ink)'); // 흰 벨
-    expect(card.querySelector('[data-nav-card-tile-dot]')).toBeNull(); // 다 읽음
-    // 이 카드는 하위 메뉴를 펼치는 것이 아니라 패널을 띄운다 — 셰브론을 두면
-    // "누르면 펼쳐진다"는 거짓 약속이 된다.
-    expect(card.querySelector('[data-nav-card-chevron]')).toBeNull();
+    let glyph = card.querySelector('[data-notification-glyph]') as HTMLElement;
+    expect(glyph.style.borderRadius).toBe('999px');
+    expect(glyph.style.width).toBe('32px');
+    expect(glyph.style.background).toBe('var(--mf-panel2)');
+    expect(glyph.style.color).toBe('var(--mf-muted)');
+    expect(card.querySelector('[data-notification-dot]')).toBeNull();
     unmount();
     cleanup();
 
     seed([{}]);
     renderBell();
     card = await screen.findByRole('button', { name: /^알림 1개 ·/ });
-    tile = card.querySelector('[data-nav-card-glyph]') as HTMLElement;
-    expect(tile.style.background).toBe('var(--mf-accent)');
-    expect(card.querySelector('[data-nav-card-tile-dot]')).not.toBeNull();
-    // 개수 배지는 이름 옆이 아니라 **오른쪽 끝**이다(첨부 디자인) — 이름이 길어도
-    // 자리를 다투지 않고 두 카드의 오른쪽 끝이 한 열에 선다.
-    const badge = card.querySelector('[data-notification-count]') as HTMLElement;
+    glyph = card.querySelector('[data-notification-glyph]') as HTMLElement;
+    // 알림색은 테마와 무관한 고정값(`UNREAD_BADGE_BG` #f0663f — #376) + 흰 벨.
+    expect(glyph.style.background).toBe('rgb(240, 102, 63)');
+    expect(glyph.style.color).toBe('rgb(255, 255, 255)');
+    expect(card.querySelector('[data-notification-dot]')).not.toBeNull();
+    // 숫자는 이름 옆이 아니라 **오른쪽 끝**이고 면이 없다(스펙) — 등폭 글자.
+    const count = card.querySelector('[data-notification-count]') as HTMLElement;
     const summary = card.querySelector('[data-nav-card-summary]') as HTMLElement;
-    expect(badge.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(count.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(count.style.background).toBe('');
+    expect(count.style.fontFamily).toContain('JetBrains Mono');
   });
 
   it('패널 목록은 첨부 디자인대로 — 안 읽은 줄만 강조색 카드, 둘째 줄은 [문서 칩][시간], 묶음은 오늘/이번 주/이전', async () => {
@@ -288,8 +304,11 @@ describe('알림 센터', () => {
   it('알림이 없으면 배지 없이 빈 안내가 뜬다', async () => {
     renderBell();
     const bell = await screen.findByRole('button', { name: /^알림 ·/ });
+    expect(bell.querySelector('[data-notification-count]')).toBeNull();
     fireEvent.click(bell);
-    expect(await screen.findByText(/새 알림이 없어요/)).toBeTruthy();
+    // 행의 요약도 같은 말을 하므로(`새 알림이 없어요`) 패널 안에서 찾는다.
+    const panel = await screen.findByRole('region', { name: '알림 센터' });
+    expect(within(panel).getByText(/새 알림이 없어요/)).toBeTruthy();
   });
 
   it('새 알림이 만들어지면 폴링을 기다리지 않고 즉시 배지가 선다(ping 신호)', async () => {
@@ -450,7 +469,7 @@ describe('알림 센터 — 새 버전', () => {
     // 확인 중·최신은 **사용자가 할 일이 없다**.
     act(() => publishUpdateStatus({ checking: true }));
 
-    const bell = await screen.findByRole('button', { name: /아직 받은 알림이 없어요/ });
+    const bell = await screen.findByRole('button', { name: /새 알림이 없어요/ });
     expect(bell.querySelector('[data-notification-count]')).toBeNull();
     fireEvent.click(bell);
     await waitFor(() => expect(document.querySelector('[data-notification-empty]')).toBeTruthy());

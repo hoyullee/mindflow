@@ -3,14 +3,15 @@ import type { HomeController } from '../../useHomeController';
 import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
 import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
-import { mixHex } from '../../../editor/theme';
 import { RadioCards, Segmented } from '../../../../components/Segmented';
 import { HOME_LANDING_KEYS, HOME_LANDING_LABEL } from '../../storage';
 import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
 import { googlePrefsOf, useGoogleCalendar } from '../../calendar/useGoogleCalendar';
 import { GoogleCalendarSection } from './GoogleCalendarSection';
-import { VersionSection } from './VersionSection';
+import { VersionSection, buildLabel } from './VersionSection';
+import { useMergedUpdate } from '../../../../pwa/updateControl';
+import { updateNoticeOf } from '../../../../platform/shellUpdate';
 import { Switch } from '../../../../components/Switch';
 import {
   askNotifyPermission,
@@ -273,22 +274,24 @@ export function AccountSettingsModal({ state, controller }: Props) {
       // 이 모달은 프로필 팝오버의 '설정' 행으로 열리고, 그 팝오버는 모달이 열리면
       // 닫힌다 — 돌아갈 자리가 사라지므로 팝오버의 트리거(계정 메뉴)로 되돌린다.
       restoreFocusSelector="[data-account-trigger]"
-      dim={{ ...MODAL_DIM, zIndex: 150 }}
+      // 막은 **옅은 먹빛 + 흐림**(스펙 6.1) — 뒤의 LNB·카드가 흐려진 채 비쳐 "지금 설정을
+      // 보고 있다"는 맥락이 남는다.
+      dim={{ ...MODAL_DIM, background: 'rgba(58,52,46,.32)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)', zIndex: 150 }}
       // 카드가 곧 스크롤러다(내용이 화면보다 길 때) — 공용 얇은 스크롤바를 입혀
       // 썸이 22px 라운드 안쪽에 머문다(제보: 스크롤이 팝업을 벗어나 보였다).
       cardClass="lnb-scroll"
-      card={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(var(--mf-app-h) - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
+      card={{ width: 512, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(var(--mf-app-h) - 32px)', overflowY: 'auto', background: 'var(--mf-card)', border: '1px solid var(--mf-border)', borderRadius: 24, boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', animation: 'mf-fade .2s ease', boxSizing: 'border-box' }}
     >
       <>
         {/* header — 제목은 언제나 '설정'이고(요청), 상세 화면에서는 뒤로 가기가 붙는다.
             지금 어느 화면인지는 본문 첫 줄의 부 제목('계정 설정')이 말한다. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 24px', borderBottom: '1px solid var(--mf-hairline)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--mf-hairline)' }}>
           {detail && (
             <button
               className="btn mf-ctl"
               aria-label="뒤로"
               onClick={controller.closeSettingsDetail}
-              style={{ width: 32, height: 32, border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, marginLeft: -4 }}
+              style={{ width: 32, height: 32, border: 'none', borderRadius: 11, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m15 6-6 6 6 6" />
@@ -299,20 +302,20 @@ export function AccountSettingsModal({ state, controller }: Props) {
               연동, 계정 관리`) — 예전에는 헤더가 늘 '설정'이고 본문 첫 줄이 화면
               이름을 말했는데, 그러면 같은 말이 두 번 나온다. */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
-            <div data-settings-title style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em', flexShrink: 0 }}>
+            <div data-settings-title style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.02em', flexShrink: 0 }}>
               {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : view === 'notify' ? '알림' : view === 'calendar' ? 'Google 캘린더 연동' : view === 'version' ? '버전 확인' : '설정'}
             </div>
             {detail && (
-              <div data-settings-subtitle style={{ fontSize: 12.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div data-settings-subtitle style={{ fontSize: 11.5, color: 'var(--mf-faint)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {view === 'account' ? '로그인 수단과 계정 관리' : view === 'notify' ? '알림을 어디서 어떻게 받을까' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : view === 'version' ? '현재 버전과 업데이트' : '사진과 표시 이름'}
               </div>
             )}
           </div>
           <button
-            className="btn mf-ctl"
+            className="mf-settings-x"
             aria-label="닫기"
             onClick={controller.closeAccountSettings}
-            style={{ marginLeft: 'auto', width: 36, height: 36, border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}
+            style={{ marginLeft: 'auto', width: 32, height: 32, border: 'none', borderRadius: 11, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -326,7 +329,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
             바뀌기 전 높이로 고정 → 새 높이로 트랜지션 → 끝나면 auto로 되돌린다
             (`auto`는 전이되지 않으므로 실제 값을 재서 잇는 수밖에 없고, 끝나고
             풀어 줘야 안쪽에서 오류 문구가 늘어나는 것 같은 변화가 다시 살아난다). */}
-        <div ref={bodyRef} data-settings-body style={{ padding: 24 }}>
+        <div ref={bodyRef} data-settings-body style={{ padding: detail ? 24 : '6px 22px 18px' }}>
           {view === 'account' ? (
             <div key="detail" className={viewClass}>
           {/* 화면 이름은 헤더가 말한다(첨부 이미지) — 여기서는 구획 라벨만 쓴다.
@@ -460,10 +463,6 @@ export function AccountSettingsModal({ state, controller }: Props) {
               sub="다른 기기·브라우저의 로그인도 모두 해제돼요"
             />
           </SettingsGroup>
-          {/* 회원 탈퇴는 **발치 링크**로 내려갔다(첨부 이미지) — 행 목록에 두면 routine
-              동작들과 나란히 서고, 파괴적인 일은 눈에 덜 띄는 자리가 맞다. 실제 경고와
-              타이핑 게이트는 확인 팝업이 맡는다. */}
-          <SettingsFooter onDelete={controller.askDeleteAccount} />
             </div>
           ) : view === 'notify' ? (
             <div key="notify" className={viewClass}>
@@ -904,67 +903,66 @@ export function AccountSettingsModal({ state, controller }: Props) {
           </div>
             </div>
           ) : (
-            <div key="main" className={viewClass}>
-          {/* 계정 요약 — 여기서는 **보여 주기만** 한다. 사진·이름을 손보는 일은
-              한 겹 안의 '프로필 설정'으로 모았다(요청) — 같은 동작의 진입점이
-              한 화면에 둘 있으면 어느 쪽이 진짜인지 흐려진다. 구획 라벨은 두지
-              않는다(첨부 이미지: 카드가 곧 첫 줄이다). */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)' }}>
-            <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={16} fontSize={17} />
+            <div key="main" className={viewClass} style={{ display: 'flex', flexDirection: 'column' }}>
+          {/* ① 프로필 머리(스펙 6.2) — **면 없이** 둥근 아바타 + 이름·이메일 + 플랜 알약.
+              여기서는 보여 주기만 한다: 사진·이름을 손보는 일은 아래 '프로필 설정'으로
+              모았다(같은 동작의 진입점이 한 화면에 둘 있으면 어느 쪽이 진짜인지 흐려진다). */}
+          <div data-settings-head style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 2px 22px' }}>
+            <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={999} fontSize={17} gradient />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 16.5, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
-              {state.userEmail && <div style={{ fontSize: 13, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
+              <div style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-.03em', color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
+              {state.userEmail && <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
             </div>
-            {/* 플랜 배지(첨부 이미지) — 유료 플랜이 없으니 **모든 계정이 무료 플랜**이다.
-                사실을 적은 정적 배지이고, 유료가 생기면 이 자리가 그것을 말한다. */}
+            {/* 플랜 — 유료 플랜이 없으니 **모든 계정이 무료 플랜**이다. 스펙은 눌러서 플랜
+                안내로 가는 단추지만 **갈 화면이 없어** 사실을 적은 정적 알약으로 둔다(↗도
+                두지 않는다 — 어디로 데려갈 것처럼 보이면 안 된다). 유료가 생기면 이 자리가
+                그 단추가 된다. */}
             <span
               data-plan-badge
-              style={{ flexShrink: 0, height: 30, padding: '0 14px', display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-card)', color: 'var(--mf-accent-strong)', fontSize: 12.5, fontWeight: 700 }}
+              style={{ flexShrink: 0, height: 30, padding: '0 12px', display: 'inline-flex', alignItems: 'center', borderRadius: 99, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: 800, boxSizing: 'border-box' }}
             >
               무료 플랜
             </span>
           </div>
 
-          {/* 손보는 일은 두 줄 뒤에 — 첫 화면은 "무엇이 있는지"만 말한다. 이 묶음에는
-              구획 라벨을 두지 않는다: 모달 제목이 이미 '설정'이라 한 번 더 쓰면
-              '설정 > 설정'으로 읽힌다. 행 이름이 스스로를 말한다. */}
-          <SettingsGroup style={{ marginTop: 14 }}>
-            <SettingsRow
+          {/* ② 한 겹 안으로 들어가는 셋 — **타일 없는 선 아이콘 + 헤어라인 목록**(스펙). 구획
+              라벨은 두지 않는다: 모달 제목이 이미 '설정'이라 한 번 더 쓰면 '설정 > 설정'으로
+              읽힌다. 행 이름이 스스로를 말한다. */}
+          <SettingsDivider />
+          <div data-settings-list style={{ display: 'flex', flexDirection: 'column', padding: '6px 0' }}>
+            <SettingsListRow
               attrs={{ 'data-profile-detail-row': '' }}
               onActivate={controller.openProfileDetail}
               icon={
                 <>
-                  <rect x="3" y="5" width="18" height="14" rx="2.5" />
-                  <circle cx="8.5" cy="10" r="1.4" />
-                  <path d="m5 17 5-4.5 4 3.5 3-2.5 3 3" />
+                  <circle cx="12" cy="8" r="3.6" />
+                  <path d="M5 20.5a7 7 0 0 1 14 0" />
                 </>
               }
               title="프로필 설정"
-              /* 커서 색은 아직 고를 수 없다 — 여기 적으면 지키지 못할 약속이 된다(사용자 결정). */
-              sub="사진과 표시 이름을 바꿔요"
+              /* 스펙의 `커서 색`은 아직 고를 수 없다 — 적으면 지키지 못할 약속이 된다(사용자 결정). */
+              sub="사진과 표시 이름"
             />
-            <SettingsRow
+            <SettingsListRow
               attrs={{ 'data-account-detail-row': '' }}
               onActivate={controller.openAccountDetail}
               icon={
                 <>
-                  <circle cx="12" cy="8" r="3.4" />
-                  <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
+                  <rect x="3.5" y="10.5" width="17" height="10.5" rx="2.5" />
+                  <path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5" />
                 </>
               }
               title="계정 설정"
-              sub="비밀번호와 연동, 탈퇴"
+              // 구글 캘린더를 켜 둔 계정이면 그 사실을 말한다(스펙). 권한이 만료된 채로
+              // "연동됨"이라 하면 거짓말이라 그때는 평소 문장으로 물러선다. 판단은 블롭
+              // 값만으로 한다 — 목록 조회는 캘린더 화면에서만 돈다(`calendarSub` 머리말).
+              sub={googleApi.available && googleApi.enabled && !googleApi.needsReauth ? '구글 캘린더 연동됨' : '비밀번호와 연동, 탈퇴'}
             />
-            {/* 알림(요청) — '계정 설정' **아래**다. 스위치들을 첫 화면에 늘어놓으면
-                그것만으로 화면이 뒤덮인다 — 계정 설정·캘린더 연동과 같은 규칙으로
-                한 겹 안에 둔다.
-
-                예전에는 `Notification`이 없는 환경에서 **이 행 자체를 감췄다**("그
-                안에 그릴 것이 하나도 없다"). 0039의 **멘션 메일**이 들어오면서 그
-                전제가 깨졌다 — 그 설정은 OS 알림 권한과 무관하고(메일은 브라우저가
-                아니라 서버가 보낸다), 감춘 채로 두면 알림을 막아 둔 사람은 **자기에게
-                가는 메일을 끌 길이 영영 없다**. 이제 언제나 그린다. */}
-            <SettingsRow
+            {/* 알림 — 스위치들을 첫 화면에 늘어놓으면 그것만으로 화면이 뒤덮여 한 겹 안에
+                둔다. 언제나 그린다: 알림 권한이 없는 환경에서도 **멘션 메일**은 끌 수 있어야
+                한다(0039). 부제는 스펙의 고정 문장 대신 **지금 상태**를 말한다 — OS 알림이
+                막혀 있으면 막혀 있다고(`notifySub`). 오른쪽의 켬/끔은 일정 알림 스위치다. */}
+            <SettingsListRow
               attrs={{ 'data-notify-detail-row': '' }}
               onActivate={controller.openNotifyDetail}
               icon={
@@ -975,142 +973,157 @@ export function AccountSettingsModal({ state, controller }: Props) {
               }
               title="알림"
               sub={notifySub(remindOn, perm, nativeNotify)}
+              status={remindOn ? '켬' : '끔'}
             />
-            {/* 버전 확인(요청) — '계정 설정' **아래**다. 여기 두는 이유: 자동으로
-                갈아끼워지는 판을 사용자가 직접 확인하고 앞당길 수 있어야 한다.
-                계정에 딸린 일은 아니지만 앱 자신에 관한 일이라 같은 묶음이 맞다. */}
-            <SettingsRow
-              attrs={{ 'data-version-detail-row': '' }}
-              onActivate={controller.openVersionDetail}
+          </div>
+
+          {/* ③ 시작 화면 — 홈에 들어왔을 때 **어느 화면부터 볼까**. 색상 테마와 같은 per-user
+              취향이다(둘 다 워크스페이스 블롭이라 기기 간에 따라온다). **탭이 기억한 화면은
+              이것보다 우선한다**: 에디터에서 돌아오면 보던 자리로 돌아간다. 그래서 이 값은
+              "새로 시작할 때"만 쓰인다. 걷어낸 `대시보드`를 골라 둔 계정은 스페이스로
+              물러선다(`homeLandingOf`). */}
+          <SettingsDivider />
+          <div data-landing-group style={{ padding: '6px 0' }}>
+            <SettingsListRow
               icon={
                 <>
-                  <path d="M12 3.5v9" />
-                  <path d="m8.5 9 3.5 3.5L15.5 9" />
-                  <path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+                  <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+                  <path d="M3 9h18" />
                 </>
               }
-              title="버전 확인"
-              sub="현재 버전을 보고 새 버전으로 업데이트해요"
+              title="시작 화면"
+              sub="앱을 열면 먼저 보이는 곳"
+              right={
+                <Segmented
+                  value={state.homeLanding}
+                  onChange={controller.setHomeLanding}
+                  label="시작 화면"
+                  trackAttrs={{ 'data-landing-seg': '' }}
+                  track={{ display: 'flex', gap: 0, padding: 2, borderRadius: 99, background: 'var(--mf-panel2)', boxSizing: 'border-box', flexShrink: 0 }}
+                  items={HOME_LANDING_KEYS.map((k) => ({
+                    value: k,
+                    label: HOME_LANDING_LABEL[k],
+                    style: (on: boolean) => ({
+                      height: 26,
+                      border: 0,
+                      borderRadius: 99,
+                      padding: '0 12px',
+                      background: on ? 'var(--mf-card)' : 'transparent',
+                      fontFamily: 'inherit',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: on ? 'var(--mf-text)' : 'var(--mf-muted)',
+                      boxShadow: on ? '0 1px 3px rgba(46,42,38,.12)' : 'none',
+                      cursor: 'pointer',
+                    }),
+                  }))}
+                />
+              }
             />
-          </SettingsGroup>
+          </div>
 
-          {/* 시작 화면(요청) — 홈에 들어왔을 때 **어느 화면부터 볼까**. 여기 두는 이유:
-              색상 테마와 같은 per-user 취향이고(둘 다 워크스페이스 블롭이라 기기 간에
-              따라온다) 색보다 **동작**이라 그 위에 선다. LNB에 "시작 화면으로 지정"을
-              따로 두지 않는다 — 같은 설정의 진입점을 둘로 두지 않는다(이 프로젝트 규칙).
-              **탭이 기억한 화면은 이것보다 우선한다**: 에디터에서 돌아오면 보던 자리로
-              돌아간다. 그래서 이 값은 "새로 시작할 때"만 쓰인다.
-              걷어낸 `대시보드`를 골라 둔 계정은 스페이스로 물러선다(`homeLandingOf`). */}
-          <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-landing-group': '' }}>
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
-              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
-                <div style={{ fontWeight: 700, fontSize: 14.5 }}>시작 화면</div>
+          {/* ④ 버전 — 지금 무엇을 돌고 있는가를 **첫 화면에서** 보인다(스펙). 스펙은 업데이트가
+              있을 때만 눌리는 정보 행이지만 **언제나 눌린다**: 한 겹 안의 「버전 확인」에
+              지금 확인하기(새 판을 앞당겨 받는 손잡이)와 빌드 커밋이 있고 — 배포가 라이브에
+              닿았는지 사람이 확인하는 자리가 그 커밋이다 — 업데이트가 없을 때 그 길을
+              막으면 두 기능을 잃는다. 그래서 캐럿을 달아 들어갈 수 있다고 말한다. */}
+          <SettingsDivider />
+          <div style={{ padding: '6px 0' }}>
+            <VersionListRow onActivate={controller.openVersionDetail} />
+          </div>
+
+          {/* ⑤ 색상 테마 — **원형 견본 한 줄**(스펙). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지
+              색이 바뀐다 — 모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. */}
+          <SettingsDivider />
+          <div data-theme-group style={{ padding: '18px 2px 6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <ListIcon>
+                <path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z" />
+                <circle cx="7.5" cy="11" r="1.1" />
+                <circle cx="10.5" cy="7.3" r="1.1" />
+                <circle cx="15" cy="7.8" r="1.1" />
+              </ListIcon>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.015em', color: 'var(--mf-text)' }}>색상 테마</div>
+                <div data-theme-current style={{ fontSize: 11.5, color: 'var(--mf-muted)', marginTop: 2 }}>{HOME_THEMES[state.theme].label}</div>
               </div>
-              {/* 공휴일 국가 세그먼트와 **같은 문법**이다(가라앉은 트랙 위에서 고른 칸만
-                  카드 면 + 진한 강조 잉크) — 한 팝업 안에서 같은 종류의 컨트롤이
-                  달라 보이지 않게. */}
-              <Segmented
-                value={state.homeLanding}
-                onChange={controller.setHomeLanding}
-                label="시작 화면"
-                trackAttrs={{ 'data-landing-seg': '' }}
-                track={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', boxSizing: 'border-box', flexShrink: 0 }}
-                items={HOME_LANDING_KEYS.map((k) => ({
-                  value: k,
-                  label: HOME_LANDING_LABEL[k],
+            </div>
+            {/* 고르는 부품은 그대로 `RadioCards`(Radix RadioGroup) — 로빙 tabindex와 ←/→로
+                견본 사이를 옮긴다(Tab이 여섯 칸마다 멈추지 않게). 줄은 아이콘 자리만큼
+                들여 제목과 같은 열에서 시작한다. */}
+            <RadioCards
+              value={state.theme}
+              onChange={controller.setTheme}
+              label="색상 테마 선택"
+              grid={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '14px 0 0 32px' }}
+              items={HOME_THEME_KEYS.map((key) => {
+                const t = HOME_THEMES[key];
+                // 다크는 **먹빛 원 가운데 강조색 점**(스펙) — 강조색만 칠하면 코랄과 구별이 안 된다.
+                const ink = t.dark ? '#221F1C' : t.accent;
+                // 고리는 스펙대로 제 색이되, 다크 견본은 **본문 잉크**로 두른다: 다크를 고른
+                // 순간 이 팝업도 어두워져 먹빛 고리가 면에 묻힌다(실측 — 체크만 떠 보였다).
+                // 밝은 테마에서 본문 잉크는 스펙의 먹빛과 거의 같다.
+                const ring = t.dark ? 'var(--mf-text)' : t.accent;
+                // 고르지 않은 견본의 얇은 테두리도 어두운 면에서는 밝게 — 모노(#2b2b2b)가 사라진다.
+                const hairline = HOME_THEMES[state.theme].dark ? '0 0 0 1px rgba(255,255,255,.16)' : '0 0 0 1px rgba(46,42,38,.08)';
+                return {
+                  value: key,
+                  label: t.label,
+                  ariaLabel: `${t.label} 테마`,
+                  attrs: { 'data-theme-swatch': key },
                   style: (on: boolean) => ({
-                    minWidth: 54,
-                    height: 30,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: 0,
                     border: 0,
-                    borderRadius: 8,
-                    padding: '0 10px',
-                    background: on ? 'var(--mf-card)' : 'transparent',
+                    background: 'transparent',
                     fontFamily: 'inherit',
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    color: on ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
-                    boxShadow: on ? '0 2px 5px -3px rgba(46,42,38,.35)' : 'none',
+                    fontSize: 11,
+                    fontWeight: on ? 800 : 600,
+                    color: on ? 'var(--mf-text)' : 'var(--mf-muted)',
                     cursor: 'pointer',
                   }),
-                }))}
-              />
-            </div>
-          </SettingsGroup>
-
-          {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
-              자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —
-              모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. 라벨 옆에 **지금
-              고른 이름**을 적는다(첨부 이미지: `색상 테마  코랄`). */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 18, marginBottom: 10 }}>
-            <SectionLabel>색상 테마</SectionLabel>
-            <span data-theme-current style={{ fontSize: 12, color: 'var(--mf-muted)' }}>{HOME_THEMES[state.theme].label}</span>
+                  children: (
+                    <>
+                      <span
+                        data-theme-preview
+                        aria-hidden="true"
+                        style={{
+                          position: 'relative',
+                          width: 34,
+                          height: 34,
+                          borderRadius: 999,
+                          background: t.dark ? `radial-gradient(circle, ${t.accent} 0 5px, ${ink} 6px)` : t.accent,
+                          // 고른 견본만 **면 색 틈 + 제 색 고리**(스펙) — 흰 체크와 함께 두 겹으로 말한다.
+                          boxShadow: state.theme === key ? `0 0 0 2px var(--mf-card), 0 0 0 4px ${ring}` : hairline,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {state.theme === key && (
+                          <svg data-theme-check width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="m5 13 4 4L19 7" />
+                          </svg>
+                        )}
+                      </span>
+                      {t.label}
+                    </>
+                  ),
+                };
+              })}
+            />
           </div>
-          {/* 카드 격자로 고르는 라디오 — 손으로 짠 `role="radio"`까지는 있었지만
-              **화살표 이동이 없었다**(Tab이 칸 여섯 개마다 멈췄다). `RadioCards`
-              (Radix RadioGroup)가 로빙 tabindex와 ←/→/↑/↓를 준다. */}
-          <RadioCards
-            value={state.theme}
-            onChange={controller.setTheme}
-            label="색상 테마 선택"
-            grid={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}
-            items={HOME_THEME_KEYS.map((key) => {
-              const t = HOME_THEMES[key];
-              const on = state.theme === key;
-              return {
-                value: key,
-                label: t.label,
-                ariaLabel: `${t.label} 테마`,
-                style: (on: boolean) => ({
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'stretch',
-                  gap: 9,
-                  padding: 11,
-                  borderRadius: 14,
-                  // 선택된 칸만 강조색 테두리 + 옅은 강조 면(첨부 이미지의 코랄 칸).
-                  border: `1.5px solid ${on ? t.accent : 'var(--mf-border)'}`,
-                  background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
-                  color: 'var(--mf-text)',
-                  fontFamily: 'inherit',
-                  fontSize: 13.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }),
-                children: (
-                  <>
-                    {/*
-                      미리보기(첨부 이미지) — 그 테마의 **면 위에 강조색 막대**를 그린
-                      알약이다. 이름만으로는 "모노"·"다크"가 얼마나 다른지 알 수 없고,
-                      면·강조색·경계선 셋이 한 그림에 함께 보여야 테마의 인상이 전달된다.
-                    */}
-                    <span
-                      data-theme-preview
-                      aria-hidden="true"
-                      style={{ display: 'flex', alignItems: 'center', gap: 7, height: 34, padding: '0 10px', borderRadius: 10, background: t.bg, border: `1px solid ${t.border}`, boxSizing: 'border-box' }}
-                    >
-                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.accent, flexShrink: 0 }} />
-                      <span style={{ flex: 1, height: 5, borderRadius: 999, background: mixHex(t.card, t.accent, 0.55) }} />
-                      <span style={{ width: 20, height: 5, borderRadius: 999, background: t.border, flexShrink: 0 }} />
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
-                      {/* 고른 칸에만 체크 — 테두리·면과 함께 세 겹으로 말한다. */}
-                      {on && (
-                        <svg data-theme-check width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-                          <path d="m5 13 4 4L19 7" />
-                        </svg>
-                      )}
-                    </span>
-                  </>
-                ),
-              };
-            })}
-          />
-          <SettingsFooter />
             </div>
           )}
         </div>
+        {/* 발치(스펙 6.1) — 본문 밖, 모달의 바닥에 선다. 첫 화면과 계정 설정에만 둔다
+            (예전 자리 그대로). **회원 탈퇴**는 계정 설정에서만 이 줄에 선다 — 행 목록에
+            두면 routine 동작들과 나란히 서고, 파괴적인 일은 눈에 덜 띄는 자리가 맞다.
+            실제 경고와 타이핑 게이트는 확인 팝업이 맡는다. */}
+        {(view === 'main' || view === 'account') && <SettingsFooter onDelete={view === 'account' ? controller.askDeleteAccount : undefined} />}
       </>
     </Modal>
   );
@@ -1250,6 +1263,144 @@ export function SettingsRow({
   );
 }
 
+/** 첫 화면의 묶음 사이 헤어라인(스펙 6.2) — 카드·타일 대신 선으로 가른다. */
+function SettingsDivider() {
+  return <div aria-hidden="true" style={{ height: 1, background: 'var(--mf-hairline)', flexShrink: 0 }} />;
+}
+
+/** 첫 화면의 18px 선 아이콘 — 타일 없이 글줄 앞에 선다(스펙). */
+function ListIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {children}
+    </svg>
+  );
+}
+
+/**
+ * 첫 화면의 **헤어라인 목록 행**(스펙 6.2) — [선 아이콘][제목/부제][오른쪽][상태][캐럿].
+ *
+ * 한 겹 안의 화면들(계정 설정·알림 …)은 예전의 **카드 묶음 행**(`SettingsRow`)을 그대로
+ * 쓴다 — 스펙이 그 화면들은 이번 변경 밖이라고 적었다. 두 모양을 한 부품의 갈래로 섞지 않은
+ * 이유: 여백·아이콘·부제 크기가 전부 달라 프롭이 모양마다 하나씩 늘어난다.
+ *
+ * `margin: 0 -8px`로 hover 면이 글 바깥까지 번진다(스펙) — 글줄은 묶음의 열에 맞은 채로.
+ * `onActivate`가 있으면 행 전체가 눌리고(Enter/Space 포함) 끝에 캐럿이 선다 — 캐럿은
+ * "한 겹 안으로 들어간다"는 약속이라 눌리지 않는 행에는 두지 않는다.
+ */
+export function SettingsListRow({
+  icon,
+  title,
+  sub,
+  right,
+  status,
+  onActivate,
+  attrs,
+}: {
+  icon: ReactNode;
+  title: ReactNode;
+  sub?: ReactNode;
+  right?: ReactNode;
+  /** 캐럿 앞의 짧은 상태 글자(`켬`/`끔`). */
+  status?: string;
+  onActivate?: () => void;
+  attrs?: Record<string, string>;
+}) {
+  const press = onActivate;
+  return (
+    <div
+      data-settings-row
+      {...attrs}
+      className={press ? 'menu-row mf-list-row' : undefined}
+      {...(press ? { role: 'button', tabIndex: 0 } : {})}
+      onClick={press}
+      onKeyDown={
+        press
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                press();
+              }
+            }
+          : undefined
+      }
+      style={{ display: 'flex', alignItems: 'center', gap: 14, minHeight: 56, padding: '0 8px 0 10px', margin: '0 -8px', borderRadius: 12, cursor: press ? 'pointer' : 'default' }}
+    >
+      <ListIcon>{icon}</ListIcon>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.015em', color: 'var(--mf-text)' }}>{title}</div>
+        {sub && <div style={{ fontSize: 11.5, color: 'var(--mf-muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>}
+      </div>
+      {right}
+      {status && (
+        <span data-settings-status style={{ flexShrink: 0, fontSize: 12, color: 'var(--mf-faint)' }}>
+          {status}
+        </span>
+      )}
+      {press && (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 첫 화면의 **버전** 행(스펙 6.2 ④) — 지금 판 + 상태 점, 부제가 업데이트 여부를 말한다.
+ *
+ * 판단은 LNB 알림·「버전 확인」 화면과 **같은 값**(`useMergedUpdate`)을 읽는다 — 이 화면이
+ * 따로 물으면 세 자리가 서로 다른 답을 말할 수 있다. 모르는 것은 "최신"이라 하지 않는다:
+ * 확인 중이거나 확인할 수단이 없으면 그렇게 말하고 점도 흐린 색이다.
+ */
+function VersionListRow({ onActivate }: { onActivate: () => void }) {
+  const merged = useMergedUpdate();
+  const notice = updateNoticeOf(merged);
+  const build = buildLabel();
+  const dev = build.label === 'dev';
+  const pending = !dev && (merged.kind === 'ready' || merged.kind === 'shell' || merged.kind === 'save-blocked' || merged.kind === 'applying');
+  const sub = dev
+    ? build.sub
+    : merged.kind === 'shell'
+      ? merged.release?.version
+        ? `새 버전 ${merged.release.version}을 받을 수 있어요`
+        : '새 버전을 받을 수 있어요'
+      : merged.kind === 'ready'
+        ? '새 버전을 받을 수 있어요'
+        : merged.kind === 'applying'
+          ? '새 버전을 적용하는 중이에요'
+          : merged.kind === 'save-blocked' && notice
+            ? `${notice.title} — ${notice.sub}`
+            : merged.kind === 'checking'
+              ? '새 버전을 확인하는 중이에요'
+              : merged.kind === 'unavailable'
+                ? '이 환경에서는 업데이트를 확인할 수 없어요'
+                : '최신 버전을 쓰고 있어요';
+  const dot = pending ? 'var(--mf-accent)' : !dev && merged.kind === 'latest' ? 'var(--mf-success)' : 'var(--mf-faint2)';
+  return (
+    <SettingsListRow
+      attrs={{ 'data-version-detail-row': '', 'data-version-state': pending ? 'update' : merged.kind }}
+      onActivate={onActivate}
+      icon={
+        <>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 8v4l2.5 2" />
+        </>
+      }
+      title="버전"
+      sub={sub}
+      right={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span data-version-value style={{ fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, color: 'var(--mf-subtext)' }}>
+            {build.label}
+          </span>
+          <span data-version-dot aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: dot, flexShrink: 0 }} />
+        </span>
+      }
+    />
+  );
+}
+
 /**
  * 발치의 법적 링크 — 로그인한 사용자에게 유일한 진입점이다(다른 하나는 로그인
  * 페이지 발치). 새 탭이라 모달·홈 상태를 잃지 않는다. 계정 설정 화면에서는
@@ -1258,18 +1409,19 @@ export function SettingsRow({
  */
 export function SettingsFooter({ onDelete }: { onDelete?: () => void }) {
   return (
-    <div data-settings-footer style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mf-hairline)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
-      <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-faint)' }}>
+    <div data-settings-footer style={{ padding: '12px 18px 15px', borderTop: '1px solid var(--mf-border-soft)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, fontSize: 11.5, fontWeight: 600 }}>
+      <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-muted)' }}>
         개인정보처리방침
       </a>
       <FooterDot />
-      <a href="/terms" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-faint)' }}>
+      <a href="/terms" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-muted)' }}>
         이용약관
       </a>
       {onDelete && (
         <>
           <FooterDot />
-          <button type="button" data-delete-account-link onClick={onDelete} style={{ border: 0, background: 'transparent', padding: 0, font: 'inherit', fontSize: 12.5, color: 'var(--mf-faint)', cursor: 'pointer' }}>
+          {/* 가장 옅게 — 눈에 덜 띄는 자리가 맞다. 손을 얹으면 경고 톤으로(`home.css`). */}
+          <button type="button" className="mf-delete-link" data-delete-account-link onClick={onDelete} style={{ border: 0, background: 'transparent', padding: 0, font: 'inherit', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
             회원 탈퇴
           </button>
         </>
