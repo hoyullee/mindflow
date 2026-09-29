@@ -10566,6 +10566,146 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
   });
 
+  /**
+   * **손잡이는 우리가 그린다**(제보 — 안드로이드·삼성 인터넷).
+   *
+   * 제보의 자리는 「글자를 두 번 눌러 고른 뒤 물방울 손잡이를 끄는」 것인데, 그 손잡이는
+   * **브라우저가 그리는 제 UI**라 헤드리스에서도 실기기에서도 페이지에는 이벤트가 오지
+   * 않는다([F20](probe-pitfalls.md#f20) 계열 — 우리가 지킬 수 있는 것은 **무엇을
+   * 통과시키나**뿐이다). 그래서 여기서 재는 것은 셋이다:
+   *  ① 브라우저가 만든 한 줄 선택을 **우리 선택으로 받아 온다**
+   *  ② 그 자리에 **우리 손잡이** 둘이 선다
+   *  ③ 그 손잡이를 끌면 **줄을 넘어** 골라진다
+   *
+   * jsdom에는 글자의 사각형이 없으므로(`Range.getBoundingClientRect`) `caretRectAt`이
+   * **줄 상자**로 물러서는 길을 탄다 — 그래서 줄의 사각형만 세워 주면 된다.
+   */
+  const rectOf = (left: number, top: number, w = 360, h = 24) => () =>
+    ({ left, top, right: left + w, bottom: top + h, width: w, height: h, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+
+  async function pickedByTouch(id: string): Promise<{ c: HTMLElement; a: HTMLElement; b: HTMLElement }> {
+    const c = await open(id, [
+      { id: 'a', kind: 'p', runs: r('첫 줄입니다') },
+      { id: 'b', kind: 'p', runs: r('둘째 줄') },
+    ]);
+    const a = c.querySelector('[data-note-line="a"]') as HTMLElement;
+    const b = c.querySelector('[data-note-line="b"]') as HTMLElement;
+    a.getBoundingClientRect = rectOf(40, 100);
+    b.getBoundingClientRect = rectOf(40, 140);
+    // 손가락이 눌렀다 — 손잡이를 그릴지 가르는 값(`touchUi`)이 여기서 선다.
+    firePtr(a, 'pointerdown', { clientX: 60, clientY: 110 });
+    firePtr(a, 'pointerup', { clientX: 60, clientY: 110 });
+    // 브라우저가 두 번 누르기로 낱말을 골랐다 — 그 뒤에 오는 것은 `selectionchange`뿐이다.
+    // `setLinearSelection`을 쓰지 않는다: 그쪽은 끝에서 `focus()`를 부르는데 jsdom의
+    // `focus()`는 **선택을 맨 앞으로 되돌린다**([F26](probe-pitfalls.md#f26)).
+    a.focus();
+    const t = document.createTreeWalker(a, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const rng = document.createRange();
+    rng.setStart(t, 0);
+    rng.setEnd(t, 2);
+    const live = window.getSelection();
+    live?.removeAllRanges();
+    live?.addRange(rng);
+    document.dispatchEvent(new Event('selectionchange'));
+    return { c, a, b };
+  }
+
+  it('손가락이 고른 한 줄을 **우리 선택으로 받아** 손잡이 둘을 세운다', async () => {
+    const { c, a } = await pickedByTouch('sg1');
+    await waitFor(() => expect(c.querySelector('[data-note-selgrip="head"]')).toBeTruthy());
+    expect(c.querySelector('[data-note-selgrip="tail"]')).toBeTruthy();
+    // 받아 왔다 = 우리가 칠한다(물방울이 사라지도록 브라우저 선택은 접어 둔다).
+    expect(c.querySelector('[data-note-painting="1"]')).toBeTruthy();
+    expect(window.getSelection()?.isCollapsed).toBe(true);
+    // 손잡이는 고른 끝을 짚는다 — 머리는 줄의 왼끝, 꼬리는 잰 글자 자리다.
+    const head = c.querySelector('[data-note-selgrip="head"]') as HTMLElement;
+    expect(parseFloat(head.style.top)).toBe(a.getBoundingClientRect().top);
+  });
+
+  it('그 손잡이를 끌면 **줄을 넘어** 골라진다(OS 손잡이가 못 하던 일)', async () => {
+    const { c, b } = await pickedByTouch('sg2');
+    const tail = (await waitFor(() => {
+      const el = c.querySelector('[data-note-selgrip="tail"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    // jsdom에는 `elementFromPoint`가 없다(F17) — 끌고 간 자리의 줄만 세워 준다.
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, writable: true, value: () => b });
+
+    firePtr(tail, 'pointerdown', { clientX: 400, clientY: 112 });
+    // 손잡이는 **제 요소에** 리스너를 단다(포인터 캡처와 같은 뜻 — jsdom에는 그것이 없다).
+    firePtr(tail, 'pointermove', { clientX: 200, clientY: 150 });
+    await waitFor(() => expect(c.querySelectorAll('[data-note-blockwrap][data-selected="1"]').length).toBe(2));
+    firePtr(tail, 'pointerup', { clientX: 200, clientY: 150 });
+
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+  });
+
+  /**
+   * **받아 오기가 덮어쓰기를 먹지 않는다**(프로브로 잡았다).
+   *
+   * 칠해 둔 선택 위에 글자를 치면 `replaceWithTyping`이 「지울 자리」를 **브라우저
+   * 선택으로 세워 두고** 기본 동작에 맡긴다(한글 조합을 끊지 않으려는 설계). 그런데
+   * 손가락에서는 리액트가 이 keydown의 상태 갱신을 **기본 동작보다 먼저** 흘리는 바람에,
+   * 다시 세워진 `selectionchange` 감시가 같은 태스크 안에서 그 선택을 사용자의 것으로
+   * 읽어 접어 버렸다 — "글자는 들어갔는데 고른 것이 안 지워진다"(실브라우저 실측).
+   */
+  it('글자를 치면 **브라우저가 지울 선택**을 남긴다 — 우리가 도로 받아 오지 않는다', async () => {
+    const { c } = await pickedByTouch('sg5');
+    await waitFor(() => expect(c.querySelector('[data-note-selgrip="head"]')).toBeTruthy());
+    fireEvent.keyDown(document.body, { key: 'z' });
+    // 고른 것은 모델에서 지워지고 그 자리는 **브라우저가 채운다** — 그래서 상자에는
+    // 잠깐 「지워진 값 + 이어 붙인 꼬리」가 함께 있다(그 겹치는 몫이 곧 지울 자리다).
+    await waitFor(() => expect((c.querySelector('[data-note-line="a"]') as HTMLElement).textContent).toBe('첫 줄입니다줄입니다'));
+    // **다시 칠하지 않는다** — 받아 오면 그 선택이 접혀 지울 자리를 잃는다(이 제보의 자리).
+    // 받아 오기는 이 keydown 안에서 **동기로** 일어나므로(리액트가 discrete 갱신을 곧바로
+    // 흘린다), 받아 왔다면 칠과 손잡이가 그대로 남아 이 기다림이 끝나지 않는다.
+    await waitFor(() => expect(c.querySelector('[data-note-selgrip="head"]')).toBeFalsy());
+    expect(c.querySelector('[data-note-painting="1"]')).toBeFalsy();
+  });
+
+  /**
+   * 손가락에는 키보드가 없다 — **길게 누르기 메뉴가 유일한 복사 길**인데, 그 「복사」가
+   * 고른 만큼이 아니라 문단을 통째로 실었다. OS의 선택 팝업(복사·붙여넣기)을 우리
+   * 손잡이로 갈아 끼우면서 그 길이 더 중요해졌으므로 ⌘C와 같은 함수로 모은다.
+   */
+  it('길게 누르기 메뉴의 「복사」는 **고른 글**을 싣는다', async () => {
+    const write = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: write } });
+    delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
+
+    const c = await open('sg4', [{ id: 'a', kind: 'p', runs: r('첫 줄입니다') }]);
+    const a = c.querySelector('[data-note-line="a"]') as HTMLElement;
+    // 이 판정은 모듈에 남는다 — 앞 테스트의 손가락 누름을 여기서 지운다(`noteTouchMenu`).
+    fireEvent.pointerDown(a, { clientX: 5, clientY: 5 });
+    a.focus();
+    const t = document.createTreeWalker(a, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const rng = document.createRange();
+    rng.setStart(t, 0);
+    rng.setEnd(t, 3); // `첫 줄`
+    const live = window.getSelection();
+    live?.removeAllRanges();
+    live?.addRange(rng);
+
+    fireEvent.contextMenu(a, { clientX: 20, clientY: 20 });
+    const copy = await waitFor(() => {
+      const el = [...c.querySelectorAll('[data-note-ctx]')].find((x) => x.textContent?.includes('복사'));
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    fireEvent.click(copy);
+    await waitFor(() => expect(write).toHaveBeenCalledWith('첫 줄'));
+  });
+
+  it('그냥 톡 누르면 칠해 둔 선택을 **놓는다**(손가락)', async () => {
+    const { c, a } = await pickedByTouch('sg3');
+    await waitFor(() => expect(c.querySelector('[data-note-selgrip="head"]')).toBeTruthy());
+    firePtr(a, 'pointerdown', { clientX: 60, clientY: 110 });
+    firePtr(a, 'pointerup', { clientX: 60, clientY: 110 });
+    await waitFor(() => expect(c.querySelector('[data-note-selgrip="head"]')).toBeFalsy());
+    expect(c.querySelector('[data-note-painting="1"]')).toBeFalsy();
+  });
+
   it('12 — 고르개는 **찾기·종류 칩·스페이스 머리**로 선다(시안)', async () => {
     localStorage.setItem(
       'mf_spaces',

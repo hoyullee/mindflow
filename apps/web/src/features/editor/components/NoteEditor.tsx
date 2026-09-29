@@ -41,7 +41,7 @@ import type { Theme } from '../theme';
 import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange, armCaretMark, armCaretMarks, armMarksForReplace, armedMarksOverlay, insertNoteLink, noteActiveMarks, noteCaretSpan, noteEditBoxInSelection, noteMarksAcross, noteMarksIn, sameMarks, type NoteFormatKind, type NoteMarks } from '../noteRichDom';
 import { codeEdgeCaret, codeEdgeMark, type CodeCaretSpot } from '../noteCodeEdge';
 
-import { buildLineSelection, buildSelection, caretAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { buildLineSelection, buildSelection, caretAt, caretRectAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
 import { NoteLine } from './NoteLine';
 import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { useCommentParticipants } from './CommentPanel';
@@ -1031,6 +1031,15 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    */
   const [textSel, setTextSel] = useState<LineSel[] | null>(null);
   /**
+   * **마지막 누름이 손가락이었나** — 선택 손잡이를 그릴지 가르는 값(제보).
+   *
+   * `isTouchPointer()`가 같은 것을 아는데 왜 상태로 또 두나: 그쪽은 모듈 변수라
+   * 바뀌어도 다시 그려지지 않는다. 손잡이는 **화면에 있는 것**이라 리렌더가 필요하다.
+   * 미디어 질의(`pointer: coarse`)를 쓰지 않는 이유는 `noteTouchMenu`의 머리말과
+   * 같다 — S펜을 받는 기기에서 거짓이 된다.
+   */
+  const [touchUi, setTouchUi] = useState(false);
+  /**
    * **오브젝트로 고른 블록들**(요청 6) — 이미지·구분선·표·코드처럼 글자 구간으로는
    * 고를 수 없는 것들.
    *
@@ -1894,6 +1903,37 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
         clearSelectionPaint();
         return;
       }
+      /**
+       * **손가락이 고른 것은 우리 선택으로 받아 온다**(제보: 두 번 눌러 고른 뒤
+       * 물방울 손잡이를 끌면 줄을 넘지 못한다).
+       *
+       * 브라우저의 그 손잡이는 **브라우저가 그리는 제 UI**라 끌어도 페이지에는
+       * 아무 포인터 이벤트가 오지 않고, 선택은 편집 박스(=한 줄) 안에 갇힌다. 그래서
+       * 여기서 같은 구간을 우리 선택으로 옮겨 담고 브라우저 선택을 비운다 —
+       * 그러면 물방울이 사라지고, 그 자리에 우리 손잡이가 선다(`NoteSelHandles`).
+       *
+       * 마우스는 그대로 둔다: 거기서는 브라우저의 한 줄 선택이 더 낫고(더블클릭·
+       * 드래그가 이미 제 일을 한다) 손잡이도 없다.
+       */
+      if (isTouchPointer()) {
+        const built = buildLineSelection(a, { node: range.startContainer, offset: range.startOffset }, { node: range.endContainer, offset: range.endOffset });
+        const one = built?.[0];
+        if (one && one.to > one.from) {
+          const sig = `${one.key}:${one.from}:${one.to}`;
+          /**
+           * 우리가 브라우저에게 넘긴 그 선택이면 손대지 않는다(`handOff` 머리말).
+           *
+           * **한 번만 봐주고 지우면 모자란다**(실측): 이 감시는 같은 자리에서 **두 번**
+           * 불린다 — 효과가 다시 서며 곧바로 한 번, 그리고 `selectionchange`가 와서 한 번.
+           * 그래서 표식은 남겨 두고, **다음 누름**이 들어올 때 지운다(`onPointerDown`) —
+           * 그때부터는 사용자가 만든 선택이다.
+           */
+          if (handOff.current !== sig) {
+            paintAndHold(built!);
+            return;
+          }
+        }
+      }
       paintRanges([range.cloneRange()]);
     };
     follow();
@@ -2069,6 +2109,60 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     },
     [],
   );
+
+  /** 지금 **우리 손잡이를 잡고 있나** — 톡 누른 것과 가르는 값(아래 `onPointerUp`). */
+  const gripping = useRef(false);
+  /**
+   * **브라우저에게 넘기려고 우리가 세운 선택**(`줄키:처음:끝`) — 그 한 번은 받아 오지 않는다.
+   *
+   * 프로브로 잡았다. 칠해 둔 선택 위에 글자를 치면 `replaceWithTyping`이 **지울 자리를
+   * 브라우저 선택으로 세워 두고** 기본 동작에 맡긴다(그래야 한글 조합이 끊기지 않는다).
+   * 그런데 손가락에서는 그 선택을 바로 다음 순간 우리가 **받아 와** 접어 버렸다 — 리액트
+   * 18이 이 keydown의 상태 갱신을 **기본 동작보다 먼저** 흘리므로, 다시 세워진
+   * `selectionchange` 감시가 같은 태스크 안에서 그것을 사용자의 선택으로 읽었다.
+   * 결과는 "글자는 들어갔는데 고른 것이 지워지지 않는다"였다(실측).
+   */
+  const handOff = useRef<string | null>(null);
+  /**
+   * **선택 손잡이를 끈다**(제보 — 안드로이드·삼성 인터넷의 물방울 손잡이가 줄을 못 넘는다).
+   *
+   * 잡지 않은 **반대쪽 끝**이 앵커다: 머리를 끌면 꼬리가, 꼬리를 끌면 머리가 제자리에
+   * 남는다. 넘어가서 뒤집히면 `buildSelection`이 문서 순서로 돌려주므로 그대로 이어진다.
+   */
+  const dragSelHandle = useCallback((end: 'head' | 'tail', x: number, y: number): void => {
+    const col = colRef.current;
+    const cur = textSelRef.current;
+    if (!col || !cur || !cur.length) return;
+    gripping.current = true;
+    const keep = end === 'head' ? cur[cur.length - 1]! : cur[0]!;
+    const at = end === 'head' ? keep.to : keep.from;
+    const spot = pointAt(keep.el, Math.max(0, Math.min(at, lineLength(keep.el))));
+    const anchor = { el: keep.el, node: spot.node, offset: spot.offset };
+    let under: HTMLElement | null = null;
+    try {
+      under = document.elementFromPoint(x, y) as HTMLElement | null;
+    } catch {
+      under = null; // 좌표 조회가 없는 환경(jsdom)
+    }
+    const overLine = under?.closest?.('[data-note-line]') as HTMLElement | null;
+    const near = overLine ? null : lineNear(col, x, y);
+    const line = overLine ?? near?.el ?? null;
+    if (!line || !col.contains(line)) return;
+    const hit = overLine ? caretInLine(line, x, y) : { node: near!.node, offset: near!.offset };
+    const focus = { el: line, node: hit.node, offset: hit.offset };
+    const built = line === anchor.el ? buildLineSelection(anchor.el, anchor, focus) : buildSelection(col, anchor, focus);
+    if (!built || !built.length) return;
+    setObjSel([]);
+    /**
+     * 칠하되 **초점은 첫 줄에 접어 둔다**(`paintAndHold`) — 브라우저 선택은 비워
+     * 물방울이 뜨지 않게 하고, 캐럿은 고른 자리의 머리에 남긴다.
+     *
+     * 왜 초점을 거두지 않나(프로브로 잡았다): 초점을 거두면 손을 뗀 뒤 **글자를 쳐도
+     * 아무 데도 들어가지 않는다** — 손가락에는 그 자리에 다시 커서를 놓을 길이 없고
+     * (소프트 키보드도 내려간다), 고른 것을 **덮어쓰는** 길이 통째로 막힌다.
+     */
+    paintAndHold(built);
+  }, [paintAndHold]);
 
   /**
    * 선택을 **한 줄 더** 늘린다(또는 줄인다) — Shift+위/아래.
@@ -2393,6 +2487,8 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       const chars = runsToChars({ text: runsText(done.runs), rich: done.runs });
       const tail = charsToRuns(chars.slice(done.at));
       if (runsText(tail)) el.insertAdjacentHTML('beforeend', runsToHtml({ text: runsText(tail), rich: tail }));
+      // 이 선택은 **브라우저가 지울 것**이다 — 손가락에서 우리가 받아 오지 않게 표식을 남긴다.
+      handOff.current = `${done.key}:${first.from}:${first.from + gone}`;
       try {
         if (document.activeElement !== el) el.focus({ preventScroll: true });
         const a = pointAt(el, first.from);
@@ -3137,6 +3233,10 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
             e.preventDefault();
           }}
           onPointerDown={(e) => {
+            // 손잡이를 그릴지 여기서 가른다 — 같은 값을 리렌더로도 알아야 한다(`touchUi`).
+            setTouchUi(e.pointerType === 'touch');
+            // 새 누름 = 새 선택 — 「브라우저에게 넘긴 자리」 표식을 여기서 지운다.
+            handOff.current = null;
             // 오른쪽·가운데 버튼만 걷어 낸다(`> 0`) — 포인터 이벤트가 없는 환경에서는
             // `button`이 실려 오지 않아 `!== 0`으로 막으면 드래그가 통째로 죽는다.
             if (e.button > 0) return;
@@ -3208,6 +3308,21 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
             } catch {
               /* 캐럿을 못 놓아도 포커스는 갔다 */
             }
+          }}
+          /**
+           * **그냥 톡 누르면 칠해 둔 선택을 놓는다**(손가락) — 마우스의 `pointerdown`이
+           * 하는 일과 같은 뜻인데 자리가 다르다.
+           *
+           * 손가락의 `pointerdown`에서는 놓을 수 없다: 길게 누르기 메뉴가 그 선택을
+           * **읽어야** 하고(`contextmenu`는 손을 떼기 전에 온다), 길게 누른 뒤 끌면
+           * 그 선택을 이어서 넓힌다. 그래서 「끌지도 않았고 메뉴도 안 떴다」가 확정되는
+           * 손 떼는 자리에서 놓는다.
+           */
+          onPointerUp={(e) => {
+            if (e.pointerType !== 'touch') return;
+            if (touchSel.current?.on || gripping.current) return; // 끌어서 골랐다 — 그대로 둔다
+            if (ctxAt) return; // 메뉴가 떴다 — 그 선택으로 무엇을 한다
+            if (textSelRef.current?.length) setTextSel(null);
           }}
           onPointerMove={(e) => {
             if (e.pointerType === 'touch') {
@@ -3719,6 +3834,18 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
 
           </div>
         </div>
+        {/* **고른 글의 손잡이**(제보) — 손가락일 때만, 본문 판 **밖**에 세운다.
+            안에 두면 손잡이를 잡는 누름이 판의 누름 처리(톡 누르면 선택을 놓는다)로
+            새어, 잡자마자 선택이 풀린다. 자리는 `position: fixed`라 어디에 놓아도 같다. */}
+        {touchUi && textSel && textSel.length > 0 && (
+          <NoteSelHandles
+            sel={textSel}
+            onDrag={dragSelHandle}
+            onDrop={() => {
+              gripping.current = false;
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -9504,6 +9631,18 @@ function BlockMenu({
   const copy = (): boolean => {
     // ⌘C와 **같은 두 벌**을 싣는다(제보 12) — 여기만 평문이면 "키보드는 서식이 오는데
     // 메뉴는 안 온다"가 된다. 클립보드를 막아 둔 환경에서는 조용히 넘어간다.
+    /**
+     * **고른 글이 있으면 그 구간만 싣는다**(제보 — 손가락).
+     *
+     * 예전에는 언제나 이 블록을 통째로 실었다. 마우스에는 ⌘C가 있어 드러나지 않았지만,
+     * 손가락에는 키보드가 없어 이 메뉴가 유일한 복사 길이다 — 그런데 고른 만큼이 아니라
+     * 문단 전체가 실렸다. 키보드와 **같은 함수**(`selectionClipboard`)로 모은다.
+     */
+    const picked = (at.sel ?? []).filter((ln) => ln.to > ln.from);
+    if (picked.length) {
+      writeClipboard(selectionClipboard(picked));
+      return true;
+    }
     if (!block) return false;
     writeClipboard(linesClipboard(text, blockClipLines(block)));
     return true;
@@ -11384,6 +11523,118 @@ function recallScroll(key: string): number {
   } catch {
     return 0;
   }
+}
+
+/** 선택 손잡이의 지름(px) — 손가락이 잡을 만하면서(44px 규칙은 잡는 칸이 지킨다) 글을 덜 가리는 크기. */
+const SEL_GRIP = 18;
+
+/**
+ * **고른 글의 두 손잡이 — 우리가 그린다**(제보: 안드로이드·삼성 인터넷).
+ *
+ * ## 왜 OS 것을 못 쓰나
+ *
+ * 글자를 두 번 누르면 브라우저가 물방울 손잡이 둘을 띄우는데, 그것을 끌어도 **줄을
+ * 넘지 못한다** — 본문의 줄이 블록마다 따로인 편집 박스라(`noteTextSelect`의 머리말)
+ * 브라우저의 선택이 그 박스 안에 갇히기 때문이다. 게다가 그 손잡이는 **브라우저가
+ * 그리는 제 UI**라 끌어도 페이지에는 `touchmove`·`pointermove`가 **하나도 오지
+ * 않는다**(오는 것은 `selectionchange`뿐이고, 그 값은 줄 끝에 닿는 순간 멈춘 채로
+ * 더는 바뀌지 않는다 — "더 가고 싶다"는 뜻을 읽을 신호가 아예 없다).
+ *
+ * ## 그래서 — 손잡이를 갈아 끼운다
+ *
+ * 손가락이 고른 것은 우리 선택으로 받아 오고(`adopt`), 브라우저 선택을 비워 그 물방울이
+ * 사라지게 한 뒤, 같은 자리에 이 손잡이를 세운다. 이것은 **우리 요소**라 끌면 포인터
+ * 이벤트가 그대로 오고, 줄을 넘는 선택은 이미 `buildSelection`이 짓는다.
+ *
+ * 자리는 **글자를 재서** 잡는다(`caretRectAt`) — 화면이 굴러가거나 창이 바뀌면 다시
+ * 잰다(`position: fixed`라 스크롤을 스스로 따라가지 못한다).
+ */
+function NoteSelHandles({
+  sel,
+  onDrag,
+  onDrop,
+}: {
+  sel: LineSel[];
+  /** 끄는 중 — 잡은 끝(`head`·`tail`)과 **캐럿이 가야 할** 화면 좌표. */
+  onDrag: (end: 'head' | 'tail', x: number, y: number) => void;
+  onDrop: () => void;
+}): React.JSX.Element | null {
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    const again = (): void => redraw((n) => n + 1);
+    // 본문은 제 판 안에서 구른다 — `scroll`은 버블하지 않으므로 **캡처**로 받는다.
+    window.addEventListener('scroll', again, true);
+    window.addEventListener('resize', again);
+    return () => {
+      window.removeEventListener('scroll', again, true);
+      window.removeEventListener('resize', again);
+    };
+  }, []);
+  const head = sel[0];
+  const tail = sel[sel.length - 1];
+  if (!head || !tail) return null;
+  // 고른 글자가 없으면(캐럿만 있다) 손잡이도 없다.
+  if (sel.length === 1 && head.to <= head.from) return null;
+  const a = caretRectAt(head.el, head.from);
+  const b = caretRectAt(tail.el, tail.to);
+  if (!a || !b) return null;
+
+  const grip = (end: 'head' | 'tail', at: DOMRect): React.JSX.Element => (
+    <span
+      key={end}
+      data-note-selgrip={end}
+      role="presentation"
+      aria-hidden="true"
+      onPointerDown={(e) => {
+        // 이 누름은 **본문의 것이 아니다** — 판의 누름 처리(스크롤·고르기)로 새면
+        // 손잡이를 잡는 순간 선택이 통째로 풀린다.
+        e.preventDefault();
+        e.stopPropagation();
+        const box = e.currentTarget;
+        // 손가락은 손잡이의 아무 데나 닿는다 — 잡은 **그 차이**를 빼서 끌면 캐럿이
+        // 손잡이를 잡은 그 자리 그대로 따라온다(잡자마자 튀지 않는다).
+        const dx = e.clientX - at.x;
+        const dy = e.clientY - (at.y + at.height / 2);
+        try {
+          box.setPointerCapture(e.pointerId);
+        } catch {
+          /* 포인터 캡처가 없는 환경(jsdom) */
+        }
+        const move = (m: PointerEvent): void => onDrag(end, m.clientX - dx, m.clientY - dy);
+        const up = (): void => {
+          box.removeEventListener('pointermove', move);
+          box.removeEventListener('pointerup', up);
+          box.removeEventListener('pointercancel', up);
+          onDrop();
+        };
+        box.addEventListener('pointermove', move);
+        box.addEventListener('pointerup', up);
+        box.addEventListener('pointercancel', up);
+      }}
+      style={{
+        position: 'fixed',
+        left: at.x - SEL_GRIP / 2,
+        top: at.y,
+        width: SEL_GRIP,
+        height: at.height + SEL_GRIP,
+        // 잡는 동안 화면이 굴러가면 안 된다 — 우리 요소이므로 미리 걸어 둘 수 있다.
+        touchAction: 'none',
+        zIndex: 30,
+        cursor: 'grab',
+      }}
+    >
+      {/* 고른 끝을 짚는 가는 막대 + 잡는 동그라미(안드로이드의 물방울과 같은 뜻). */}
+      <span style={{ position: 'absolute', left: SEL_GRIP / 2 - 1, top: 0, width: 2, height: at.height, borderRadius: 1, background: 'var(--mf-accent)' }} />
+      <span style={{ position: 'absolute', left: 0, top: at.height, width: SEL_GRIP, height: SEL_GRIP, borderRadius: '50%', background: 'var(--mf-accent)', boxShadow: '0 1px 3px rgba(0,0,0,.28)' }} />
+    </span>
+  );
+
+  return (
+    <>
+      {grip('head', a)}
+      {grip('tail', b)}
+    </>
+  );
 }
 
 /**
