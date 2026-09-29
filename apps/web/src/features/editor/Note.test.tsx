@@ -10684,6 +10684,40 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     expect(window.getSelection()?.isCollapsed).toBe(false);
   });
 
+  /**
+   * **승격된 선택도 칠한다**(제보: 실기기에서 골라도 배경이 보이지 않는다).
+   *
+   * 본문 줄의 `::selection`은 투명하다(한 줄·여러 줄의 배경 크기를 맞추려고 `CSS.highlights`
+   * 한 벌로만 그린다). 승격한 뒤 칠을 걷어 두면 OS 손잡이·툴바만 뜨고 고른 글자는 아무
+   * 표시가 없다. 그리고 **줄마다 나눠** 칠한다 — 통째로 칠하면 블록 사이의 목록 번호까지
+   * 물든다.
+   */
+  it('승격된 선택도 우리가 칠한다 — 한 줄이든 여러 줄이든, 줄마다', async () => {
+    class FakeHighlight {
+      readonly ranges: Range[];
+      constructor(...r: Range[]) {
+        this.ranges = r;
+      }
+    }
+    const store = new Map<string, FakeHighlight>();
+    vi.stubGlobal('CSS', { highlights: store });
+    vi.stubGlobal('Highlight', FakeHighlight);
+    try {
+      const { a, b } = await promotedByTouch('sg12');
+      // 두 번 눌러 고른 한 줄 — 받아 오지 않아도 칠은 선다.
+      await waitFor(() => expect(store.get('mf-note-sel')?.ranges.map((x) => x.toString())).toEqual(['첫 ']));
+      // 손잡이로 줄을 넘겼다 — 줄마다 한 구간씩.
+      selectAcross(a, 2, b, 2);
+      await waitFor(() => expect(store.get('mf-note-sel')?.ranges.map((x) => x.toString())).toEqual(['줄입니다', '둘째']));
+      // 놓으면 걷힌다.
+      window.getSelection()?.removeAllRanges();
+      document.dispatchEvent(new Event('selectionchange'));
+      await waitFor(() => expect(store.has('mf-note-sel')).toBe(false));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('선택이 접히면 승격을 걷는다 — 그대로 두면 글쇠가 줄에 들어가지 않는다', async () => {
     const { col } = await promotedByTouch('sg1b');
     window.getSelection()?.removeAllRanges();
