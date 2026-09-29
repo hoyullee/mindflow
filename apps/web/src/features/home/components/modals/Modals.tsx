@@ -29,6 +29,9 @@ interface Props {
 export function Modals({ state, controller }: Props) {
   const deleteIsDrive = state.confirmDelete ? sourceOf(state.confirmDelete, DRIVE_FILES) === 'drive' : false;
   const deleteSpaceName = state.spaces.find((s) => s.id === state.confirmDeleteSpace)?.name || '';
+  // 여러 개 삭제 — 맵과 폴더가 섞일 수 있어(요청) 확인창이 둘을 갈라 센다.
+  const deleteManyFolders = (state.confirmDeleteMulti ?? []).filter((c) => !!c.folderId).length;
+  const deleteManyMaps = (state.confirmDeleteMulti ?? []).length - deleteManyFolders;
   // 폴더 삭제 확인창 — 폴더는 이름표라 지워도 안의 것은 남는다. 무엇이 몇 개
   // 어디로 올라가는지 문장으로 밝힌다(내용이 있어도 삭제할 수 있게 되면서 필요해진
   // 안내 — 예전에는 빈 폴더만 지울 수 있었다).
@@ -61,14 +64,20 @@ export function Modals({ state, controller }: Props) {
         onConfirm={controller.confirmDeleteYes}
       />
 
-      {/* 여러 장 삭제(요청) — 한 장 확인창과 같은 꼴이되 몇 개인지 말한다. */}
+      {/* 여러 개 삭제(요청) — 한 장 확인창과 같은 꼴이되 몇 개인지 말한다.
+          **폴더가 섞일 수 있다**(폴더 다중 선택): 폴더는 휴지통이 없고 지워도 안의
+          것이 한 단계 위로 올라오므로, 그때는 확인창이 두 가지를 갈라 말한다. */}
       <ConfirmModal
         visible={!!state.confirmDeleteMulti}
         zIndex={120}
         iconBg="var(--mf-danger-soft)"
         icon={TRASH_ICON}
-        heading="선택한 맵을 삭제할까요?"
-        body={`맵 ${state.confirmDeleteMulti?.length ?? 0}개를 휴지통으로 이동합니다. 휴지통에서 다시 복원할 수 있어요.`}
+        heading={deleteManyFolders > 0 ? '선택한 항목을 삭제할까요?' : '선택한 맵을 삭제할까요?'}
+        body={
+          deleteManyFolders > 0
+            ? `${deleteManyMaps > 0 ? `맵 ${deleteManyMaps}개는 휴지통으로 이동하고, ` : ''}폴더 ${deleteManyFolders}개는 목록에서 사라집니다. 폴더 안의 맵·하위 폴더는 지워지지 않고 한 단계 위로 올라와요.`
+            : `맵 ${deleteManyMaps}개를 휴지통으로 이동합니다. 휴지통에서 다시 복원할 수 있어요.`
+        }
         cancelLabel="취소"
         confirmLabel="삭제"
         confirmColor="var(--mf-danger)"

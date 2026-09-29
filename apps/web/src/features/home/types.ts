@@ -340,7 +340,10 @@ export interface HomeState {
    */
   selectMode: boolean;
   /** 여러 장을 한 번에 지울 때의 확인 대상 — 한 장이면 기존 `confirmDelete` 경로. */
-  confirmDeleteMulti: { key: string; title: string; docId?: string }[] | null;
+  /** 여러 개를 한 번에 삭제(요청) — **폴더도 섞일 수 있다**(폴더 다중 선택).
+   *  `folderId`가 있으면 그 항목은 폴더이고, 지워도 안의 것은 한 단계 위로 올라온다
+   *  (단일 폴더 삭제와 같은 규칙 — `confirmDeleteFolderYes`). */
+  confirmDeleteMulti: { key: string; title: string; docId?: string; folderId?: string }[] | null;
   /** 문서별 **마지막으로 저장한 사람**(docId → 이름 + 얼굴 주소). 마지막 저장자가
    * 나이거나 알 수 없으면 키가 없다 — 그때 카드는 이름을 붙이지 않고, 공책 카드의
    * 얼굴 자리에는 **내** 프로필 이미지가 온다(0015 → 0041). */

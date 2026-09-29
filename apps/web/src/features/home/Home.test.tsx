@@ -753,7 +753,11 @@ describe('Home', () => {
       { id: 'm1', title: '맵하나', updatedAt: '', version: 1, isFavorite: false, deletedAt: null },
       { id: 'm2', title: '맵둘', updatedAt: '', version: 1, isFavorite: false, deletedAt: null },
     ]);
-    const cardKeys = () => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
+    // 폴더 카드도 같은 표식을 단다(요청: 폴더도 다중 선택) — 이 갈래는 맵을 센다.
+    const cardKeys = () =>
+      Array.from(container.querySelectorAll('[data-card-key]'))
+        .map((e) => e.getAttribute('data-card-key')!)
+        .filter((k) => !k.startsWith('folder:'));
     const chosen = () =>
       Array.from(container.querySelectorAll('[data-card-key]')).filter((e) => (e as HTMLElement).style.outline.includes('var(--mf-accent)')).length;
 
@@ -5001,12 +5005,16 @@ describe('홈 카드 다중 선택', () => {
       }),
     );
   };
-  const keys = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
-  const selectedKeys = (container: HTMLElement) =>
+  /** 화면의 카드 키 전부 — **폴더도 포함**한다(요청: 폴더도 다중 선택 대상). */
+  const allKeys = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
+  /** 맵 카드만 — 아래 갈래들은 맵 사이의 규칙을 본다(폴더 갈래는 따로 있다). */
+  const keys = (container: HTMLElement) => allKeys(container).filter((k) => !k.startsWith('folder:'));
+  const allSelectedKeys = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('[data-card-key]'))
       // 선택 표시는 outline 링(디자인 개정판) — 테두리는 늘 1px 그대로다.
       .filter((e) => (e as HTMLElement).style.outline.includes('var(--mf-accent)'))
       .map((e) => e.getAttribute('data-card-key')!);
+  const selectedKeys = (container: HTMLElement) => allSelectedKeys(container).filter((k) => !k.startsWith('folder:'));
 
   it('Ctrl+클릭으로 더하고 빼며, Shift+클릭은 앵커부터 범위로 고른다', async () => {
     seedThree();
@@ -5234,6 +5242,129 @@ describe('홈 카드 다중 선택', () => {
     fireEvent.mouseDown(container.querySelector('main') as HTMLElement);
     await waitFor(() => expect(selectedKeys(container)).toHaveLength(0));
   });
+
+  // ── 폴더도 다중 선택(요청) ────────────────────────────────────────────────
+  // 예전에는 폴더를 고르면 **맵 선택이 통째로 비워졌다**(`selectCard`가 폴더 키에서
+  // 곧바로 돌아섰다) — 그래서 Shift·Ctrl·마퀴 어느 쪽으로도 폴더가 잡히지 않았다.
+  it('폴더도 Ctrl+클릭·Shift+클릭으로 맵과 함께 골라진다(요청)', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const folderKey = allKeys(container).find((k) => k.startsWith('folder:'))!;
+    expect(folderKey).toBe('folder:fx');
+    const [kA, kB] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    // 폴더 하나 → 맵 하나를 Ctrl로 더한다(예전에는 여기서 폴더가 빠졌다).
+    fireEvent.click(card(folderKey));
+    expect(allSelectedKeys(container)).toEqual([folderKey]);
+    fireEvent.click(card(kA!), { ctrlKey: true });
+    expect(allSelectedKeys(container).sort()).toEqual([folderKey, kA].sort());
+
+    // Shift 범위 — 화면에 그려진 순서(폴더가 먼저)대로 폴더..B가 한 묶음이 된다.
+    fireEvent.click(card(folderKey));
+    fireEvent.click(card(kB!), { shiftKey: true });
+    expect(allSelectedKeys(container).sort()).toEqual([folderKey, kA, kB].sort());
+
+    // 수정 키 클릭은 여는 동작이 아니다 — 폴더 안으로 들어가지 않았다.
+    expect(keys(container)).toHaveLength(3);
+  });
+
+  it('마퀴(드래그 사각형)에도 폴더가 잡힌다', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const folderKey = allKeys(container).find((k) => k.startsWith('folder:'))!;
+    const [kA] = keys(container);
+
+    const put = (k: string, left: number, top: number) => {
+      const el = container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+      el.getBoundingClientRect = () =>
+        ({ left, top, right: left + 100, bottom: top + 60, width: 100, height: 60, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    };
+    put(folderKey, 0, 0);
+    put(kA!, 120, 0);
+    keys(container).slice(1).forEach((k) => put(k, 400, 400));
+
+    const main = container.querySelector('main') as HTMLElement;
+    firePointer(main, 'pointerdown', { clientX: 5, clientY: 200 });
+    firePointer(window, 'pointermove', { clientX: 200, clientY: 210 });
+    firePointer(window, 'pointermove', { clientX: 200, clientY: -10 });
+    expect(allSelectedKeys(container).sort()).toEqual([folderKey, kA].sort());
+    firePointer(window, 'pointerup', {});
+  });
+
+  it('폴더가 섞인 일괄 메뉴 — 이동 계열은 빠지고 삭제만 남는다', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const folderKey = allKeys(container).find((k) => k.startsWith('folder:'))!;
+    const [kA] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(kA!));
+    fireEvent.click(card(folderKey), { ctrlKey: true });
+    fireEvent.contextMenu(card(folderKey), { clientX: 200, clientY: 200 });
+
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByText('삭제하기 (2개)')).toBeTruthy();
+    // 폴더를 폴더·스페이스로 옮기는 길이 아직 없다 — 내주면 맵만 조용히 움직인다.
+    expect(within(menu).queryByText('폴더로 이동')).toBeNull();
+    expect(within(menu).queryByText('스페이스로 이동')).toBeNull();
+    // 단일 폴더 메뉴의 항목도 뜨지 않는다(지금은 일괄 메뉴다).
+    expect(within(menu).queryByText('이름 변경')).toBeNull();
+  });
+
+  it('폴더가 섞인 일괄 삭제 — 맵은 휴지통으로, 폴더 안의 것은 한 단계 위로', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          {
+            id: 's1',
+            name: '일반 스페이스',
+            color: '#f0663f',
+            maps: [{ title: 'A맵', docId: 'da' }, { title: 'B맵', docId: 'db' }],
+            folders: [{ id: 'fx', name: '보관함' }],
+          },
+        ],
+        activeSpace: 's1',
+        // B맵은 보관함 안에 있다 — 폴더를 지우면 최상위로 올라와야 한다.
+        mapFolders: { db: 'fx' },
+        recent: [],
+      }),
+    );
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(1)); // A맵만 최상위
+    const folderKey = allKeys(container).find((k) => k.startsWith('folder:'))!;
+    const [kA] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(kA!));
+    fireEvent.click(card(folderKey), { ctrlKey: true });
+    fireEvent.contextMenu(card(folderKey), { clientX: 200, clientY: 200 });
+    const menu = await screen.findByRole('menu');
+    fireEvent.click(within(menu).getByText('삭제하기 (2개)'));
+
+    // 확인창이 둘을 갈라 말한다 — 폴더는 휴지통이 아니다.
+    const body = await screen.findByText(/폴더 1개는 목록에서 사라집니다/);
+    expect(body.textContent).toContain('맵 1개는 휴지통으로 이동하고');
+    fireEvent.click(screen.getByRole('button', { name: '삭제' }));
+
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as {
+        spaces?: { folders?: { id: string }[] }[];
+        mapFolders?: Record<string, string>;
+      };
+      // 폴더는 사라지고, 담겨 있던 B맵은 **지워지지 않고** 최상위로 올라왔다.
+      expect(ws.spaces?.[0]?.folders ?? []).toHaveLength(0);
+      expect(ws.mapFolders?.db).toBeUndefined();
+    });
+    // 그리드에 남은 것은 B맵 하나 — A맵은 휴지통으로 갔다(휴지통 목록에는 남는다).
+    await waitFor(() => expect(keys(container)).toHaveLength(1));
+    expect(container.querySelector('[data-card-key] [data-title="A맵"], [data-card-key][data-title="A맵"]')).toBeNull();
+    expect(container.querySelector('[data-card-key][data-title="B맵"]')).toBeTruthy();
+  });
 });
 
 /**
@@ -5267,7 +5398,11 @@ describe('모바일 홈 다중 선택', () => {
       }),
     );
   };
-  const keys = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
+  /** 맵 카드만 — 폴더 카드도 같은 표식을 달지만(요청) 이 갈래들은 맵을 본다. */
+  const keys = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-card-key]'))
+      .map((e) => e.getAttribute('data-card-key')!)
+      .filter((k) => !k.startsWith('folder:'));
   const checked = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-select-check] svg')).length;
 
   it('길게 누르면(타이머) 선택 모드 — 툴바가 선택 바로 바뀌고 탭이 토글이 된다', async () => {
@@ -5342,7 +5477,7 @@ describe('모바일 홈 다중 선택', () => {
     }
   });
 
-  it('선택 모드에서는 폴더 카드가 반응하지 않는다 — 선택이 비워진 채 모드만 남지 않게', async () => {
+  it('선택 모드 안에서 폴더 탭 = 체크 토글(요청) — 폴더 안으로 들어가지 않는다', async () => {
     const restore = mockMatchMedia(true);
     try {
       seedTwo();
@@ -5354,13 +5489,40 @@ describe('모바일 홈 다중 선택', () => {
       fireEvent.contextMenu(card, { clientX: 40, clientY: 40 });
       await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
 
-      // 폴더는 다중 선택 대상이 아니다 — 여기서 선택이 바뀌면 "0개 선택" 바가 뜬다.
+      // 예전에는 폴더가 다중 선택 대상이 아니라 모드 안에서 죽어 있었다(흐리게).
+      // 이제는 맵과 같이 **탭이 곧 체크 토글**이다.
       const folder = screen.getByText('보관함').closest('.map-card') as HTMLElement;
+      fireEvent.click(folder);
+      await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
+      expect(checked(container)).toBe(2);
+      // 두 번 탭해도 폴더 안으로는 들어가지 않는다 — 그 시간대의 탭은 토글이다.
       fireEvent.click(folder);
       fireEvent.doubleClick(folder);
       await new Promise((r) => setTimeout(r, 60));
+      await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
+      expect(keys(container)).toHaveLength(2);
+    } finally {
+      restore();
+    }
+  });
+
+  it('폴더를 길게 눌러도 선택 모드에 들어간다 — 맵과 같은 기계(요청)', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      seedTwo();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(keys(container)).toHaveLength(2));
+      const folder = screen.getByText('보관함').closest('.map-card') as HTMLElement;
+
+      touchDown(folder);
+      await new Promise((r) => setTimeout(r, 560)); // 길게 누르기(500ms)
+
+      await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
+      expect(checked(container)).toBe(1);
+      // 손을 떼며 따라오는 클릭 한 번은 삼킨다 — 방금 켠 체크가 곧바로 풀리지 않게.
+      fireEvent.click(folder);
+      await new Promise((r) => setTimeout(r, 20));
       expect(screen.getByText('1개 선택')).toBeTruthy();
-      expect(keys(container)).toHaveLength(2); // 폴더 안으로 들어가지도 않았다
     } finally {
       restore();
     }
@@ -5379,10 +5541,22 @@ describe('모바일 홈 다중 선택', () => {
       fireEvent.contextMenu(card, { clientX: 40, clientY: 40 });
       await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
 
+      // 전체 선택은 **폴더까지** 고른다(요청) — 맵 둘 + 폴더 하나.
       fireEvent.click(screen.getByText('전체 선택'));
+      await waitFor(() => expect(screen.getByText('3개 선택')).toBeTruthy());
+      // 폴더가 섞이면 이동 계열은 내주지 않는다(폴더를 폴더로 옮기는 길이 없다).
+      fireEvent.click(screen.getByRole('button', { name: '선택한 항목 메뉴' }));
+      const mixed = await screen.findByRole('menu');
+      expect(within(mixed).getByText('삭제하기 (3개)')).toBeTruthy();
+      expect(within(mixed).queryByText('폴더로 이동')).toBeNull();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+
+      // 맵 둘만 고르면 예전 그대로 — 폴더로 옮긴다.
+      fireEvent.click(screen.getByText('보관함').closest('.map-card') as HTMLElement);
       await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
 
-      fireEvent.click(screen.getByRole('button', { name: '선택한 맵 메뉴' }));
+      fireEvent.click(screen.getByRole('button', { name: '선택한 항목 메뉴' }));
       const menu = await screen.findByRole('menu');
       expect(within(menu).getByText('삭제하기 (2개)')).toBeTruthy();
       fireEvent.click(within(menu).getByText('폴더로 이동'));

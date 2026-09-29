@@ -1703,11 +1703,21 @@ export function useHomeController() {
       return { ...prev, spaces, mapFolders, deleted, favs, trash, confirmDelete: null, confirmDeleteDocId: null };
   };
 
-  /** 여러 장을 한 번에(요청) — 확인창은 "N개를 휴지통으로". */
-  const askDeleteMany = (cards: { key: string; title: string; docId?: string }[]) => {
+  /**
+   * 여러 개를 한 번에(요청) — 확인창은 "N개를 휴지통으로".
+   *
+   * **폴더가 섞일 수 있다**(요청: 폴더도 다중 선택). 폴더는 휴지통이 없고 지워도 안의
+   * 것이 한 단계 위로 올라오므로, 하나뿐일 때는 그 사실을 말하는 **폴더 전용 확인창**
+   * 으로 보낸다(단일 폴더 삭제와 같은 길). 섞여 있으면 여러 개 확인창이 둘 다 말한다.
+   */
+  const askDeleteMany = (cards: { key: string; title: string; docId?: string; folderId?: string }[]) => {
     if (!cards.length) return;
     if (cards.length === 1) {
       const c = cards[0]!;
+      if (c.folderId) {
+        askDeleteFolder(c.folderId);
+        return;
+      }
       patch({ confirmDelete: c.title, confirmDeleteDocId: c.docId ?? null, confirmDeleteMulti: null, ctxMenu: null });
       return;
     }
@@ -1717,7 +1727,9 @@ export function useHomeController() {
     // 여러 장 — 한 장 삭제를 그대로 접는다(휴지통 기록·서버 삭제까지 같은 규칙).
     const many = state.confirmDeleteMulti;
     if (many) {
-      many.forEach((c) => setState((prev) => removeCardFrom(prev, c.title, c.docId ?? null)));
+      // 폴더는 휴지통이 아니라 **이름표를 떼는** 일이다 — 안의 맵·하위 폴더는 한 단계
+      // 위로 올라온다(단일 삭제와 같은 단계를 그대로 접는다).
+      many.forEach((c) => setState((prev) => (c.folderId ? removeFolderFrom(prev, c.folderId) : removeCardFrom(prev, c.title, c.docId ?? null))));
       patch({ confirmDeleteMulti: null, ...clearSelection });
       many.forEach((c) => {
         if (!c.docId) return;
@@ -2611,47 +2623,49 @@ export function useHomeController() {
   // **이름표**라, 이름표를 떼는 일이 내용을 지울 이유가 되지 않는다.
   const askDeleteFolder = (id: string) => patch({ confirmDeleteFolder: id, ctxMenu: null });
   const cancelDeleteFolder = () => patch({ confirmDeleteFolder: null });
+  /**
+   * 폴더 하나를 상태에서 걷는 **순수 단계** — 단일 삭제와 여러 개 삭제(요청: 폴더도
+   * 다중 선택)가 **같은 규칙**을 쓰도록 여기 한 곳에 둔다. 여러 개를 지울 때 이 단계를
+   * 차례로 접으면 되고, 그래서 "폴더를 하나씩 지울 때와 한꺼번에 지울 때가 다르다"가
+   * 생길 수 없다(맵 쪽의 `removeCardFrom`과 같은 결).
+   */
+  const removeFolderFrom = (prev: HomeState, id: string): HomeState => {
+    if (isDriveFolderId(id)) {
+      const driveMapFolders = { ...prev.driveMapFolders };
+      for (const t in driveMapFolders) if (driveMapFolders[t] === id) delete driveMapFolders[t];
+      return {
+        ...prev,
+        driveFolders: prev.driveFolders.filter((f) => f.id !== id),
+        driveMapFolders,
+        driveFolder: prev.driveFolder === id ? null : prev.driveFolder,
+      };
+    }
+    const sp = prev.spaces.find((s) => s.id === prev.activeSpace);
+    const fs = sp && Array.isArray(sp.folders) ? sp.folders : [];
+    // 지운 폴더의 자리 = 그 부모(없으면 최상위). 안에 있던 것들이 여기로 올라온다.
+    const up = fs.find((f) => f.id === id)?.parent ?? null;
+    const mapFolders = { ...prev.mapFolders };
+    for (const t in mapFolders) {
+      if (mapFolders[t] !== id) continue;
+      if (up) mapFolders[t] = up;
+      else delete mapFolders[t]; // 최상위로
+    }
+    return {
+      ...prev,
+      spaces: mutateFolders(prev.spaces, (list) =>
+        list
+          .filter((f) => f.id !== id)
+          // 직속 하위 폴더도 한 단계 올라온다 — 고아가 되지 않는다.
+          .map((f) => ((f.parent ?? null) === id ? { ...f, parent: up ?? undefined } : f)),
+      ),
+      mapFolders,
+      curFolder: prev.curFolder === id ? up : prev.curFolder,
+    };
+  };
   const confirmDeleteFolderYes = () => {
     const id = state.confirmDeleteFolder;
     if (!id) return;
-    if (isDriveFolderId(id)) {
-      setState((prev) => {
-        const driveMapFolders = { ...prev.driveMapFolders };
-        for (const t in driveMapFolders) if (driveMapFolders[t] === id) delete driveMapFolders[t];
-        return {
-          ...prev,
-          driveFolders: prev.driveFolders.filter((f) => f.id !== id),
-          driveMapFolders,
-          confirmDeleteFolder: null,
-          driveFolder: prev.driveFolder === id ? null : prev.driveFolder,
-        };
-      });
-      return;
-    }
-    setState((prev) => {
-      const sp = prev.spaces.find((s) => s.id === prev.activeSpace);
-      const fs = sp && Array.isArray(sp.folders) ? sp.folders : [];
-      // 지운 폴더의 자리 = 그 부모(없으면 최상위). 안에 있던 것들이 여기로 올라온다.
-      const up = fs.find((f) => f.id === id)?.parent ?? null;
-      const mapFolders = { ...prev.mapFolders };
-      for (const t in mapFolders) {
-        if (mapFolders[t] !== id) continue;
-        if (up) mapFolders[t] = up;
-        else delete mapFolders[t]; // 최상위로
-      }
-      return {
-        ...prev,
-        spaces: mutateFolders(prev.spaces, (list) =>
-          list
-            .filter((f) => f.id !== id)
-            // 직속 하위 폴더도 한 단계 올라온다 — 고아가 되지 않는다.
-            .map((f) => ((f.parent ?? null) === id ? { ...f, parent: up ?? undefined } : f)),
-        ),
-        mapFolders,
-        confirmDeleteFolder: null,
-        curFolder: prev.curFolder === id ? up : prev.curFolder,
-      };
-    });
+    setState((prev) => ({ ...removeFolderFrom(prev, id), confirmDeleteFolder: null }));
   };
   const moveMapToFolder = (key: string, folderId: string | null) => {
     if (state.activeSpace === 'drive') {
@@ -2723,7 +2737,11 @@ export function useHomeController() {
     });
   };
   /** 여러 장을 한 폴더로(요청) — 단일 이동을 접어 한 번의 상태 변경으로 만든다. */
-  const moveMapsToFolder = (keys: string[], folderId: string | null) => {
+  const moveMapsToFolder = (rawKeys: string[], folderId: string | null) => {
+    // 폴더 키는 여기 오지 않는다 — 선택에 폴더가 섞여 있어도(요청) 옮기는 것은 맵뿐이다
+    // (폴더를 폴더 안으로 끌어 넣는 길은 아직 없다). 메뉴가 이미 가리지만, 드래그는
+    // `dragKeys`로 선택 전체를 싣고 오므로 **받는 쪽에서 한 번 더** 거른다.
+    const keys = rawKeys.filter((k) => !k.startsWith(FOLDER_CARD_PREFIX));
     if (!keys.length) return;
     if (state.activeSpace === 'drive') {
       setState((prev) => {
@@ -2747,7 +2765,9 @@ export function useHomeController() {
   };
 
   /** 여러 장을 한 스페이스로 — 토스트는 "N개를"로 한 번만. */
-  const moveMapsToSpace = (keys: string[], spaceId: string) => {
+  const moveMapsToSpace = (rawKeys: string[], spaceId: string) => {
+    // `moveMapsToFolder`와 같은 이유 — 스페이스로 옮기는 것도 맵뿐이다.
+    const keys = rawKeys.filter((k) => !k.startsWith(FOLDER_CARD_PREFIX));
     if (!keys.length) return;
     setState((prev) => {
       const target = prev.spaces.find((s) => s.id === spaceId);
@@ -2812,16 +2832,17 @@ export function useHomeController() {
       patch({ selectedCard: null, selectAnchor: null, selectedCards: [] });
       return;
     }
-    // 폴더 카드는 다중 선택 대상이 아니다 — 고르면 맵 선택은 비운다.
-    if (key.startsWith(FOLDER_CARD_PREFIX)) {
-      patch({ selectedCard: key, selectAnchor: null, selectedCards: [] });
-      return;
-    }
+    // **폴더도 맵과 같은 선택 대상이다**(요청: 폴더도 Shift+클릭·드래그로 다중 선택).
+    // 예전에는 여기서 곧바로 돌아서며 맵 선택을 비웠다 — 그래서 폴더는 언제나 혼자
+    // 골라졌고 마퀴에도 잡히지 않았다. 키에 `folder:` 접두가 붙어 있으므로 맵 키와
+    // 섞이지 않고, 폴더에 뜻이 없는 일괄 동작(폴더 이동·스페이스 이동)은 메뉴가
+    // 가린다(`HomeContextMenu`).
+    //
     // Shift 범위 — 기준은 **앵커**다(`selectedCard`가 아니라). 이어서 Shift+클릭할
     // 때마다 끝점이 앵커가 되면 C → B → A에서 마지막 범위가 B..A가 되어 C가
     // 빠진다(제보). 앵커는 다음 평범한/토글 클릭까지 제자리에 있는다.
     const anchor = state.selectAnchor ?? state.selectedCard;
-    if (opts?.range && anchor && !anchor.startsWith(FOLDER_CARD_PREFIX)) {
+    if (opts?.range && anchor) {
       const order = visibleMapKeys();
       const a = order.indexOf(anchor);
       const b = order.indexOf(key);

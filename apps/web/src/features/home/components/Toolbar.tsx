@@ -1,6 +1,7 @@
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
+import { FOLDER_CARD_PREFIX } from '../viewModel';
 import { UNREAD_BADGE_BG } from '../theme';
 import { pillStyle, primaryPillStyle, roundIconStyle } from '../chrome';
 import { useNavDot } from './navDot';
@@ -122,12 +123,17 @@ function SelectionBar({ state, controller }: { state: HomeState; controller: Hom
           type="button"
           className="btn"
           data-sel-menu
-          aria-label="선택한 맵 메뉴"
+          aria-label="선택한 항목 메뉴"
           title="메뉴"
           onClick={(e) => {
             if (!anchor) return;
             const r = e.currentTarget.getBoundingClientRect();
-            controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: anchor });
+            // 앵커가 폴더일 수 있다(요청: 폴더도 다중 선택) — 대상의 종류를 키의
+            // 접두로 가른다. 여러 개를 골랐으면 어느 쪽이든 같은 일괄 메뉴가 뜬다.
+            const target = anchor.startsWith(FOLDER_CARD_PREFIX)
+              ? ({ kind: 'folder', id: anchor.slice(FOLDER_CARD_PREFIX.length) } as const)
+              : ({ kind: 'map', key: anchor } as const);
+            controller.openCtxMenu(r.right - 184, r.bottom + 6, target);
           }}
           style={btn}
         >
