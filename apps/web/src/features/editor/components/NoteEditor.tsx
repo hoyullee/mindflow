@@ -1961,7 +1961,10 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     const head = built[0];
     if (!head) return;
     try {
-      head.el.focus({ preventScroll: true });
+      // **이미 초점이 있으면 다시 주지 않는다** — 손잡이를 끄는 동안 이 함수가 프레임마다
+      // 불리는데, 그때마다 `focus()`를 부르면 조합이 끊기고 소프트 키보드가 들썩인다
+      // (`putCaretNow`가 쓰는 것과 같은 가드).
+      if (document.activeElement !== head.el) head.el.focus({ preventScroll: true });
       const len = lineLength(head.el);
       const spot = pointAt(head.el, Math.max(0, Math.min(head.from, len)));
       const range = document.createRange();
@@ -2113,6 +2116,17 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   /** 지금 **우리 손잡이를 잡고 있나** — 톡 누른 것과 가르는 값(아래 `onPointerUp`). */
   const gripping = useRef(false);
   /**
+   * **손잡이를 잡은 순간 못박은 앵커** — 잡지 않은 반대쪽 끝(줄 키 + 글자 자리).
+   *
+   * 왜 잡을 때 한 번만 정하나(제보: 끄는 동안 범위 밖 글자에 배경이 생겼다 사라진다):
+   * 예전에는 움직일 때마다 **지금 칠해진 선택**에서 반대쪽 끝을 다시 읽었다. 그런데
+   * 끌던 끝이 앵커를 **지나가는 순간** 문서 순서가 뒤집혀(`buildSelection`은 늘 순서대로
+   * 돌려준다) 그 「반대쪽 끝」이 방금 손가락이 있던 자리로 바뀐다 — 앵커가 손가락을
+   * 따라다니며 매 프레임 다른 구간이 칠해졌다(실측: `줄입니다 여기` → ` 여기` → `를`
+   * → ` 고른다`). 한 번 정하면 넘어가도 그대로다.
+   */
+  const grabbed = useRef<{ key: string; at: number } | null>(null);
+  /**
    * **브라우저에게 넘기려고 우리가 세운 선택**(`줄키:처음:끝`) — 그 한 번은 받아 오지 않는다.
    *
    * 프로브로 잡았다. 칠해 둔 선택 위에 글자를 치면 `replaceWithTyping`이 **지울 자리를
@@ -2124,20 +2138,35 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    */
   const handOff = useRef<string | null>(null);
   /**
+   * **손잡이를 잡았다** — 잡지 않은 **반대쪽 끝**을 앵커로 못박는다(끄는 내내 그대로).
+   *
+   * 여기서 한 번만 정하는 이유는 `grabbed`의 머리말에 있다(제보: 끄는 동안 범위 밖
+   * 글자가 깜빡인다).
+   */
+  const grabSelHandle = useCallback((end: 'head' | 'tail'): void => {
+    const cur = textSelRef.current;
+    if (!cur || !cur.length) return;
+    const keep = end === 'head' ? cur[cur.length - 1]! : cur[0]!;
+    grabbed.current = { key: keep.key, at: end === 'head' ? keep.to : keep.from };
+  }, []);
+
+  /**
    * **선택 손잡이를 끈다**(제보 — 안드로이드·삼성 인터넷의 물방울 손잡이가 줄을 못 넘는다).
    *
-   * 잡지 않은 **반대쪽 끝**이 앵커다: 머리를 끌면 꼬리가, 꼬리를 끌면 머리가 제자리에
-   * 남는다. 넘어가서 뒤집히면 `buildSelection`이 문서 순서로 돌려주므로 그대로 이어진다.
+   * 앵커는 잡을 때 못박아 둔 반대쪽 끝이다(`grabbed`): 머리를 끌면 꼬리가, 꼬리를 끌면
+   * 머리가 제자리에 남고, 넘어가서 뒤집혀도 `buildSelection`이 문서 순서로 돌려준다.
    */
-  const dragSelHandle = useCallback((end: 'head' | 'tail', x: number, y: number): void => {
+  const dragSelHandle = useCallback((x: number, y: number): void => {
     const col = colRef.current;
-    const cur = textSelRef.current;
-    if (!col || !cur || !cur.length) return;
+    const hold = grabbed.current;
+    if (!col || !hold) return;
     gripping.current = true;
-    const keep = end === 'head' ? cur[cur.length - 1]! : cur[0]!;
-    const at = end === 'head' ? keep.to : keep.from;
-    const spot = pointAt(keep.el, Math.max(0, Math.min(at, lineLength(keep.el))));
-    const anchor = { el: keep.el, node: spot.node, offset: spot.offset };
+    // 앵커는 **줄 키와 글자 자리**로 들고 있다가 여기서 되살린다 — 비제어 박스는 값이
+    // 바뀌면 통째로 다시 그려져 붙잡아 둔 노드가 죽는다([F32](probe-pitfalls.md#f32)).
+    const keep = document.querySelector<HTMLElement>(`[data-note-line="${hold.key}"]`);
+    if (!keep || !col.contains(keep)) return;
+    const spot = pointAt(keep, Math.max(0, Math.min(hold.at, lineLength(keep))));
+    const anchor = { el: keep, node: spot.node, offset: spot.offset };
     let under: HTMLElement | null = null;
     try {
       under = document.elementFromPoint(x, y) as HTMLElement | null;
@@ -3840,9 +3869,11 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
         {touchUi && textSel && textSel.length > 0 && (
           <NoteSelHandles
             sel={textSel}
+            onGrab={grabSelHandle}
             onDrag={dragSelHandle}
             onDrop={() => {
               gripping.current = false;
+              grabbed.current = null;
             }}
           />
         )}
@@ -11551,12 +11582,15 @@ const SEL_GRIP = 18;
  */
 function NoteSelHandles({
   sel,
+  onGrab,
   onDrag,
   onDrop,
 }: {
   sel: LineSel[];
-  /** 끄는 중 — 잡은 끝(`head`·`tail`)과 **캐럿이 가야 할** 화면 좌표. */
-  onDrag: (end: 'head' | 'tail', x: number, y: number) => void;
+  /** 잡았다 — 반대쪽 끝을 앵커로 못박을 자리(끄는 내내 그대로 쓴다). */
+  onGrab: (end: 'head' | 'tail') => void;
+  /** 끄는 중 — **캐럿이 가야 할** 화면 좌표. */
+  onDrag: (x: number, y: number) => void;
   onDrop: () => void;
 }): React.JSX.Element | null {
   const [, redraw] = useState(0);
@@ -11595,12 +11629,13 @@ function NoteSelHandles({
         // 손잡이를 잡은 그 자리 그대로 따라온다(잡자마자 튀지 않는다).
         const dx = e.clientX - at.x;
         const dy = e.clientY - (at.y + at.height / 2);
+        onGrab(end);
         try {
           box.setPointerCapture(e.pointerId);
         } catch {
           /* 포인터 캡처가 없는 환경(jsdom) */
         }
-        const move = (m: PointerEvent): void => onDrag(end, m.clientX - dx, m.clientY - dy);
+        const move = (m: PointerEvent): void => onDrag(m.clientX - dx, m.clientY - dy);
         const up = (): void => {
           box.removeEventListener('pointermove', move);
           box.removeEventListener('pointerup', up);
