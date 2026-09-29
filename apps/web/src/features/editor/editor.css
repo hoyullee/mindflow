@@ -451,6 +451,14 @@ input[type='search']::-webkit-search-results-decoration {
    앞인데도 안내문 끝을 가리키는 것처럼 보인다. */
 .mf-note-line {
   position: relative;
+  /* **문맥 합자(`clig`)를 끈다**(제보: 줄 첫 글자로 `:`를 치고 한글을 이어 치면 `:`가 위로 튄다).
+     Pretendard의 `clig`는 **한글 곁의 쌍점을 한글 높이의 가운데로** 끌어올린다 — `:` 혼자일
+     때는 제자리였다가 다음 글자가 한글이 되는 순간 약 5px 올라가, 치는 동안 글자가 움직였다
+     (헤드리스 크로뮴 실측: 40px에서 점의 세로 범위 30–50 → 26–46, `clig` 0이면 30–50 그대로).
+     `calt`·`case`·`locl`·`kern`을 꺼도 그대로였고 `clig`만이 그 자리다. 숫자·대문자 사이의
+     쌍점 정렬(`12:30`·`A:B`)은 다른 기능이 맡아 그대로다. 대가 하나: `->`가 화살표로 합쳐
+     보이던 합자가 풀린다 — 글자는 원래도 `->`였고 **보이는 모양**만 친 그대로가 된다. */
+  font-feature-settings: 'clig' 0;
 }
 .mf-note-line:empty::before,
 .mf-note-line:has(> br:only-child)::before {

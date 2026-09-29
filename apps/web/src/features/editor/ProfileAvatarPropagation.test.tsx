@@ -22,6 +22,8 @@ import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, ShareParticipant } from '../../adapters/ports';
 import { mockMatchMedia } from '../../test/matchMedia';
+import { ShareModal } from '../../components/ShareModal';
+import { resetMyAvatarForTests } from '../../adapters/myAvatar';
 
 const ME = 'me@example.com';
 const PHOTO = 'https://cdn.example.com/me.webp';
@@ -108,6 +110,7 @@ describe('프로필 이미지 반영(에디터)', () => {
     localStorage.clear();
     mockMatchMedia(false);
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u-me', email: ME, avatarUrl: PHOTO } }));
+    resetMyAvatarForTests();
   });
   afterEach(cleanup);
 
@@ -209,5 +212,45 @@ describe('프로필 이미지 반영(에디터)', () => {
     fireEvent.click(container.querySelector('[data-kanban-tab="timeline"]') as HTMLElement);
     const timeline = await waitFor(() => container.querySelector('[data-kanban-timeline]') as HTMLElement);
     await waitFor(() => expect(timeline.querySelector(`img[src="${PHOTO}"]`)).toBeTruthy());
+  });
+
+  /**
+   * **내 사진은 한 원천에서**(제보: 홈에서 바꾼 사진이 에디터 좌상단·공유 단추·공유 팝업에는 안
+   * 보이고 구글 기본 이미지가 뜬다).
+   *
+   * 세션의 `avatarUrl`은 구글로 다시 로그인할 때마다 **구글 사진으로 덮인다** — 그 값을 그대로
+   * 쓰던 에디터만 옛 얼굴이었다. 이제 모든 자리가 `adapters/myAvatar`를 거치고, 거기서는 홈이
+   * 마지막으로 확인·변경한 값(캐시 `mf_profile_avatars`)이 세션 사진보다 먼저다.
+   */
+  it('세션이 구글 사진이어도 **홈에서 바꾼 사진**이 공책의 `공유` 옆 내 얼굴에 그려진다', async () => {
+    const GOOGLE = 'https://lh3.googleusercontent.com/a/google-default';
+    const NOTE = { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white', kind: 'note', pages: [{ id: 'p1', title: 'P', updatedAt: '2026-09-29T00:00:00.000Z', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '글', b: false, c: null }] }] }], cover: {} };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u-me', email: ME, avatarUrl: GOOGLE } }));
+    localStorage.setItem('mf_profile_avatars', JSON.stringify({ [ME]: PHOTO }));
+    localStorage.setItem('mindflow_doc_meav', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=meav&title=x', backendWith(PARTICIPANTS));
+    const faces = (await waitFor(() => container.querySelector('[data-presence-avatars]'))) as HTMLElement;
+    await waitFor(() => expect(faces.querySelector(`img[src="${PHOTO}"]`)).toBeTruthy());
+    expect(container.querySelector(`img[src="${GOOGLE}"]`)).toBeNull();
+  });
+
+  it('공유 팝업 — 참가자 사진을 그리고, **내 행**은 한 원천의 사진이다', async () => {
+    const GOOGLE = 'https://lh3.googleusercontent.com/a/google-default';
+    const FRIEND = 'https://cdn.example.com/friend.webp';
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u-me', email: ME, avatarUrl: GOOGLE } }));
+    localStorage.setItem('mf_profile_avatars', JSON.stringify({ [ME]: PHOTO }));
+    const backend = backendWith([
+      { ...PARTICIPANTS[0]!, avatarUrl: GOOGLE }, // 서버 목록이 옛 값이어도 내 행은 지금 사진
+      { ...PARTICIPANTS[1]!, avatarUrl: FRIEND },
+    ]);
+    vi.spyOn(backend.shareStore, 'list').mockResolvedValue([{ docId: 'd1', email: 'friend@example.com', role: 'edit', createdAt: '' } as never]);
+    render(
+      <BackendProvider backend={backend}>
+        <ShareModal open docId="d1" onClose={() => {}} />
+      </BackendProvider>,
+    );
+    await waitFor(() => expect(document.querySelector(`[data-share-face="photo"] img[src="${FRIEND}"]`)).toBeTruthy());
+    expect(document.querySelector(`[data-share-face="photo"] img[src="${PHOTO}"]`)).toBeTruthy();
+    expect(document.querySelector(`img[src="${GOOGLE}"]`)).toBeNull();
   });
 });

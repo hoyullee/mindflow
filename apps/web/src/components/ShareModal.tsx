@@ -4,6 +4,7 @@ import { Popover } from './Popover';
 import { Switch } from './Switch';
 import type { DocumentShare, ShareParticipant, ShareRole } from '../adapters/ports';
 import { useAuthUser } from '../adapters/useAuthUser';
+import { useMyAvatar } from '../adapters/myAvatar';
 import { useBackend, useShareStore } from '../adapters/BackendContext';
 import { colorForSeed } from '../collab/identity';
 
@@ -71,13 +72,21 @@ function looksLikeEmail(v: string): boolean {
  * 여기서 무엇을 하든 서버가 다시 판단한다.
  */
 /** 참가자 원형 아바타 — 협업 커서와 같은 시드(이메일)로 색을 정해, 팝업의 색과
- * 캔버스에서 보이는 그 사람의 커서 색이 일치한다. */
-function PersonDot({ email, name, dimmed = false }: { email: string; name: string | null; dimmed?: boolean }) {
+ * 캔버스에서 보이는 그 사람의 커서 색이 일치한다.
+ *
+ * **사진이 있으면 사진을 얹는다**(제보: 홈에서 바꾼 사진이 공유 팝업에 안 보인다). 예전에는
+ * 참가자 목록이 사진 주소(`ShareParticipant.avatarUrl`)를 받아 오면서도 이 점은 늘 첫 글자만
+ * 그렸다. 첫 글자는 사진 **아래에** 그대로 두어, 주소가 깨지면(`onError`) 사진만 걷혀 첫 글자로
+ * 물러선다(홈의 `ProfileAvatar`와 같은 규칙 — `no-referrer`는 구글 사진이 요구한다). */
+function PersonDot({ email, name, src, dimmed = false }: { email: string; name: string | null; src?: string | null; dimmed?: boolean }) {
   const initial = (name || email).slice(0, 1).toUpperCase();
   return (
     <span
       aria-hidden="true"
+      data-share-face={src ? 'photo' : 'initial'}
       style={{
+        position: 'relative',
+        overflow: 'hidden',
         width: 28,
         height: 28,
         borderRadius: '50%',
@@ -93,6 +102,17 @@ function PersonDot({ email, name, dimmed = false }: { email: string; name: strin
       }}
     >
       {initial}
+      {src && (
+        <img
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
     </span>
   );
 }
@@ -249,12 +269,17 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
     inputRef.current?.focus();
   }, [shareOpen, refresh]);
 
+  // 내 사진은 **한 원천**에서(`adapters/myAvatar`) — 목록의 내 행은 서버가 방금 준 값보다
+  // 이 탭에서 막 바꾼 사진이 더 새로울 수 있다. 훅이라 **닫혀 있을 때 돌려보내기 전에** 부른다.
+  const myAvatar = useMyAvatar(authUser?.email, authUser?.avatarUrl);
+
   // Esc·바깥 클릭·초점 트랩은 `Modal`(Radix Dialog)이 맡는다.
   if (!shareOpen) return null;
 
   const owner = participants?.find((p) => p.kind === 'owner') ?? null;
   const inviteeInfo = new Map((participants ?? []).filter((p) => p.kind === 'invitee').map((p) => [p.email, p]));
   const myEmail = (authUser?.email ?? '').trim().toLowerCase();
+  const faceOf = (email: string, remote: string | null | undefined): string | null => (email === myEmail ? myAvatar : (remote ?? null));
   /** 초대·취소 UI를 소유자에게만. 참가자 정보를 못 얻는 환경(폴백)에서는 판단할 수
    * 없으므로 보여 준다 — 진짜 권한은 어차피 서버 RLS가 판단한다(0009: insert는
    * 소유자만). 이 플래그는 어포던스 정리일 뿐이다. */
@@ -491,7 +516,7 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
             못 얻는 환경(0010 RPC 미적용)에서는 줄째 생략. */}
         {owner && (
           <div aria-label="소유자" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0' }}>
-            <PersonDot email={owner.email} name={owner.displayName} />
+            <PersonDot email={owner.email} name={owner.displayName} src={faceOf(owner.email, owner.avatarUrl)} />
             <div style={{ flex: '1 1 auto', minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner.displayName || owner.email.split('@')[0]}</span>
@@ -517,7 +542,7 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
               const isMe = s.email === myEmail;
               return (
               <li key={s.email} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0' }}>
-                <PersonDot email={s.email} name={name} dimmed={pending} />
+                <PersonDot email={s.email} name={name} src={faceOf(s.email, info?.avatarUrl)} dimmed={pending} />
                 <span style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <span style={{ fontSize: 13, fontWeight: name ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || s.email}</span>
                   {name && <span style={{ fontSize: 11, color: th.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.email}</span>}
