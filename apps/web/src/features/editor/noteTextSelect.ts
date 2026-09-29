@@ -214,6 +214,33 @@ function charsRect(el: HTMLElement, from: number, to: number): DOMRect | null {
 }
 
 /**
+ * 그 줄의 `index` 글자 자리에 선 **캐럿의 사각형**(화면 좌표) — 손잡이가 설 자리다.
+ *
+ * 접힌 `Range`의 사각형은 요소 경계에서 비어 오는 일이 잦다(`columnX`·`caretMetrics`와
+ * 같은 사정). 그래서 **옆 글자 한 칸**을 재고 그 변을 쓴다: 앞에 글자가 있으면 그
+ * 오른변, 줄 머리면 뒤 글자의 왼변이다.
+ *
+ * 글자를 하나도 재지 못하면 **줄 상자의 처음·끝**으로 물러선다 — 손잡이가 통째로
+ * 사라지는 것보다 대략의 자리에라도 서 있는 편이 낫다(빈 줄이 그렇고, `Range`의
+ * 사각형이 없는 환경도 그렇다).
+ */
+export function caretRectAt(el: HTMLElement, index: number): DOMRect | null {
+  const len = lineLength(el);
+  const i = Math.max(0, Math.min(index, len));
+  const near = i > 0 ? charsRect(el, i - 1, i) : charsRect(el, i, Math.min(len, i + 1));
+  if (near) return new DOMRect(i > 0 ? near.right : near.left, near.top, 0, near.height);
+  let box: DOMRect;
+  try {
+    box = el.getBoundingClientRect();
+  } catch {
+    return null;
+  }
+  if (!box.width && !box.height) return null;
+  const h = Math.min(rowHeight(el) || box.height, box.height) || box.height;
+  return new DOMRect(i > 0 ? box.right : box.left, box.top, 0, h);
+}
+
+/**
  * 캐럿이 **화면에서** 놓인 자리 — 세로줄(`x`)과 그 행의 가운데 높이(`y`).
  *
  * 방향키로 줄을 넘을 때 지킬 값이다(요청: "무조건 사용자가 의도한대로 한 칸씩").
