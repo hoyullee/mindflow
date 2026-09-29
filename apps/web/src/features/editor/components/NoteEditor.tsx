@@ -507,7 +507,10 @@ export function noteTokens(t: Theme): CSSProperties {
       '--mf-note-sb-hover': mix(t.text, 42, 'transparent'),
       '--mf-tsel-bg': mix(t.accent, 20, t.panel),
       '--mf-tsel-ring': mix(t.accent, 76, t.panel),
-      '--mf-tsel-text': mix(t.accent, 40, t.panel),
+      // 글자 선택 — **OS의 파랑**이다(요청: 선택 배경을 기본 선택처럼). 테마의 강조색을 따르지
+      // 않는다 — 고른 것은 "무엇을 골랐나"이지 앱의 색이 아니다. 어두운 판에서는 한 톤 짙게.
+      '--mf-note-sel': 'rgba(96, 165, 250, 0.34)',
+      '--mf-tsel-text': 'rgba(96, 165, 250, 0.34)',
       '--mf-note-ck': t.border,
       '--mf-note-code-bg': t.panel2,
       '--mf-note-code-fg': t.text,
@@ -576,7 +579,10 @@ export function noteTokens(t: Theme): CSSProperties {
     '--mf-note-sb-hover': 'rgba(58, 53, 47, 0.32)',
     '--mf-tsel-bg': '#fbede6', // 고른 칸의 면(스펙 값)
     '--mf-tsel-ring': '#e8845c', // 고른 구역의 바깥 링(스펙 값)
-    '--mf-tsel-text': '#fbdfcc', // 표 안에서 글자를 끌어 고른 자리(스펙 값)
+    // 글자 선택 — 안드로이드 크롬의 기본 선택색(#CADEF7, 실기기 화면에서 잰 값)을 반투명으로
+    // 만든 것이다(요청). 표 안의 글자 선택도 같은 색이다(예전 스펙 값 #fbdfcc는 주황이었다).
+    '--mf-note-sel': 'rgba(59, 130, 246, 0.26)',
+    '--mf-tsel-text': 'rgba(59, 130, 246, 0.26)',
     '--mf-note-ck': '#dcd1c6', // 체크 상자의 빈 테두리
     '--mf-note-code-bg': '#332e29',
     '--mf-note-code-fg': '#e7dacb',
@@ -1980,22 +1986,15 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       return (el?.closest?.('[data-note-line]') as HTMLElement | null) ?? null;
     };
     /**
-     * **승격된 선택도 우리가 칠한다**(제보: 실기기에서 골라도 배경이 보이지 않는다).
+     * **승격된 선택은 브라우저가 칠한다**(제보 둘: 배경이 없다 → 배경이 손잡이와 어긋나 보인다).
      *
-     * 본문 줄의 `::selection`은 투명하다 — 한 줄과 여러 줄의 배경 크기를 맞추려고
-     * 브라우저 칠을 끄고 `CSS.highlights`로 한 벌만 그리기로 했기 때문이다(`editor.css`
-     * 의 `data-note-hl` 규칙). 승격한 뒤에도 그 규칙은 그대로인데 칠을 걷어 두었으니
-     * OS 손잡이와 알약 툴바만 뜨고 **고른 글자는 아무 표시가 없었다**.
-     *
-     * 브라우저 구간을 통째로 칠하지 않고 **줄마다** 나눠 칠한다(`nativeLineSel`) —
-     * 블록을 넘는 구간에는 목록 번호·글머리표(편집 박스 밖의 형제)가 함께 들어 있어
-     * 통째로 칠하면 그것까지 물든다.
+     * 처음에는 칠을 걷어 두어 아무 표시가 없었고, 다음에는 우리가 줄마다 칠했다
+     * (`CSS.highlights`). 그런데 `::highlight()`는 **글자 상자**만 덮는다 — OS 손잡이는
+     * **줄 높이**의 아래 끝에 매달리므로, 얇은 칠과 손잡이 사이에 틈이 생겨 손잡이가 **다음
+     * 줄**을 가리키는 것처럼 보였다(실기기: 손을 뗀 뒤에도). 브라우저 칠은 손잡이와 같은
+     * 기하로 그려지므로 그 자리는 브라우저에게 준다 — 줄 밖 장식(번호·글머리표)만 끄고 줄의
+     * 글자는 켠다(`editor.css`의 승격 규칙). 두 겹이 되지 않게 우리 칠은 걷는다.
      */
-    const paintNative = (): void => {
-      const sel = nativeLineSel();
-      if (sel) paintSelection(sel);
-      else clearSelectionPaint();
-    };
     const follow = (): void => {
       const col = colRef.current;
       const s = window.getSelection();
@@ -2013,7 +2012,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
        * 알약 툴바가 함께 사라진다(그것이 예전 모습이었다).
        */
       if (promoted.current) {
-        paintNative();
+        clearSelectionPaint();
         return;
       }
       // 한 줄 안에서, 본문 단 안에서, 표 밖일 때만 — 나머지는 브라우저에 맡긴다.
@@ -2038,7 +2037,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
        */
       if (isTouchPointer() && !readOnly) {
         promoteCol();
-        paintNative();
+        clearSelectionPaint();
         return;
       }
       paintRanges([range.cloneRange()]);
@@ -2050,7 +2049,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       clearSelectionPaint();
       demoteCol(true);
     };
-  }, [textSel, readOnly, promoteCol, demoteCol, nativeLineSel]);
+  }, [textSel, readOnly, promoteCol, demoteCol]);
 
   /**
    * 고른 것을 **우리 그림으로 칠하고**, 캐럿은 **첫 줄의 시작점에 접어 둔다**.

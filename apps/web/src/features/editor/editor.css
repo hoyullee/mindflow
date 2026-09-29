@@ -1047,7 +1047,7 @@ input[type='search']::-webkit-search-results-decoration {
    마지막 줄은 중간까지 칠해져 메모장·업노트의 그 선택으로 보인다. 색은 브라우저
    기본 선택과 같은 결로(강조색을 옅게) — 글자는 그대로 읽혀야 한다. */
 ::highlight(mf-note-sel) {
-  background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
+  background: var(--mf-note-sel, rgba(59, 130, 246, 0.26));
   color: inherit;
 }
 /* `/` 커맨드가 **지금 읽고 있는 글자**(요청) — 이미 쓰인 글 앞에서 `/`를 치면 질의와
@@ -1076,10 +1076,10 @@ input[type='search']::-webkit-search-results-decoration {
 /* 선택 색은 어디서나 같다 — 한 줄은 OS 파랑, 여러 줄은 우리 주황으로 갈리면 같은
    동작이 다른 일로 보인다(제보). 글자색은 건드리지 않는다(굵기·강조가 살아 있어야). */
 [data-note-editor] ::selection {
-  background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
+  background: var(--mf-note-sel, rgba(59, 130, 246, 0.26));
 }
 [data-note-editor] ::-moz-selection {
-  background: color-mix(in srgb, var(--mf-accent) 24%, transparent);
+  background: var(--mf-note-sel, rgba(59, 130, 246, 0.26));
 }
 /* **본문 줄에서는 브라우저가 칠하지 않는다**(제보: 한 줄과 여러 줄의 배경 크기가
    다르다). `::selection`은 **줄 높이**를 통째로 덮고 `::highlight()`는 **글자 상자**만
@@ -1122,6 +1122,22 @@ input[type='search']::-webkit-search-results-decoration {
 [data-note-editor][data-note-hl='1'] [data-note-col][data-note-promoted] ::selection,
 [data-note-editor][data-note-hl='1'] [data-note-col][data-note-promoted]::selection {
   background: transparent;
+}
+/* **줄의 글자는 켠다** — 승격된 선택은 브라우저 칠로 보인다(`NoteEditor`의 `follow` 머리말).
+   `::highlight()`는 글자 상자만 덮어 OS 손잡이(줄 높이 아래 끝에 매달린다)와 틈이 생겼다.
+   브라우저 칠은 **줄 높이**를 덮고 손잡이와 같은 기하라 어긋나 보이지 않는다. 세기는 위의
+   끄는 규칙(속성 넷)보다 높고, 표 칸의 마커(글자다)는 아래에서 다시 끈다. */
+[data-note-editor][data-note-hl='1'] [data-note-col][data-note-promoted] .mf-note-line::selection,
+[data-note-editor][data-note-hl='1'] [data-note-col][data-note-promoted] .mf-note-line *::selection {
+  background: var(--mf-note-sel, rgba(59, 130, 246, 0.26));
+}
+[data-note-editor][data-note-hl='1'] [data-note-col][data-note-promoted] .mf-note-line [data-list-marker]::selection {
+  background: transparent;
+}
+/* 승격된 단은 초점을 받는 편집 호스트가 된다 — 크로뮴이 그 둘레에 초점 고리를 그린다
+   (헤드리스 실측). 줄 박스가 이미 `outline: none`인 것과 같은 결로 끈다. */
+[data-note-col][data-note-promoted] {
+  outline: none;
 }
 
 /* 구분선 — 고를 수 있는 블록(제보: 넣고 나면 지울 방법이 없다).
