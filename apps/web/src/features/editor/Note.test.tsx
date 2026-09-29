@@ -10685,14 +10685,15 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
   });
 
   /**
-   * **승격된 선택도 칠한다**(제보: 실기기에서 골라도 배경이 보이지 않는다).
+   * **승격된 선택은 브라우저가 칠한다 — 우리 칠은 걷는다**(제보: 손을 뗀 뒤에도 배경과 손잡이가
+   * 어긋나 보인다).
    *
-   * 본문 줄의 `::selection`은 투명하다(한 줄·여러 줄의 배경 크기를 맞추려고 `CSS.highlights`
-   * 한 벌로만 그린다). 승격한 뒤 칠을 걷어 두면 OS 손잡이·툴바만 뜨고 고른 글자는 아무
-   * 표시가 없다. 그리고 **줄마다 나눠** 칠한다 — 통째로 칠하면 블록 사이의 목록 번호까지
-   * 물든다.
+   * `::highlight()`는 **글자 상자**만 덮는데 OS 손잡이는 **줄 높이**의 아래 끝에 매달린다 — 그
+   * 틈 때문에 손잡이가 다음 줄을 가리키는 것처럼 보였다. 브라우저 칠(줄 높이 · 손잡이와 같은
+   * 기하)에 맡기고, 두 겹이 되지 않게 우리 칠은 걷는다. 브라우저 칠이 **줄의 글자에만** 켜지는지는
+   * 아래 CSS 시험과 크로뮴 프로브가 본다(jsdom은 `::selection`을 계산하지 않는다).
    */
-  it('승격된 선택도 우리가 칠한다 — 한 줄이든 여러 줄이든, 줄마다', async () => {
+  it('승격된 선택은 브라우저가 칠한다 — 우리 칠은 한 줄이든 여러 줄이든 걷는다', async () => {
     class FakeHighlight {
       readonly ranges: Range[];
       constructor(...r: Range[]) {
@@ -10704,15 +10705,10 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     vi.stubGlobal('Highlight', FakeHighlight);
     try {
       const { a, b } = await promotedByTouch('sg12');
-      // 두 번 눌러 고른 한 줄 — 받아 오지 않아도 칠은 선다.
-      await waitFor(() => expect(store.get('mf-note-sel')?.ranges.map((x) => x.toString())).toEqual(['첫 ']));
-      // 손잡이로 줄을 넘겼다 — 줄마다 한 구간씩.
+      expect(store.has('mf-note-sel')).toBe(false);
       selectAcross(a, 2, b, 2);
-      await waitFor(() => expect(store.get('mf-note-sel')?.ranges.map((x) => x.toString())).toEqual(['줄입니다', '둘째']));
-      // 놓으면 걷힌다.
-      window.getSelection()?.removeAllRanges();
-      document.dispatchEvent(new Event('selectionchange'));
-      await waitFor(() => expect(store.has('mf-note-sel')).toBe(false));
+      await new Promise((ok) => setTimeout(ok, 0));
+      expect(store.has('mf-note-sel')).toBe(false);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -10730,6 +10726,9 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     const src = readFileSync(['src/features/editor/editor.css', 'apps/web/src/features/editor/editor.css'].find((f) => existsSync(f))!, 'utf8');
     const rule = /\[data-note-editor\]\[data-note-hl='1'\] \[data-note-col\]\[data-note-promoted\] ::selection,[^{]*\{([^}]*)\}/.exec(src)?.[1] ?? '';
     expect(rule).toMatch(/background:\s*transparent/);
+    // 줄의 글자는 **켠다**(파랑) — 끄기만 하면 선택이 아예 보이지 않는다(그 앞 제보).
+    const on = /\[data-note-col\]\[data-note-promoted\] \.mf-note-line::selection,[^{]*\{([^}]*)\}/.exec(src)?.[1] ?? '';
+    expect(on).toMatch(/background:\s*var\(--mf-note-sel/);
     /**
      * **크로뮴은 선택자 목록에 모르는 의사 요소가 하나라도 있으면 규칙 전체를 버린다** —
      * `::selection`과 `::-moz-selection`을 한 목록에 두면 크로뮴에서는 그 규칙이 없는 것과
