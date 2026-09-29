@@ -4,7 +4,7 @@
 // 고른 자리는 텍스트 노드만 훑어 셌고(`<br>`을 세지 않았다) 서식을 거는 쪽은
 // 값(`domToRuns`)의 좌표를 기대했다 — `<br>` 하나만큼 어긋나 있었다.
 import { describe, it, expect } from 'vitest';
-import { charOffset, lineLength, lineText, pointAt } from './noteTextSelect';
+import { charOffset, drawSelLayer, lineLength, lineText, pointAt } from './noteTextSelect';
 
 function box(html: string): HTMLElement {
   const el = document.createElement('div');
@@ -71,5 +71,48 @@ describe('공책 선택의 좌표계 — 값과 같은 수를 센다', () => {
     expect(lineLength(el)).toBe(5);
     expect(charOffset(el, el.firstChild as Text, 3)).toBe(3);
     expect(pointAt(el, 3).offset).toBe(3);
+  });
+});
+
+/**
+ * **선택 덮개** — 고른 글자를 **줄 높이의 띠**로 그린다(제보: 윈도우에서도 선택 배경을 줄 높이만큼).
+ *
+ * `::highlight()`는 글자 상자만 덮고 높이를 바꿀 수 없어서, 구간의 사각형을 받아 행마다 줄 높이로
+ * 늘린 띠를 그린다. jsdom에는 배치가 없으므로 사각형을 세워 **무엇을 그리나**만 지킨다 — 실제
+ * 높이는 크로뮴 프로브로 쟀다(글자 17px → 띠 26.8px = 그 줄의 `line-height`).
+ */
+describe('drawSelLayer — 줄 높이의 띠', () => {
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+
+  it('한 행의 조각들은 **한 띠**로 잇고, 높이는 그 줄의 line-height다', () => {
+    const col = document.createElement('div');
+    col.setAttribute('data-note-col', '');
+    const line = document.createElement('div');
+    line.setAttribute('data-note-line', 'a');
+    line.style.lineHeight = '26px';
+    line.innerHTML = '보통 <b>굵게</b> 둘째 행';
+    const layer = document.createElement('div');
+    layer.setAttribute('data-note-sel-layer', '');
+    col.append(line, layer);
+    document.body.appendChild(col);
+    layer.getBoundingClientRect = () => rect(0, 500, 0, 0);
+    const r = document.createRange();
+    r.selectNodeContents(line);
+    // 첫 행에 조각 둘(보통 · 굵게 — 굵은 글자는 상자가 조금 크다) + 둘째 행 하나 + 요소 경계의 빈 사각형.
+    r.getClientRects = () => [rect(10, 104, 40, 17), rect(50, 103.5, 30, 18), rect(0, 104, 0, 17), rect(10, 130, 60, 17)] as unknown as DOMRectList;
+
+    drawSelLayer([r]);
+    const bands = [...layer.querySelectorAll<HTMLElement>('[data-note-sel-band]')].map((b) => [b.style.left, b.style.top, b.style.width, b.style.height]);
+    // 원점(덮개의 자리 y=500)에서 잰다 · 첫 행은 10~80 한 띠(가운데 112.5 ± 13) · 둘째 행은 가운데
+    // 138.5 ± 13 — 앞 띠의 아래 끝(125.5)에 맞닿아 **겹치지 않는다**(겹치면 이음매가 짙어진다).
+    expect(bands).toEqual([
+      ['10px', '-400.5px', '70px', '26px'],
+      ['10px', '-374.5px', '60px', '26px'],
+    ]);
+
+    drawSelLayer([]);
+    expect(layer.children).toHaveLength(0);
+    col.remove();
   });
 });
