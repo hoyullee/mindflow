@@ -268,8 +268,24 @@ const eventCache = new Map<string, GoogleEvent[]>();
 /**
  * 이벤트 색 팔레트(`/colors`) — 계정마다 같은 값이고 거의 바뀌지 않으므로 탭에서
  * **한 번만** 받는다. 못 받아도 화면은 하드코딩 폴백 표로 색을 그린다.
+ *
+ * ⚠️ **받아 둔 값을 늦게 켜진 화면에도 흘려 준다**(제보: 구글에서 지정한 다일 일정의
+ * 색이 캘린더 색으로 보인다). 예전에는 기억이 있으면 효과가 그냥 돌아섰고, 그래서
+ * **마운트한 뒤에 기억이 찬** 인스턴스(LNB→일정, 공책의 일정 탭, 위젯…)는 팔레트가
+ * 영영 `{}`로 남았다. 그 상태에서는 하드코딩 폴백 표(고전 11색)로만 번호를 풀 수 있어,
+ * 구글이 넓힌 팔레트의 번호가 캘린더 색으로 떨어진다 — 11색 안의 번호는 멀쩡하고
+ * 그 밖만 틀리는, 제보와 정확히 같은 모양이다. 그래서 **구독자에게 밀어 준다**.
  */
 let colorsCache: Record<string, string> | null = null;
+/** 같은 순간에 여럿이 켜져도 조회는 하나 — 나머지는 이 약속을 함께 기다린다. */
+let colorsInFlight: Promise<Record<string, string> | null> | null = null;
+/** 지금 살아 있는 인스턴스들 — 팔레트가 도착하면 전부에게 같은 값이 간다. */
+const colorsWatchers = new Set<(p: Record<string, string>) => void>();
+
+function publishColors(p: Record<string, string>): void {
+  colorsCache = p;
+  for (const fn of colorsWatchers) fn(p);
+}
 
 /**
  * 계정이 바뀌거나 연동을 끄면 기억도 버린다 — 남의 계정 일정이 비칠 자리를 없앤다.
@@ -279,6 +295,7 @@ export function clearGoogleSessionCache(): void {
   listCache = null;
   eventCache.clear();
   colorsCache = null;
+  colorsInFlight = null;
   // 이름 장부도 계정의 것이다 — 다음 연결이 다른 계정일 수 있다.
   clearNameBook();
 }
@@ -609,16 +626,26 @@ export function useGoogleCalendar(
    * 있으니 조용히 넘어간다.
    */
   useEffect(() => {
-    if (!available || !enabled || mode === 'off' || colorsCache) return;
-    let cancelled = false;
-    void (async () => {
-      const got = await withToken((t) => fetchEventColors(t)).catch(() => null);
-      if (cancelled || !aliveRef.current || !got) return;
-      colorsCache = got;
-      setColors(got);
-    })();
+    if (!available || !enabled || mode === 'off') return;
+    // 이미 받아 둔 것이 있으면 **내 상태로 들인다** — 같은 참조면 React가 리렌더하지
+    // 않으므로 공짜다. 이 한 줄이 "마운트 뒤에 기억이 찬" 경우를 막는다.
+    if (colorsCache) setColors(colorsCache);
+    // 그리고 **지금부터 도착하는 값**도 받는다 — 내 조회가 아니라 옆 화면의 조회가
+    // 끝나는 경우가 대부분이다(일정 페이지가 먼저 뜨고 LNB가 뒤따른다).
+    const watch = (p: Record<string, string>): void => setColors(p);
+    colorsWatchers.add(watch);
+    if (!colorsCache) {
+      // 조회는 탭에 하나만 — 화면 넷이 동시에 켜져도 `/colors`는 한 번이다.
+      if (!colorsInFlight) colorsInFlight = withToken((t) => fetchEventColors(t)).catch(() => null);
+      const mine = colorsInFlight;
+      void mine.then((got) => {
+        if (colorsInFlight === mine) colorsInFlight = null;
+        // 그 사이 다른 조회가 이미 채웠으면 덮지 않는다(같은 값이다).
+        if (got && !colorsCache) publishColors(got);
+      });
+    }
     return () => {
-      cancelled = true;
+      colorsWatchers.delete(watch);
     };
   }, [available, enabled, mode, withToken, tokenTick]);
 

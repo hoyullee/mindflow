@@ -4855,3 +4855,85 @@ describe('구글 일정 상세 — 막을 누르면 닫힌다(제보)', () => {
     await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
   });
 });
+
+/**
+ * 구글에서 지정한 일정 색이 **캘린더 색으로 떨어지는** 문제(제보 — 다일 일정의 색을
+ * 구글에서 바꿨는데 그리오는 캘린더 색으로 그렸다).
+ *
+ * 색은 번호(`colorId`)로 오고 hex는 `/colors`에서 온다. 그 팔레트를 **탭에서 한 번만**
+ * 받는데, 받아 둔 뒤에 조회를 시작한 화면(LNB→일정, 위젯, 공책의 일정 탭…)은 그
+ * 기억을 자기 상태로 들이지 못하고 **빈 팔레트**로 남았다. 그러면 하드코딩 폴백 표
+ * (고전 11색)로만 풀 수 있어, 구글이 넓힌 팔레트의 번호는 캘린더 색이 된다 —
+ * 11색 안의 번호는 멀쩡하고 그 밖만 틀리는, 제보와 정확히 같은 모양이다.
+ */
+describe('구글 일정 색 — 늦게 도착한 팔레트도 모든 화면이 쓴다(제보)', () => {
+  beforeEach(() => mockMatchMedia(false));
+
+  /** 구글이 넓힌 팔레트의 번호 하나 — 고전 11색 표에는 없다. */
+  const EXT_ID = '13';
+  const EXT_HEX = '#f09300';
+  const CAL_HEX = '#039be5';
+
+  function stubWithPalette(day: string): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('/colors')) {
+          return ok({ event: { ...Object.fromEntries(Object.entries(GOOGLE_EVENT_COLORS).map(([k, v]) => [k, { background: v }])), [EXT_ID]: { background: EXT_HEX } } });
+        }
+        if (url.includes('/users/me/calendarList')) {
+          return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, backgroundColor: CAL_HEX, accessRole: 'owner' }] });
+        }
+        // 다일(종일) 일정 — 끝 날짜는 배타적이다.
+        return ok({ items: [{ id: 'g1', summary: '해외기업 지원자', start: { date: day }, end: { date: nextDay(nextDay(day)) }, colorId: EXT_ID }] });
+      }),
+    );
+  }
+
+  it('팔레트가 도착한 뒤 조회를 시작한 화면도 그 색으로 그린다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    const day = inMonth(1);
+    stubWithPalette(day);
+    clientId = 'test-client.apps.googleusercontent.com';
+    const at = partsOf(day)!;
+    const prefs = googlePrefsOf({ calendars: ['me@example.com'] });
+
+    let eager: ReturnType<typeof useGoogleCalendar> | null = null;
+    let late: ReturnType<typeof useGoogleCalendar> | null = null;
+    /** 먼저 뜬 화면 — 이쪽이 팔레트를 받아 탭의 기억을 채운다(일정 페이지). */
+    function Eager() {
+      eager = useGoogleCalendar(at.y, at.m, prefs, () => {}, 'events');
+      return null;
+    }
+    /** 나중에 켜지는 화면 — LNB의 하위 목록·공책의 일정 탭이 이 모양이다. */
+    function Late({ on }: { on: boolean }) {
+      late = useGoogleCalendar(at.y, at.m, prefs, () => {}, on ? 'events' : 'off');
+      return null;
+    }
+    const { rerender } = render(
+      <>
+        <Eager />
+        <Late on={false} />
+      </>,
+    );
+    // 먼저 뜬 화면이 팔레트를 받았다 — 여기서 탭의 기억이 찬다.
+    await waitFor(() => expect(eager!.eventColors[EXT_ID]).toBe(EXT_HEX));
+
+    // 이제 두 번째 화면이 켜진다.
+    rerender(
+      <>
+        <Eager />
+        <Late on />
+      </>,
+    );
+    await waitFor(() => expect(late!.events.length).toBe(1));
+
+    // 수리 전: 이 화면의 팔레트는 비어 있었고(기억을 자기 상태로 못 들였다),
+    // 폴백 11색에 없는 번호라 **캘린더 색**으로 떨어졌다.
+    expect(late!.eventColors[EXT_ID]).toBe(EXT_HEX);
+    expect(late!.events[0]!.color).toBe(EXT_HEX);
+    expect(late!.events[0]!.color).not.toBe(CAL_HEX);
+  });
+});
