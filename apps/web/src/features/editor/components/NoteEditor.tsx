@@ -1870,6 +1870,94 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    */
 
   /**
+   * **손가락이 고른 글은 OS에게 맡긴다** — 고르는 동안만 본문 단을 편집 호스트로
+   * 「승격」한다(제보: 노션은 삼성인터넷에서 줄을 넘어 고르고 알약 툴바도 뜬다).
+   *
+   * 왜 우리만 안 됐나: OS의 손잡이와 알약 툴바(잘라내기·복사·붙여넣기·번역…)는
+   * 브라우저가 **제 편집 호스트 안의 선택**에만 붙여 주는 OS UI다. 우리 본문은
+   * **줄마다 편집 박스**라(`NoteLine` 머리말 — 비제어 박스) 그 선택이 한 줄을 넘지
+   * 못했고, 그래서 손잡이를 끌어도 줄에 갇혔다. 노션이 되는 것은 본문 전체가
+   * **하나의** 편집 호스트이기 때문이다.
+   *
+   * 스파이크로 확인한 것: 줄의 `contenteditable`은 **그대로 두고** 바깥 단에
+   * `contenteditable`을 하나 더 얹기만 해도 선택이 줄을 넘는다 — 줄을 손대지 않으므로
+   * 비제어 박스의 약속이 그대로다. 실기기에서 알약 툴바가 뜨는 것도 확인했다.
+   *
+   * 대신 승격된 동안에는 **초점이 단으로 간다**: 줄 부품의 키 처리가 하나도 오지 않고,
+   * 브라우저가 제멋대로 블록을 합치거나 쪼갠다(실측: 글자를 치면 세 줄이 한 줄, Enter는
+   * 세 줄이 네 줄). 그래서 승격은 **고르는 동안만** 산다 — 선택이 접히면 걷고
+   * (`demoteCol`), 편집이 오면 그 자리에서 걷은 뒤 우리 모델 경로로 넘긴다.
+   */
+  const promoted = useRef(false);
+  const promoteCol = useCallback((): void => {
+    const col = colRef.current;
+    if (!col || promoted.current) return;
+    promoted.current = true;
+    col.setAttribute('contenteditable', 'true');
+    // 승격된 단에 크로뮴이 제 맞춤법 밑줄을 붙이지 않게 한다(줄 박스의 설정과 같다).
+    col.setAttribute('spellcheck', 'false');
+    col.setAttribute('data-note-promoted', '1');
+  }, []);
+
+  /**
+   * 승격을 걷는다. **초점을 줄로 돌려준다** — 승격된 동안 초점은 단이 쥐고 있는데,
+   * 단의 `contenteditable`을 떼는 순간 그 초점은 **편집할 수 없는 자리**가 되어 글쇠가
+   * 어디로도 들어가지 않는다.
+   *
+   * `keep`이면 캐럿을 손대지 않는다 — 편집을 받은 길에서 쓴다. 그쪽은 곧바로
+   * `replaceWithTyping`이 **지울 구간**을 선택으로 다시 세우므로, 여기서 캐럿을 한 번
+   * 더 놓으면 그 선택을 도로 접어 버린다.
+   */
+  const demoteCol = useCallback((keep = false): void => {
+    const col = colRef.current;
+    if (!col || !promoted.current) return;
+    promoted.current = false;
+    col.removeAttribute('contenteditable');
+    col.removeAttribute('spellcheck');
+    col.removeAttribute('data-note-promoted');
+    if (keep) return;
+    const s = window.getSelection();
+    const r = s && s.rangeCount ? s.getRangeAt(0) : null;
+    if (!r) return;
+    const node = r.startContainer;
+    const host = (node.nodeType === 1 ? (node as HTMLElement) : node.parentElement)?.closest?.('[data-note-line]') as HTMLElement | null;
+    if (!host || !col.contains(host)) return;
+    caretToLine(host.getAttribute('data-note-line') ?? '', charOffset(host, node, r.startOffset));
+  }, []);
+
+  /**
+   * 승격된 동안의 **브라우저 선택을 우리 좌표로** 읽는다 — 지우기·덮어쓰기·클립보드가
+   * 쓰는 `LineSel[]`이다.
+   *
+   * 끝점이 줄 **밖**(블록 사이의 여백, 단 자체)에 떨어질 수 있으므로 노드 동일성으로
+   * 가르지 않는다: 구간이 **스치는 줄들**(`intersectsNode`)을 먼저 모으고 양끝만 그 줄
+   * 안의 자리로 읽는다(밖이면 줄의 처음·끝으로 접는다). 경계에 스치기만 한 양끝 줄은
+   * 뺀다 — 다음 블록의 0번 자리에서 끝난 선택이 그렇다.
+   */
+  const nativeLineSel = useCallback((): LineSel[] | null => {
+    const col = colRef.current;
+    const s = window.getSelection();
+    if (!col || !s || s.isCollapsed || s.rangeCount === 0) return null;
+    const r = s.getRangeAt(0);
+    const hit = [...col.querySelectorAll<HTMLElement>('[data-note-line]')].filter((el) => {
+      try {
+        return r.intersectsNode(el);
+      } catch {
+        return false; // 구간 비교가 없는 환경
+      }
+    });
+    if (!hit.length) return null;
+    const first = hit[0]!;
+    const last = hit[hit.length - 1]!;
+    const a = first.contains(r.startContainer) ? { node: r.startContainer, offset: r.startOffset } : pointAt(first, 0);
+    const b = last.contains(r.endContainer) ? { node: r.endContainer, offset: r.endOffset } : pointAt(last, lineLength(last));
+    const built = first === last ? buildLineSelection(first, a, b) : buildSelection(col, { el: first, ...a }, { el: last, ...b });
+    if (!built || !built.length) return null;
+    const trimmed = built.filter((x, i) => x.to > x.from || (i > 0 && i < built.length - 1));
+    return trimmed.length ? trimmed : null;
+  }, []);
+
+  /**
    * 칠하기는 DOM 작업이라 그리고 난 뒤에 — 선택이 바뀔 때마다 다시 칠한다.
    *
    * **한 줄 안의 선택도 여기서 칠한다**(제보: 한 줄과 여러 줄의 배경 크기가 다르다).
@@ -1882,6 +1970,8 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
    */
   useEffect(() => {
     if (textSel && textSel.length) {
+      // 우리 칠과 승격은 함께 살 수 없다 — 우리가 그리기로 했으면 단은 다시 평범해진다.
+      demoteCol(true);
       paintSelection(textSel);
       return () => clearSelectionPaint();
     }
@@ -1894,45 +1984,44 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       const s = window.getSelection();
       if (!col || !s || s.isCollapsed || s.rangeCount === 0) {
         clearSelectionPaint();
+        // 선택이 접혔다 = 고르기가 끝났다 — 승격도 여기서 걷는다(`promoteCol` 머리말).
+        demoteCol();
         return;
       }
       const range = s.getRangeAt(0);
       const a = lineOf(range.startContainer);
+      /**
+       * **승격된 동안에는 브라우저의 선택이 곧 우리 선택이다** — 칠하지도, 받아 오지도
+       * 않는다. 받아 오면(`paintAndHold`) 브라우저 선택이 접히고, 그 순간 OS 손잡이와
+       * 알약 툴바가 함께 사라진다(그것이 예전 모습이었다).
+       */
+      if (promoted.current) {
+        clearSelectionPaint();
+        return;
+      }
       // 한 줄 안에서, 본문 단 안에서, 표 밖일 때만 — 나머지는 브라우저에 맡긴다.
       if (!a || a !== lineOf(range.endContainer) || !col.contains(a) || a.closest('.mf-note-table')) {
         clearSelectionPaint();
         return;
       }
       /**
-       * **손가락이 고른 것은 우리 선택으로 받아 온다**(제보: 두 번 눌러 고른 뒤
-       * 물방울 손잡이를 끌면 줄을 넘지 못한다).
+       * **손가락이 고른 것은 OS에게 맡긴다** — 단을 승격하고 물러선다(`promoteCol`).
        *
-       * 브라우저의 그 손잡이는 **브라우저가 그리는 제 UI**라 끌어도 페이지에는
-       * 아무 포인터 이벤트가 오지 않고, 선택은 편집 박스(=한 줄) 안에 갇힌다. 그래서
-       * 여기서 같은 구간을 우리 선택으로 옮겨 담고 브라우저 선택을 비운다 —
-       * 그러면 물방울이 사라지고, 그 자리에 우리 손잡이가 선다(`NoteSelHandles`).
+       * 예전에는 여기서 그 구간을 **우리 선택으로 받아 와** 칠하고 우리 손잡이를
+       * 세웠다(브라우저 손잡이가 줄을 넘지 못했으므로). 그 대가가 **OS 알약 툴바**였다:
+       * 받아 오는 순간 브라우저 선택이 접혀 잘라내기·복사·붙여넣기·번역이 사라졌다
+       * (제보: 노션은 삼성인터넷에서도 그 툴바가 뜬다).
+       *
+       * 이제는 받아 오지 않는다 — 단을 편집 호스트로 승격해 **브라우저의 선택이
+       * 줄을 넘게** 만든다. 손잡이도 툴바도 OS의 것이 그대로 살아 있고, 우리는
+       * 편집이 올 때만 끼어든다(`useEffect` — 승격된 선택 위의 편집).
        *
        * 마우스는 그대로 둔다: 거기서는 브라우저의 한 줄 선택이 더 낫고(더블클릭·
        * 드래그가 이미 제 일을 한다) 손잡이도 없다.
        */
-      if (isTouchPointer()) {
-        const built = buildLineSelection(a, { node: range.startContainer, offset: range.startOffset }, { node: range.endContainer, offset: range.endOffset });
-        const one = built?.[0];
-        if (one && one.to > one.from) {
-          const sig = `${one.key}:${one.from}:${one.to}`;
-          /**
-           * 우리가 브라우저에게 넘긴 그 선택이면 손대지 않는다(`handOff` 머리말).
-           *
-           * **한 번만 봐주고 지우면 모자란다**(실측): 이 감시는 같은 자리에서 **두 번**
-           * 불린다 — 효과가 다시 서며 곧바로 한 번, 그리고 `selectionchange`가 와서 한 번.
-           * 그래서 표식은 남겨 두고, **다음 누름**이 들어올 때 지운다(`onPointerDown`) —
-           * 그때부터는 사용자가 만든 선택이다.
-           */
-          if (handOff.current !== sig) {
-            paintAndHold(built!);
-            return;
-          }
-        }
+      if (isTouchPointer() && !readOnly) {
+        promoteCol();
+        return;
       }
       paintRanges([range.cloneRange()]);
     };
@@ -1941,8 +2030,9 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     return () => {
       document.removeEventListener('selectionchange', follow);
       clearSelectionPaint();
+      demoteCol(true);
     };
-  }, [textSel]);
+  }, [textSel, readOnly, promoteCol, demoteCol]);
 
   /**
    * 고른 것을 **우리 그림으로 칠하고**, 캐럿은 **첫 줄의 시작점에 접어 둔다**.
@@ -2447,6 +2537,114 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   }, [textSel]);
 
   /**
+   * 고른 글자를 **모델에서 들어낸다** — 첫 줄의 앞부분과 마지막 줄의 뒷부분을 이어
+   * 붙이고 그 사이를 뺀다(노션·메모장과 같은 결과).
+   *
+   * **선택을 인자로 받는다.** 예전에는 `textSel`을 닫아 쥔 효과 안의 지역 함수였다 —
+   * 그때는 원천이 하나(우리가 칠한 선택)뿐이었기 때문이다. 이제 손가락이 만든
+   * **브라우저 선택**도 같은 길을 쓴다(단 승격 — `promoteCol` 머리말). 지우기·
+   * 덮어쓰기의 규칙은 원천이 둘이어도 **하나**여야 한다.
+   */
+  const removeSel = useCallback((sel: LineSel[]): { key: string; at: number } | null => {
+    const first = sel[0]!;
+    const last = sel[sel.length - 1]!;
+    /**
+     * **줄의 단위는 블록만이 아니다**(제보: 목록 여러 줄을 끌어 지우면 첫 줄의
+     * 글자만 지워진다). 예전에는 여기서 "가운데 **블록**들을 지운다"만 했는데,
+     * 목록의 여러 줄은 한 블록 안의 **항목**이라 지울 블록이 하나도 없었다.
+     * 이제 컨트롤러가 항목까지 보고 한 커밋으로 들어낸다.
+     */
+    const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
+    if (!done) {
+      setTextSel(null);
+      return null;
+    }
+    // 비제어 박스라 DOM도 함께 고쳐 준다(모델만 바꾸면 화면에 옛 글자가 남는다).
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${done.key}"]`) ?? first.el;
+    el.innerHTML = runsToHtml({ text: runsText(done.runs), rich: done.runs });
+    setTextSel(null);
+    return { key: done.key, at: done.at };
+  }, [controller]);
+  /**
+   * **고른 것을 「브라우저가 지울 선택」으로 바꿔 둔다** — 글자를 칠 때 쓴다.
+   *
+   * 왜 우리가 직접 지우고 다시 그리지 않나: 그러면 **한글의 자모가 갈린다**(제보:
+   * `안녕`이 `ㅇㅏㄴ녕`으로). IME는 키를 누른 그 순간 **고칠 텍스트 노드와 자리**를
+   * 붙잡는데, 우리가 그 사이에 `innerHTML`을 갈아 끼우면 그 자리가 사라져 조합이
+   * 풀리고 자모가 낱낱이 들어간다.
+   *
+   * 그래서 DOM은 **덧붙이기만** 한다:
+   * ① 모델에서는 고른 범위를 지우고(가운데 블록·마지막 줄이 사라진다)
+   * ② 첫 줄의 DOM 끝에 **남을 꼬리**(마지막 줄의 뒷부분)를 덧붙이고
+   * ③ 지워질 구간(첫 줄의 고른 부분)을 **브라우저의 선택**으로 잡아 둔다.
+   * 그러면 이어지는 글자·조합이 그 선택을 통째로 갈아 끼운다 — 우리가 손대지 않은
+   * 텍스트 노드 위에서 일어나므로 조합이 끊기지 않는다.
+   */
+  const replaceWithTyping = useCallback((sel: LineSel[]): void => {
+    const first = sel[0];
+    const last = sel[sel.length - 1];
+    if (!first || !last) return;
+    const gone = lineLength(first.el) - first.from; // 첫 줄에서 지워질 길이
+    /**
+     * **덮어쓸 글자의 서식을 지우기 전에 읽어 둔다**(제보 1 — `armMarksForReplace`).
+     *
+     * 「고른 구간의 시작」이 기준이다: 첫 줄의 `from` 자리 글자 하나. 그 자리에
+     * 글자가 없으면(줄 끝에서 시작한 선택) 캐럿 규칙으로 물러선다 —
+     * `noteMarksIn`이 접힌 자리를 그렇게 본다(앞 글자를 물려받는다).
+     */
+    const head = noteMarksIn(first.el, first.from, Math.min(lineLength(first.el), first.from + 1));
+    const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
+    if (!done) {
+      setTextSel(null);
+      return;
+    }
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${done.key}"]`) ?? first.el;
+    const chars = runsToChars({ text: runsText(done.runs), rich: done.runs });
+    const tail = charsToRuns(chars.slice(done.at));
+    if (runsText(tail)) el.insertAdjacentHTML('beforeend', runsToHtml({ text: runsText(tail), rich: tail }));
+    // 이 선택은 **브라우저가 지울 것**이다 — 손가락에서 우리가 받아 오지 않게 표식을 남긴다.
+    handOff.current = `${done.key}:${first.from}:${first.from + gone}`;
+    try {
+      if (document.activeElement !== el) el.focus({ preventScroll: true });
+      const a = pointAt(el, first.from);
+      const b = pointAt(el, first.from + gone);
+      window.getSelection()?.setBaseAndExtent(a.node, a.offset, b.node, b.offset);
+    } catch {
+      /* 선택을 못 세우면 글자가 캐럿 자리에 들어간다(고른 것은 이미 지워졌다) */
+    }
+    // 브라우저가 첫 글자에만 물려주는 서식을 **끝까지 못박는다**(제보 1).
+    armMarksForReplace(el, first.from, gone, head);
+    setTextSel(null);
+  }, [controller]);
+
+  /**
+   * 캐럿을 **지금 곧바로** 그 자리에 놓는다(다음 프레임이 아니라).
+   *
+   * 글자를 이어 치는 길에서 쓴다 — 브라우저는 이 `keydown`이 끝난 **직후** 지금
+   * 초점·캐럿이 있는 자리에 글자를 넣으므로, 한 프레임이라도 늦으면 그 글자가
+   * 갈 곳을 잃는다.
+   */
+  const putCaretNow = useCallback((key: string, at: number): void => {
+    const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
+    if (!el) return;
+    // **이미 초점이 있으면 다시 주지 않는다** — 조합 중에 `focus()`를 부르면 그
+    // 조합이 끊긴다(한글의 첫 자모가 사라지는 길 가운데 하나다).
+    if (document.activeElement !== el) el.focus({ preventScroll: true });
+    const len = lineLength(el);
+    const spot = pointAt(el, Math.max(0, Math.min(at, len)));
+    try {
+      const range = document.createRange();
+      range.setStart(spot.node, spot.offset);
+      range.collapse(true);
+      const sel2 = window.getSelection();
+      sel2?.removeAllRanges();
+      sel2?.addRange(range);
+    } catch {
+      /* 캐럿을 못 놓아도 포커스는 갔다 */
+    }
+  }, []);
+
+  /**
    * 글자 선택 위의 키보드 — 복사·잘라내기·지우기·Esc.
    *
    * `copy`/`cut` 이벤트에 얹지 않는 이유: 브라우저의 선택은 비워 둔 상태라(칠하기로
@@ -2459,104 +2657,6 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   useEffect(() => {
     const sel = textSel;
     if (!sel || !sel.length || !page) return;
-    const remove = () => {
-      const first = sel[0]!;
-      const last = sel[sel.length - 1]!;
-      /**
-       * **줄의 단위는 블록만이 아니다**(제보: 목록 여러 줄을 끌어 지우면 첫 줄의
-       * 글자만 지워진다). 예전에는 여기서 "가운데 **블록**들을 지운다"만 했는데,
-       * 목록의 여러 줄은 한 블록 안의 **항목**이라 지울 블록이 하나도 없었다.
-       * 이제 컨트롤러가 항목까지 보고 한 커밋으로 들어낸다.
-       */
-      const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
-      if (!done) {
-        setTextSel(null);
-        return null;
-      }
-      // 비제어 박스라 DOM도 함께 고쳐 준다(모델만 바꾸면 화면에 옛 글자가 남는다).
-      const el = document.querySelector<HTMLElement>(`[data-note-line="${done.key}"]`) ?? first.el;
-      el.innerHTML = runsToHtml({ text: runsText(done.runs), rich: done.runs });
-      setTextSel(null);
-      return { key: done.key, at: done.at };
-    };
-    /**
-     * **고른 것을 「브라우저가 지울 선택」으로 바꿔 둔다** — 글자를 칠 때 쓴다.
-     *
-     * 왜 우리가 직접 지우고 다시 그리지 않나: 그러면 **한글의 자모가 갈린다**(제보:
-     * `안녕`이 `ㅇㅏㄴ녕`으로). IME는 키를 누른 그 순간 **고칠 텍스트 노드와 자리**를
-     * 붙잡는데, 우리가 그 사이에 `innerHTML`을 갈아 끼우면 그 자리가 사라져 조합이
-     * 풀리고 자모가 낱낱이 들어간다.
-     *
-     * 그래서 DOM은 **덧붙이기만** 한다:
-     * ① 모델에서는 고른 범위를 지우고(가운데 블록·마지막 줄이 사라진다)
-     * ② 첫 줄의 DOM 끝에 **남을 꼬리**(마지막 줄의 뒷부분)를 덧붙이고
-     * ③ 지워질 구간(첫 줄의 고른 부분)을 **브라우저의 선택**으로 잡아 둔다.
-     * 그러면 이어지는 글자·조합이 그 선택을 통째로 갈아 끼운다 — 우리가 손대지 않은
-     * 텍스트 노드 위에서 일어나므로 조합이 끊기지 않는다.
-     */
-    const replaceWithTyping = (): void => {
-      const first = sel[0];
-      const last = sel[sel.length - 1];
-      if (!first || !last) return;
-      const gone = lineLength(first.el) - first.from; // 첫 줄에서 지워질 길이
-      /**
-       * **덮어쓸 글자의 서식을 지우기 전에 읽어 둔다**(제보 1 — `armMarksForReplace`).
-       *
-       * 「고른 구간의 시작」이 기준이다: 첫 줄의 `from` 자리 글자 하나. 그 자리에
-       * 글자가 없으면(줄 끝에서 시작한 선택) 캐럿 규칙으로 물러선다 —
-       * `noteMarksIn`이 접힌 자리를 그렇게 본다(앞 글자를 물려받는다).
-       */
-      const head = noteMarksIn(first.el, first.from, Math.min(lineLength(first.el), first.from + 1));
-      const done = controller.deleteNoteTextRange({ key: first.key, at: first.from }, { key: last.key, at: last.to });
-      if (!done) {
-        setTextSel(null);
-        return;
-      }
-      const el = document.querySelector<HTMLElement>(`[data-note-line="${done.key}"]`) ?? first.el;
-      const chars = runsToChars({ text: runsText(done.runs), rich: done.runs });
-      const tail = charsToRuns(chars.slice(done.at));
-      if (runsText(tail)) el.insertAdjacentHTML('beforeend', runsToHtml({ text: runsText(tail), rich: tail }));
-      // 이 선택은 **브라우저가 지울 것**이다 — 손가락에서 우리가 받아 오지 않게 표식을 남긴다.
-      handOff.current = `${done.key}:${first.from}:${first.from + gone}`;
-      try {
-        if (document.activeElement !== el) el.focus({ preventScroll: true });
-        const a = pointAt(el, first.from);
-        const b = pointAt(el, first.from + gone);
-        window.getSelection()?.setBaseAndExtent(a.node, a.offset, b.node, b.offset);
-      } catch {
-        /* 선택을 못 세우면 글자가 캐럿 자리에 들어간다(고른 것은 이미 지워졌다) */
-      }
-      // 브라우저가 첫 글자에만 물려주는 서식을 **끝까지 못박는다**(제보 1).
-      armMarksForReplace(el, first.from, gone, head);
-      setTextSel(null);
-    };
-
-    /**
-     * 캐럿을 **지금 곧바로** 그 자리에 놓는다(다음 프레임이 아니라).
-     *
-     * 글자를 이어 치는 길에서 쓴다 — 브라우저는 이 `keydown`이 끝난 **직후** 지금
-     * 초점·캐럿이 있는 자리에 글자를 넣으므로, 한 프레임이라도 늦으면 그 글자가
-     * 갈 곳을 잃는다.
-     */
-    const putCaretNow = (key: string, at: number): void => {
-      const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
-      if (!el) return;
-      // **이미 초점이 있으면 다시 주지 않는다** — 조합 중에 `focus()`를 부르면 그
-      // 조합이 끊긴다(한글의 첫 자모가 사라지는 길 가운데 하나다).
-      if (document.activeElement !== el) el.focus({ preventScroll: true });
-      const len = lineLength(el);
-      const spot = pointAt(el, Math.max(0, Math.min(at, len)));
-      try {
-        const range = document.createRange();
-        range.setStart(spot.node, spot.offset);
-        range.collapse(true);
-        const sel2 = window.getSelection();
-        sel2?.removeAllRanges();
-        sel2?.addRange(range);
-      } catch {
-        /* 캐럿을 못 놓아도 포커스는 갔다 */
-      }
-    };
     const onKey = (e: KeyboardEvent) => {
       /**
        * **줄 부품이 이미 처리한 키는 건너뛴다.**
@@ -2629,7 +2729,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
        * `Process`·`Unidentified`는 IME가 첫 자모를 삼킬 때 오는 키 이름이다.
        */
       if (!mod && !e.altKey && !readOnly && (e.key.length === 1 || e.key === 'Process' || e.key === 'Unidentified')) {
-        replaceWithTyping();
+        replaceWithTyping(sel);
         return; // preventDefault 하지 않는다 — 브라우저가 그 선택을 친 글자로 바꾼다
       }
       // 이미 여러 줄을 고른 상태의 ⌘A — 본문 전체로 넓힌다.
@@ -2654,10 +2754,10 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
         e.preventDefault();
         // 지우기 **전에** 만든다. 클립보드가 없는 환경에서도 지우기는 듣는다.
         writeClipboard(payload());
-        if (!readOnly) remove();
+        if (!readOnly) removeSel(sel);
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && !readOnly) {
         e.preventDefault();
-        const spot = remove();
+        const spot = removeSel(sel);
         if (spot) putCaretNow(spot.key, spot.at);
       }
     };
@@ -2673,7 +2773,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       const t = e.clipboardData?.getData('text/plain') ?? '';
       if (!t) return;
       e.preventDefault();
-      const spot = remove();
+      const spot = removeSel(sel);
       if (!spot) return;
       putCaretNow(spot.key, spot.at);
       const go = () => {
@@ -2691,7 +2791,140 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('paste', onPaste);
     };
-  }, [textSel, page, controller, readOnly, extendSelection, extendSide, selectAllBody, selectToEnd]);
+  }, [textSel, page, controller, readOnly, extendSelection, extendSide, selectAllBody, selectToEnd, removeSel, replaceWithTyping, putCaretNow]);
+
+  /**
+   * **승격된 선택 위의 편집** — 브라우저에 맡기면 블록이 부서진다.
+   *
+   * 승격된 동안 크로뮴은 본문 전체를 제 편집 호스트로 본다. 그 상태로 여러 줄을 골라
+   * 놓고 글자를 치면 **블록들을 제 손으로 합치고**(실측: 세 줄이 한 줄), Enter는 **없던
+   * 블록을 만든다**(세 줄이 네 줄). 리액트가 그린 DOM을 브라우저가 고친 셈이라 모델과
+   * 화면이 그 자리에서 갈린다.
+   *
+   * 그래서 편집이 오는 **그 순간** 승격을 걷고 우리 모델 경로로 넘긴다:
+   * - 글자: `replaceWithTyping` — 고른 것을 모델에서 지우고, **브라우저가 지울 선택**을
+   *   첫 줄에 다시 세운다. 우리가 글자를 직접 넣지 않으므로 **한글 조합이 끊기지
+   *   않는다**(이 함수가 효과 밖으로 나온 이유다 — 원천이 「우리 칠」과 「브라우저
+   *   선택」 둘이 됐다).
+   * - 지우기·Enter·잘라내기·붙여넣기: `removeSel`로 들어내고 이은 자리에 캐럿.
+   * - 복사: 우리 두 벌(평문+서식)을 싣는다 — 기본 복사는 목록 마커(편집 박스 밖의
+   *   형제 span)와 링크·형광을 잃는다.
+   *
+   * `beforeinput`은 **글쇠가 오지 않는 입력기**를 위한 그물이다 — 취소할 수 있을 때만
+   * 막는다(조합 입력은 취소 불가라 그때는 `keydown`이 먼저 잡아야 한다).
+   *
+   * 한 줄 안의 선택은 건드리지 않는다: 그것은 승격 전과 똑같은 모양이고 브라우저가
+   * 이미 옳게 한다.
+   */
+  useEffect(() => {
+    if (readOnly) return;
+    /** 승격된 **여러 줄** 선택일 때만 우리 일이다. */
+    const crossing = (): LineSel[] | null => {
+      if (!promoted.current) return null;
+      const sel = nativeLineSel();
+      return sel && sel.length >= 2 ? sel : null;
+    };
+    const load = (data: DataTransfer | null, sel: LineSel[]): void => {
+      const p = selectionClipboard(sel);
+      data?.setData('text/plain', p.plain);
+      data?.setData('text/html', p.html);
+    };
+    const cut = (sel: LineSel[]): void => {
+      demoteCol(true);
+      const spot = removeSel(sel);
+      if (spot) putCaretNow(spot.key, spot.at);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented) return;
+      const sel = crossing();
+      if (!sel) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return; // 복사·잘라내기·붙여넣기는 아래에서
+      if (e.key.length === 1 || e.key === 'Process' || e.key === 'Unidentified') {
+        demoteCol(true);
+        replaceWithTyping(sel);
+        return; // preventDefault 하지 않는다 — 브라우저가 그 선택을 친 글자로 바꾼다
+      }
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        cut(sel);
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        demoteCol(true);
+        const spot = removeSel(sel);
+        if (!spot) return;
+        putCaretNow(spot.key, spot.at);
+        /**
+         * 지운 자리에서 **줄을 가른다** — 그 규칙은 줄 종류마다 다르다(목록은 항목을,
+         * 인용은 본문으로, 코드는 블록 안에서 줄바꿈). 그 규칙이 전부 줄 부품의
+         * `onKeyDown`에 있으므로 같은 키를 **그 줄에게 한 번 더** 보낸다. 이 키가 왔을
+         * 때 초점은 단에 있었으니 줄 부품은 아직 이 Enter를 보지 못했다.
+         *
+         * 한 프레임 미루는 이유는 붙여넣기와 같다 — 지우기는 컨트롤러의 커밋이라
+         * 이 차례에는 아직 옛 DOM이 서 있다.
+         */
+        const again = (): void => {
+          const el = document.querySelector<HTMLElement>(`[data-note-line="${spot.key}"]`);
+          if (!el) return;
+          caretToLine(spot.key, spot.at);
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(again);
+        else setTimeout(again, 0);
+      }
+    };
+    const onBeforeInput = (e: InputEvent): void => {
+      if (!e.cancelable || e.defaultPrevented) return;
+      const sel = crossing();
+      if (!sel) return;
+      e.preventDefault();
+      cut(sel);
+      const t = e.data ?? '';
+      if (t) document.execCommand?.('insertText', false, t);
+    };
+    const onCopy = (e: ClipboardEvent): void => {
+      const sel = crossing();
+      if (!sel) return;
+      e.preventDefault();
+      load(e.clipboardData, sel);
+    };
+    const onCut = (e: ClipboardEvent): void => {
+      const sel = crossing();
+      if (!sel) return;
+      e.preventDefault();
+      load(e.clipboardData, sel); // 지우기 **전에** 싣는다
+      cut(sel);
+    };
+    const onPaste = (e: ClipboardEvent): void => {
+      const sel = crossing();
+      if (!sel) return;
+      const t = e.clipboardData?.getData('text/plain') ?? '';
+      e.preventDefault();
+      demoteCol(true);
+      const spot = removeSel(sel);
+      if (!spot) return;
+      putCaretNow(spot.key, spot.at);
+      if (!t) return;
+      const go = (): void => {
+        if (!pasteRef.current(spot.key, t, spot.at, spot.at)) document.execCommand?.('insertText', false, t);
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+      else setTimeout(go, 0);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('beforeinput', onBeforeInput, true);
+    document.addEventListener('copy', onCopy, true);
+    document.addEventListener('cut', onCut, true);
+    document.addEventListener('paste', onPaste, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('beforeinput', onBeforeInput, true);
+      document.removeEventListener('copy', onCopy, true);
+      document.removeEventListener('cut', onCut, true);
+      document.removeEventListener('paste', onPaste, true);
+    };
+  }, [readOnly, nativeLineSel, demoteCol, removeSel, replaceWithTyping, putCaretNow]);
 
   /**
    * **클립보드의 그림을 붙여넣으면 이미지 블록이 된다**(요청 10) — 단추로 고른 것과
@@ -3458,6 +3691,8 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
               촘촘하고 구획은 여전히 갈린다. */}
           <div
             ref={colRef}
+            /** 본문 단 — 손가락 선택이 잠깐 승격되는 자리다(`promoteCol`). */
+            data-note-col=""
             onContextMenu={(e) => {
               if (readOnly) return;
               const el = e.target as HTMLElement | null;
