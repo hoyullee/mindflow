@@ -1054,6 +1054,27 @@ export function coerceExtraCalendars(raw: unknown): { extra?: GoogleExtraCalenda
   return out.length ? { extra: out } : {};
 }
 
+/**
+ * 저장 블롭에서 읽은 `calendarColors` 검증(요청: 구글 캘린더 색 바꾸기) — `id → hex`.
+ *
+ * `coerceExtraCalendars`와 같은 태도다: 모양이 어긋난 항목은 조용히 버리고, 남는 것이
+ * 없으면 **키 자체를 만들지 않는다**(옛 블롭과 바이트가 같게 — 저장 서명이 흔들려
+ * 하이드레이션 직후 다시 저장되는 사고를 막는다).
+ *
+ * 값은 `#rgb`·`#rrggbb`만 받는다. 이 문자열은 `background`에 그대로 들어가므로,
+ * 검증 없이 통과시키면 손상된 블롭 한 줄이 임의의 CSS가 된다.
+ */
+export function coerceCalendarColors(raw: unknown): { calendarColors?: Record<string, string> } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [id, hex] of Object.entries(raw as Record<string, unknown>)) {
+    if (!id || typeof hex !== 'string') continue;
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) continue;
+    out[id] = hex;
+  }
+  return Object.keys(out).length ? { calendarColors: out } : {};
+}
+
 /** 목록에 더하지 못한 이유 — 상태 코드마다 답이 다르므로 갈라 말한다. */
 export function calendarAddError(e: unknown): string {
   const status = (e as { status?: number }).status;

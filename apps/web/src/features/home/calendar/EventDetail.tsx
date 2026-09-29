@@ -332,8 +332,22 @@ export function EventDetail({
       open
       onClose={onClose}
       label="일정 상세"
-      // 고칠 수 있는 팝업은 초안을 들고 있다 — 막 클릭 한 번에 버려지면 안 된다.
-      dismissOnBackdrop={readOnly}
+      /*
+       * **막을 누르면 닫힌다**(제보: 그리오 일정 팝업은 닫히는데 구글 일정 팝업은
+       * 닫히지 않는다 — 같게 해 달라).
+       *
+       * 여기는 `dismissOnBackdrop={readOnly}`였다: **보기 전용일 때만** 닫혔다. 그래서
+       * 고칠 수 있는 구글 일정(대개 내 캘린더의 일정)이 막에 반응하지 않았다. 견줘
+       * 말한 「그리오 일정 팝업」은 칸반 카드의 일정 상세(`CalendarDetail`)이고 그쪽은
+       * 처음부터 `dismissOnBackdrop`다 — 원천이 아니라 **팝업마다 달랐던 것**이다
+       * (그리오 캘린더 일정도 이 팝업을 쓰므로 함께 닫히지 않고 있었다).
+       *
+       * 이제 원천을 가리지 않고 닫힌다. 초안을 지키는 자리는 **새 일정 팝업**
+       * (`NewEventModal`, `dismissOnBackdrop={false}`)으로 남는다 — 그쪽은 닫으면 빈
+       * 종이에서 다시 시작해야 하지만, 상세는 일정이 그대로 남아 다시 열면 된다
+       * (`CalendarDetail`이 같은 이유로 이미 그렇게 동작해 왔다).
+       */
+      dismissOnBackdrop
       // 막·등장 효과는 설정 팝업과 같은 것(요청) — 예전에는 배경이 그대로 보였다(제보).
       dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 321, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
       cardRef={morphRef}

@@ -231,7 +231,7 @@ export interface HomeState {
   homeLanding: HomeLanding;
   /** 구글 캘린더 겹치기 설정(PR5) — 켜지 않았으면 `null`. 워크스페이스 블롭에
    * 실려 기기 간에 따라온다(토큰은 따라오지 않는다 — 탭마다 새로 받는다). */
-  google: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string } | null;
+  google: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string; calendarColors?: Record<string, string> } | null;
   /** 일정 알림 설정(제보: 앱에서는 알림이 오지 않았다) — 정본은 워크스페이스 블롭이라
    * **기기 간에 따라온다**. 고른 적 없으면 `null`(그때는 각 기기가 실제로 고른 값을
    * 올려 준다 — `reminderPrefs.ts`의 `explicitReminderPrefs`). 이 기기에 남는 것은

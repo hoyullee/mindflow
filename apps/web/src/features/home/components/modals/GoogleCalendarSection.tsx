@@ -18,6 +18,7 @@ import type { GoogleCalendarApi } from '../../calendar/useGoogleCalendar';
 import type { DirectoryPerson } from '../../calendar/googleDirectory';
 import { HOLIDAY_COUNTRIES, HOLIDAY_OFF, isManagedHolidayId, type HolidayCountry } from '../../calendar/googleCalendar';
 import { Segmented } from '../../../../components/Segmented';
+import { CalendarColorPicker } from '../../calendar/CalendarColorPicker';
 import { AnchoredList, rowDivider } from '../../calendar/AnchoredList';
 import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
 import { isDesktopShell } from '../../../../platform/desktopBridge';
@@ -176,7 +177,21 @@ export function GoogleCalendarSection({
                       className="menu-row"
                     >
                       <input type="checkbox" className="mf-cb" checked={on} onChange={() => api.toggleCalendar(c.id)} />
-                      <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 999, background: c.color ?? 'var(--mf-accent)', flexShrink: 0 }} />
+                      {/*
+                        색 점이 곧 **색 고르개**다(요청: 구글 캘린더 색을 바꾸고 싶다) —
+                        이 줄에서 색을 보고 있으므로 바꾸는 자리도 여기가 맞고, 같은 일의
+                        진입점을 따로 만들지 않는다. `<label>` 안의 `<button>`은 체크를
+                        건드리지 않는다(HTML: 상호작용 자손을 누르면 라벨은 아무 일도 하지
+                        않는다 — 아래 ✕ 단추와 같은 자리).
+                      */}
+                      <CalendarColorPicker
+                        id={c.id}
+                        summary={c.summary}
+                        color={c.color}
+                        palette={api.eventColors}
+                        custom={!!api.calendarColors[c.id]}
+                        onPick={(hex) => api.setCalendarColor(c.id, hex)}
+                      />
                       <span style={{ minWidth: 0, flex: 1, fontSize: 13.5, fontWeight: on ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.summary}</span>
                       {c.primary ? (
                         <Badge>내 캘린더</Badge>
@@ -282,7 +297,11 @@ function CalendarListSkeleton() {
       {Array.from({ length: SKELETON_ROWS }, (_, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '7px 8px', minHeight: 38 }}>
           <span className="mf-skel" style={{ width: 22, height: 22, borderRadius: 7, flexShrink: 0 }} />
-          <span className="mf-skel" style={{ width: 9, height: 9, borderRadius: 999, flexShrink: 0 }} />
+          {/* 색 점은 이제 22px 단추 안에 앉는다(색 고르개) — 자리를 그만큼 잡아 둬야
+              목록이 도착할 때 이름이 옆으로 밀리지 않는다. */}
+          <span style={{ width: 22, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+            <span className="mf-skel" style={{ width: 9, height: 9, borderRadius: 999 }} />
+          </span>
           {/* 이름은 길이가 저마다 다르다 — 한 폭으로 고르면 표처럼 보인다. */}
           <span className="mf-skel" style={{ width: `${[52, 38, 61, 44, 33][i % 5]}%`, height: 10, borderRadius: 5 }} />
         </div>

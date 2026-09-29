@@ -541,6 +541,16 @@ export interface WorkspaceData {
     /** 공휴일 국가(요청) — `'kr' | 'jp' | 'us'`. 그 나라의 공개 공휴일 캘린더를
      * 보여 줄 목록에 올린다(`calendar/googleCalendar.ts`의 `HOLIDAY_COUNTRIES`). */
     holiday?: string;
+    /**
+     * **캘린더 색을 우리 쪽에서 덮어쓴 값**(요청: 구글 캘린더 색을 바꾸고 싶다).
+     * `캘린더 id → hex`. 없는 id는 구글이 준 색을 그대로 쓴다.
+     *
+     * 구글에 쓰지 않는 이유: 캘린더 목록의 색을 고치려면 `calendar.calendarlist`
+     * **쓰기** 스코프가 필요한데 우리는 읽기만 받았고(`GOOGLE_SCOPE_REQUIRED`),
+     * 넓히면 민감 스코프 검수를 다시 받아야 한다. 그래서 **그리오에서 보이는 색**만
+     * 바꾼다 — 구글 캘린더 쪽 색은 그대로다(화면이 그렇게 말한다).
+     */
+    calendarColors?: Record<string, string>;
   };
   /**
    * 일정 알림을 **받을까**(제보: 앱에서는 알림이 오지 않았다).

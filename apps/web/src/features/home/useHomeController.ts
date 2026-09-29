@@ -14,7 +14,7 @@ import { explicitReminderPrefs, setGoogleRemindersEnabled, setRemindersEnabled }
 import { noteSyncedReminderPrefs } from '../reminders/reminderSync';
 import { addMonth, partsOf, todayISO } from './calendar/model';
 import { useLiveRefresh } from './calendar/useLiveRefresh';
-import { coerceExtraCalendars, holidayCountryOf } from './calendar/googleCalendar';
+import { coerceCalendarColors, coerceExtraCalendars, holidayCountryOf } from './calendar/googleCalendar';
 import { moveInList } from './listOrder';
 import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
@@ -219,7 +219,7 @@ export function useHomeController() {
     const wsTheme = ws && ws.theme !== undefined ? homeThemeKeyOf(ws.theme) : null;
     // 구글 겹치기 설정 — 모양이 어긋난 값은 조용히 버린다(옛/손상 블롭 방어).
     const wsHoliday = ws?.google ? holidayCountryOf(ws.google.holiday) : null;
-    const wsGoogle = ws && ws.google && Array.isArray(ws.google.calendars) ? { calendars: ws.google.calendars.filter((c): c is string => typeof c === 'string'), ...coerceExtraCalendars(ws.google.extra), ...(wsHoliday ? { holiday: wsHoliday } : {}) } : null;
+    const wsGoogle = ws && ws.google && Array.isArray(ws.google.calendars) ? { calendars: ws.google.calendars.filter((c): c is string => typeof c === 'string'), ...coerceExtraCalendars(ws.google.extra), ...(wsHoliday ? { holiday: wsHoliday } : {}), ...coerceCalendarColors(ws.google.calendarColors) } : null;
     // 대시보드 — 스페이스와 같은 블롭에 실려 온다. 저장을 못 읽었으면 빈 목록으로
     // 두되(canPersistWorkspaceRef가 저장을 막으므로 덮어쓸 위험은 없다) 읽었으면
     // 모양을 검증해 들인다.
@@ -1172,8 +1172,20 @@ export function useHomeController() {
    * 블롭에는 **고른 캘린더만** 남긴다: "켰는가"는 이 키가 있는가로 이미 말해진다
    * (플래그를 따로 두면 둘이 어긋날 수 있다).
    */
-  const setGoogleCalendars = (next: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string } | null) =>
-    patch({ google: next ? { calendars: next.calendars, ...(next.extra?.length ? { extra: next.extra } : {}), ...(next.holiday ? { holiday: next.holiday } : {}) } : null });
+  const setGoogleCalendars = (
+    next: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string; colors?: Record<string, string> } | null,
+  ) =>
+    patch({
+      google: next
+        ? {
+            calendars: next.calendars,
+            ...(next.extra?.length ? { extra: next.extra } : {}),
+            ...(next.holiday ? { holiday: next.holiday } : {}),
+            // 우리 쪽에서 바꿔 둔 캘린더 색(요청) — 여기서 빠뜨리면 체크 한 번에 색이 사라진다.
+            ...(next.colors && Object.keys(next.colors).length ? { calendarColors: next.colors } : {}),
+          }
+        : null,
+    });
 
   const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
   const closeFeedback = () => patch({ feedbackOpen: false });

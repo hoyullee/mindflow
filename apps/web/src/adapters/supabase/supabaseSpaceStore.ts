@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SpaceStore, WorkspaceData } from '../ports';
+import { coerceCalendarColors } from '../../features/home/calendar/googleCalendar';
 
 const TABLE = 'workspaces';
 
@@ -34,7 +35,7 @@ export class SupabaseSpaceStore implements SpaceStore {
     const homeLanding = typeof body.homeLanding === 'string' ? body.homeLanding : undefined;
     const dashboards = Array.isArray(body.dashboards) ? body.dashboards : undefined;
     // 구글 캘린더 겹치기 설정(PR5) — 모양이 어긋나면 없는 것으로 본다.
-    const g = body.google as { calendars?: unknown; extra?: unknown; holiday?: unknown } | undefined;
+    const g = body.google as { calendars?: unknown; extra?: unknown; holiday?: unknown; calendarColors?: unknown } | undefined;
     // 그리오 목록에만 더한 캘린더(요청) — 모양이 어긋난 항목은 버린다(정본 검증은
     // `calendar/googleCalendar.ts`의 `coerceExtraCalendars`가 한다).
     const extra = g && Array.isArray(g.extra)
@@ -43,8 +44,10 @@ export class SupabaseSpaceStore implements SpaceStore {
     // `holiday`(공휴일 국가)도 함께 실어 보낸다 — 여기서 필드별로 다시 지으면서
     // 빠뜨리면 사용자가 고른 나라가 **로드마다 지워진다**(`extra`에서 이미 겪은
     // 것과 같은 계열). 값 검증은 `googlePrefsOf`가 한다(모르는 값은 거른다).
+    // 우리 쪽에서 바꿔 둔 **캘린더 색**(요청) — 위 ⚠️와 같은 이유로 여기에도 실어야
+    // 한다(빠뜨리면 바꾼 색이 로드마다 지워진다). 검증은 `coerceCalendarColors`가.
     const google = g && Array.isArray(g.calendars)
-      ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string'), ...(extra?.length ? { extra } : {}), ...(typeof g.holiday === 'string' ? { holiday: g.holiday } : {}) }
+      ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string'), ...(extra?.length ? { extra } : {}), ...(typeof g.holiday === 'string' ? { holiday: g.holiday } : {}), ...coerceCalendarColors(g.calendarColors) }
       : undefined;
     // 일정 알림(제보: 앱과 웹에 따로 켜져 있었다) — 위 ⚠️와 같은 이유로 여기에도.
     const r = body.reminders as { on?: unknown; google?: unknown } | undefined;

@@ -113,6 +113,16 @@ export interface GoogleCalendarApi {
   disconnect: () => Promise<void>;
   /** 그 캘린더를 보이기/감추기. */
   toggleCalendar: (id: string) => void;
+  /**
+   * 그 캘린더를 **어떤 색으로 볼까**(요청) — `null`이면 구글이 준 색으로 되돌린다.
+   *
+   * 구글에는 쓰지 않는다: 목록의 색을 고치려면 `calendar.calendarlist` **쓰기**
+   * 스코프가 필요한데 우리는 읽기만 받았고, 넓히면 민감 스코프 검수를 다시 받아야
+   * 한다. 그래서 바뀌는 것은 **그리오에서 보이는 색**이다(화면이 그렇게 말한다).
+   */
+  setCalendarColor: (id: string, hex: string | null) => void;
+  /** 우리 쪽에서 색을 바꿔 둔 캘린더 — `id → hex`. 「기본」 칸이 켜질지 화면이 이 값으로 가른다. */
+  calendarColors: Record<string, string>;
   /** 목록의 캘린더를 **전부 켠다**(LNB의 `모두 보기`) — 하나씩 토글하면 저장이
    * 그만큼 나가므로 한 번에 쓴다. 이미 전부 켜져 있으면 호출부가 버튼을 감춘다. */
   showAllCalendars: () => void;
@@ -214,6 +224,14 @@ export interface GoogleCalendarPrefs {
   extra?: GoogleExtraCalendar[];
   /** 공휴일 국가(요청) — 그 나라의 공개 공휴일 캘린더를 보여 준다. */
   holiday?: HolidayCountry;
+  /**
+   * **캘린더 색을 우리 쪽에서 덮어쓴 값**(요청) — `캘린더 id → hex`.
+   *
+   * 구글에 쓰지 않는다: 목록의 색을 고치려면 `calendar.calendarlist` **쓰기**
+   * 스코프가 필요한데 우리는 읽기만 받았고(`GOOGLE_SCOPE_REQUIRED`), 넓히면 민감
+   * 스코프 검수를 다시 받아야 한다. 그래서 **그리오에서 보이는 색**만 바꾼다.
+   */
+  colors?: Record<string, string>;
 }
 
 /**
@@ -221,13 +239,17 @@ export interface GoogleCalendarPrefs {
  * LNB 하위 메뉴·계정 설정)가 **같은 한 곳**을 쓴다 — 각자 적으면 `extra` 같은 필드를
  * 더할 때 한 곳이 조용히 빠진다.
  */
-export function googlePrefsOf(g: { calendars: string[]; extra?: GoogleExtraCalendar[]; holiday?: string } | null | undefined): GoogleCalendarPrefs {
+export function googlePrefsOf(
+  g: { calendars: string[]; extra?: GoogleExtraCalendar[]; holiday?: string; calendarColors?: Record<string, string> } | null | undefined,
+): GoogleCalendarPrefs {
   const holiday = holidayCountryOf(g?.holiday);
+  const colors = g?.calendarColors && Object.keys(g.calendarColors).length ? g.calendarColors : undefined;
   return {
     enabled: !!g,
     calendars: g?.calendars ?? [],
     ...(g?.extra?.length ? { extra: g.extra } : {}),
     ...(holiday ? { holiday } : {}),
+    ...(colors ? { colors } : {}),
   };
 }
 
@@ -299,6 +321,8 @@ export function useGoogleCalendar(
    * (그러면 목록에서 되유추한 값 — 대개 `없음` — 으로 떨어진다). 실측으로 잡았다.
    */
   const keepHoliday = () => (prefs.holiday ? { holiday: prefs.holiday } : {});
+  /** 바꿔 둔 캘린더 색을 다음 저장에도 그대로 실어 보낸다(`keepHoliday`와 같은 결). */
+  const keepColors = () => (prefs.colors && Object.keys(prefs.colors).length ? { colors: prefs.colors } : {});
   // 콜백이 최신 값을 보게 해 두는 자리 — `connect`는 deps가 좁아야 한다(누를 때마다
   // 새 함수가 되면 버튼이 하는 일과 무관하게 리렌더가 번진다).
   const extrasRef = useRef<GoogleExtraCalendar[]>(extras);
@@ -472,7 +496,19 @@ export function useGoogleCalendar(
    * 구독 쪽이 이긴다 — 그쪽에는 구글이 정한 색과 실제 쓰기 권한이 실려 있다(나중에
    * 구글에서 구독하면 우리 항목이 조용히 그것으로 승격된다).
    */
-  const allCalendars = useMemo(() => mergeExtraCalendars(calendars, extras), [calendars, extraKey]);
+  const merged = useMemo(() => mergeExtraCalendars(calendars, extras), [calendars, extraKey]);
+  /** 바꿔 둔 색의 지문 — 객체 그대로를 의존성에 넣으면 매 렌더가 새 참조다. */
+  const colorKey = useMemo(() => JSON.stringify(prefs.colors ?? {}), [prefs.colors]);
+  /**
+   * **여기서 한 번만 색을 갈아 끼운다**(요청: 구글 캘린더 색을 바꾸고 싶다).
+   *
+   * 소비처가 여럿이라(LNB 하위 목록·설정 목록·월 격자·시간표·위젯) 각자 덮어쓰면
+   * 어느 화면에서만 옛 색이 남는다 — 목록이 화면으로 나가는 **이 한 자리**에서 바꾼다.
+   */
+  const allCalendars = useMemo(() => {
+    const over = prefs.colors ?? {};
+    return Object.keys(over).length ? merged.map((c) => (over[c.id] ? { ...c, color: over[c.id]! } : c)) : merged;
+  }, [merged, colorKey]);
 
   /**
    * 알림 스케줄러가 볼 **캘린더 거울**을 이 기기에 적어 둔다(2단계).
@@ -601,10 +637,13 @@ export function useGoogleCalendar(
       needsReauth
         ? []
         : events.map((e) => {
-            const hex = eventColorOf(e, colors);
+            // 일정에 **제 색**이 지정돼 있으면 그것이 이긴다(구글에서도 그렇다) —
+            // 우리가 바꾼 캘린더 색은 그 지정이 없는 일정에만 걸린다.
+            const over = e.colorId ? undefined : (prefs.colors ?? {})[e.calendarId];
+            const hex = over ?? eventColorOf(e, colors);
             return hex && hex !== e.color ? { ...e, color: hex } : e;
           }),
-    [events, colors, needsReauth],
+    [events, colors, needsReauth, colorKey],
   );
 
   const connect = useCallback(async () => {
@@ -636,9 +675,9 @@ export function useGoogleCalendar(
       // 우리가 더해 둔 캘린더는 지키고 켠 채로 둔다 — 이 버튼은 **다시 연결**도 겸한다
       // (권한 만료). 여기서 버리면 재승인 한 번에 목록이 통째로 사라진다.
       const keep = extrasRef.current;
-      onPrefs({ enabled: true, calendars: [...seed, ...keep.map((e) => e.id)], ...(keep.length ? { extra: keep } : {}), ...keepHoliday() });
+      onPrefs({ enabled: true, calendars: [...seed, ...keep.map((e) => e.id)], ...(keep.length ? { extra: keep } : {}), ...keepHoliday(), ...keepColors() });
     } catch {
-      if (aliveRef.current) onPrefs({ enabled: true, calendars: [], ...(extrasRef.current.length ? { extra: extrasRef.current } : {}), ...keepHoliday() });
+      if (aliveRef.current) onPrefs({ enabled: true, calendars: [], ...(extrasRef.current.length ? { extra: extrasRef.current } : {}), ...keepHoliday(), ...keepColors() });
     }
   }, [onPrefs, resetAccountCache]);
 
@@ -816,7 +855,7 @@ export function useGoogleCalendar(
     (id: string) => {
       const has = prefs.calendars.includes(id);
       // `extra`를 함께 실어 보낸다 — 빠뜨리면 체크 한 번에 우리가 더한 캘린더가 사라진다.
-      onPrefs({ enabled: true, calendars: has ? prefs.calendars.filter((c) => c !== id) : [...prefs.calendars, id], ...(extras.length ? { extra: extras } : {}), ...keepHoliday() });
+      onPrefs({ enabled: true, calendars: has ? prefs.calendars.filter((c) => c !== id) : [...prefs.calendars, id], ...(extras.length ? { extra: extras } : {}), ...keepHoliday(), ...keepColors() });
     },
     [prefs.calendars, extraKey, onPrefs],
   );
@@ -826,7 +865,7 @@ export function useGoogleCalendar(
     // 설정이 소유한 공휴일 캘린더는 지금 상태를 그대로 둔다 — 그 스위치는 `공휴일 국가`다.
     const managed = prefs.calendars.filter((id) => isManagedHolidayId(id));
     const next = [...managed, ...allCalendars.filter((c) => !isManagedHolidayId(c.id)).map((c) => c.id)];
-    onPrefs({ enabled: true, calendars: next, ...(extras.length ? { extra: extras } : {}), ...keepHoliday() });
+    onPrefs({ enabled: true, calendars: next, ...(extras.length ? { extra: extras } : {}), ...keepHoliday(), ...keepColors() });
   }, [allCalendars, prefs.calendars, extraKey, onPrefs]);
 
   /**
@@ -853,7 +892,7 @@ export function useGoogleCalendar(
       if (!probed) return null;
       if (!aliveRef.current) return null;
       const next = [...extras.filter((e) => e.id !== probed.id), probed];
-      onPrefs({ enabled: true, calendars: [...prefs.calendars.filter((c) => c !== probed.id), probed.id], extra: next, ...keepHoliday() });
+      onPrefs({ enabled: true, calendars: [...prefs.calendars.filter((c) => c !== probed.id), probed.id], extra: next, ...keepHoliday(), ...keepColors() });
       return null;
     },
     [allCalendars, prefs.calendars, extraKey, onPrefs, toggleCalendar, withToken],
@@ -863,7 +902,7 @@ export function useGoogleCalendar(
   const removeCalendar = useCallback(
     (id: string) => {
       const next = extras.filter((e) => e.id !== id);
-      onPrefs({ enabled: true, calendars: prefs.calendars.filter((c) => c !== id), ...(next.length ? { extra: next } : {}), ...keepHoliday() });
+      onPrefs({ enabled: true, calendars: prefs.calendars.filter((c) => c !== id), ...(next.length ? { extra: next } : {}), ...keepHoliday(), ...keepColors() });
     },
     [prefs.calendars, extraKey, onPrefs],
   );
@@ -892,9 +931,33 @@ export function useGoogleCalendar(
       const subscribed = !!pick && calendars.some((x) => x.id.toLowerCase() === pick.id.toLowerCase());
       const nextExtra = [...extras.filter((e) => !managed(e.id)), ...(pick && !subscribed ? [{ id: pick.id, name: pick.name }] : [])];
       const nextShown = [...prefs.calendars.filter((id) => !managed(id)), ...(pick ? [pick.id] : [])];
-      onPrefs({ enabled: true, calendars: nextShown, ...(nextExtra.length ? { extra: nextExtra } : {}), holiday: c });
+      onPrefs({ enabled: true, calendars: nextShown, ...(nextExtra.length ? { extra: nextExtra } : {}), holiday: c, ...keepColors() });
     },
     [calendars, prefs.calendars, extraKey, onPrefs],
+  );
+
+  /**
+   * **이 캘린더를 어떤 색으로 볼까**(요청) — `null`이면 구글이 준 색으로 되돌린다.
+   *
+   * 구글에 쓰지 않는다(`GoogleCalendarPrefs.colors` 머리말): 목록의 색을 고치려면
+   * 쓰기 스코프가 따로라 민감 스코프 검수를 다시 받아야 한다. 그래서 이 값은
+   * 워크스페이스 블롭에만 남고 — 그래서 **기기를 옮겨도 따라온다** — 구글 캘린더
+   * 앱에서 보는 색은 그대로다.
+   */
+  const setCalendarColor = useCallback(
+    (id: string, hex: string | null) => {
+      const next = { ...(prefs.colors ?? {}) };
+      if (hex) next[id] = hex;
+      else delete next[id];
+      onPrefs({
+        enabled: true,
+        calendars: prefs.calendars,
+        ...(extrasRef.current.length ? { extra: extrasRef.current } : {}),
+        ...keepHoliday(),
+        ...(Object.keys(next).length ? { colors: next } : {}),
+      });
+    },
+    [prefs.calendars, colorKey, extraKey, onPrefs],
   );
 
   return {
@@ -916,6 +979,10 @@ export function useGoogleCalendar(
     connect,
     disconnect,
     toggleCalendar,
+    /** 이 캘린더를 어떤 색으로 볼까 — `null`이면 구글이 준 색으로 되돌린다(요청). */
+    setCalendarColor,
+    /** 우리 쪽에서 색을 바꿔 둔 캘린더 — 「기본으로」를 내줄지 화면이 이 값으로 가른다. */
+    calendarColors: prefs.colors ?? {},
     showAllCalendars,
     addCalendar,
     removeCalendar,
