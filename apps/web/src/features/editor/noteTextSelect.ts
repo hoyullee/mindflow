@@ -145,7 +145,15 @@ export function lineLength(el: HTMLElement): number {
  */
 export function rowHeight(el: HTMLElement): number {
   if (typeof getComputedStyle !== 'function') return 0;
-  const lh = parseFloat(getComputedStyle(el).lineHeight);
+  /**
+   * **px로 끝나는 값만 받는다** — 계산값(computed)의 `line-height`는 브라우저에서
+   * `normal`이거나 **px 길이**뿐이다. 그런데 jsdom은 시트에 적은 **맨 숫자**를 그대로
+   * 돌려주므로(`1.85`), 그것을 길이로 읽으면 행 높이가 **1.85px**이 된다 — 그 값으로
+   * 「글자 행의 가운데」를 재면 상자의 꼭대기 바로 아래를 짚어 엉뚱한 답이 나온다
+   * (실측: 손잡이 끌기의 세로 접기가 140.9를 골랐다). 단위가 없으면 상자 높이로 물러선다.
+   */
+  const raw = getComputedStyle(el).lineHeight || '';
+  const lh = raw.endsWith('px') ? parseFloat(raw) : NaN;
   if (lh > 0) return lh;
   const h = el.getBoundingClientRect().height;
   return h > 0 ? h : 0;

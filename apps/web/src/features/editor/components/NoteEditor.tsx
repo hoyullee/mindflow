@@ -11635,11 +11635,34 @@ function NoteSelHandles({
         } catch {
           /* 포인터 캡처가 없는 환경(jsdom) */
         }
+        /**
+         * **끄는 동안 손잡이는 좌표 조회에 걸리지 않는다**(제보: 범위 밖 글자가 깜빡인다).
+         *
+         * 캐럿이 가야 할 자리는 곧 손잡이가 선 자리다 — 그래서 손가락 아래에는 **늘 우리
+         * 손잡이**가 있고, `elementFromPoint`·`caretRangeFromPoint`가 줄 대신 그것을 짚는다.
+         * 그런데 손잡이의 DOM은 리액트 한 박자 뒤에 움직이므로 프레임마다 「손잡이가
+         * 걸렸다 / 줄이 걸렸다」가 갈렸고, 두 길의 답이 달라 칠이 앞뒤로 튀었다
+         * (실측: `hit=GRIP` ↔ `hit=b`가 번갈아 나온다).
+         *
+         * `pointer-events`는 **상속되는** 속성이라 이 한 줄이 안의 막대·동그라미까지 덮는다.
+         * 포인터 캡처는 히트 테스트를 건너뛰므로 이 값과 무관하게 이벤트는 그대로 온다.
+         */
+        const grips = [...document.querySelectorAll<HTMLElement>('[data-note-selgrip]')];
+        grips.forEach((g) => {
+          g.style.pointerEvents = 'none';
+        });
         const move = (m: PointerEvent): void => onDrag(m.clientX - dx, m.clientY - dy);
         const up = (): void => {
           box.removeEventListener('pointermove', move);
           box.removeEventListener('pointerup', up);
           box.removeEventListener('pointercancel', up);
+          grips.forEach((g) => {
+            g.style.pointerEvents = '';
+          });
+          // 끄는 사이에 다시 그려진 손잡이도 되돌린다(위 목록은 잡을 때의 것이다).
+          document.querySelectorAll<HTMLElement>('[data-note-selgrip]').forEach((g) => {
+            g.style.pointerEvents = '';
+          });
           onDrop();
         };
         box.addEventListener('pointermove', move);
@@ -11734,13 +11757,23 @@ function lineNear(root: HTMLElement, x: number, y: number): { el: HTMLElement; n
  * 고른다. 어느 길로 가도 "줄 전체"라는 답은 나오지 않는다.
  */
 function caretInLine(el: HTMLElement, x: number, y: number): { node: Node; offset: number } {
-  const first = caretAt(x, y);
-  if (first && el.contains(first.node)) return first;
   const box = el.getBoundingClientRect();
+  /**
+   * 세로 자리를 **글자 행 안으로 접는다**(제보: 손잡이를 끌면 칠이 앞뒤로 튄다).
+   *
+   * 줄 상자에는 글자 위아래로 여백이 있다. 그 여백을 짚으면 크로뮴이 「이 줄의 맨 앞」을
+   * 돌려주므로(요소 경계이든 첫 글자 노드의 0번이든 결과는 같다) 선택이 그 줄의 처음으로
+   * **접힌다** — 실측으로 같은 줄에서 `off` 15 → **0** → 15가 한 프레임씩 섞였다.
+   * 행의 **가운데 높이**로 접어 물으면 언제나 글자를 짚는다(감긴 줄의 가운데 행은
+   * 그대로 지나간다 — 접히는 것은 첫 행 위·마지막 행 아래뿐이다).
+   */
+  const lh = Math.min(rowHeight(el) || box.height, box.height) || box.height;
+  const py = box.height > 0 && lh > 0 ? Math.min(Math.max(y, box.top + lh / 2), Math.max(box.top + lh / 2, box.bottom - lh / 2)) : y;
+  const first = caretAt(x, py);
+  if (isTextSpot(el, first)) return first;
   const px = Math.min(Math.max(x, box.left + 1), Math.max(box.left + 1, box.right - 1));
-  const py = Math.min(Math.max(y, box.top + 1), Math.max(box.top + 1, box.bottom - 1));
   const again = caretAt(px, py);
-  if (again && el.contains(again.node)) return again;
+  if (isTextSpot(el, again)) return again;
   return pointInLine(el, y < box.top ? 1 : -1, px);
 }
 
@@ -11806,6 +11839,19 @@ function rowEdgeY(el: HTMLElement, dir: -1 | 1): number | undefined {
   return dir === 1 ? box.top + lh / 2 : box.bottom - lh / 2;
 }
 
+/**
+ * 좌표 조회가 준 답이 **글자 자리**인가 — 요소 경계(`DIV@0`)는 받지 않는다(제보).
+ *
+ * 줄 상자의 **글자 위아래 여백**을 짚으면 크로뮴이 텍스트 노드가 아니라 그 상자 자신을
+ * `DIV@0`으로 돌려준다. 그대로 쓰면 `charOffset`이 0으로 읽혀 선택이 그 줄의 **맨 앞으로
+ * 접힌다** — 손잡이를 끌다 줄 경계를 지날 때 그런 답이 한 프레임씩 섞여 칠이 앞뒤로
+ * 튀었다(실브라우저 실측: 같은 줄에서 `off` 15 → **0** → 15). 받지 않으면 아래의
+ * 기하 폴백(`pointInLine`·`textSpotIn`)이 **그 가로 자리에 가장 가까운 글자**를 고른다.
+ */
+function isTextSpot(el: HTMLElement, p: { node: Node; offset: number } | null | undefined): p is { node: Node; offset: number } {
+  return !!p && el.contains(p.node) && p.node.nodeType === 3;
+}
+
 function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; offset: number } {
   if (typeof x === 'number') {
     const box = el.getBoundingClientRect();
@@ -11823,7 +11869,7 @@ function pointInLine(el: HTMLElement, dir: -1 | 1, x?: number): { node: Node; of
        */
       const cx = Math.min(Math.max(x, box.left + 1), Math.max(box.left + 1, box.right - 1));
       const at = caretAt(cx, y);
-      if (at && el.contains(at.node)) return at;
+      if (isTextSpot(el, at)) return at;
     }
   }
   const text = lineLength(el);
