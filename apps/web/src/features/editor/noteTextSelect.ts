@@ -454,19 +454,120 @@ export function paint(sel: LineSel[]): void {
  * 상자**만 덮는다(실측: 같은 문단에서 27px 대 17px). 그래서 한 줄을 고를 때와 여러
  * 줄을 고를 때 같은 동작의 배경 크기가 달라 보였다. 두 경우 모두 이 함수로 칠하고
  * 본문 줄의 `::selection`은 투명하게 두어 한 벌로 맞춘다.
+ *
+ * **보이는 칠은 덮개가 한다**(`drawSelLayer` — 제보: 윈도우에서도 줄 높이만큼). 하이라이트는
+ * 구간의 기록으로만 남기고(시트에서 투명) 줄 높이의 띠는 덮개가 그린다.
  */
 export function paintRanges(ranges: Range[]): void {
   if (!supportsHighlight()) return;
   if (!ranges.length) {
     CSS.highlights.delete(HIGHLIGHT_NAME);
+    drawSelLayer([]);
     return;
   }
   CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
+  drawSelLayer(ranges);
 }
 
 export function clearPaint(): void {
   if (!supportsHighlight()) return;
   CSS.highlights.delete(HIGHLIGHT_NAME);
+  drawSelLayer([]);
+}
+
+/**
+ * **선택 덮개** — 고른 글자를 **줄 높이의 띠**로 그린다(제보: 윈도우에서도 기본 선택처럼).
+ *
+ * 왜 하이라이트로 안 되나: `::highlight()`는 배경·글자색만 받고 **높이를 바꿀 수 없다** —
+ * 언제나 글자 상자(폰트의 위아래 끝)만 덮는다. 줄마다 편집 박스라 브라우저의 `::selection`
+ * (줄 높이)도 여러 줄에는 쓸 수 없다. 그래서 구간의 사각형을 받아 **행마다** 줄 높이로 늘린
+ * 띠를 본문 단 끝의 덮개(`[data-note-sel-layer]`)에 그린다 — 구글 문서가 선택을 그리는 방식과
+ * 같다(글자 **위**의 반투명 띠).
+ *
+ * - 행 가르기: 한 구간의 사각형들은 조각(굵게·링크 스팬)마다 따로 온다. 세로 가운데가 반 줄
+ *   안이면 같은 행으로 보고 가로만 잇는다 — 겹친 반투명 띠는 **이음매가 짙어진다**.
+ * - 높이: 그 줄의 계산값 `line-height`(px). 모르면(`normal`) 글자 상자 그대로 — 상자 높이로
+ *   물러서면 감긴 문단 전체 높이가 된다(`rowHeight`를 쓰지 않는 이유).
+ * - 위치: 덮개의 원점에서 잰다. 덮개는 단 안의 흐름에 있으므로 **스크롤과 함께 움직이고**
+ *   판이 자른다. 배치가 바뀌면(창 크기·그림이 늦게 뜸) 단의 `ResizeObserver`가 다시 그린다.
+ */
+let drawn: Range[] = [];
+let watched: { el: Element; ro: ResizeObserver } | null = null;
+let redraw = 0;
+
+function lineOfNode(n: Node): HTMLElement | null {
+  const el = n.nodeType === 1 ? (n as Element) : n.parentElement;
+  return (el?.closest?.('[data-note-line]') as HTMLElement | null) ?? null;
+}
+
+function bandHeight(line: HTMLElement | null, glyph: number): number {
+  if (!line || typeof getComputedStyle !== 'function') return glyph;
+  const raw = getComputedStyle(line).lineHeight || '';
+  const lh = raw.endsWith('px') ? parseFloat(raw) : NaN;
+  return lh > glyph ? lh : glyph;
+}
+
+export function drawSelLayer(ranges: Range[]): void {
+  if (typeof document === 'undefined') return;
+  for (const l of document.querySelectorAll('[data-note-sel-layer]')) l.replaceChildren();
+  drawn = ranges;
+  const first = ranges[0];
+  const col = first ? ((first.startContainer.nodeType === 1 ? (first.startContainer as Element) : first.startContainer.parentElement)?.closest?.('[data-note-col]') ?? null) : null;
+  const layer = (col?.querySelector(':scope > [data-note-sel-layer]') as HTMLElement | null) ?? null;
+  if (!col || !layer) {
+    watched?.ro.disconnect();
+    watched = null;
+    return;
+  }
+  if (typeof ResizeObserver === 'function' && watched?.el !== col) {
+    watched?.ro.disconnect();
+    const ro = new ResizeObserver(() => {
+      if (redraw) return;
+      redraw = requestAnimationFrame(() => {
+        redraw = 0;
+        if (drawn.length && drawn[0]!.startContainer.isConnected) drawSelLayer(drawn);
+      });
+    });
+    ro.observe(col);
+    watched = { el: col, ro };
+  }
+  const origin = layer.getBoundingClientRect();
+  const frag = document.createDocumentFragment();
+  for (const r of ranges) {
+    let rects: DOMRect[];
+    try {
+      rects = typeof r.getClientRects === 'function' ? [...r.getClientRects()] : [];
+    } catch {
+      continue; // 구간이 끊겼다(DOM을 다시 심었다)
+    }
+    const line = lineOfNode(r.startContainer);
+    const rows: { c: number; h: number; left: number; right: number }[] = [];
+    for (const b of rects) {
+      if (b.width < 0.5 || b.height < 0.5) continue; // 요소 경계의 빈 사각형
+      const c = b.top + b.height / 2;
+      const tol = Math.max(4, bandHeight(line, b.height) / 2);
+      const row = rows.find((x) => Math.abs(x.c - c) < tol);
+      if (row) {
+        row.left = Math.min(row.left, b.left);
+        row.right = Math.max(row.right, b.right);
+        row.h = Math.max(row.h, b.height);
+      } else rows.push({ c, h: b.height, left: b.left, right: b.right });
+    }
+    rows.sort((x, y) => x.c - y.c);
+    let floor = -Infinity; // 앞 행의 아래 끝 — 띠가 겹치면 이음매가 짙어진다
+    for (const row of rows) {
+      const h = bandHeight(line, row.h);
+      let top = row.c - h / 2;
+      const bottom = row.c + h / 2;
+      if (top < floor) top = floor;
+      floor = bottom;
+      const d = document.createElement('div');
+      d.setAttribute('data-note-sel-band', '');
+      d.style.cssText = `position:absolute;left:${row.left - origin.left}px;top:${top - origin.top}px;width:${row.right - row.left}px;height:${bottom - top}px;background:var(--mf-note-sel, rgba(59, 130, 246, 0.26));pointer-events:none`;
+      frag.appendChild(d);
+    }
+  }
+  layer.appendChild(frag);
 }
 
 /** `/질의` 구간을 회색으로 — `null`이면 지운다(`::highlight(mf-note-slash)`). */

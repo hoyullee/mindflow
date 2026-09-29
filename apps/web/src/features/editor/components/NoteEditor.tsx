@@ -4112,6 +4112,10 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 <span style={{ fontSize: 12.5, color: 'var(--mf-faint)' }}>여기에 입력하거나 / 를 눌러 블록을 넣으세요</span>
               </button>
             )}
+            {/* **선택 덮개**(`drawSelLayer`) — 고른 글자를 줄 높이의 띠로 그리는 자리다. 흐름 안의
+                0높이 상자라 스크롤과 함께 움직이고, 단의 `gap`(9px)을 `marginTop`으로 되돌려
+                자리를 차지하지 않는다. 띠는 이 상자를 원점으로 절대 배치된다. */}
+            <div data-note-sel-layer="" aria-hidden="true" style={{ position: 'relative', height: 0, marginTop: -9, pointerEvents: 'none' }} />
 
           </div>
         </div>
