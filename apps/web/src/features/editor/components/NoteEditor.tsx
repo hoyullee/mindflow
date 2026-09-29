@@ -1979,6 +1979,23 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       const el = node?.nodeType === 1 ? (node as HTMLElement) : (node?.parentElement ?? null);
       return (el?.closest?.('[data-note-line]') as HTMLElement | null) ?? null;
     };
+    /**
+     * **승격된 선택도 우리가 칠한다**(제보: 실기기에서 골라도 배경이 보이지 않는다).
+     *
+     * 본문 줄의 `::selection`은 투명하다 — 한 줄과 여러 줄의 배경 크기를 맞추려고
+     * 브라우저 칠을 끄고 `CSS.highlights`로 한 벌만 그리기로 했기 때문이다(`editor.css`
+     * 의 `data-note-hl` 규칙). 승격한 뒤에도 그 규칙은 그대로인데 칠을 걷어 두었으니
+     * OS 손잡이와 알약 툴바만 뜨고 **고른 글자는 아무 표시가 없었다**.
+     *
+     * 브라우저 구간을 통째로 칠하지 않고 **줄마다** 나눠 칠한다(`nativeLineSel`) —
+     * 블록을 넘는 구간에는 목록 번호·글머리표(편집 박스 밖의 형제)가 함께 들어 있어
+     * 통째로 칠하면 그것까지 물든다.
+     */
+    const paintNative = (): void => {
+      const sel = nativeLineSel();
+      if (sel) paintSelection(sel);
+      else clearSelectionPaint();
+    };
     const follow = (): void => {
       const col = colRef.current;
       const s = window.getSelection();
@@ -1996,7 +2013,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
        * 알약 툴바가 함께 사라진다(그것이 예전 모습이었다).
        */
       if (promoted.current) {
-        clearSelectionPaint();
+        paintNative();
         return;
       }
       // 한 줄 안에서, 본문 단 안에서, 표 밖일 때만 — 나머지는 브라우저에 맡긴다.
@@ -2021,6 +2038,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
        */
       if (isTouchPointer() && !readOnly) {
         promoteCol();
+        paintNative();
         return;
       }
       paintRanges([range.cloneRange()]);
@@ -2032,7 +2050,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       clearSelectionPaint();
       demoteCol(true);
     };
-  }, [textSel, readOnly, promoteCol, demoteCol]);
+  }, [textSel, readOnly, promoteCol, demoteCol, nativeLineSel]);
 
   /**
    * 고른 것을 **우리 그림으로 칠하고**, 캐럿은 **첫 줄의 시작점에 접어 둔다**.
