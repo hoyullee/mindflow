@@ -2277,7 +2277,7 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     expect(activeItem(c)).toBe('p');
 
     fireEvent.keyDown(document, { key: 'ArrowUp' });
-    await waitFor(() => expect(activeItem(c)).toBe('date')); // 첫 줄에서 위 → 마지막 줄(「일정」 묶음의 `날짜`)
+    await waitFor(() => expect(activeItem(c)).toBe('sched')); // 첫 줄에서 위 → 마지막 줄(「일정」 묶음의 `일정` — `날짜`는 걷었다)
     fireEvent.keyDown(document, { key: 'ArrowDown' });
     await waitFor(() => expect(activeItem(c)).toBe('p')); // 마지막에서 아래 → 첫 줄
   });
@@ -5514,6 +5514,16 @@ describe('공책 50판 — 형광펜 상자 · 툴바 툴팁 · 링크 주소 ·
     return readFileSync(p as string, 'utf8');
   };
 
+  /**
+   * **줄 첫 글자의 `:` 뒤에 한글을 치면 `:`가 위로 튄다**(제보) — Pretendard의 `clig`가 한글
+   * 곁의 쌍점을 한글 높이 가운데로 끌어올린다. jsdom은 글꼴을 모양내지 않으므로 규칙을 지키고,
+   * 효과는 헤드리스 크로뮴으로 쟀다(점의 세로 범위 26–46 → 30–50, `:` 혼자일 때와 같다).
+   */
+  it('본문 줄은 문맥 합자(`clig`)를 끈다 — 한글이 이어져도 `:`가 움직이지 않게', () => {
+    const rule = /\.mf-note-line \{([^}]*)\}/.exec(css())?.[1] ?? '';
+    expect(rule).toMatch(/font-feature-settings:\s*'clig' 0/);
+  });
+
   it('형광펜은 **자리를 넓히지 않는다** — 좌우 여백을 음수로 되돌린다(제보 1)', () => {
     const rule = /\.mf-note-line \.mf-hl \{([^}]*)\}/.exec(css())?.[1] ?? '';
     // 가로 padding만큼을 음수 margin으로 돌려놓는다 — 아니면 글자가 옆으로 밀리고,
@@ -8113,21 +8123,23 @@ describe('공책 64판 — 일정 블록(스펙 2절)', () => {
     });
   });
 
-  it('세그먼트로 보기를 바꾸면 **문서에 남는다**(2-3의 4)', async () => {
+  /**
+   * **머리 띠가 없다**(요청) — 제목·부제·보기 세그먼트·`+`·`×`가 있던 띠를 통째로 걷었다.
+   * 보기는 넣을 때 고르고(위 시험), 지우기는 다른 위젯 블록과 같다(아래 시험).
+   */
+  it('일정 블록에는 **머리 띠가 없다** — 제목·부제·세그먼트·새 일정·지우기 단추 모두', async () => {
     const c = await open('sc3', [{ id: 'b1', kind: 'sched', sched: 'today' }]);
-    const seg = (await waitFor(() => c.querySelector('[data-sched-seg="next"]'))) as HTMLElement;
-    fireEvent.click(seg);
-    await waitFor(() => expect(c.querySelector('[data-sched-block]')?.getAttribute('data-sched-kind')).toBe('next'));
-    saveNow();
-    await waitFor(() => expect(saved('sc3').pages[0].blocks[0].sched).toBe('next'));
+    await waitFor(() => expect(c.querySelector('[data-sched-block]')).toBeTruthy());
+    for (const sel of ['[data-sched-title]', '[data-sched-sub]', '[data-sched-seg]', '[data-sched-new]', '[data-sched-remove]']) {
+      expect(c.querySelector(sel), sel).toBeNull();
+    }
   });
 
-  it('머리에 제목과 부제가 서고, `×`로 블록을 지운다', async () => {
+  it('골라서 Delete로 지운다(`×`가 없어도 지울 길이 있다)', async () => {
     const c = await open('sc4', [{ id: 'b1', kind: 'sched', sched: 'today' }, { id: 'b2', kind: 'p', runs: [] }]);
-    await waitFor(() => expect(c.querySelector('[data-sched-title]')?.textContent).toBe('오늘 일정'));
-    expect(c.querySelector('[data-sched-sub]')?.textContent).toMatch(/\d+월 \d+일 · \d+개/);
-
-    fireEvent.click(c.querySelector('[data-sched-remove]')!);
+    const blockEl = (await waitFor(() => c.querySelector('[data-sched-block]'))) as HTMLElement;
+    fireEvent.pointerDown(blockEl);
+    fireEvent.keyDown(document, { key: 'Delete' });
     saveNow();
     await waitFor(() => expect(saved('sc4').pages[0].blocks.some((b: { kind: string }) => b.kind === 'sched')).toBe(false));
   });
@@ -8135,22 +8147,20 @@ describe('공책 64판 — 일정 블록(스펙 2절)', () => {
   it('달력 보기는 미니 달력과 고른 날 목록을 함께 그린다(2-3)', async () => {
     const c = await open('sc5', [{ id: 'b1', kind: 'sched', sched: 'month' }]);
     await waitFor(() => expect(c.querySelector('[data-sched-block] [data-mini-cal]')).toBeTruthy());
-    // **제목은 서지 않는다**(제보 10) — 미니 달력의 머리가 같은 달을 이미 적는다.
-    // 부제도 달 이름을 빼고 개수만 남는다.
-    expect(c.querySelector('[data-sched-title]')).toBeNull();
-    expect(c.querySelector('[data-sched-sub]')?.textContent).toMatch(/^\d+개$/);
   });
 
-  it('`/날짜`는 블록이 아니라 **`@` 허브를 날짜만으로** 연다(2-1)', async () => {
+  /**
+   * **블록 넣기에 날짜가 없다**(요청) — `@` 멘션이 같은 일(날짜 칩)을 한다. 목록에 둘이면
+   * 같은 것을 넣는 길이 둘로 보인다.
+   */
+  it('`/` 목록에 **날짜가 없다** — 날짜 칩은 `@`에서 넣는다', async () => {
     const c = await open('sc6', [{ id: 'b1', kind: 'p', runs: [] }]);
+    slash(c, '/');
+    await waitFor(() => expect(items(c)).toContain('sched'));
+    expect(items(c)).not.toContain('date');
+    // 「날짜」를 쳐도 걸리는 줄이 없다(예전에는 그 줄이 `@` 허브를 날짜만으로 열었다).
     slash(c, '/날짜');
-    await waitFor(() => expect(items(c)).toEqual(['date']));
-    fireEvent.keyDown(document, { key: 'Enter' });
-
-    await waitFor(() => expect(c.querySelector('[data-note-hub]')).toBeTruthy());
-    // 사람 줄은 없다 — 날짜만 보이는 허브다.
-    expect(c.querySelector('[data-hub-kind="person"]')).toBeNull();
-    expect(c.querySelector('[data-hub-kind="date"]')).toBeTruthy();
+    await waitFor(() => expect(items(c)).not.toContain('date'));
   });
 });
 

@@ -15,11 +15,8 @@ import { MiniCalendar } from '../../home/calendar/MiniCalendar';
 import { DOW, dayProgress, partsOf, todayISO } from '../../home/calendar/model';
 import { entryChip } from '../../home/calendar/chips';
 import { focusCalendar } from '../../home/calendarFocus';
-import { schedDays, schedSubtitle, schedTitle, useNoteAgenda, type SchedKind } from '../noteAgenda';
+import { schedDays, useNoteAgenda, type SchedKind } from '../noteAgenda';
 import type { EditorController } from '../useEditorState';
-
-const SEG: SchedKind[] = ['today', 'week', 'month', 'next'];
-const SEG_NAME: Record<SchedKind, string> = { today: '오늘', week: '이번 주', month: '달력', next: '다가오는' };
 
 /** 날짜 칸의 숫자 색 — 큰 달력과 같은 규칙(오늘·일요일·토요일). */
 function dayInk(iso: string, today: string): string {
@@ -65,13 +62,8 @@ export function NoteSchedBlock({
   const days = useMemo(() => schedDays(kind, agenda.entries, today, day), [kind, agenda.entries, today, day]);
   const surface = useMemo(() => ({ card: th.panel, text: th.text }), [th.panel, th.text]);
 
-  const setKind = (next: SchedKind): void => controller.setNoteBlockSched(block.id, next);
   const openEntry = (e: CalendarEntry): void => {
     focusCalendar({ date: e.due, ...(e.google || e.event ? { eventId: e.cardId } : {}), ...(e.google ? { source: 'google' as const } : e.event ? { source: 'geurio' as const } : {}) });
-    navigate('/home');
-  };
-  const newEvent = (iso: string): void => {
-    focusCalendar({ date: iso });
     navigate('/home');
   };
 
@@ -122,86 +114,9 @@ export function NoteSchedBlock({
           userSelect: 'none',
         }}
       >
-        {/* 머리 띠(2-3) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px 10px 13px', background: 'var(--mf-note-chip-bg)', borderBottom: '1px solid var(--mf-border-soft)' }}>
-          <span aria-hidden style={{ flex: '0 0 auto', width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, background: 'var(--mf-note-chip-bg-on)', color: 'var(--mf-note-chip-icon)' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="5" width="18" height="16" rx="3" />
-              <path d="M8 3v4M16 3v4M3 10h18" />
-            </svg>
-          </span>
-          {/* 달력형에는 **제목을 걸지 않는다**(제보 10) — 바로 아래 미니 달력이 제 머리에
-              같은 달을 이미 적고 있어, 「9월 달력」이 한 뼘 위에서 같은 말을 되풀이했다.
-              목록형(오늘·이번 주·다가오는)은 무엇을 세는지 다른 데서 알 길이 없으므로 남긴다. */}
-          {kind !== 'month' && (
-            <span data-sched-title style={{ flex: '0 0 auto', fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: th.text }}>{schedTitle(kind, today, ym)}</span>
-          )}
-          <span data-sched-sub style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: th.subtext }}>
-            {schedSubtitle(kind, agenda.entries, today, ym)}
-          </span>
-          {!controller.readOnly && (
-            <span style={{ flex: '0 0 auto', display: 'inline-flex', gap: 2, padding: 2, borderRadius: 9, background: 'var(--mf-note-chip-pill)' }}>
-              {SEG.map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  data-sched-seg={k}
-                  aria-pressed={k === kind}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setKind(k);
-                  }}
-                  style={{
-                    height: 24,
-                    padding: '0 10px',
-                    borderRadius: 7,
-                    border: 0,
-                    background: k === kind ? 'var(--mf-card)' : 'transparent',
-                    color: k === kind ? th.text : th.subtext,
-                    boxShadow: k === kind ? '0 1px 2px rgba(46,42,38,.12)' : 'none',
-                    fontFamily: 'inherit',
-                    fontSize: 11.5,
-                    fontWeight: k === kind ? 800 : 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {SEG_NAME[k]}
-                </button>
-              ))}
-            </span>
-          )}
-          {!controller.readOnly && (
-            <>
-              <button
-                type="button"
-                data-sched-new
-                aria-label="새 일정"
-                title="새 일정"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  newEvent(kind === 'month' ? day : today);
-                }}
-                style={{ flex: '0 0 auto', width: 26, height: 26, borderRadius: 8, border: 0, background: 'transparent', color: th.subtext, fontFamily: 'inherit', fontSize: 15, cursor: 'pointer' }}
-              >
-                +
-              </button>
-              <button
-                type="button"
-                data-sched-remove
-                aria-label="일정 블록 지우기"
-                title="지우기"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  controller.removeNoteBlock(block.id);
-                }}
-                style={{ flex: '0 0 auto', width: 26, height: 26, borderRadius: 8, border: 0, background: 'transparent', color: 'var(--mf-faint)', fontFamily: 'inherit', fontSize: 14, cursor: 'pointer' }}
-              >
-                ×
-              </button>
-            </>
-          )}
-        </div>
-
+        {/* 머리 띠는 **없다**(요청) — 제목·부제·보기 세그먼트·`+`·`×`를 통째로 걷었다. 보기는 넣을
+            때 「일정 블록 고르기」 창에서 고르고(`/일정`), 지우기는 다른 위젯 블록과 같다(골라서
+            Delete · 우클릭 메뉴). 머리가 있으면 본문 안의 일정이 **본문이 아니라 창**으로 읽혔다. */}
         {kind === 'month' ? (
           /* 달력형 — 왼쪽 미니 달력(일정 화면의 그 부품), 오른쪽 고른 날의 목록 */
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 0 }}>

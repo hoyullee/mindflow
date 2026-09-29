@@ -14,6 +14,7 @@ import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useCommentStore, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useProfileName } from '../../adapters/useProfileName';
+import { useMyAvatar } from '../../adapters/myAvatar';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
@@ -1667,7 +1668,10 @@ export function useEditorState(): EditorController {
   // 커서 이름표는 이메일이 아니라 **프로필명**(홈에서 바꾼 이름)을 쓴다. ----
   const authUser = useAuthUser();
   const profileName = useProfileName(authUser?.email ?? null, authUser?.name ?? null);
-  const presence = usePresence(awareness, authUser?.email, profileName, authUser?.avatarUrl ?? null);
+  // 사진은 **한 원천**에서(`adapters/myAvatar` 머리말) — 세션의 `avatarUrl`은 구글로 다시
+  // 로그인할 때마다 구글 사진으로 덮여, 홈에서 바꾼 사진이 여기서만 옛 얼굴로 보였다.
+  const myAvatar = useMyAvatar(authUser?.email, authUser?.avatarUrl);
+  const presence = usePresence(awareness, authUser?.email, profileName, myAvatar);
   const peerCount = presence.peers.length;
   if (peerCount > 0) collabSessionRef.current = true;
 
@@ -8969,7 +8973,7 @@ export function useEditorState(): EditorController {
     startCommentDraftAtClient,
     commentDraft,
     myName: meName,
-    myAvatar: authUser?.avatarUrl ?? null,
+    myAvatar,
     cancelCommentDraft,
     submitCommentDraft,
     moveCommentPin,

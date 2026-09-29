@@ -15,6 +15,7 @@ vi.mock('./avatarImage', () => ({ prepareAvatar: () => prepareAvatar(), AVATAR_S
 
 import { Home } from './Home';
 import { BackendProvider } from '../../adapters/BackendContext';
+import { resetMyAvatarForTests } from '../../adapters/myAvatar';
 import type { Backend } from '../../adapters/ports';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
@@ -71,6 +72,9 @@ describe('프로필 이미지 변경', () => {
     mockMatchMedia(false);
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
     prepareAvatar.mockClear();
+    // 사진의 한 원천(`adapters/myAvatar`)은 **탭의 상태**를 쥔다 — 한 파일의 시험들은 같은 탭이라
+    // 앞 시험이 확인해 둔 사진이 다음 시험의 첫 페인트로 새지 않게 비운다(새 방문을 흉내 낸다).
+    resetMyAvatarForTests();
   });
   afterEach(cleanup);
 

@@ -109,7 +109,7 @@ interface Props {
  * 치면 「코드 블록」만 나오고, 한 낱말만 코드로 만들고 싶은 사람은 갈 곳이 없었다
  * (툴바의 `<>` 단추를 아는 사람만 썼다). 고르면 그 자리에 **서식을 켜 둔다**.
  */
-type SlashKind = NoteBlockKind | 'inline-code' | 'date' | 'link-inline';
+type SlashKind = NoteBlockKind | 'inline-code' | 'link-inline';
 
 /**
  * **인라인 코드**와 **코드 블록**의 아이콘(시안) — 예전에는 둘 다 꺾쇠(`< >`)라
@@ -179,13 +179,8 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
  */
 const SLASH_TYPES: { kind: SlashKind; name: string; hint: string; desc: string; group: string; inMenu?: boolean; sepBefore?: boolean; icon: JSX.Element }[] = [
   ...BLOCK_TYPES,
-  /**
-   * **날짜**(스펙 2-1) — 블록이 아니라 **인라인 칩**이다. 고르면 `@` 허브를 날짜만
-   * 보이게 열어(`dateOnly`) 그 자리에 칩을 박는다. 여기 두는 이유는 사람들이 `/`를
-   * "무언가를 넣는 곳"으로 배우기 때문이다 — `@`를 모르는 사람이 날짜를 넣으려고
-   * 처음 여는 자리가 이 목록이다.
-   */
-  { kind: 'date', name: '날짜', hint: '', desc: '@ 로도 넣어요 · 올리면 그날 일정', group: '일정', icon: (<><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /></>) },
+  // **날짜는 여기 없다**(요청) — `@` 멘션 허브가 같은 일(날짜 칩)을 하고, 목록에 둘이 있으면
+  // 같은 것을 넣는 길이 둘로 보인다. 날짜 칩은 `@`에서 넣는다.
   /**
    * **링크**(제보 9) — 주소를 글에 거는 인라인 링크다. 블록이 아니라서 인라인 코드와
    * 같은 자리에 두지만, 그쪽과 달리 **고른 글이 없어도 할 일이 있다**: 툴바의 링크
@@ -3948,26 +3943,6 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                    * 자리에 **서식을 켜 둔다**. 다음에 치는 글자부터 코드가 된다
                    * (툴바의 `<>` 단추와 같은 길 — `armCaretMark`).
                    */
-                  /**
-                   * **날짜**(스펙 2-1) — 블록이 아니라 인라인 칩이라, `/질의`를 걷고
-                   * 그 자리에서 `@` 허브를 **날짜만** 보이게 연다. 넣는 일은 허브가
-                   * 하므로 여기서는 자리를 만들지 않는다.
-                   */
-                  if (kind === 'date') {
-                    const at = slashAtChar;
-                    const key = slashFor ?? '';
-                    if (at !== null) dropSlashText(page, slashFor, at, slashQuery, controller);
-                    closeSlash();
-                    const go = (): void => {
-                      const el = document.querySelector<HTMLElement>(`[data-note-line="${key}"]`);
-                      if (!el) return;
-                      el.focus({ preventScroll: true });
-                      openMentionAt(key, at ?? lineLength(el), '', true);
-                    };
-                    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
-                    else setTimeout(go, 0);
-                    return;
-                  }
                   /**
                    * **일정**(스펙 2-2) — 고르면 블록이 바로 서지 않고 「일정 블록
                    * 고르기」 창이 먼저 뜬다. 종류를 고른 뒤에 넣는다(그림·문서 링크와

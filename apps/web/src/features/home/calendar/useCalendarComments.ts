@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCommentStore } from '../../../adapters/BackendContext';
 import { useAuthUser } from '../../../adapters/useAuthUser';
 import { useProfileName } from '../../../adapters/useProfileName';
+import { useMyAvatar } from '../../../adapters/myAvatar';
 import type { CommentHost } from '../../editor/components/CommentPanel';
 import type { CommentMention, DocComment } from '../../../adapters/ports';
 import type { Theme } from '../../editor/theme';
@@ -18,6 +19,7 @@ export function useCalendarComments(docId: string, theme: Theme): CommentHost {
   const commentStore = useCommentStore();
   const authUser = useAuthUser();
   const profileName = useProfileName(authUser?.email ?? null, authUser?.name ?? null);
+  const myAvatar = useMyAvatar(authUser?.email, authUser?.avatarUrl);
   const [comments, setComments] = useState<DocComment[]>([]);
   const [loading, setLoading] = useState(true);
   const aliveRef = useRef(true);
@@ -60,7 +62,7 @@ export function useCalendarComments(docId: string, theme: Theme): CommentHost {
       comments,
       commentsLoading: loading,
       myName,
-      myAvatar: authUser?.avatarUrl ?? null,
+      myAvatar,
       addComment: async (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => {
         const res = await commentStore.add(docId, nodeId, body, opts);
         if (!res.error) await reload();
@@ -78,6 +80,6 @@ export function useCalendarComments(docId: string, theme: Theme): CommentHost {
       },
       // `closeComments`는 두지 않는다 — 이 열은 모달 안이라 Escape는 모달의 것이다.
     }),
-    [theme, docId, comments, loading, myName, authUser?.avatarUrl, commentStore, reload],
+    [theme, docId, comments, loading, myName, myAvatar, commentStore, reload],
   );
 }

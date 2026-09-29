@@ -20,6 +20,7 @@ import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
 import { useBackend } from '../../adapters/BackendContext';
+import { knownMyAvatar, publishMyAvatar, refreshMyAvatar, resolveMyAvatar, subscribeMyAvatar } from '../../adapters/myAvatar';
 import { cachedImageUrls, rememberImageUrls } from '../../adapters/imageUrlCache';
 import { findBoardTemplate, findKanbanTemplate, findNoteTemplate, findTemplate } from '../../templates/mapTemplates';
 import {
@@ -64,14 +65,12 @@ import {
   applyImportBinding,
   readDocRaw,
   RECENT_CAP,
-  readSavedAvatar,
   readSavedProfileName,
   rootTextOf,
   safeFileName,
   saveRecent,
   seedFavAndTrashFromMetas,
   sourceOf,
-  writeSavedAvatar,
   writeSavedProfileName,
 } from './storage';
 import { onCalendarFocus, takeCalendarFocus, type CalendarFocus } from './calendarFocus';
@@ -580,7 +579,7 @@ export function useHomeController() {
       // email local part. The provider avatar rides along (null for email/demo
       // accounts — the UI falls back to the initial circle).
       const name0 = readSavedProfileName(email) || session?.user?.name || email.split('@')[0] || email;
-      setState((prev) => ({ ...prev, userEmail: email, userName: name0, userAvatar: session?.user?.avatarUrl || readSavedAvatar(email) || null, profileLoaded: true }));
+      setState((prev) => ({ ...prev, userEmail: email, userName: name0, userAvatar: resolveMyAvatar(email, session?.user?.avatarUrl), profileLoaded: true }));
       // …then reconcile with the backend (Supabase `profiles.display_name`), which
       // survives a browser-cache clear and syncs across devices. Local mode returns
       // null here, so it just keeps the cached value.
@@ -604,14 +603,8 @@ export function useHomeController() {
        * `undefined`(모른다 — 로컬 모드·조회 실패)면 손대지 않고, `null`(지웠다)이면
        * 기본 얼굴로 되돌린다. 캐시도 함께 고친다 — 다음 방문의 첫 페인트가 그 값이다.
        */
-      try {
-        const avatar = await auth.getProfileAvatar();
-        if (cancelled || avatar === undefined) return;
-        writeSavedAvatar(email, avatar);
-        setState((prev) => (prev.userEmail === email ? { ...prev, userAvatar: avatar } : prev));
-      } catch {
-        /* offline / transient — keep what the session and the cache gave us */
-      }
+      // 조회·캐시·구독자 알림은 한 원천이 한다(`adapters/myAvatar`) — 결과는 아래 구독이 받는다.
+      await refreshMyAvatar(auth, email);
     }).catch(() => {
       // 세션 조회 실패 — 플레이스홀더라도 보여주도록 스켈레톤을 풀어준다.
       if (!cancelled) setState((prev) => ({ ...prev, profileLoaded: true }));
@@ -620,6 +613,23 @@ export function useHomeController() {
       cancelled = true;
     };
   }, [auth]);
+
+  /**
+   * **사진은 한 원천을 따른다**(`adapters/myAvatar`) — 서버 조회가 끝났을 때, 다른 탭에서
+   * 바꿨을 때 같은 값이 이 화면에도 온다. 원천이 모르는 동안(`undefined`)은 손대지 않는다 —
+   * 세션이 준 구글 사진을 `null`로 지워 버리지 않게.
+   */
+  useEffect(() => {
+    const email = state.userEmail;
+    if (!email) return;
+    const sync = (): void => {
+      const v = knownMyAvatar(email);
+      if (v === undefined) return;
+      setState((prev) => (prev.userEmail === email && prev.userAvatar !== v ? { ...prev, userAvatar: v } : prev));
+    };
+    sync();
+    return subscribeMyAvatar(sync);
+  }, [state.userEmail]);
 
   // Remember the screen currently being viewed — space/folder (and whether the
   // calendar was open) — tab-scoped, so opening a map in the editor and returning
@@ -943,7 +953,8 @@ export function useHomeController() {
       patch({ avatarBusy: false, avatarError: '이미지를 올리지 못했어요. 잠시 후 다시 시도해 주세요.' });
       return;
     }
-    if (state.userEmail) writeSavedAvatar(state.userEmail, res.url ?? null);
+    // 한 원천에 알린다 — 캐시와, 이 탭·다른 탭에 떠 있는 모든 화면(에디터·공유 팝업)이 받는다.
+    if (state.userEmail) publishMyAvatar(state.userEmail, res.url ?? null);
     patch({ avatarBusy: false, userAvatar: res.url ?? null });
   };
 
@@ -954,7 +965,7 @@ export function useHomeController() {
       patch({ avatarBusy: false, avatarError: '이미지를 지우지 못했어요. 잠시 후 다시 시도해 주세요.' });
       return;
     }
-    if (state.userEmail) writeSavedAvatar(state.userEmail, null);
+    if (state.userEmail) publishMyAvatar(state.userEmail, null);
     patch({ avatarBusy: false, userAvatar: null });
   };
   const onProfileNameKey = (e: KeyboardEvent<HTMLInputElement>) => {
