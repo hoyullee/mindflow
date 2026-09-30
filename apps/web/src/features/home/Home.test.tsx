@@ -5737,7 +5737,8 @@ describe('홈 리디자인 계약', () => {
 
     // 공유받음도 즐겨찾기·휴지통처럼 **접힌 채** 시작한다(요청)
     expect(shared.closest('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
-    // 공유받음과 휴지통 사이에는 구분선이 있다(요청) — 성격이 다른 묶음이다
+    // 공유받음과 휴지통 사이에는 **구분선이 없다**(요청 — 예전 요청으로 갈랐던 것을 걷었다).
+    // 셋이 모아보기 한 구획의 나란한 목록이라 선이 있으면 한 구획이 둘로 쪼개져 보인다.
     const sharedRow = shared.closest('.nav-item') as HTMLElement;
     const trashRow = trash.closest('.nav-item') as HTMLElement;
     // 구획들은 판의 **굴러가는 위 칸** 안에 선다(프로필은 그 밖, 바닥 고정 — 스펙 1).
@@ -5747,11 +5748,12 @@ describe('홈 리디자인 계약', () => {
       const before = trashRow.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING;
       return after && before;
     });
-    expect(between.some((el) => (el as HTMLElement).style.height === '1px')).toBe(true);
-    // 구분선(스페이스↔모아보기 / 공유받음↔휴지통)은 **같은 값**이다
+    expect(between.some((el) => (el as HTMLElement).style.height === '1px' || el.hasAttribute('data-lnb-divider'))).toBe(false);
+    // 남은 구분선은 스페이스↔모아보기 **한 줄**이고 모아보기 앞에 선다
     // (제보: 굵기가 달라 보였다 — 원인은 flexShrink였다. 선은 눌리는 여백이 아니다).
     const lines = [...aside.querySelectorAll('[data-lnb-divider]')] as HTMLElement[];
-    expect(lines.length).toBeGreaterThanOrEqual(2);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.compareDocumentPosition(fav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     for (const el of lines) {
       const st = el.style;
       expect(st.height).toBe('1px');
