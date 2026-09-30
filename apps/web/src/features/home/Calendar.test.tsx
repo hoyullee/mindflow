@@ -709,13 +709,13 @@ describe('일정 화면', () => {
     expect(main.style.overflowY).toBe('hidden');
   });
 
-  it('칸 면은 여섯 가지 — 오늘·선택·오늘+선택이 각자 면을 가진다, 날짜 숫자는 19px 둥근 사각(스펙 3.3·3.4)', async () => {
+  it('칸 면은 여섯 가지 — 오늘·선택이 각자 면을 가지고 오늘은 골라도 면이 그대로다, 날짜 숫자는 19px 둥근 사각(스펙 3.3·3.4)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const cell = () => document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
     const num = () => cell().querySelector('[data-day-num]') as HTMLElement;
-    // 진입하면 오늘이 골라져 있다(스펙 5) — 오늘+선택의 면.
-    expect(cell().style.background).toBe('var(--mf-cal-today-sel)');
+    // 진입하면 오늘이 골라져 있다(스펙 5) — 그래도 면은 오늘 면 그대로(요청).
+    expect(cell().style.background).toBe('var(--mf-cal-today)');
     expect(num().style.background).toBe('var(--mf-accent)');
     expect(num().style.width).toBe('19px');
     expect(num().style.borderRadius).toBe('6px');
