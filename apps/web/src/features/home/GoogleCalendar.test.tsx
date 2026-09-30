@@ -2876,7 +2876,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
-    const d1 = inMonth(1);
+    // **오늘**이다 — 우편함은 지나간 일정의 거절을 적재하지 않는데(`startDate >= today`)
+    // `inMonth(1)`은 달의 마지막 날에 **어제**로 접힌다(2026-09-30에 실제로 깨졌다).
+    const d1 = inMonth(0);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
