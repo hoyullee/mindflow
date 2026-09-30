@@ -21,6 +21,7 @@ import {
   deleteGoogleEvent,
   ensureGoogleToken,
   eventColorOf,
+  modernGoogleHex,
   fetchCalendarList,
   mergeExtraCalendars,
   HOLIDAY_COUNTRIES,
@@ -524,7 +525,8 @@ export function useGoogleCalendar(
    */
   const allCalendars = useMemo(() => {
     const over = prefs.colors ?? {};
-    return Object.keys(over).length ? merged.map((c) => (over[c.id] ? { ...c, color: over[c.id]! } : c)) : merged;
+    // 덮어쓴 색도 모던 값으로 — 예전 판은 `/colors`의 클래식 값을 그대로 저장했다(`modernGoogleHex`).
+    return Object.keys(over).length ? merged.map((c) => (over[c.id] ? { ...c, color: modernGoogleHex(over[c.id]!) } : c)) : merged;
   }, [merged, colorKey]);
 
   /**
@@ -666,7 +668,8 @@ export function useGoogleCalendar(
         : events.map((e) => {
             // 일정에 **제 색**이 지정돼 있으면 그것이 이긴다(구글에서도 그렇다) —
             // 우리가 바꾼 캘린더 색은 그 지정이 없는 일정에만 걸린다.
-            const over = e.colorId ? undefined : (prefs.colors ?? {})[e.calendarId];
+            const raw = e.colorId ? undefined : (prefs.colors ?? {})[e.calendarId];
+            const over = raw ? modernGoogleHex(raw) : undefined;
             const hex = over ?? eventColorOf(e, colors);
             return hex && hex !== e.color ? { ...e, color: hex } : e;
           }),
