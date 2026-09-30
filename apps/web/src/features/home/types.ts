@@ -270,6 +270,11 @@ export interface HomeState {
    * 그린다(`activeCal` → 일정 / 아니면 스페이스).
    */
   activeCal: boolean;
+  /**
+   * 도구 화면(작업 현황 — 도구 스펙 §5)을 보고 있는가. 있으면 본문은 그 화면이고 LNB는 그대로다.
+   * `activeCal`·`activeSpace`가 바뀌면 컨트롤러의 `patch`가 비운다(화면은 하나만).
+   */
+  activeTool: 'jira' | null;
 
   /**
    * 걷어낸 대시보드(위젯 배치)의 저장값 — **읽고 그대로 되돌려 쓰기만 한다.**
@@ -516,6 +521,7 @@ export function initialHomeState(): HomeState {
     activeSpace: 'general',
     dashboardsRaw: [],
     activeCal: false,
+    activeTool: null,
     // 초기값은 오늘이 든 달 — 화면을 열면 이번 달이 보인다.
     calY: new Date().getFullYear(),
     calM: new Date().getMonth() + 1,

@@ -164,7 +164,11 @@ export function useHomeController() {
   const workspaceResyncedRef = useRef(false);
   const workspaceMutatedRef = useRef(false);
 
-  const patch = (partial: Partial<HomeState>) => setState((prev) => ({ ...prev, ...partial }));
+  // 화면을 바꾸는 값(`activeCal`·`activeSpace`)이 오면 **도구 화면을 닫는다** — 스페이스·일정으로
+  // 가는 길(LNB·알림·검색 결과·카드 이동)이 여럿이라 한 곳에서 지킨다. 도구를 여는 쪽은
+  // `activeTool`을 함께 실어 이 규칙을 비껴간다(`openTool`).
+  const patch = (partial: Partial<HomeState>) =>
+    setState((prev) => ({ ...prev, ...partial, ...(('activeCal' in partial || 'activeSpace' in partial) && !('activeTool' in partial) ? { activeTool: null } : {}) }));
 
   // Fetch the per-user workspace (spaces + folders) and the doc list, then apply
   // both in ONE setState. Extracted so both the mount and the auth-confirmed
@@ -361,9 +365,12 @@ export function useHomeController() {
       const canDecideLanding = !!restore || ws !== null;
       // 일정 화면은 탭이 기억한 화면으로 복원한다 — 일정에서 맵을 열고 돌아오면 일정으로.
       let activeCal = prev.activeCal;
+      let activeTool = prev.activeTool;
       if (!landedRef.current && canDecideLanding) {
         landedRef.current = true;
         activeCal = restore ? !!restore.activeCal : homeLanding === 'cal';
+        // 도구 화면도 이 탭이 기억한 자리로 돌아온다(작업 현황을 보다 새로고침).
+        activeTool = restore?.activeTool ?? null;
         // 다음 진입의 **첫 프레임**이 맞는 모양으로 시작하도록 이 기기에 적어 둔다
         // (스켈레톤은 하이드레이션 전에 그려진다 — `predictLanding`).
         saveLandingHint(activeCal ? 'cal' : 'space');
@@ -394,7 +401,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, homeLanding, calendarHidden, google, reminders, dashboardsRaw, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, homeLanding, calendarHidden, google, reminders, dashboardsRaw, activeCal, activeTool, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -647,8 +654,8 @@ export function useHomeController() {
     // 않는다 — 그때의 `activeCal: false`를 남기면, 곧 도착하는 재동기화가 그것을
     // "사용자가 스페이스를 보고 있었다"로 읽어 고른 시작 화면을 열지 못한다(제보).
     if (!state.loaded || !landedRef.current) return;
-    saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder, activeCal: state.activeCal });
-  }, [state.loaded, state.activeSpace, state.curFolder, state.activeCal]);
+    saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder, activeCal: state.activeCal, ...(state.activeTool ? { activeTool: state.activeTool } : {}) });
+  }, [state.loaded, state.activeSpace, state.curFolder, state.activeCal, state.activeTool]);
 
   // Prefetch document BODIES for the map cards' thumbnails. `DocStore.list()`
   // above only returns metadata, and `realPreview` reads localStorage — so a
@@ -1369,6 +1376,12 @@ export function useHomeController() {
    * 스페이스에 다녀와도 돌아오는 자리는 오늘이다(달력의 첫 질문은 "지금 무엇이 있나"다).
    * 날짜별 보기의 열림·닫힘은 건드리지 않는다 — 그 토글은 세션 동안 사용자가 정한 대로다.
    */
+  /** LNB 도구 행 — 본문을 그 도구의 화면으로(도구 스펙 §5). 검색·선택 모드는 접는다. */
+  const openTool = (tool: 'jira') => patch({ activeTool: tool, activeCal: false, search: '', searchInput: '', ctxMenu: null });
+  /** 도구 화면을 닫고 스페이스로 — 보던 도구의 연결을 해제했을 때(§4.3). */
+  const closeTool = () => patch({ activeTool: null });
+  /** 도구 관리 팝오버의 바닥 링크 — 설정 › 계정 설정(도구 구획이 있는 화면)을 곧바로 연다. */
+  const openToolsSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true, settingsView: 'account', signinError: '' });
   const openCalendar = () => {
     const now = new Date();
     patch({ activeCal: true, search: '', searchInput: '', calY: now.getFullYear(), calM: now.getMonth() + 1, calDay: null });
@@ -3074,6 +3087,9 @@ export function useHomeController() {
     pickSpaceColor,
     setActiveSpace,
     openCalendar,
+    openTool,
+    closeTool,
+    openToolsSettings,
     calShiftMonth,
     calGoToday,
     setCalMonth,

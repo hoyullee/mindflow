@@ -9,6 +9,7 @@ import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
 import { googlePrefsOf, useGoogleCalendar } from '../../calendar/useGoogleCalendar';
 import { GoogleCalendarSection } from './GoogleCalendarSection';
+import { ToolsSettingsSection } from '../../../tools/ToolsSettingsSection';
 import { VersionSection, buildLabel } from './VersionSection';
 import { useMergedUpdate } from '../../../../pwa/updateControl';
 import { updateNoticeOf } from '../../../../platform/shellUpdate';
@@ -413,32 +414,10 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
           )}
 
-          {/* 캘린더 연동은 **한 겹 더** 들어간다(요청) — 로그인 수단과 하는 일이 다르고
-              (위는 "이 계정에 들어오는 문", 저기는 "무엇을 함께 보여 줄까"), 목록·공휴일·
-              캘린더 추가가 한 화면에 다 들어가면 계정 설정이 그것으로 뒤덮인다.
-              배포에 클라이언트 ID가 없으면 **행 자체가 없다**(눌러도 빈 화면이 열린다). */}
-          {googleApi.available && (
-            <>
-              <div style={{ margin: '18px 0 9px' }}>
-                <SectionLabel>캘린더 연동</SectionLabel>
-              </div>
-              <SettingsGroup>
-                <SettingsRow
-                  first
-                  attrs={{ 'data-calendar-detail-row': '' }}
-                  onActivate={controller.openCalendarDetail}
-                  icon={
-                    <>
-                      <rect x="3.5" y="5" width="17" height="16" rx="2.5" />
-                      <path d="M8 3v4M16 3v4M3.5 10h17" />
-                    </>
-                  }
-                  title="Google 캘린더 연동"
-                  sub={calendarSub(googleApi)}
-                />
-              </SettingsGroup>
-            </>
-          )}
+          {/* 도구(도구 스펙 §6) — 예전 「캘린더 연동」 구획의 자리. Jira와 Google 캘린더를 한 카드에서
+              연결·해제하고, LNB 도구 관리 팝오버와 같은 데이터를 쓴다. 구글 캘린더의 세부(보여 줄
+              캘린더·공휴일 국가)는 그 행의 줄에서 **한 겹 더** 들어간다(예전과 같은 화면). */}
+          <ToolsSettingsSection state={state} controller={controller} />
 
           <div style={{ margin: '18px 0 9px' }}>
             <SectionLabel>계정 관리</SectionLabel>
@@ -1135,22 +1114,6 @@ export function AccountSettingsModal({ state, controller }: Props) {
 // (이 프로젝트에서 여러 번 겪은 드리프트) — 그래서 한곳에 둔다.
 
 /** 구획 라벨(`로그인`·`캘린더 연동`·`계정 관리`·`색상 테마`). */
-/**
- * 계정 설정의 진입 행 부제 — **지금 상태**를 말한다(무엇을 하는 곳인지는 제목이 말한다).
- *
- * 판단은 **왕복 없이 되는 것으로만** 한다: 켜 뒀는가(`enabled`)와 몇 개를 고랐는가
- * (`pickedIds`)는 둘 다 워크스페이스 블롭에서 온다. `connected`를 보면 안 된다 —
- * 그 값은 캘린더 목록이 도착해야 참이 되고 목록 조회는 **캘린더 화면에서만** 도는데,
- * 그러면 연동해 둔 사람에게 "연결하면 …"이라 말하는 거짓말이 된다.
- */
-function calendarSub(api: { enabled: boolean; needsReauth: boolean; pickedIds: string[] }): string {
-  // 연결 전에는 **아무 말도 하지 않는다**(요청) — 늘 같은 안내를 걸어 두면 정작
-  // 알려야 할 때(권한 만료 같은 상황) 눈에 띌 자리가 없다.
-  if (api.enabled && api.needsReauth) return '구글 권한을 다시 허용해야 이어져요';
-  if (!api.enabled) return '';
-  return `${api.pickedIds.length}개 캘린더를 함께 보고 있어요`;
-}
-
 /**
  * 알림 진입 행의 부제 — **지금 상태**를 말한다(무엇을 하는 곳인지는 제목이 말한다).
  * 꺼져 있으면 그렇게, 켜져 있는데 OS가 막고 있으면 그 사실을(그 상태를 모르고

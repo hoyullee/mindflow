@@ -280,8 +280,8 @@ export interface HomeViewModel {
  * **일정 화면을 더할 때 한쪽만 빠졌다**(제보: 일정을 고르고 있는데 스페이스 행에 계속
  * 포커스가 남는다). 세 번째 화면이 생겨도 여기만 고치면 된다.
  */
-export function isSpaceView(state: { activeCal: boolean }): boolean {
-  return !state.activeCal;
+export function isSpaceView(state: { activeCal: boolean; activeTool?: string | null }): boolean {
+  return !state.activeCal && !state.activeTool;
 }
 
 export function recentTrayDocIds(spaces: SpaceData[], recent: string[], trash: { docId?: string }[], deleted: Record<string, boolean>): string[] {

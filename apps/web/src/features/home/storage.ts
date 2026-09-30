@@ -449,6 +449,8 @@ export interface ActiveView {
   curFolder: string | null;
   /** 일정 화면을 보고 있었다면 true(스페이스와 나란한 두 번째 화면). */
   activeCal?: boolean;
+  /** 도구 화면(작업 현황)을 보고 있었다면 그 도구. */
+  activeTool?: 'jira';
 }
 
 export function saveActiveView(view: ActiveView): void {
@@ -532,6 +534,7 @@ export function loadActiveView(): ActiveView | null {
         activeSpace: v.activeSpace,
         curFolder: typeof v.curFolder === 'string' ? v.curFolder : null,
         activeCal: v.activeCal === true,
+        ...(v.activeTool === 'jira' ? { activeTool: 'jira' as const } : {}),
       };
     }
     return null;

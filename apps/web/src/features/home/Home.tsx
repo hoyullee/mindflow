@@ -37,6 +37,10 @@ import { useInstallHint } from '../../pwa/installHint';
 import { OfflineBar } from '../../components/OfflineBar';
 import { useOnline } from '../../hooks/useOnline';
 import { useMarqueeSelect } from './marquee';
+import { WorkStatusView } from '../tools/workstatus/WorkStatusView';
+import { JiraSetupHost, openJiraSetup } from '../tools/jira/JiraSetupModal';
+import { ToolToastHost, toolToast } from '../tools/ui';
+import { jiraReasonText } from '../tools/jira/jiraApi';
 
 /**
  * React port of Home.dc.html — the map home. State/behavior lives in
@@ -85,6 +89,30 @@ export function Home() {
   // 적용하고, 입력 중인 팝업·확인 다이얼로그·검색어가 있을 때만 물어본다.
   useUpdateGuard(homeUpdateRisk(state));
 
+  // Jira 연결에서 돌아왔다(`/auth/jira` → `/home?jira=…`) — 작업 현황을 열고, 프로젝트를 아직 안
+  // 골랐으면 곧바로 고르게 한다(결정: "프로젝트는 연결 시 선택"). **하이드레이션 뒤에** 연다 —
+  // 그 전에 열면 착지(탭이 기억한 화면 복원)가 도구 화면을 덮는다. 주소의 신호는 한 번 읽고 지운다.
+  const jiraReturn = useRef<string | null>(null);
+  if (jiraReturn.current === null) jiraReturn.current = new URLSearchParams(window.location.search).get('jira') ?? '';
+  useEffect(() => {
+    const sig = jiraReturn.current;
+    if (!state.loaded || !sig) return;
+    jiraReturn.current = '';
+    const q = new URLSearchParams(window.location.search);
+    const reason = q.get('reason') ?? '';
+    q.delete('jira');
+    q.delete('reason');
+    const rest = q.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+    if (sig === 'error') {
+      toolToast(reason === 'denied' ? 'Jira 연결을 취소했어요' : `연결하지 못했어요 · ${jiraReasonText(reason)}`);
+      return;
+    }
+    controller.openTool('jira');
+    toolToast('Jira를 연결했어요 · 도구에 작업 현황이 생겼어요');
+    if (sig === 'setup') openJiraSetup();
+  }, [state.loaded, controller]);
+
   // Closing the drawer when the layout crosses back to desktop keeps it from
   // lingering "open" (and blocking the backdrop) after a resize/rotation.
   useEffect(() => {
@@ -97,7 +125,7 @@ export function Home() {
   // 구획(즐겨찾기·휴지통·공유받음)은 화면을 바꾸지 않으므로 저절로 열린 채 남는다.
   useEffect(() => {
     if (isMobile) setNavOpen(false);
-  }, [isMobile, state.activeSpace, state.activeCal]);
+  }, [isMobile, state.activeSpace, state.activeCal, state.activeTool]);
 
   // One-thumb drawer gestures: left-edge swipe-right opens, swipe-left (while
   // open) closes — the hamburger stays as the visible affordance.
@@ -176,12 +204,14 @@ export function Home() {
           flex: '1 1 auto',
           display: 'flex',
           flexDirection: 'column',
-          overflowY: state.activeCal ? 'hidden' : 'auto',
+          overflowY: state.activeCal || state.activeTool ? 'hidden' : 'auto',
+          // 도구 화면은 본문을 꽉 채운다(`inset: 0` — 도구 스펙 §5) — 그 기준 상자.
+          position: 'relative',
           scrollbarGutter: 'stable',
           // 아래 여백은 **떠 있는 피드백 단추**(46px, 바닥에서 22px)가 마지막 줄의 카드를
           // 덮지 않을 만큼이다 — 끝까지 굴렸을 때 카드의 오른쪽 아래가 단추 밑에 깔리면
           // 거기 있는 것을 누를 수 없다.
-          padding: state.activeCal ? 0 : isMobile ? '16px 14px 84px' : '24px 32px 84px',
+          padding: state.activeCal || state.activeTool ? 0 : isMobile ? '16px 14px 84px' : '24px 32px 84px',
           minWidth: 0,
           backgroundColor: 'var(--mf-page)',
           ...(isSpaceView(state) ? { backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px' } : {}),
@@ -195,7 +225,12 @@ export function Home() {
             남아 있으면 무엇이 결과인지 흐려진다. */}
         {/* 화면은 언제나 한쪽만 그린다(일정 ↔ 스페이스). 최근 항목·툴바·그리드는
             스페이스의 것이라 함께 접는다. */}
-        {state.activeCal ? (
+        {state.activeTool === 'jira' ? (
+          /* 도구 화면(작업 현황) — LNB는 그대로 두고 본문만 갈아 끼운다(도구 스펙 §5). */
+          <div data-tool-screen="jira" style={{ position: 'absolute', inset: 0, animation: 'mf-fade .3s ease' }}>
+            <WorkStatusView isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+          </div>
+        ) : state.activeCal ? (
           /* 일정 보기 — 스페이스와 나란한 두 번째 화면. */
           <CalendarView state={state} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         ) : calSkeleton ? (
@@ -284,6 +319,8 @@ export function Home() {
 
       {/* 홈의 단 하나뿐인 메뉴 — 카드 ☰·카드 우클릭·빈 자리 우클릭이 모두 이걸 연다. */}
       <HomeContextMenu state={state} view={view} controller={controller} />
+      <JiraSetupHost />
+      <ToolToastHost />
     </div>
   );
 }

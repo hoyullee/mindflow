@@ -10,6 +10,7 @@ import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
 import { CalendarNavSection } from './CalendarNavSection';
 import { LNB_LIST_CAP, LnbListSection } from './LnbSection';
+import { ToolsNavSection } from '../../tools/ToolsNavSection';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -508,6 +509,10 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         )}
         {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>휴지통이 비어 있습니다</div>}
       </LnbListSection>
+
+      {/* 도구(도구 스펙 §3) — 모아보기 아래, 프로필 카드 위. 굴러가는 위 칸 안에 두어 목록이 길어도
+          프로필 카드를 밀어내지 않는다. */}
+      <ToolsNavSection state={state} controller={controller} isMobile={isMobile} />
 
         </div>
 

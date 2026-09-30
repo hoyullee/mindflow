@@ -2683,8 +2683,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 뒤로 → 계정 설정
     await user.click(screen.getByRole('button', { name: /뒤로/ }));
     await user.click(await screen.findByText('계정 설정'));
-    // 두 구획으로 갈렸다(첨부 이미지): `로그인`에 Google 로그인 행, `캘린더 연동`에
-    // **진입 행** — 하는 일이 다르다(들어오는 문 / 무엇을 함께 보여 줄까).
+    // 두 구획으로 갈렸다: `로그인`에 Google 로그인 행, `도구`에 Google 캘린더 행(도구 스펙 §6 —
+    // 예전 `캘린더 연동` 구획의 자리). 하는 일이 다르다(들어오는 문 / 무엇을 함께 보여 줄까).
+    // 연결 전의 진입점은 그 행의 `연결` 단추다 — 연결 흐름은 한 겹 안의 화면에 있다.
     const link = await waitFor(() => {
       const el = document.querySelector('[data-google-link-row]');
       expect(el).toBeTruthy();
@@ -2692,12 +2693,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
     const row = document.querySelector('[data-calendar-detail-row]')!;
     expect(document.body.textContent).toContain('로그인');
-    expect(document.body.textContent).toContain('캘린더 연동');
+    expect(document.querySelector('[data-tools-settings]')?.textContent).toContain('도구');
     expect(link.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(link.textContent).toContain('Google 로그인');
-    // 연결 전에는 **부제가 없다**(요청) — 늘 같은 안내("연결하면 …")를 걸어 두면
-    // 정작 알려야 할 때(권한 만료 같은 상황) 눈에 띌 자리가 없다.
-    expect(row.textContent).toBe('Google 캘린더 연동');
+    expect(row.closest('[data-settings-tool="gcal"]')).toBeTruthy();
+    expect(row.textContent).toBe('연결');
     // 목록·공휴일은 이 화면에 없다 — 한 겹 더 들어간다(요청).
     expect(document.querySelector('[data-google-section]')).toBeNull();
     expect(document.querySelector('[data-holiday-row]')).toBeNull();
