@@ -2239,3 +2239,76 @@ describe('열어 둔 화면이 다른 기기의 변경을 잡는다', () => {
   });
 
 });
+
+describe('보드별 일정 반영(요청 — 보드 카드 메뉴)', () => {
+  beforeEach(() => {
+    mockMatchMedia(false);
+    seedSpaces();
+  });
+
+  const cardEl = (title: string): HTMLElement => document.querySelector(`.map-card[data-title="${title}"]`) as HTMLElement;
+  const savedHidden = (): unknown => JSON.parse(localStorage.getItem('mf_spaces') ?? '{}').calendarHidden;
+
+  it('메뉴의 「일정에 반영하지 않기」로 **그 보드만** 달력에서 빠지고, 설정은 워크스페이스에 남는다', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await waitFor(() => expect(cardEl('스프린트 보드')).toBeTruthy());
+    // 본문이 도착해야 칸반인 줄 안다(메뉴의 이 줄은 칸반에만 선다).
+    await waitFor(() => expect(document.querySelector('[data-cal-summary]')!.textContent).not.toBe('예정된 일정이 없어요'));
+    fireEvent.contextMenu(cardEl('스프린트 보드'));
+    fireEvent.click(await screen.findByText('일정에 반영하지 않기'));
+    await waitFor(() => expect(savedHidden()).toEqual(['d1']));
+
+    await openCalendar();
+    await waitFor(() => expect(chipTexts().length).toBeGreaterThan(0));
+    if (!chipTexts().includes('다른 스페이스 카드')) {
+      fireEvent.click(document.querySelector('[aria-label="다음 달"]')!);
+      await waitFor(() => expect(chipTexts()).toContain('다른 스페이스 카드'));
+    }
+    // 뺀 보드(스프린트 보드)의 카드는 어디에도 없다 — 다른 보드는 그대로.
+    expect(document.body.textContent).not.toContain('오늘 마감 카드');
+    expect(document.body.textContent).not.toContain('지난 마감 카드');
+  });
+
+  it('저장된 설정으로 시작하면 그 보드가 빠져 있고, 메뉴로 다시 켜면 돌아온다(LNB 요약까지)', async () => {
+    const raw = JSON.parse(localStorage.getItem('mf_spaces')!);
+    localStorage.setItem('mf_spaces', JSON.stringify({ ...raw, calendarHidden: ['d1'] }));
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await waitFor(() => expect(document.querySelector('[data-cal-nav]')).toBeTruthy());
+    fireEvent.click(document.querySelector('[data-cal-nav]')!);
+    await waitFor(() => expect(document.querySelector('[data-calendar-view]')).toBeTruthy());
+    const other = async () => {
+      await waitFor(() => expect(chipTexts().length).toBeGreaterThan(0));
+      if (!chipTexts().includes('다른 스페이스 카드')) {
+        fireEvent.click(document.querySelector('[aria-label="다음 달"]')!);
+        await waitFor(() => expect(chipTexts()).toContain('다른 스페이스 카드'));
+        fireEvent.click(document.querySelector('[aria-label="이전 달"]')!);
+      }
+    };
+    await other();
+    expect(document.body.textContent).not.toContain('오늘 마감 카드');
+    // LNB 요약도 같은 목록이다 — 뺀 보드의 지난 마감을 세지 않는다.
+    expect(document.querySelector('[data-cal-summary]')!.textContent).not.toContain('지난 마감');
+
+    // 스페이스로 돌아가 다시 켠다.
+    const spaceRow = [...document.querySelectorAll('aside [role="button"], aside button')].find((e) => e.textContent?.trim().startsWith('업무')) as HTMLElement;
+    fireEvent.click(spaceRow);
+    await waitFor(() => expect(cardEl('스프린트 보드')).toBeTruthy());
+    fireEvent.contextMenu(cardEl('스프린트 보드'));
+    fireEvent.click(await screen.findByText('일정에 반영하기'));
+    await waitFor(() => expect(document.querySelector('[data-cal-summary]')!.textContent).toContain('지난 마감 1건'));
+    // 비면 키를 싣지 않는다(예전 블롭과 같은 모양).
+    await waitFor(() => expect(savedHidden()).toBeUndefined());
+  });
+
+  it('칸반이 아닌 문서의 메뉴에는 이 줄이 없다', async () => {
+    const bodies = { ...BODIES(), d2: { doc: { v: 1, kind: 'board', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white' } as unknown as LoadedDoc['doc'], version: 1, title: '보드' } };
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], bodies);
+    await waitFor(() => expect(document.querySelector('[data-cal-summary]')!.textContent).not.toBe('예정된 일정이 없어요'));
+    fireEvent.click(document.querySelector('aside')!.querySelector('[data-space-id="s2"], [data-space="s2"]') ?? [...document.querySelectorAll('aside [role="button"], aside button')].find((e) => e.textContent?.trim().startsWith('원티드랩'))!);
+    await waitFor(() => expect(cardEl('이슈 트리아지')).toBeTruthy());
+    fireEvent.contextMenu(cardEl('이슈 트리아지'));
+    await screen.findByText('이름 변경');
+    expect(screen.queryByText('일정에 반영하지 않기')).toBeNull();
+    expect(screen.queryByText('일정에 반영하기')).toBeNull();
+  });
+});

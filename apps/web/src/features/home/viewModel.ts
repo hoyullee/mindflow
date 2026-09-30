@@ -1058,7 +1058,7 @@ function calendarBriefOf(state: HomeState): { calendarBrief: CalendarBrief; cale
   }
   for (const sm of state.sharedMaps) sources.push({ docId: sm.docId, boardName: sm.title, spaceName: '공유받음' });
   const today = todayISO();
-  const entries = calendarEntries(sources, state.previewDocs);
+  const entries = calendarEntries(sources, state.previewDocs, state.calendarHidden);
   return { calendarBrief: calendarBrief(entries, today), calendarNext: calendarNextOf(entries, today) };
 }
 

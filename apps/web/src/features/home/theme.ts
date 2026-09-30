@@ -16,7 +16,7 @@
  *   배경만 어두워지고 흰 패널에 검은 글씨가 그대로 남는다.
  */
 
-import { hexA, mixHex, THEMES, UI_THEME } from '../editor/theme';
+import { hexA, mixHex, OLD_CORAL_SUNKEN, THEMES, UI_THEME } from '../editor/theme';
 
 export type HomeThemeKey = 'coral' | 'ocean' | 'forest' | 'grape' | 'mono' | 'dark';
 
@@ -227,7 +227,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     // 때 바탕이 바뀌어 보이지 않게 한 곳에서 가져온다(요청 5). 나머지 여섯 테마는
     // 제 색을 지킨다 — 바탕 색조가 그 테마의 정체다.
     bg: UI_THEME.appBg,
-    sunken: THEMES.coral.canvasBg,
+    sunken: OLD_CORAL_SUNKEN,
     panel2: THEMES.coral.panel2,
     panelVeil: hexA(LIGHT_INK.panel, 0.92),
     overlayVeil: hexA(UI_THEME.appBg, 0.92),

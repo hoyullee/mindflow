@@ -524,10 +524,14 @@ describe('previewSurface', () => {
     expect(ocean!.bg).not.toBe(dark!.bg);
   });
 
-  it('반지름은 백분율 — px 고정이면 150px 썸네일이 단색이 된다', () => {
-    const s = previewSurface(docOf('coral'));
+  it('반지름은 백분율 — px 고정이면 150px 썸네일이 단색이 된다(그라데이션을 쓰는 테마)', () => {
+    const s = previewSurface(docOf('ocean'));
     expect(s!.bg).toContain('%');
     expect(s!.bg).not.toContain('1200px');
+  });
+
+  it('기본 캔버스(코랄 맵)는 에디터와 같은 **단색 `#F7FBF1`**이다(요청)', () => {
+    expect(previewSurface(docOf('coral'))!.bg).toBe('linear-gradient(#f7fbf1, #f7fbf1)');
   });
 
   it('칸반은 캔버스가 아니라 크롬 — 에디터 보드 바닥 + 격자 없음', () => {

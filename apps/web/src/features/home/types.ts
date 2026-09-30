@@ -229,6 +229,12 @@ export interface HomeState {
    * 고른 적 없으면 `'dash'`(지금 동작 그대로). **탭이 기억한 화면이 이것보다
    * 우선한다** — 에디터에서 돌아오면 보던 자리로 돌아가는 게 맞다. */
   homeLanding: HomeLanding;
+  /**
+   * **일정에 반영하지 않을 칸반 보드**(요청 — 보드 카드 메뉴 「일정에 반영하지 않기」).
+   * 문서 id 목록이고 정본은 워크스페이스 블롭(`calendarHidden`)이라 기기 간에 따라온다.
+   * 비어 있으면 모든 보드가 반영된다(이 설정이 생기기 전과 같다).
+   */
+  calendarHidden: string[];
   /** 구글 캘린더 겹치기 설정(PR5) — 켜지 않았으면 `null`. 워크스페이스 블롭에
    * 실려 기기 간에 따라온다(토큰은 따라오지 않는다 — 탭마다 새로 받는다). */
   google: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string; calendarColors?: Record<string, string> } | null;
@@ -497,6 +503,7 @@ export function initialHomeState(): HomeState {
     theme: loadHomeThemeCache(),
     // 정본은 워크스페이스다 — 도착하면 그 값으로 맞춘다(테마와 같은 길).
     homeLanding: 'space',
+    calendarHidden: [],
     google: null,
     reminders: null,
     calGoogleDetail: null,

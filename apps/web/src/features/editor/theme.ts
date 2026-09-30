@@ -20,11 +20,25 @@ export interface Theme {
 
 export type ThemeKey = 'coral' | 'ocean' | 'forest' | 'grape' | 'dark' | 'mono' | 'white';
 
+/**
+ * **기본 캔버스의 배경색**(요청: 마인드맵·화이트보드 배경을 `#F7FBF1`로) — 맵의 기본 테마
+ * (코랄)와 화이트보드의 기본 테마(화이트)가 함께 쓴다. **단색**이다: 예전의 방사형
+ * 그라데이션은 원본 디자인의 따뜻한 스톱(`#fffdfb → #fbf2eb`)이라 이 색 위에 얹으면
+ * 가운데가 다시 누렇게 뜬다(`canvasWash` 머리말).
+ *
+ * 코랄의 **앱 껍데기 쪽 값은 옛 색을 지킨다** — `UI_THEME`(공유·피드백 팝업의 가라앉은
+ * 행)과 홈의 `sunken`이 `THEMES.coral.canvasBg`를 빌려 썼다. 캔버스 색이 바뀌었다고
+ * 홈의 면까지 초록으로 물들면 안 된다(`OLD_CORAL_SUNKEN`).
+ */
+export const CANVAS_BG = '#f7fbf1';
+/** 코랄 캔버스의 옛 값 — 앱 껍데기(`UI_THEME`·홈 `sunken`)가 계속 쓴다. */
+export const OLD_CORAL_SUNKEN = '#f5ece5';
+
 export const THEMES: Record<ThemeKey, Theme> = {
   coral: {
     label: '코랄',
     appBg: '#fbf6f2',
-    canvasBg: '#f5ece5',
+    canvasBg: CANVAS_BG,
     panel: '#ffffff',
     panel2: '#faf3ee',
     border: '#ecdfd5',
@@ -112,7 +126,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
   white: {
     label: '화이트',
     appBg: '#ffffff',
-    canvasBg: '#ffffff',
+    canvasBg: CANVAS_BG,
     panel: '#ffffff',
     panel2: '#f6f7f8',
     border: '#e4e6ea',
@@ -136,7 +150,7 @@ export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
  * 옮길 때마다 바탕이 바뀌어 보였다. 문서 테마 `coral`의 `appBg`는 **건드리지
  * 않는다**: 그쪽은 문서가 고른 색이고 이쪽은 앱의 껍데기다.
  */
-export const UI_THEME: Theme = { ...THEMES.coral, appBg: '#fcfcfb' };
+export const UI_THEME: Theme = { ...THEMES.coral, appBg: '#fcfcfb', canvasBg: OLD_CORAL_SUNKEN };
 
 /** Port of `Component#theme()` (MindFlow.dc.html:880) — falls back to coral for unknown keys. */
 export function themeOf(key: string | undefined | null): Theme {
@@ -184,6 +198,9 @@ export function mixHex(a: string, b: string, t: number): string {
  */
 export function canvasWash(canvasBg: string, radii = '1200px 700px'): string {
   const key = canvasBg.toLowerCase();
+  // 기본 캔버스는 **단색**(`CANVAS_BG` 머리말). `none`이 아니라 같은 색 두 스톱으로 돌려준다 —
+  // 부르는 쪽 하나(홈 썸네일)는 이 값을 `background` 단축 속성에 그대로 넣는다.
+  if (key === CANVAS_BG) return `linear-gradient(${CANVAS_BG}, ${CANVAS_BG})`;
   if (key === '#f5ece5' || key === '#ffffff') {
     return `radial-gradient(${radii} at 62% 46%, #fffdfb 0%, #fdf7f2 55%, #fbf2eb 100%)`;
   }

@@ -25,6 +25,6 @@ export function useCalendarEntries(state: HomeState, enabled = true): CalendarEn
     // 공유받은 맵도 내 일정이다 — 다만 스페이스가 없으므로 구획 이름으로 표기한다.
     // 보기 전용(role='view')이면 그대로 실어 보낸다: 끌리지도, 고쳐지지도 않는다.
     for (const sm of state.sharedMaps) sources.push({ docId: sm.docId, boardName: sm.title, spaceName: '공유받음', ...(sm.role === 'view' ? { readOnly: true } : {}) });
-    return calendarEntries(sources, state.previewDocs);
-  }, [enabled, state.spaces, state.sharedMaps, state.previewDocs]);
+    return calendarEntries(sources, state.previewDocs, state.calendarHidden);
+  }, [enabled, state.spaces, state.sharedMaps, state.previewDocs, state.calendarHidden]);
 }

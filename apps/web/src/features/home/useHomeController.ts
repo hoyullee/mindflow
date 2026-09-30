@@ -14,6 +14,7 @@ import { explicitReminderPrefs, setGoogleRemindersEnabled, setRemindersEnabled }
 import { noteSyncedReminderPrefs } from '../reminders/reminderSync';
 import { addMonth, partsOf, todayISO } from './calendar/model';
 import { useLiveRefresh } from './calendar/useLiveRefresh';
+import { calendarHiddenOf } from './calendar/entries';
 import { coerceCalendarColors, coerceExtraCalendars, holidayCountryOf } from './calendar/googleCalendar';
 import { moveInList } from './listOrder';
 import { forgetSignedIn } from '../auth/sessionNotice';
@@ -228,6 +229,8 @@ export function useHomeController() {
     // 첫 화면(요청: 설정 › 시작 화면) — 정본도 이 블롭이라 기기 간에 따라온다.
     // 고른 적 없으면 `homeLandingOf`가 `'space'`로 답한다.
     const wsLanding = ws ? homeLandingOf(ws.homeLanding) : null;
+    // 일정에 반영하지 않을 보드(요청) — 첫 화면과 같은 블롭·같은 규칙(읽었을 때만 믿는다).
+    const wsCalendarHidden = ws ? calendarHiddenOf(ws.calendarHidden) : null;
     // 일정 알림(제보: 앱과 웹에 따로 켜져 있었다) — 정본은 이 블롭이다. 계정에 아직
     // 값이 없으면(예전 블롭) **이 기기가 실제로 고른 값만** 올려 준다: 기본값까지
     // 올리면 먼저 켠 기기가 아니라 **먼저 접속한 기기**가 계정 값을 정해 버린다.
@@ -348,6 +351,7 @@ export function useHomeController() {
       // 에디터에서 돌아오면 보던 자리로 돌아가는 게 맞고, 시작 화면은 말 그대로
       // "새로 시작할 때" 어디로 갈지다.
       const homeLanding = wsLanding ?? prev.homeLanding;
+      const calendarHidden = wsCalendarHidden ?? prev.calendarHidden;
       // **판단할 근거가 있을 때만** 정한다(제보: 로그인 직후 첫 진입에서 고른 시작
       // 화면이 아니라 스페이스 그리드가 떴다). 갓 로그인한 탭에서는 마운트
       // 하이드레이션이 인증 토큰 적용 **전에** 돌아 워크스페이스를 못 읽는다
@@ -373,6 +377,7 @@ export function useHomeController() {
         // 하이드레이션한 것을 "바뀌었다"고 보고 곧바로 다시 저장한다(빈 조회 뒤의
         // 그 저장이 저장된 워크스페이스를 덮는다: "재로그인하니 스페이스가 사라짐").
         homeLanding,
+        calendarHidden,
         dashboards: dashboardsRaw,
         google,
         // 베이스라인은 **계정이 실제로 가진 값**이다(상태의 씨앗이 아니라). 계정에
@@ -389,7 +394,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, homeLanding, google, reminders, dashboardsRaw, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, homeLanding, calendarHidden, google, reminders, dashboardsRaw, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -885,7 +890,7 @@ export function useHomeController() {
   // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
     if (!state.loaded || !canPersistWorkspaceRef.current) return;
-    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboardsRaw, google: state.google, reminders: state.reminders });
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, calendarHidden: state.calendarHidden, dashboards: state.dashboardsRaw, google: state.google, reminders: state.reminders });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
     // A genuine user change is being persisted — from here on the auth-confirmed
@@ -895,10 +900,10 @@ export function useHomeController() {
     // the recent-items list syncs across devices just like spaces/folders do.
     // `dashboards`는 걷어낸 화면의 저장값이다 — 읽은 그대로 다시 싣기만 한다(빼면
     // 블롭을 통째로 덮어쓰면서 사라진다. `types.ts`의 `dashboardsRaw` 참고).
-    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboardsRaw, ...(state.google ? { google: state.google } : {}), ...(state.reminders ? { reminders: state.reminders } : {}) }).catch(() => {
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboardsRaw, ...(state.google ? { google: state.google } : {}), ...(state.reminders ? { reminders: state.reminders } : {}), ...(state.calendarHidden.length ? { calendarHidden: state.calendarHidden } : {}) }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
-  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.homeLanding, state.dashboardsRaw, state.google, state.reminders, spaceStore]);
+  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.homeLanding, state.calendarHidden, state.dashboardsRaw, state.google, state.reminders, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
@@ -1190,6 +1195,18 @@ export function useHomeController() {
   const setHomeLanding = (kind: HomeLanding) => {
     saveLandingHint(kind);
     patch({ homeLanding: kind });
+  };
+
+  /**
+   * **이 칸반 보드를 일정에 반영할까**(요청 — 보드 카드 메뉴). 켜고 끄는 것뿐이고 저장은
+   * 워크스페이스 자동저장이 한다(첫 화면과 같은 길). 내 설정이라 공유받은 보드도
+   * 다른 사람의 달력은 건드리지 않는다.
+   */
+  const toggleCalendarFor = (docId: string) => {
+    setState((prev) => {
+      const hidden = prev.calendarHidden.includes(docId) ? prev.calendarHidden.filter((d) => d !== docId) : [...prev.calendarHidden, docId];
+      return { ...prev, calendarHidden: hidden };
+    });
   };
 
   /**
@@ -3018,6 +3035,7 @@ export function useHomeController() {
     setTheme,
     setReminderPrefs,
     setHomeLanding,
+    toggleCalendarFor,
     setGoogleCalendars,
     closeAccountSettings,
     openAccountDetail,

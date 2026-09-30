@@ -250,10 +250,11 @@ describe('Editor interactions (M3-Editor-b)', () => {
     localStorage.setItem('mindflow_doc_bgw', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=bgw&title=x');
 
-    // 워시 층: 방사형 그라데이션 하나뿐 — 팬/줌에 흔들리지 않아 **한 번만 래스터**된다
-    // (#368의 분리 효과. 도트를 여기 함께 두면 매 프레임 비싼 그라데이션까지 다시 칠한다.)
+    // 워시 층: 배경 한 겹뿐 — 팬/줌에 흔들리지 않아 **한 번만 래스터**된다
+    // (#368의 분리 효과. 도트를 여기 함께 두면 매 프레임 워시까지 다시 칠한다).
+    // 기본 캔버스는 요청으로 **단색 `#F7FBF1`**이다(옛 방사형 그라데이션이 아니다).
     const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
-    expect(bg.style.backgroundImage).toContain('1200px 700px at 62% 46%');
+    expect(bg.style.backgroundImage).toBe('linear-gradient(#f7fbf1, #f7fbf1)');
     expect(bg.style.backgroundImage).not.toContain('26px');
     expect(bg.style.backgroundSize).toBe('');
 
@@ -1003,7 +1004,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     // 그라디언트가 매 프레임 다시 래스터되지 않도록 분리 — Viewport.tsx 주석).
     const vp = container.querySelector('[data-canvas-bg]') as HTMLElement;
     const chromeBgBefore = topbar.style.background;
-    expect(vp.style.backgroundColor).toBe('rgb(245, 236, 229)'); // coral canvasBg #f5ece5
+    expect(vp.style.backgroundColor).toBe('rgb(247, 251, 241)'); // coral canvasBg #f7fbf1(요청)
 
     await user.click(screen.getByRole('button', { name: '스타일' }));
     await user.click(screen.getByRole('button', { name: '다크' }));

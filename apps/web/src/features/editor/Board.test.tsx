@@ -226,8 +226,8 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
     const bg = () => container.querySelector('[data-canvas-bg]') as HTMLElement;
     const painted = (): string => bg().style.background || bg().style.backgroundColor;
-    // 기본은 순백 — 흰 배경이 덮어쓰기가 아니라 `white` 테마다.
-    expect(painted()).toContain('255, 255, 255');
+    // 기본은 `white` 테마의 캔버스 — 요청으로 `#F7FBF1`(맵의 기본 캔버스와 같은 값)이다.
+    expect(painted()).toContain('247, 251, 241');
 
     fireEvent.click(screen.getByRole('button', { name: '스타일' }));
     await waitFor(() => expect(screen.getByText('테마')).toBeTruthy());
@@ -237,7 +237,7 @@ describe('화이트보드 에디터', () => {
     // 다른 테마를 고르면 캔버스가 실제로 바뀐다 — 예전에는 보드만 그대로였다.
     fireEvent.click(screen.getByRole('button', { name: '포레스트' }));
     await waitFor(() => expect(painted()).toContain('233, 243, 236')); // THEMES.forest.canvasBg
-    expect(painted()).not.toContain('255, 255, 255');
+    expect(painted()).not.toContain('247, 251, 241');
 
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
@@ -258,7 +258,8 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(screen.getByText('테마')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '화이트' }));
     const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
-    await waitFor(() => expect(bg.style.background || bg.style.backgroundColor).toContain('255, 255, 255'));
+    await waitFor(() => expect(bg.style.background || bg.style.backgroundColor).toContain('247, 251, 241')); // THEMES.white.canvasBg(#F7FBF1)
+    expect(screen.getByRole('button', { name: '화이트' }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('그린 획은 객체 위에 얹힌다 — 메모 뒤에 그려지고 z-index가 더 높다(제보)', async () => {
@@ -292,7 +293,7 @@ describe('화이트보드 에디터', () => {
     const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
     const painted = bg.style.background || bg.style.backgroundColor;
     expect(painted).toContain('32, 27, 22'); // THEMES.dark.canvasBg (#201b16)
-    expect(painted).not.toContain('255, 255, 255');
+    expect(painted).not.toContain('247, 251, 241'); // 기본 캔버스(화이트)로 덮어쓰지 않는다
     // 접기 토글 부재 + collapsed여도 두 줄이 다 보인다.
     expect(floatEl.querySelector('[data-fold-toggle]')).toBeNull();
     expect(floatEl.textContent).toContain('둘째 줄');
