@@ -316,7 +316,10 @@ describe('일정 화면', () => {
     // 둘째 줄은 급한 것부터 — 지난 마감(1) · 오늘(1). 완료 열은 빠진다. 다음 마감의 이름이
     // 이 자리를 차지하면 "이미 늦은 것이 있다"가 가려지므로 이때는 개수를 말한다.
     const sum = nav.querySelector('[data-cal-summary]') as HTMLElement;
-    expect(sum.textContent).toBe('지난 마감 1건 · 오늘 1건');
+    // 기간 카드의 기한은 달 안쪽으로 클램프되므로 **달의 마지막 날에는 오늘**이 되어
+    // 오늘 마감에 함께 세어진다(옳은 동작 — 2026-09-30에 실제로 갈렸다).
+    const todayCount = SPAN.due === todayISO() ? 2 : 1;
+    expect(sum.textContent).toBe(`지난 마감 1건 · 오늘 ${todayCount}건`);
     // 알약을 걷어낸 자리에서 **경고색**이 그 급함을 말한다.
     expect(sum.dataset.urgent).toBe('1');
     expect(sum.style.color).toBe('var(--mf-danger)');
@@ -495,9 +498,11 @@ describe('일정 화면', () => {
     // 두 줄 카드와 다른 물건. 우측 메모는 열 이름, 기간이면 `N/M일째`.
     const chips = [...document.querySelectorAll('[data-cal-day-chip]')] as HTMLElement[];
     expect(chips.length).toBeGreaterThan(0);
-    expect(chips[0]!.style.borderLeft).toMatch(/^3px solid/);
-    expect(chips[0]!.style.borderRadius).toBe('4px 10px 10px 4px');
-    expect(chips[0]!.textContent).toContain('진행 중');
+    // 순서에 기대지 않는다 — 달의 마지막 날에는 기간 카드도 오늘 마감이라 앞에 설 수 있다.
+    const dueToday = chips.find((c) => c.textContent!.includes('오늘 마감 카드'))!;
+    expect(dueToday.style.borderLeft).toMatch(/^3px solid/);
+    expect(dueToday.style.borderRadius).toBe('4px 10px 10px 4px');
+    expect(dueToday.textContent).toContain('진행 중');
     // 오늘은 기간 카드(닷새짜리)의 며칠째다 — 시작이 월초·월말 클램프로 움직이므로 계산해 단정한다
     expect(side().textContent).toContain(`${daysBetween(SPAN.start, todayISO()) + 1}/5일째`);
     expect(document.querySelector('[aria-label="날짜별 보기"]')!.getAttribute('aria-pressed')).toBe('true');
