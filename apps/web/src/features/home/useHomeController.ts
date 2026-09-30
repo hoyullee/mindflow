@@ -1364,7 +1364,15 @@ export function useHomeController() {
   // **않는다** — 다른 달을 보다 맵을 열고 돌아오면 그 달이 그대로인 편이
   // 자연스럽다(달을 되돌리는 것은 '오늘' 버튼의 일이다).
   /** LNB `일정` — 일정 화면을 연다. 검색 중이었다면 함께 비운다. */
-  const openCalendar = () => patch({ activeCal: true, search: '', searchInput: '' });
+  /**
+   * LNB `일정` — **이번 달, 오늘을 고른 채로** 연다(스펙: 일정 페이지 5). 다른 달을 보다가
+   * 스페이스에 다녀와도 돌아오는 자리는 오늘이다(달력의 첫 질문은 "지금 무엇이 있나"다).
+   * 날짜별 보기의 열림·닫힘은 건드리지 않는다 — 그 토글은 세션 동안 사용자가 정한 대로다.
+   */
+  const openCalendar = () => {
+    const now = new Date();
+    patch({ activeCal: true, search: '', searchInput: '', calY: now.getFullYear(), calM: now.getMonth() + 1, calDay: null });
+  };
   /**
    * 홈 **밖**에서 온 요청(일정 알림 토스트·OS 알림). 화면만 바꾸면 부족하다 —
    * 이미 일정 화면이었으면 아무 일도 일어나지 않고(제보: "반응이 없어"), 다른 달을
@@ -1419,9 +1427,14 @@ export function useHomeController() {
   /** 통계 칩 = 필터. 켜진 칩을 다시 누르면 꺼진다(전부 보기). */
   // 같은 버튼을 다시 누르면 접는다(디자인 원본의 ✕와 같은 자리).
   const setCalSide = (side: 'day' | null) => patch({ calSide: state.calSide === side ? null : side });
-  const toggleCalDeadline = () => patch({ calDeadline: !state.calDeadline });
-  /** 달력 칸 클릭 — 그 날을 골라 사이드에 펼친다(디자인 원본의 daySel). */
-  const selectCalDay = (iso: string) => patch({ calDay: iso, calSide: 'day' });
+  /**
+   * 달력 칸 클릭 — 그 날을 **고르기만** 한다(스펙: 일정 페이지 3.3 · 5). 예전에는 접힌
+   * 날짜별 보기까지 펼쳤는데, 그 토글은 이제 세션 동안 사용자가 정한 대로 둔다(닫으면
+   * 달력이 오른쪽 끝까지 넓어진다 — 칸을 누를 때마다 패널이 튀어나오면 닫은 뜻이 없다).
+   */
+  const selectCalDay = (iso: string) => patch({ calDay: iso });
+  /** 그 날을 골라 날짜별 보기를 **편다**(우클릭 메뉴 `날짜별 보기로 열기`). 이미 펴져 있으면 그대로. */
+  const showCalDay = (iso: string) => patch({ calDay: iso, calSide: 'day' });
   /** 항목 클릭 → 상세 팝업. 대상은 그 칸반 카드다(정본은 그 문서). */
   const openCalendarCard = (docId: string, cardId: string) => patch({ calDetail: { docId, cardId } });
   const closeCalendarCard = () => patch({ calDetail: null });
@@ -3065,7 +3078,7 @@ export function useHomeController() {
     calGoToday,
     setCalMonth,
     setCalSide,
-    toggleCalDeadline,
+    showCalDay,
     selectCalDay,
     openCalendarCard,
     closeCalendarCard,

@@ -396,35 +396,36 @@ describe('일정 화면', () => {
     expect([...document.querySelectorAll('[data-cal-bar] [data-cal-bar-title]')].some((b) => b.textContent === '기간 카드')).toBe(true);
   });
 
-  it('통계 칩은 **필터가 아니라 목록**이다 — 누르면 그 항목이 팝오버로 뜨고 골라서 상세로 간다', async () => {
+  it('헤더 요약 줄 — 오늘 날짜 + 0이 아닌 수만, 오늘 마감 → 이번 주 → 지난 마감 순(스펙 2.1)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
-    await waitFor(() => expect(chipTexts().length).toBeGreaterThan(1));
-    const before = chipTexts().length;
-    const over = document.querySelector('[data-cal-stat="over"]')!;
-    expect(over.textContent).toContain('1건');
-    fireEvent.click(over);
-    // 팝오버가 뜨고 **달력은 그대로다**(예전에는 나머지가 통째로 사라졌다).
-    await waitFor(() => expect(document.querySelector('[data-cal-stat-item]')).toBeTruthy());
-    expect(chipTexts().length).toBe(before);
-    const row = document.querySelector('[data-cal-stat-item]') as HTMLElement;
-    expect(row.textContent).toContain('지난 마감 카드');
-    expect(row.textContent).toContain('-5일'); // 며칠 지났는지까지 말한다
-    // 목록에서 고르면 그 항목의 상세
-    fireEvent.click(row);
-    await waitFor(() => expect(detail()).toBeTruthy());
-    expect(document.querySelector('[data-cal-detail-title]')!.textContent).toBe('지난 마감 카드');
+    const head = () => document.querySelector('[data-cal-head-summary]') as HTMLElement;
+    await waitFor(() => expect(head().querySelector('[data-cal-head-stat="over"]')).toBeTruthy());
+    const now = new Date();
+    expect(head().querySelector('[data-cal-head-date]')!.textContent).toBe(`${now.getMonth() + 1}월 ${now.getDate()}일 ${'일월화수목금토'[now.getDay()]}요일`);
+    // 순서는 급한 것 먼저가 아니라 **스펙의 순서**다(오늘 → 이번 주 → 지난). 칸반 마감만 센다.
+    // 이번 주에는 오늘 카드가 늘 든다 — 셋 다 선다.
+    const keys = [...head().querySelectorAll('[data-cal-head-stat]')].map((el) => el.getAttribute('data-cal-head-stat'));
+    expect(keys).toEqual(['today', 'week', 'over']);
+    const n = (k: string) => head().querySelector(`[data-cal-head-stat="${k}"] [data-cal-head-n]`)!.textContent;
+    expect(n('over')).toBe('1');
+    // 오늘 마감 = 오늘 카드(완료 열은 빠진다) + 달의 끝이면 기간 카드도 오늘 마감이다.
+    expect(Number(n('today'))).toBe(SPAN.due === todayISO() ? 2 : 1);
+    // 숫자는 등폭 글꼴이다(스펙 — 숫자·카운트는 JetBrains Mono).
+    expect((head().querySelector('[data-cal-head-n]') as HTMLElement).style.fontFamily).toContain('JetBrains Mono');
+    // 예전의 통계 칩·팝오버는 없다(스펙 6).
+    expect(document.querySelector('[data-cal-stat]')).toBeNull();
+    expect(document.querySelector('[data-cal-stats]')).toBeNull();
   });
 
-  it('항목이 없는 통계 칩은 빈 안내를 보여 준다(눌러도 아무 일 없는 칩이 아니다)', async () => {
-    // 앞으로 올 마감 하나뿐 — `지난 마감`은 0건이다.
+  it('0인 항목은 요약 줄에 적지 않는다 — "지난 마감 0"은 읽을 거리가 아니다(스펙 2.1)', async () => {
+    // 앞으로 올 마감 하나뿐 — 지난 마감·오늘 마감은 0건이다.
     renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody([{ id: 'k1', col: 'c2', pos: 1, text: '앞날 카드', due: shiftDays(2) }]) });
     await openCalendar();
-    const over = document.querySelector('[data-cal-stat="over"]')!;
-    expect(over.textContent).toContain('0건');
-    fireEvent.click(over);
-    await waitFor(() => expect(document.body.textContent).toContain('해당하는 일정이 없어요'));
-    expect(document.querySelector('[data-cal-stat-item]')).toBeNull();
+    const head = document.querySelector('[data-cal-head-summary]') as HTMLElement;
+    expect(head.querySelector('[data-cal-head-date]')).toBeTruthy();
+    expect(head.querySelector('[data-cal-head-stat="over"]')).toBeNull();
+    expect(head.querySelector('[data-cal-head-stat="today"]')).toBeNull();
   });
 
   it('`새 일정`은 헤더 **오른쪽 묶음**에 있다 — 왼쪽은 지금 보는 자리, 오른쪽은 할 수 있는 일', async () => {
@@ -485,82 +486,128 @@ describe('일정 화면', () => {
     expect(wed.style.background).toContain('--mf-card');
   });
 
-  it('날짜별 보기(RNB)와 마감 목록은 각자 켜고 끈다 — 마감 목록은 달력 위에 겹친다', async () => {
+  it('날짜별 보기는 기본으로 열려 있고 헤더의 원 토글이 접고 편다 — 마감 목록은 어디에도 없다(스펙 2.2·6)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
-    const side = () => document.querySelector('[data-cal-side]')!;
-    // 날짜별 보기는 기본으로 열려 있고, 미니 달력에서 오늘을 고르면 그 날 목록이 된다.
+    const side = () => document.querySelector('[data-cal-side]');
+    // 날짜별 보기는 기본으로 열려 있고, **오늘이 골라져 있다**(스펙 5 — 진입하면 오늘).
     await waitFor(() => expect(side()).toBeTruthy());
-    fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
-    await waitFor(() => expect(side().textContent).toContain('일정 '));
     expect(within(side() as HTMLElement).getByText('오늘 마감 카드')).toBeTruthy();
-    // 날짜별 항목은 **왼쪽 색 바가 붙은 납작한 행**이다(디자인 원본) — 마감 목록의
-    // 두 줄 카드와 다른 물건. 우측 메모는 열 이름, 기간이면 `N/M일째`.
+    // 날짜별 항목은 **왼쪽 색 바가 붙은 납작한 행**이다(스펙 4.2). 우측 메모는 열 이름,
+    // 기간이면 `N/M일째`.
     const chips = [...document.querySelectorAll('[data-cal-day-chip]')] as HTMLElement[];
-    expect(chips.length).toBeGreaterThan(0);
     // 순서에 기대지 않는다 — 달의 마지막 날에는 기간 카드도 오늘 마감이라 앞에 설 수 있다.
     const dueToday = chips.find((c) => c.textContent!.includes('오늘 마감 카드'))!;
     expect(dueToday.style.borderLeft).toMatch(/^3px solid/);
-    expect(dueToday.style.borderRadius).toBe('4px 10px 10px 4px');
+    expect(dueToday.style.borderRadius).toBe('4px 9px 9px 4px');
+    expect(dueToday.style.padding).toBe('6px 9px');
     expect(dueToday.textContent).toContain('진행 중');
     // 오늘은 기간 카드(닷새짜리)의 며칠째다 — 시작이 월초·월말 클램프로 움직이므로 계산해 단정한다
-    expect(side().textContent).toContain(`${daysBetween(SPAN.start, todayISO()) + 1}/5일째`);
-    expect(document.querySelector('[aria-label="날짜별 보기"]')!.getAttribute('aria-pressed')).toBe('true');
-
-    // 마감 목록은 **다른 물건**이다(원본 `dlOpen`) — 날짜별 보기를 갈아 끼우지 않고
-    // 달력 위에 겹치는 판으로 뜬다. 둘 다 켜지면 나란히 선다.
-    fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
-    const dl = () => document.querySelector('[data-cal-deadline]') as HTMLElement | null;
-    await waitFor(() => expect(dl()).toBeTruthy());
-    expect(dl()!.textContent).toContain('다가오는 마감');
-    expect(side()).toBeTruthy();
-    // 겹치는 판이라 날짜별 보기가 열려 있으면 그 폭만큼 왼쪽으로 비켜선다.
-    expect(dl()!.style.right).toBe('300px');
-    // 다시 누르면 접힌다(날짜별 보기는 그대로).
-    fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
-    await waitFor(() => expect(dl()).toBeNull());
-    expect(document.querySelector('[data-cal-side]')).toBeTruthy();
+    expect(side()!.textContent).toContain(`${daysBetween(SPAN.start, todayISO()) + 1}/5일째`);
+    const toggle = () => document.querySelector('[aria-label="날짜별 보기"]') as HTMLElement;
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    // 32px 원(스펙 2.2)
+    expect(toggle().style.width).toBe('32px');
+    expect(toggle().style.borderRadius).toBe('999px');
+    // 누르면 접히고 달력이 오른쪽 끝까지 넓어진다.
+    fireEvent.click(toggle());
+    await waitFor(() => expect(side()).toBeNull());
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(toggle());
+    await waitFor(() => expect(side()).toBeTruthy());
+    // 마감 목록 판·토글은 걷었다(스펙 6).
+    expect(document.querySelector('[aria-label="마감 목록"]')).toBeNull();
+    expect(document.querySelector('[data-cal-deadline]')).toBeNull();
   });
 
-  it('마감 목록이 열려 있을 때 날짜 칸을 고르면 목록이 닫힌다(제보 #12)', async () => {
+  it('본문 행이 880px보다 좁으면 패널이 달력 위에 **겹치고** 막이 깔린다 — 막을 누르면 접힌다(스펙 4)', async () => {
     renderHome([META('d1', '스프린트 보드')], BODIES());
     await openCalendar();
-    fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
-    await waitFor(() => expect(document.querySelector('[data-cal-deadline]')).toBeTruthy());
-    // 달력 칸을 누르는 순간 그 판은 자리를 비켜 준다(달력으로 돌아온 것이므로).
-    fireEvent.click(document.querySelector(`[data-day-cell="${shiftInMonth(1)}"]`)!);
-    await waitFor(() => expect(document.querySelector('[data-cal-deadline]')).toBeNull());
-    // 날짜별 보기는 고른 날의 짝이라 그대로 남는다.
-    expect(document.querySelector('[data-cal-side]')).toBeTruthy();
+    const body = document.querySelector('[data-cal-body]') as HTMLElement;
+    const side = () => document.querySelector('[data-cal-side]') as HTMLElement | null;
+    // 넉넉하면 300px 붙박이 열
+    Object.defineProperty(body, 'clientWidth', { configurable: true, value: 1180 });
+    act(() => { for (const cb of roCallbacks) cb(); });
+    await waitFor(() => expect(body.dataset.calSideMode).toBe('dock'));
+    expect(side()!.style.flex).toBe('0 0 300px');
+    expect(document.querySelector('[data-cal-scrim]')).toBeNull();
+    // 좁아지면 324px 판 + 막
+    Object.defineProperty(body, 'clientWidth', { configurable: true, value: 860 });
+    act(() => { for (const cb of roCallbacks) cb(); });
+    await waitFor(() => expect(body.dataset.calSideMode).toBe('overlay'));
+    expect(side()!.style.position).toBe('absolute');
+    expect(side()!.style.width).toBe('324px');
+    const scrim = document.querySelector('[data-cal-scrim]') as HTMLElement;
+    expect(scrim.style.background).toBe('rgba(46, 42, 38, 0.18)');
+    fireEvent.click(scrim);
+    await waitFor(() => expect(side()).toBeNull());
+    expect(document.querySelector('[data-cal-scrim]')).toBeNull();
+    expect(document.querySelector('[aria-label="날짜별 보기"]')!.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('마감 배지는 급한 정도로 색이 갈리고, 목록이 길면 접힌다(제보 #14·#15)', async () => {
-    // 오늘 / 이틀 뒤 / 먼 뒤 — 세 등급이 한 목록에 서게 만든다.
-    // 여기서는 `shiftInMonth`를 쓰지 않는다: 그 헬퍼는 달을 넘으면 **뒤로** 물러서는데,
-    // 그러면 미래로 두려던 날이 과거가 되어 "다가오는 마감"에서 통째로 빠진다(달 후반에만
-    // 깨지는 시계 의존 — 실제로 그렇게 깨졌다). 마감 목록은 달에 매이지 않으므로
-    // (`upcomingEntries`는 `due >= 오늘`만 본다) 클램프할 이유도 없다.
-    const many = Array.from({ length: 9 }, (_, i) => ({ id: `n${i}`, col: 'c1', pos: i + 1, text: `일감 ${i}`, due: shiftDays(i === 0 ? 0 : i === 1 ? 2 : 10 + i) }));
-    renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody(many) });
+  it('LNB `일정`으로 들어오면 **이번 달, 오늘**이다 — 다른 달을 보다 나갔다 와도(스펙 5)', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
     await openCalendar();
-    fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
-    const dl = await waitFor(() => {
-      const el = document.querySelector('[data-cal-deadline]');
+    const label = () => document.querySelector('[data-cal-month-label]')!.textContent;
+    const now = new Date();
+    const here = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
+    expect(label()).toBe(here);
+    fireEvent.click(document.querySelector('[data-cal-month]')!.parentElement!.querySelector('[aria-label="다음 달"]')!);
+    await waitFor(() => expect(label()).not.toBe(here));
+    fireEvent.click(document.querySelector('[data-cal-nav]')!);
+    await waitFor(() => expect(label()).toBe(here));
+    expect(document.querySelector(`[data-day-cell="${todayISO()}"] [data-day-num]`)!.getAttribute('data-selected')).toBe('1');
+  });
+
+  it('패널의 미니 달력 — 21px 알약 날짜 아래 3.5px 점(그 날 첫 항목의 종류 색), 오늘은 코랄 알약(스펙 4.1)', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const mini = document.querySelector('[data-cal-side] [data-mini-cal]') as HTMLElement;
+    expect(mini.dataset.miniVariant).toBe('side');
+    const today = mini.querySelector(`[data-mini-day="${todayISO()}"]`) as HTMLElement;
+    const pill = today.querySelector('[data-mini-num]') as HTMLElement;
+    expect(pill.style.height).toBe('21px');
+    expect(pill.style.borderRadius).toBe('99px');
+    expect(pill.style.background).toBe('var(--mf-accent)');
+    // 오늘 카드(분류 없음) — 점은 칸반 초록.
+    const dot = today.querySelector('[data-mini-dot]') as HTMLElement;
+    expect(dot.style.width).toBe('3.5px');
+    expect(dot.style.background).toBe('rgb(78, 140, 103)');
+    // 항목 없는 날의 점은 투명하다(자리는 지킨다 — 줄 높이가 흔들리지 않게).
+    const empty = [...mini.querySelectorAll<HTMLElement>('[data-mini-day]')].find((b) => !b.querySelector('[data-mini-dot="1"]'))!;
+    expect((empty.querySelector('span[aria-hidden]') as HTMLElement).style.background).toBe('transparent');
+    // 누르면 큰 달력의 그 날이 골라진다.
+    fireEvent.click(empty);
+    await waitFor(() => expect(document.querySelector(`[data-day-cell="${empty.dataset.miniDay}"] [data-day-num]`)?.getAttribute('data-selected')).toBe('1'));
+  });
+
+  it('시간 일정이 없는 날 — 시계 + 안내 + `일정 추가`, **시간표는 그대로** 남아 빈 시간대를 누를 수 있다(스펙 4.2·제보 #20)', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const empty = await waitFor(() => {
+      const el = document.querySelector('[data-cal-timed-empty]');
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    // 중요도 사다리: 오늘 / 사흘 안 / 그 뒤가 서로 다른 색을 쓴다.
-    const tones = [...dl.querySelectorAll('[data-cal-due]')].map((b) => b.getAttribute('data-cal-due'));
-    expect(new Set(tones).size).toBeGreaterThan(1);
-    const today = dl.querySelector<HTMLElement>('[data-cal-due="today"]')!;
-    const later = dl.querySelector<HTMLElement>('[data-cal-due="later"]')!;
-    expect(today.style.color).not.toBe(later.style.color);
-    // 아홉 개는 한 번에 다 펼치지 않는다 — 나머지는 `+N개 더 보기`로.
-    const more = dl.querySelector<HTMLElement>('[data-cal-more-upcoming]')!;
-    expect(more.textContent).toBe('+2개 더 보기');
-    fireEvent.click(more);
-    await waitFor(() => expect(dl.querySelectorAll('[data-cal-row]').length).toBe(9));
-    expect(dl.querySelector('[data-cal-more-upcoming]')).toBeNull();
+    expect(empty.textContent).toContain('이 날에는 시간 일정이 없어요');
+    expect(document.querySelectorAll('[data-cal-hour]')).toHaveLength(24);
+    fireEvent.click(empty.querySelector('[data-cal-timed-add]')!);
+    await waitFor(() => expect(document.querySelector('[role="dialog"][aria-label="새 일정"]')).toBeTruthy());
+  });
+
+  it('날짜 칸 클릭은 **고르기만** 한다 — 접어 둔 날짜별 보기를 다시 펴지 않는다(스펙 5: 토글은 세션 동안 유지)', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    fireEvent.click(document.querySelector('[aria-label="날짜별 보기"]')!);
+    await waitFor(() => expect(document.querySelector('[data-cal-side]')).toBeNull());
+    const iso = shiftInMonth(1);
+    fireEvent.click(document.querySelector(`[data-day-cell="${iso}"]`)!);
+    await waitFor(() => expect(document.querySelector(`[data-day-cell="${iso}"] [data-day-num]`)!.getAttribute('data-selected')).toBe('1'));
+    expect(document.querySelector('[data-cal-side]')).toBeNull();
+    // 폈을 때 보이는 날은 방금 고른 그 날이다.
+    fireEvent.click(document.querySelector('[aria-label="날짜별 보기"]')!);
+    const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
+    await waitFor(() => expect(document.querySelector('[data-cal-agenda-head]')!.textContent).toContain(`${+m!}월 ${+d!}일`));
   });
 
   it('이웃 달 칸도 평범한 칸처럼 고를 수 있다(제보 #3)', async () => {
@@ -574,23 +621,17 @@ describe('일정 화면', () => {
     expect(out.getAttribute('role')).toBe('button');
     expect(out.style.background).toBe('var(--mf-cal-out)');
     fireEvent.click(out);
-    // 고른 표시는 **날짜 숫자의 링**이다(제보 — 배경으로 표시하니 이웃 달의 가라앉은
-    // 면·주말 톤·드롭 대기와 뜻이 겹쳐 계속 문제가 났다). 칸 배경은 그대로다.
+    // 고른 표시는 **칸 면**이다(스펙 3.3 — 선택 `#FCF6ED`). 숫자 상자는 오늘만 채운다.
     await waitFor(() => expect(out.querySelector('[data-day-num][data-selected]')).toBeTruthy());
-    expect(out.style.background).toBe('var(--mf-cal-out)');
-    // 고른 날의 숫자는 **채운 원**이다 — 속 빈 링은 튀어 보였다(제보). 요일에 따라
-    // 그 색이 갈린다(요청 ④: 토·일·공휴일은 파랑·빨강을 지킨다).
-    const outDow = new Date(`${out.getAttribute('data-day-cell')}T12:00:00`).getDay();
-    expect((out.querySelector('[data-day-num]') as HTMLElement).style.background).toBe(
-      outDow === 0 ? 'var(--mf-danger)' : outDow === 6 ? 'var(--mf-info)' : 'var(--mf-text)',
-    );
+    expect(out.style.background).toBe('var(--mf-cal-sel)');
+    expect((out.querySelector('[data-day-num]') as HTMLElement).style.background).toBe('transparent');
     // 사이드가 그 날을 보여 준다 — 이번 달이 아니어도 고를 수 있다.
     const iso = out.getAttribute('data-day-cell')!;
     const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
     await waitFor(() => expect(document.querySelector('[data-cal-side]')!.textContent).toContain(`${+m!}월 ${+d!}일`));
   });
 
-  it('이웃 달 칸의 날짜도 토·일 색을 쓴다(요청 ④) — 이번 달이 아님은 면과 흐림이 말한다', async () => {
+  it('이웃 달 칸의 날짜도 토·일 색조를 지킨다(요청 ④) — 이번 달이 아님은 면과 흐림이 말한다', async () => {
     renderHome([META('d1', '스프린트 보드')], BODIES());
     await openCalendar();
     const cells = await waitFor(() => {
@@ -603,10 +644,10 @@ describe('일정 화면', () => {
     expect(out.length).toBeGreaterThan(0);
     for (const cell of out) {
       const dow = cells.indexOf(cell) % 7;
-      // 이웃 달 칸의 일요일은 붉게, 토요일은 파랗게 — 평일만 흐린 회색이다.
-      if (dow === 0) expect(numOf(cell)).toBe('var(--mf-danger)');
-      else if (dow === 6) expect(numOf(cell)).toBe('var(--mf-info)');
-      else expect(numOf(cell)).toBe('var(--mf-faint)');
+      // 이웃 달의 일요일은 붉은 기, 토요일은 푸른 기를 지닌 채 흐려지고 — 평일만 가라앉은 회색이다.
+      if (dow === 0) expect(numOf(cell)).toContain('--mf-cal-num-sun');
+      else if (dow === 6) expect(numOf(cell)).toContain('--mf-cal-num-sat');
+      else expect(numOf(cell)).toBe('var(--mf-cal-num-out)');
     }
   });
 
@@ -668,37 +709,27 @@ describe('일정 화면', () => {
     expect(main.style.overflowY).toBe('hidden');
   });
 
-  it('통계 칩은 면도 테두리도 없고, 켜짐은 CSS 클래스가 정한다(제보 ②)', async () => {
-    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
-    await openCalendar();
-    const chip = document.querySelector('[data-cal-stat="today"]') as HTMLElement;
-    expect(chip.style.border).toBe('0px');
-    // 인라인 배경을 두지 않는다 — 두면 hover 규칙(`.mf-cal-chip:hover`)과 싸운다.
-    expect(chip.style.background).toBe('');
-    expect(chip.className).toContain('mf-cal-chip');
-    expect(chip.className).not.toContain('mf-ctl');
-  });
-
-  it('칸 배경은 요일만 말하고, 고른 날은 **숫자 링**이 진다(제보 — 배경 표시가 계속 문제였다)', async () => {
+  it('칸 면은 여섯 가지 — 오늘·선택·오늘+선택이 각자 면을 가진다, 날짜 숫자는 19px 둥근 사각(스펙 3.3·3.4)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const cell = () => document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
     const num = () => cell().querySelector('[data-day-num]') as HTMLElement;
-    // 오늘은 숫자가 이미 채운 원으로 말한다 — 배경까지 바꾸면 "고른 칸"과 헷갈린다.
-    expect(cell().style.background).not.toContain('cal-today');
-    const before = cell().style.background;
-    fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
-    // 고르면 **칸 배경은 그대로**이고 숫자만 표시된다 — 오늘은 이미 채운 원이라
-    // 안쪽 링이 보이지 않으므로 바깥 후광으로 두른다.
-    await waitFor(() => expect(num().dataset.selected).toBe('1'));
-    expect(cell().style.background).toBe(before);
-    expect(cell().style.boxShadow).not.toContain('inset');
-    // 오늘+선택은 강조색 원에 **옅은 후광**(딱딱한 링이 아니라 물 탄 강조색).
-    // 예전 값(`--mf-cal-ring`)은 테마에서 지워진 토큰이라 아무 표시도 나오지 않았다.
-    expect(num().style.boxShadow).toBe('0 0 0 3px var(--mf-accent-mute)');
+    // 진입하면 오늘이 골라져 있다(스펙 5) — 오늘+선택의 면.
+    expect(cell().style.background).toBe('var(--mf-cal-today-sel)');
     expect(num().style.background).toBe('var(--mf-accent)');
+    expect(num().style.width).toBe('19px');
+    expect(num().style.borderRadius).toBe('6px');
+    expect(num().style.fontSize).toBe('10.5px');
+    // 다른 날을 고르면 오늘은 **오늘 면**으로, 고른 칸은 선택 면으로.
+    const other = [...document.querySelectorAll<HTMLElement>('[data-day-cell]')].find((c) => !c.dataset.today && !c.dataset.outMonth)!;
+    fireEvent.click(other);
+    await waitFor(() => expect(other.style.background).toBe('var(--mf-cal-sel)'));
+    expect(cell().style.background).toBe('var(--mf-cal-today)');
+    // 고른 날의 숫자는 면을 채우지 않는다 — 면이 이미 말한다.
+    expect((other.querySelector('[data-day-num]') as HTMLElement).style.background).toBe('transparent');
+    // 링은 **놓일 자리**만의 것이다.
+    expect(other.style.boxShadow).not.toContain('inset');
   });
-
 
   // ── 제보 라운드: 텍스트 선택·선택 표시·우클릭 메뉴·통계 팝오버 ────────────────
   describe('일정 화면 UI(제보 ②③④⑨)', () => {
@@ -715,14 +746,47 @@ describe('일정 화면', () => {
       expect(rule).toContain('-webkit-user-select: none');
     });
 
-    it('달력 뒤의 면은 **바닥 면**(`--mf-page`)이고 점 격자는 그대로다(요청)', async () => {
+    it('달력은 카드가 아니다 — 테두리·모서리·그늘 없이 스크롤 영역을 끝까지 채우고, 뒤에 점 격자가 없다(스펙 3·6)', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       await openCalendar();
-      const body = document.querySelector('[data-cal-body]') as HTMLElement;
-      expect(body.style.background).toContain('--mf-page');
-      // 점 격자는 그 위에 그대로(요청: dot 표시는 유지).
       const canvas = document.querySelector('[data-cal-canvas]') as HTMLElement;
-      expect(canvas.style.backgroundImage).toContain('--mf-dot-grid');
+      expect(canvas.style.backgroundImage).toBe('');
+      expect(canvas.style.padding).toBe('');
+      const grid = document.querySelector('[data-month-grid]') as HTMLElement;
+      expect(grid.style.borderRadius).toBe('');
+      expect(grid.style.boxShadow).toBe('');
+      expect(grid.style.border).toBe('');
+      expect(grid.style.background).toBe('var(--mf-cal-frame)');
+      // 7 × 92px보다 좁으면 가로로 굴린다.
+      expect(grid.style.minWidth).toBe('644px');
+      // 요일 줄의 위 선이 헤더와 달력의 유일한 경계 — 오른쪽 패널의 위 선과 같은 토큰이다.
+      const dow = document.querySelector('[data-cal-dow-row]') as HTMLElement;
+      expect(dow.style.borderTop).toBe('1px solid var(--mf-cal-grid)');
+      expect((document.querySelector('[data-cal-side]') as HTMLElement).style.borderTop).toBe('1px solid var(--mf-cal-grid)');
+      expect((document.querySelector('[data-cal-head]') as HTMLElement).style.borderBottom).toBe('');
+    });
+
+    it('헤더는 점 격자 띠 위의 **월 제목**이다 — 아이콘 타일·부제·알약 월 이동기·G 단추는 없다(스펙 2·6)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      const head = document.querySelector('[data-cal-head]') as HTMLElement;
+      expect(head.style.backgroundColor).toBe('var(--mf-cal-head)');
+      expect(head.style.backgroundImage).toContain('--mf-cal-head-dot');
+      expect(head.style.backgroundSize).toBe('18px 18px');
+      expect(head.style.padding).toBe('20px 20px 16px 32px');
+      const title = document.querySelector('[data-cal-month]') as HTMLElement;
+      expect(title.style.fontSize).toBe('26px');
+      expect(title.style.fontWeight).toBe('800');
+      expect(title.style.height).toBe('38px');
+      expect(head.querySelector('h2')).toBeNull();
+      expect(head.textContent).not.toContain('마감과 회의를');
+      expect(head.querySelector('[data-google-connect-cal]')).toBeNull();
+      // 새 일정은 단색 코랄 알약 — 그라디언트·그늘 없음(스펙 2.2).
+      const btn = document.querySelector('[data-cal-new]') as HTMLElement;
+      expect(btn.style.background).toBe('var(--mf-accent)');
+      expect(btn.style.boxShadow).toBe('');
+      expect(btn.style.height).toBe('32px');
+      expect(btn.style.borderRadius).toBe('99px');
     });
 
     it('연/달 버튼은 1자리 달과 2자리 달에서 **폭이 같다**(제보 ⑥)', async () => {
@@ -739,34 +803,6 @@ describe('일정 화면', () => {
       expect(box.style.fontVariantNumeric).toBe('tabular-nums');
       // 보이는 라벨은 자와 같은 칸에 겹친다.
       expect(btn.querySelector('[data-cal-month-label]')!.getAttribute('style')).toContain('grid-area: 1 / 1');
-    });
-
-    it('고른 날은 **채운 원**이고, 토·일·공휴일은 그 색을 지킨다(제보 ③④)', async () => {
-      renderHome([META('d1', '스프린트 보드')], BODIES());
-      await openCalendar();
-      const num = (iso: string) => document.querySelector(`[data-day-cell="${iso}"] [data-day-num]`) as HTMLElement;
-      const pick = async (iso: string) => {
-        fireEvent.click(document.querySelector(`[data-day-cell="${iso}"]`)!);
-        await waitFor(() => expect(num(iso).dataset.selected).toBe('1'));
-      };
-      // 이 달 안의 평일·토·일을 각각 찾는다(월말에도 흔들리지 않게 DOM에서 고른다).
-      const cells = [...document.querySelectorAll<HTMLElement>('[data-day-cell]')].filter((c) => !c.dataset.outMonth && !c.dataset.today);
-      const dowOf = (c: HTMLElement) => new Date(`${c.dataset.dayCell}T12:00:00`).getDay();
-      const weekday = cells.find((c) => dowOf(c) > 0 && dowOf(c) < 6)!.dataset.dayCell!;
-      const sat = cells.find((c) => dowOf(c) === 6)!.dataset.dayCell!;
-      const sun = cells.find((c) => dowOf(c) === 0)!.dataset.dayCell!;
-
-      // 평일은 **오늘+선택의 후광과 같은 옅은 강조색**으로 채운다(요청: 검은 원이
-      // 안 어울린다 — 그 후광 색으로). 속 빈 링도, 잉크색 원도 아니다.
-      await pick(weekday);
-      expect(num(weekday).style.background).toBe('var(--mf-accent-mute)');
-      expect(num(weekday).style.color).toBe('var(--mf-text)');
-      expect(num(weekday).style.boxShadow).toBe('');
-      // 요청 ④ — 고른 뒤에도 파랑·빨강이 남는다(예전에는 잉크색이 덮어 요일 신호가 사라졌다).
-      await pick(sat);
-      expect(num(sat).style.background).toBe('var(--mf-info)');
-      await pick(sun);
-      expect(num(sun).style.background).toBe('var(--mf-danger)');
     });
 
     it('날짜 칸 우클릭 = 그 날의 메뉴 — `이 날에 새 일정`이 그 날짜로 열린다(제보 ④)', async () => {
@@ -812,34 +848,31 @@ describe('일정 화면', () => {
       expect(chipFor('오늘 마감 카드')).toBeTruthy();
     });
 
-    it('칸·칩이 아닌 자리의 우클릭 = 화면 메뉴(새 일정 · 사이드 토글)', async () => {
+    it('칸·칩이 아닌 자리의 우클릭 = 화면 메뉴(새 일정 · 사이드 토글) — 마감 목록 항목은 없다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       await openCalendar();
-      const area = document.querySelector('[data-cal-stats]')!.parentElement as HTMLElement;
-      fireEvent.contextMenu(area);
+      fireEvent.contextMenu(document.querySelector('[data-cal-canvas]')!);
       await waitFor(() => expect(document.querySelector('[data-home-ctx="cal-view"]')).toBeTruthy());
       const menu = document.querySelector('[data-home-ctx="cal-view"]') as HTMLElement;
       expect(menu.textContent).toContain('새 일정');
-      expect(menu.textContent).toContain('마감 목록 보기');
-      fireEvent.click(within(menu).getByText('마감 목록 보기'));
-      await waitFor(() => expect(document.querySelector('[data-cal-deadline]')).toBeTruthy());
+      expect(menu.textContent).not.toContain('마감 목록');
+      // 열려 있으니 `닫기` — 고르면 접힌다.
+      fireEvent.click(within(menu).getByText('날짜별 보기 닫기'));
+      await waitFor(() => expect(document.querySelector('[data-cal-side]')).toBeNull());
     });
 
-    it('통계 팝오버의 `+N개 더 보기`를 누르면 목록이 전부 보인다(제보 ⑨)', async () => {
-      const many = Array.from({ length: 8 }, (_, i) => ({ id: `o${i}`, col: 'c1', pos: i + 1, text: `지난 카드 ${i + 1}`, due: shiftDays(-(i + 1)) }));
-      // LNB의 `일정 N`은 **다가오는** 마감을 센다 — 지난 것만 있으면 개수가 서지 않아
-      // `openCalendar`가 기다리다 만다(앞으로 올 카드 하나를 함께 심는다).
-      renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody([...many, { id: 'up', col: 'c1', pos: 9, text: '앞날 카드', due: shiftDays(2) }]) });
+    it('날짜 칸의 `날짜별 보기로 열기`는 펴져 있으면 **그대로 둔다**(예전에는 토글을 거쳐 닫혔다)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
       await openCalendar();
-      const over = document.querySelector('[data-cal-stat="over"]')!;
-      fireEvent.click(over);
-      await waitFor(() => expect(document.querySelectorAll('[data-cal-stat-item]').length).toBe(5));
-      const more = document.querySelector('[data-cal-stat-more]') as HTMLElement;
-      expect(more.textContent).toBe('+3개 더 보기');
-      fireEvent.click(more);
-      await waitFor(() => expect(document.querySelectorAll('[data-cal-stat-item]').length).toBe(8));
-      expect(document.querySelector('[data-cal-stat-more]')).toBeNull();
+      const iso = shiftInMonth(2);
+      fireEvent.contextMenu(document.querySelector(`[data-day-cell="${iso}"]`)!);
+      await waitFor(() => expect(document.querySelector('[data-home-ctx="cal-day"]')).toBeTruthy());
+      fireEvent.click(within(document.querySelector('[data-home-ctx="cal-day"]') as HTMLElement).getByText('날짜별 보기로 열기'));
+      const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
+      await waitFor(() => expect(document.querySelector('[data-cal-agenda-head]')!.textContent).toContain(`${+m!}월 ${+d!}일`));
+      expect(document.querySelector('[data-cal-side]')).toBeTruthy();
     });
+
   });
 
   // ── 제보 ⑦⑧: 기간 일정의 진행 바 · 주 단위 줄 고정 ─────────────────────────
@@ -928,7 +961,9 @@ describe('일정 화면', () => {
       await waitFor(() => expect(barFor('기간 하나')).toBeTruthy());
       // 칸이 세 줄만 담으면 마지막 줄이 `+2개`(하루짜리 둘)로 바뀐다.
       const grid = document.querySelector('[data-month-grid]')!.querySelector('[data-day-cell]')!.parentElement as HTMLElement;
-      Object.defineProperty(grid, 'clientHeight', { configurable: true, value: 6 * 115 });
+      // 칸 113px — 여백 10 + 숫자 19 + 간격 2 + 격자선 1을 빼면 81px: 칩만이면 세 줄, 접힘
+      // 표시를 붙이면 두 줄(23·2 + 13 = 59 ✓ / 23·3 + 13 = 82 ✗).
+      Object.defineProperty(grid, 'clientHeight', { configurable: true, value: 6 * 113 });
       act(() => { for (const cb of roCallbacks) cb(); });
       const cell = document.querySelector(`[data-day-cell="${iso(1)}"]`) as HTMLElement;
       await waitFor(() => expect(cell.querySelector('[data-cal-more]')).toBeTruthy());
@@ -1386,11 +1421,15 @@ describe('일정 화면', () => {
         JSON.stringify([{ id: 'e1', title: '팀 회의', startDate: day, endDate: day, allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: 10 }]),
       );
       await openCalendar();
-      // 이미 일정 화면이고 아무 날도 고르지 않았다 — 예전에는 이 상태에서 알림의
+      // 이미 일정 화면이고 **다른 달을 보고 있다** — 예전에는 이 상태에서 알림의
       // `일정 보기`를 눌러도 화면만 "일정"으로 바뀌어(이미 그 화면이다) 아무 일도
       // 일어나지 않았다.
       expect(document.querySelector('[data-calendar-view]')).toBeTruthy();
-      expect(document.querySelector('[data-day-num][data-selected]')).toBeNull();
+      // 두 달 뒤 — 다음 달 격자는 이웃 칸으로 오늘을 담을 수 있다(달의 마지막 주).
+      const next = () => document.querySelector('[data-cal-month]')!.parentElement!.querySelector('[aria-label="다음 달"]')!;
+      fireEvent.click(next());
+      fireEvent.click(next());
+      await waitFor(() => expect(document.querySelector(`[data-day-cell="${day}"]`)).toBeNull());
       expect(evDetail()).toBeNull();
 
       // 토스트·OS 알림이 지나는 그 길(`ReminderHost` → `focusCalendar`).
@@ -1649,10 +1688,15 @@ describe('일정 화면', () => {
       await openCalendar();
       await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
 
-      // 칸의 칩은 글자 폭만큼만 눌린다 — 칸 전체로 늘어나면 빈 옆자리 클릭이
-      // 팝업을 열었다(제보 #1. jsdom엔 히트 영역이 없어 스타일 계약으로 지킨다).
+      // 우리 칩은 **칸 폭 전체의 상자**다(스펙 3.5) — 면·테두리·왼쪽 색 바가 누르는 자리를
+      // 보여 준다. (예전에 글자 폭으로 좁힌 이유는 면이 없는 칩의 빈 옆자리를 눌러도
+      // 팝업이 열려서였다(제보 #1) — 면 없는 구글 시간 일정은 그대로 글자 폭이다.)
       const chip = chipFor('주간 회의');
-      expect(chip.style.alignSelf).toBe('flex-start');
+      expect(chip.style.alignSelf).toBe('stretch');
+      expect(chip.style.borderLeft).toMatch(/^3px solid/);
+      expect(chip.style.borderRadius).toBe('6px');
+      // 색을 고르지 않은 Geurio 일정은 **종류 색**(Geurio 캘린더 보라)이다.
+      expect(chip.style.borderLeftColor).toBe('rgb(139, 92, 246)');
 
       fireEvent.click(chip);
       await waitFor(() => expect(evDetail()).toBeTruthy());
@@ -2037,9 +2081,10 @@ describe('일정 화면', () => {
     expect(document.querySelector('[data-day-list]')).toBeNull();
   });
 
-  // 요청 ①② — 종일은 **채운 칩**(하루를 통째로 쓰는 일), 시간 일정은 **표식 + 시작
-  // 시각 + 제목**(구글 캘린더의 관례). 그래서 칸을 훑을 때 둘이 갈린다.
-  it('종일 항목은 채운 칩, 시간 일정은 시작 시각을 앞에 붙인 글자다', async () => {
+  // 우리 일정·카드는 종일이든 시간 일정이든 **스펙 3.5의 상자**다(종류의 옅은 면 + 왼쪽 색
+  // 바) — 시간 일정은 그 안에서 시작 시각을 제목 앞에 세운다. 면 없는 글자 칩은 구글 시간
+  // 일정만의 규칙으로 남는다(스펙 3.7 — `GoogleCalendar.test.tsx`).
+  it('우리 칩은 종일·시간 모두 상자, 시간 일정은 시작 시각을 제목 앞에 세운다(스펙 3.5)', async () => {
     localStorage.setItem(
       'mf_events',
       JSON.stringify([{ id: 'e1', title: '회의', startDate: todayISO(), endDate: todayISO(), allDay: false, startTime: '09:00', endTime: '10:00', source: 'geurio' }]),
@@ -2047,12 +2092,17 @@ describe('일정 화면', () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
-    // 칸반 마감은 종일이다 — 면을 채운다.
-    expect(chipFor('오늘 마감 카드').style.background).not.toBe('transparent');
-    // 시각이 있는 일정은 면 없이 시각을 앞에 세운다.
+    // 칸반 마감은 종일이다 — 종류의 옅은 면을 채운다. 분류가 없는 카드는 **칸반 초록**.
+    const card = chipFor('오늘 마감 카드');
+    expect(card.style.background).not.toBe('transparent');
+    expect(card.style.borderLeftColor).toBe('rgb(78, 140, 103)');
+    // 점은 5px **둥근 사각**(스페이스 카드 태그와 같은 언어) — 칸반이면 열(상태) 색.
+    const dot = card.querySelector('[data-cal-chip-dot]') as HTMLElement;
+    expect(dot.style.borderRadius).toBe('1.5px');
+    // 시각이 있는 일정도 상자이고, 시각을 제목 앞에 세운다.
     await waitFor(() => expect(chipTexts()).toContain('회의'));
     const timed = chipFor('회의');
-    expect(timed.style.background).toBe('transparent');
+    expect(timed.style.background).not.toBe('transparent');
     expect(timed.querySelector('[data-cal-chip-time]')?.textContent).toBe('오전 9시');
     // 기간 바는 이어진 띠로 읽혀야 하므로 면을 유지한다
     const bar = document.querySelector('[data-cal-bar]') as HTMLElement;
@@ -2109,7 +2159,7 @@ describe('일정 화면 후속(제보 6건)', () => {
     expect(done.style.background).toContain('linear-gradient');
   });
 
-  it('날짜 숫자는 12px이고 격자선·이웃 달 칸은 전용 토큰을 쓴다(요청)', async () => {
+  it('날짜 숫자는 10.5px(스펙 3.4)이고 격자선·이웃 달 칸은 전용 토큰을 쓴다(요청)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const cell = document.querySelector('[data-day-cell]') as HTMLElement;
@@ -2119,8 +2169,9 @@ describe('일정 화면 후속(제보 6건)', () => {
     // 이웃 달 칸은 전용 토큰(디자인 원본 #F5EFE7)
     const out = document.querySelector('[data-day-cell][data-out-month="1"]') as HTMLElement;
     expect(out.style.background).toBe('var(--mf-cal-out)');
-    const num = cell.querySelector('span > span') as HTMLElement;
-    expect(num.style.fontSize).toBe('12px');
+    const num = cell.querySelector('[data-day-num]') as HTMLElement;
+    expect(num.style.fontSize).toBe('10.5px');
+    expect(num.style.fontFamily).toContain('JetBrains Mono');
   });
 
   it('댓글은 읽어 오는 동안 스켈레톤을 보여 준다(제보: 빈 화면이었다)', async () => {

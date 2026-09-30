@@ -22,8 +22,8 @@ describe('월 격자 칸 용량(cellCapacity)', () => {
     expect(cellCapacity(120, true).rows).toBeGreaterThanOrEqual(cellCapacity(120, false).rows);
   });
 
-  // 라이브 실측: 격자 715px / 6주 = 칸 119.17px. 안쪽 여백 11 + 숫자 줄 20 + 간격 2 +
-  // 격자선 1 = 34를 빼면 85.17px이 칩 몫이다.
+  // 라이브 실측: 격자 715px / 6주 = 칸 119.17px. 안쪽 여백 10(위 6 · 아래 4) + 숫자 상자 19 +
+  // 간격 2 + 격자선 1 = 32를 빼면 87.17px이 칩 몫이다(스펙: 일정 페이지 3.2·3.4).
   //   · 칩만 n줄  = 23n − 2  → 3줄 67 ✓ / 4줄 90 ✗
   //   · n줄 + 접힘 = 23n + 13 → 3줄 82 ✓
   // 그래서 접을 때도 **3줄을 그릴 수 있다** — 예전 식은 2줄만 그리고 한 줄을 버렸다.
@@ -36,7 +36,7 @@ describe('월 격자 칸 용량(cellCapacity)', () => {
   it('픽셀 예산을 넘기지 않는다 — 접힘 줄을 붙여도 칸 안이다', () => {
     for (const h of [86, 95, 104, 110, 119, 130, 141, 160, 180]) {
       const cap = cellCapacity(h, false);
-      const avail = h - (20 + 2 + 11 + 1);
+      const avail = h - (19 + 2 + 10 + 1);
       // 칩만 그릴 때 / 접힘 표시를 붙일 때, 둘 다 칸 안에 들어가야 한다.
       if (cap.rows > 1) expect(23 * cap.rows - 2).toBeLessThanOrEqual(avail);
       if (cap.withMore > 1) expect(23 * cap.withMore + 13).toBeLessThanOrEqual(avail);
