@@ -38,9 +38,11 @@ export interface CalMenuActions {
   askDelete: (e: CalendarEntry) => void;
   newEvent: (iso: string) => void;
   openDayList: (iso: string, at: { x: number; y: number }) => void;
+  /** 그 날을 골라 날짜별 보기를 편다(이미 펴져 있으면 그대로). */
   openDaySide: (iso: string) => void;
+  /** 날짜별 보기 열기/닫기 — 헤더의 토글과 같다. */
+  toggleSide: () => void;
   goToday: () => void;
-  toggleDeadline: () => void;
   /**
    * 그 날의 **근무 위치**(요청) — 구글은 이 일정을 **기본 캘린더에만** 받으므로,
    * 쓸 수 있고 지금 보고 있을 때만 호출부가 이 함수를 넘긴다(없으면 항목이 없다:
@@ -68,7 +70,7 @@ function deletable(e: CalendarEntry): { ok: true } | { ok: false; hint?: string 
 
 export function buildCalendarMenu(
   target: CalMenuTarget,
-  ctx: { todayIso: string; selectedDay: string; y: number; m: number; dayCount: (iso: string) => number; sideOpen: boolean; deadlineOpen: boolean; isMobile: boolean; at: { x: number; y: number }; workLocation?: (iso: string) => string | undefined },
+  ctx: { todayIso: string; selectedDay: string; y: number; m: number; dayCount: (iso: string) => number; sideOpen: boolean; isMobile: boolean; at: { x: number; y: number }; workLocation?: (iso: string) => string | undefined },
   a: CalMenuActions,
 ): HomeMenuItem[] {
   if ('entry' in target) {
@@ -124,8 +126,7 @@ export function buildCalendarMenu(
   if (!onNow) items.push({ key: 'today', icon: TodayIcon, label: '오늘로 이동', onSelect: a.goToday });
   if (!ctx.isMobile) {
     items.push({ key: 'sep-side', label: '' });
-    items.push({ key: 'deadline', icon: ListIcon, label: ctx.deadlineOpen ? '마감 목록 닫기' : '마감 목록 보기', onSelect: a.toggleDeadline });
-    items.push({ key: 'side', icon: CalendarIcon, label: ctx.sideOpen ? '날짜별 보기 닫기' : '날짜별 보기 열기', onSelect: () => a.openDaySide(ctx.selectedDay) });
+    items.push({ key: 'side', icon: CalendarIcon, label: ctx.sideOpen ? '날짜별 보기 닫기' : '날짜별 보기 열기', onSelect: a.toggleSide });
   }
   return items;
 }

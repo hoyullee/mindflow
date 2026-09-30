@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, calendarHiddenOf, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW, calendarBrief, calendarBriefLine, nextTimeSlot, TIME_STEP } from './model';
+import { addDays, daysBetween, addMonth, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, timeLabel, todayISO, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW, calendarBrief, calendarBriefLine, nextTimeSlot, TIME_STEP } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -194,38 +194,6 @@ describe('일정 모델(model)', () => {
     expect(c.moreN).toBe(1);
   });
 
-  it('통계는 기한 기준 — 지난·오늘·이번 주·기간', () => {
-    const list = [E('2026-08-20'), E('2026-08-26'), E('2026-08-28'), E('2026-08-30', { start: '2026-08-24' }), E('2026-09-10')];
-    expect(calendarStats(list, TODAY).map((s) => [s.key, s.count])).toEqual([['over', 1], ['today', 1], ['week', 2], ['span', 1]]);
-  });
-
-  it('통계는 개수만이 아니라 **그 항목들**을 싣는다 — 칩 팝오버가 그 목록을 그린다', () => {
-    const list = [E('2026-08-20'), E('2026-08-26'), E('2026-08-30', { start: '2026-08-24' })];
-    const by = Object.fromEntries(calendarStats(list, TODAY).map((s) => [s.key, s]));
-    expect(by['over']!.items.map((e) => e.due)).toEqual(['2026-08-20']);
-    expect(by['span']!.items.map((e) => e.due)).toEqual(['2026-08-30']);
-    // 개수는 언제나 목록 길이다(둘이 갈리면 그게 곧 버그다).
-    expect(calendarStats(list, TODAY).every((s) => s.count === s.items.length)).toBe(true);
-  });
-
-  it('지난 마감 목록은 가까운 것부터 — 어제 놓친 일이 한 달 전 일보다 급하다', () => {
-    const list = [E('2026-08-01'), E('2026-08-25'), E('2026-08-10')];
-    const over = calendarStats(list, TODAY).find((s) => s.key === 'over')!;
-    expect(over.items.map((e) => e.due)).toEqual(['2026-08-25', '2026-08-10', '2026-08-01']);
-  });
-
-  it('통계 팝오버 배지는 며칠 지났는지까지 말한다', () => {
-    expect(statBadge(TODAY, TODAY)).toBe('오늘');
-    expect(statBadge('2026-08-22', TODAY)).toBe('-4일');
-    expect(statBadge('2026-08-29', TODAY)).toBe('D-3');
-  });
-
-  it('목록: 다가오는 것은 이른 순, 지난 것은 최근에 놓친 순', () => {
-    const list = [E('2026-08-10'), E('2026-08-20'), E('2026-08-26'), E('2026-08-28')];
-    expect(upcomingEntries(list, TODAY).map((e) => e.due)).toEqual(['2026-08-26', '2026-08-28']);
-    expect(overdueEntries(list, TODAY).map((e) => e.due)).toEqual(['2026-08-20', '2026-08-10']);
-  });
-
   it('그 날의 항목은 하루짜리 + 그 날을 덮는 기간', () => {
     const span = E('2026-08-30', { start: '2026-08-24', title: '기간' });
     const one = E('2026-08-26', { title: '하루' });
@@ -412,17 +380,6 @@ describe('시각·격자 구간', () => {
     const cells = monthCells(2026, 8, [], '2026-08-26');
     expect(cells[0]!.iso).toBe(from);
     expect(cells[41]!.iso).toBe(to);
-  });
-});
-
-describe('마감 배지의 중요도(dueTone)', () => {
-  const TODAY = '2026-08-26';
-  it('지남 / 오늘 / 사흘 안 / 그 뒤 네 등급으로 갈린다', () => {
-    expect(dueTone('2026-08-25', TODAY)).toBe('over');
-    expect(dueTone(TODAY, TODAY)).toBe('today');
-    expect(dueTone('2026-08-27', TODAY)).toBe('soon');
-    expect(dueTone('2026-08-29', TODAY)).toBe('soon');
-    expect(dueTone('2026-08-30', TODAY)).toBe('later');
   });
 });
 

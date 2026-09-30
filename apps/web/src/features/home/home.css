@@ -358,21 +358,22 @@ a:hover {
 .mf-home .mf-ctl[aria-checked='true']:hover {
   filter: brightness(var(--mf-hover-bright));
 }
-/* 일정 화면의 통계 칩 — 면 없는 칩이라 `.mf-ctl`의 hover(`--mf-panel2` !important)를
-   쓸 수 없다: 켜진 칩의 틴트보다 그 hover가 **더 옅어서** 손을 얹으면 꺼진 것처럼
-   보였다. 그래서 hover도 켜짐도 여기서 정한다(인라인 배경을 두지 않으므로
-   `!important`가 필요 없다). */
-.mf-home .mf-cal-chip {
-  background: transparent;
-  transition: background 0.13s ease;
+/* 일정 헤더의 알약·원 단추(`오늘`·날짜별 보기) — 흰 면에서 옅은 코랄 면으로, 글자는 본문
+   잉크, 테두리는 코랄 쪽으로 한 걸음(스펙 2.1·2.2). 배경·테두리가 인라인이라 `!important`. */
+.mf-home .mf-cal-pill { transition: background-color .12s ease, border-color .12s ease, color .12s ease; }
+.mf-home .mf-cal-pill:hover {
+  background: color-mix(in srgb, var(--mf-accent) 6%, var(--mf-card)) !important;
+  border-color: color-mix(in srgb, var(--mf-accent) 32%, var(--mf-card)) !important;
+  color: var(--mf-text) !important;
 }
-.mf-home .mf-cal-chip:hover {
-  background: var(--mf-panel2);
-}
-.mf-home .mf-cal-chip[aria-pressed='true'],
-.mf-home .mf-cal-chip[aria-pressed='true']:hover {
-  background: var(--mf-chip-on);
-}
+/* 켜진 토글은 자기 색을 지킨다 — 면만 한 톤 옅어지고 아이콘은 코랄 그대로. */
+.mf-home .mf-cal-pill[aria-pressed='true']:hover { color: var(--mf-accent-strong) !important; }
+/* 날짜별 보기 머리의 `＋` — 손을 얹으면 옅은 코랄 면에 코랄 글자(스펙 4.2). */
+.mf-home .mf-cal-plus { transition: background-color .12s ease, color .12s ease; }
+.mf-home .mf-cal-plus:hover { background: var(--mf-accent-soft) !important; color: var(--mf-accent-strong) !important; }
+/* `새 일정` — 단색 코랄 알약, hover는 한 톤 짙은 면(그라디언트·그늘 없음, 스펙 2.2). */
+.mf-home .mf-cal-new { transition: background-color .12s ease; }
+.mf-home .mf-cal-new:hover { background: var(--mf-accent-strong) !important; }
 /* 날짜 칸을 마우스로 누르면 브라우저 기본 **검은 포커스 테두리**가 칸을 둘러
    디자인을 깨뜨렸다(제보 ③ — "포커스 효과가 마음에 안 든다"). 고른 날은 날짜
    숫자가 채운 원으로 이미 말하므로 마우스에서는 테두리를 두르지 않고, 키보드로
@@ -750,10 +751,19 @@ input[type='search']::-webkit-search-results-decoration {
   }
 }
 
-/* 대시보드 캘린더 위젯의 항목 칩 — 원본 `style-hover="filter:brightness(.96)"`.
-   면 색이 분류색에서 오므로(인라인) 배경을 갈아 끼우지 않고 밝기만 움직인다. */
+/* 일정 화면의 칩·기간 바·시간표 블록 — 스펙 `hover: filter: brightness(.96)`.
+   면 색이 종류색에서 오므로(인라인) 배경을 갈아 끼우지 않고 밝기만 움직인다. */
 .mf-home .mf-cal-chip-btn { transition: filter .12s ease; }
 .mf-home .mf-cal-chip-btn:hover { filter: brightness(.96); }
+/* 시간표 블록은 겹칠 때 옆 블록 밑에 깔린다 — 손을 얹은 것이 위로 온다(스펙 4.2). */
+.mf-home .mf-cal-block:hover { filter: brightness(.96); z-index: 3; }
+/* `+N개 더` — 글자만 있다가 손을 얹으면 옅은 면(스펙 3.8). */
+.mf-home .mf-cal-more { background: transparent; transition: background-color .12s ease; }
+.mf-home .mf-cal-more:hover { background: var(--mf-sunken); }
+/* 일정 헤더의 면 없는 단추(‹ › · 월 제목) — 손을 얹으면 가라앉은 면, 글자는 본문 잉크(스펙 2.1).
+   배경이 인라인이라 `!important`(`.mf-ctl`과 같은 처방). */
+.mf-home .mf-cal-ghost { transition: background-color .12s ease, color .12s ease; }
+.mf-home .mf-cal-ghost:hover { background: var(--mf-sunken) !important; color: var(--mf-text) !important; }
 
 
 /* 손을 얹으면 뜨는 작은 툴팁(`?`) — 라디오 칸 **안**에도 쓸 수 있게 순수 CSS다:

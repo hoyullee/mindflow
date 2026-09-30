@@ -19,6 +19,7 @@ export function MonthPicker({
   now,
   onPick,
   label,
+  compact = false,
 }: {
   y: number;
   m: number;
@@ -27,6 +28,8 @@ export function MonthPicker({
   onPick: (y: number, m: number) => void;
   /** 버튼에 보이는 글자(`2026년 8월`). */
   label: string;
+  /** 폰 — 제목이 한 단계 작다(26px은 좁은 화면에서 새 일정 단추와 한 줄에 서지 못한다). */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // 팝오버 안에서만 넘겨 보는 해 — 고르기 전까지 달력은 움직이지 않는다.
@@ -55,7 +58,7 @@ export function MonthPicker({
       }}
       label="연도·월 선택"
       side="bottom"
-      align="center"
+      align="start"
       sideOffset={6}
       panel={{
         width: 264,
@@ -71,22 +74,25 @@ export function MonthPicker({
         <button
           type="button"
           data-cal-month
+          data-open={open ? '1' : undefined}
           title="연도·월 선택"
           aria-label="연도·월 선택"
-          className="mf-ctl"
+          // **월 제목이 곧 화면 제목**이다(스펙 2.1) — 26px/800, 면 없이. 손을 얹으면
+          // 가라앉은 면(`mf-cal-ghost`), 열려 있는 동안은 그 면이 남는다.
+          className="mf-cal-ghost"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            height: 26,
-            padding: '0 10px',
+            height: compact ? 32 : 38,
+            padding: '0 8px',
             border: 0,
-            borderRadius: 999,
-            background: open ? 'var(--mf-panel2)' : 'transparent',
+            borderRadius: 10,
+            background: open ? 'var(--mf-sunken)' : 'transparent',
             font: 'inherit',
-            fontSize: 12.5,
+            fontSize: compact ? 21 : 26,
             fontWeight: 800,
-            letterSpacing: '-.02em',
+            letterSpacing: '-.04em',
             color: 'var(--mf-text)',
             whiteSpace: 'nowrap',
             cursor: 'pointer',
@@ -100,9 +106,12 @@ export function MonthPicker({
             <span aria-hidden="true" style={{ gridArea: '1 / 1', visibility: 'hidden', pointerEvents: 'none' }}>
               {monthLabel(y, 12)}
             </span>
-            <span data-cal-month-label style={{ gridArea: '1 / 1', textAlign: 'center' }}>{label}</span>
+            <span data-cal-month-label style={{ gridArea: '1 / 1', textAlign: 'left' }}>{label}</span>
           </span>
-          <Caret rotate={false} />
+          {/* 큰 글자 옆의 캐럿 — 12px, 글자 가운데보다 2px 위(스펙 2.1: 대문자 높이에 맞춘다). */}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto', transform: 'translateY(-2px)' }}>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
         </button>
       }
     >

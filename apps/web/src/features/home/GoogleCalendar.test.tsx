@@ -889,7 +889,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
-  it('연동 전 일정 화면 머리의 버튼은 **무엇인지 말하고**, 누르면 구글 창이 아니라 설정을 연다(제보 ⑤)', async () => {
+  it('일정 화면 머리에는 구글 연결(G) 단추가 없다 — 연동은 LNB 일정 하위 행에서 설정으로 간다(스펙 6·제보 ⑤)', async () => {
     seed();
     const gis = stubGis();
     stubFetch();
@@ -897,24 +897,23 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     await openCalendar(container, user);
-    const btn = await waitFor(() => {
-      const el = document.querySelector('[data-google-connect-cal]');
+    expect(document.querySelector('[data-cal-head] [data-google-connect-cal]')).toBeNull();
+    expect(document.querySelector('[data-google-connect-cal]')).toBeNull();
+    // 연동 전에는 LNB 일정의 하위 행이 무엇을 하면 되는지 말한다.
+    await openCalendarSub(user);
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-connect]');
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    // 아이콘만으로는 "달력 보기"로도 읽혔다 — 이제 구글 G 마크 + 글자다.
-    expect(btn.getAttribute('aria-label')).toBe('Google 캘린더 연동');
-    expect(btn.textContent).toContain('Google 캘린더');
-    await user.click(btn);
+    expect(row.textContent).toContain('Google 캘린더 연동');
+    await user.click(row);
     // 예고 없는 동의 창 대신 **설정 › 계정 설정 › 연동**이 열린다.
     expect(gis.requested).toEqual([]);
     await screen.findByRole('dialog', { name: '설정' });
     await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
-    expect(document.body.textContent).toContain('캘린더 연동');
-    // 거기서 연결하면 켜지고, 할 일이 끝났으므로 머리의 버튼은 사라진다.
     await user.click(within(document.querySelector('[data-google-section]') as HTMLElement).getByText('연결하기'));
     expect(gis.requested).toEqual(['consent']);
-    await waitFor(() => expect(document.querySelector('[data-google-connect-cal]')).toBeNull());
   });
 
   it('클라이언트 ID가 없으면 연동 아이콘도 없다 — 눌러도 아무 일 없는 버튼을 두지 않는다', async () => {
@@ -1118,14 +1117,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     await openCalendar(container, user);
-    // 머리의 연동 아이콘이 다시 뜬다(정상 연동이면 사라져 있다)
-    await waitFor(() => {
-      const btn = container.querySelector('[data-google-connect-cal]');
-      expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
-    });
-    // **왜**인지 툴팁이 말한다(제보: 배포되면 연동이 해제되는 것 같다) — 해제된 것이
-    // 아니라 구글 권한을 다시 허용해야 하는 것이고, 고른 캘린더는 그대로 남아 있다.
-    expect(container.querySelector('[data-google-connect-cal]')?.getAttribute('title')).toContain('다시 허용');
+    // LNB 일정 글리프의 경고 점이 늘 보이고(펼치지 않아도), 하위 행이 "다시 연결"을 권한다.
+    await waitFor(() => expect(container.querySelector('[data-cal-link="warn"]')).toBeTruthy());
+    await openCalendarSub(user);
+    await waitFor(() => expect(container.querySelector('[data-cal-sub-connect]')?.textContent).toContain('Google 캘린더 다시 연결'));
   });
 
   it('목적지가 구글이면 참석자·회의실·알림 필드가 오른쪽 열로 뜬다 — 반복은 두 목적지 공통', async () => {
@@ -2210,17 +2205,19 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     await openCalendar(container, user);
-    // 다시 연결 버튼이 뜬다 — 화면을 여는 것만으로는 GIS 요청이 **한 번도** 나가지 않는다
+    // 다시 연결을 권한다 — 화면을 여는 것만으로는 GIS 요청이 **한 번도** 나가지 않는다
     // (조용한 갱신도 팝업 창을 연다 — 그게 제보의 "로그인 팝업"이었다).
-    await waitFor(() => {
-      const btn = container.querySelector('[data-google-connect-cal]');
-      expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
+    await waitFor(() => expect(container.querySelector('[data-cal-link="warn"]')).toBeTruthy());
+    expect(gis.requested).toEqual([]);
+    // 누른 사람이 원한 일이므로 그때 동의 창이 뜬다.
+    await openCalendarSub(user);
+    const row = await waitFor(() => {
+      const el = container.querySelector('[data-cal-sub-connect]');
+      expect(el?.textContent).toContain('다시 연결');
+      return el as HTMLElement;
     });
     expect(gis.requested).toEqual([]);
-    // 누르면 설정이 열리고(제보 ⑤), 거기서 다시 연결하면 그때 동의 창이 뜬다.
-    await user.click(container.querySelector('[data-google-connect-cal]') as HTMLElement);
-    expect(gis.requested).toEqual([]);
-    await user.click(await waitFor(() => document.querySelector('[data-google-reconnect]') as HTMLElement));
+    await user.click(row);
     expect(gis.requested).toEqual(['consent']);
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
   });
@@ -4632,7 +4629,9 @@ describe('다시 연결이 필요하면 어느 화면에서도 연결된 척하�
     await user.click(screen.getAllByRole('button', { name: '다음 달' })[0]!);
     await user.click(screen.getAllByRole('button', { name: '이전 달' })[0]!);
 
-    // LNB 하위 메뉴와 달력 머리가 **함께** 그렇게 말한다(이 값은 이제 탭이 공유한다).
+    // LNB 하위 메뉴가 그렇게 말한다(이 값은 이제 탭이 공유한다 — 달력 머리의 G 단추는
+    // 걷었다, 스펙 6).
+    await openCalendarSub(user);
     await waitFor(() => expect(screen.getAllByRole('button', { name: /다시 연결/ }).length).toBeGreaterThan(0));
     // 기억한 구글 일정이 화면에 남지 않는다.
     await waitFor(() => expect(screen.queryByText('구글 회의')).toBeNull());

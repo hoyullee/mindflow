@@ -8,7 +8,6 @@ import { DOW, dayProgress, daysBetween, weekRows } from "./model";
 import { beginPointerDrag } from "../../editor/components/KanbanBoard";
 import {
   chipTimeLabel,
-  dayNumTone,
   declinedStyle,
   entryChip,
   isAllDayEntry,
@@ -24,9 +23,15 @@ const GAP = 2;
 const ROW_H = (compact: boolean): number => CHIP_H(compact) + GAP;
 /** `+N개 더` 줄은 글 한 줄이라 **칩보다 낮다** — 용량 계산에서 이 차이가 한 줄을 만든다. */
 const MORE_H = (compact: boolean): number => (compact ? 12 : 13);
-/** 날짜 숫자 줄 + 그 아래 간격 + 칸 안쪽 여백 + 칸 아래 격자선 — 칩이 쓸 수 없는 높이. */
+/** 날짜 숫자 줄 + 그 아래 간격 + 칸 안쪽 여백 + 칸 아래 격자선 — 칩이 쓸 수 없는 높이.
+ *  숫자 상자는 19px, 칸 여백은 위 6 · 아래 4(스펙 3.2·3.4 — 폰은 18 · 3/4). */
 const CHROME_H = (compact: boolean): number =>
-  (compact ? 18 : 20) + GAP + (compact ? 7 : 11) + 1;
+  (compact ? 18 : 19) + GAP + (compact ? 7 : 10) + 1;
+/** 칸 하나의 최소 높이 — 숫자 + 칩 한 줄 + `+N개 더`가 들어가는 만큼(스펙은 44px이지만
+ *  우리 칩은 읽히는 크기(21px)라 그 높이에서는 칩 한 줄도 못 들어간다). */
+const CELL_MIN_H = (compact: boolean): number => (compact ? 48 : 64);
+/** 이보다 좁으면 가로로 굴린다(스펙 3 — 7 × 92px). 폰은 칸을 줄여 한 화면에 담는다. */
+const GRID_MIN_W = 7 * 92;
 
 /**
  * 이 칸에 칩을 몇 줄 그릴 수 있는가 — **실측한 칸 높이**로 정한다.
@@ -200,46 +205,49 @@ export function MonthGrid({
   return (
     <div
       data-month-grid
+      // 카드가 아니다(스펙 3) — 테두리·모서리·그늘 없이 스크롤 영역을 좌우 끝까지 채운다.
+      // 바탕은 격자선 톤이라 칸이 덮지 못한 자리도 격자의 일부로 읽힌다.
       style={{
-        flex: "1 1 auto",
-        minHeight: 0,
+        flex: "1 0 auto",
+        minWidth: compact ? 0 : GRID_MIN_W,
         display: "flex",
         flexDirection: "column",
-        borderRadius: 16,
-        border: "1px solid var(--mf-cal-grid)",
-        background: "var(--mf-card)",
-        // 요청 — 달력은 화면을 채우는 큰 판이라 카드 기본 그늘로는 바닥에서 떠 보이지
-        // 않는다. 같은 기하로 **알파만** 올린다(퍼짐을 키우면 아래 여백을 넘는다).
-        boxShadow: "0 16px 32px -26px rgba(46, 42, 38, .72)",
+        background: "var(--mf-cal-frame)",
+        // 요일 줄·격자의 `marginRight: -1`이 가로 스크롤을 만들지 않게 여기서 자른다.
         overflow: "hidden",
       }}
     >
-      {/* 요일 머리 */}
+      {/* 요일 머리 — 위 선이 **헤더와 달력의 유일한 경계**다(스펙 1). 오른쪽 패널의 위
+          선과 같은 색·같은 높이라 한 줄로 이어진다. */}
       <div
+        data-cal-dow-row
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(7, 1fr)",
-          borderBottom: "1px solid var(--mf-cal-grid)",
-          background: "var(--mf-panel2)",
+          borderTop: "1px solid var(--mf-cal-grid)",
+          background: "var(--mf-card)",
+          // 마지막 칸의 오른쪽 선은 스크롤 영역 끝과 겹친다 — 1px 밀어 숨긴다(스펙 3.2).
+          marginRight: -1,
           flexShrink: 0,
         }}
       >
         {DOW.map((d, i) => (
           <span
             key={d}
-            // 디자인 원본의 요일 머리 — 작고 굵고 자간을 넓게(달력 표의 머리다운 꼴).
+            data-cal-dow={i}
             style={{
               padding: "9px 0 8px",
               textAlign: "center",
-              fontSize: 10,
+              borderRight: "1px solid var(--mf-cal-grid)",
+              fontSize: 11,
               fontWeight: 800,
-              letterSpacing: ".08em",
+              letterSpacing: ".06em",
               color:
                 i === 0
-                  ? "var(--mf-danger)"
+                  ? "var(--mf-cal-dow-sun)"
                   : i === 6
-                    ? "var(--mf-info)"
-                    : "var(--mf-faint)",
+                    ? "var(--mf-cal-dow-sat)"
+                    : "var(--mf-muted)",
             }}
           >
             {d}
@@ -250,11 +258,14 @@ export function MonthGrid({
       <div
         ref={gridRef}
         style={{
-          flex: 1,
-          minHeight: 0,
+          // 줄지 않는다 — 칸이 최소 높이 아래로 눌리면 칩이 잘리므로, 그보다 낮은 창에서는
+          // 스크롤 영역이 세로로 굴러간다.
+          flex: "1 0 auto",
           display: "grid",
           gridTemplateColumns: "repeat(7, 1fr)",
-          gridAutoRows: "1fr",
+          gridTemplateRows: `repeat(${Math.max(1, Math.round(cells.length / 7))}, minmax(${CELL_MIN_H(compact)}px, 1fr))`,
+          borderTop: "1px solid var(--mf-cal-grid)",
+          marginRight: -1,
         }}
       >
         {cells.map((c, i) => (
@@ -391,68 +402,63 @@ function DayCell({
   dropHot: boolean;
 }) {
   const { inMonth, isToday, dim, dow } = cell;
-  // 칸에 실제로 들어가는 만큼 그린다(제보 #1) — 줄 배치는 `cellRows`가 정한다.
-  // 칸 색은 **요일·이번 달 여부만** 말한다(제보 — 고른 칸을 배경으로 표시하니
-  // 계속 문제가 났다: 이 자리는 이미 세 가지를 겸하고 있다(이웃 달의 가라앉은 면 /
-  // 주말·공휴일 톤 / 드롭 대기). 넷째 뜻을 얹으면 어느 하나가 반드시 가려진다).
-  // 그래서 **선택은 배경이 아니라 날짜 숫자**가 진다(아래 `selRing`) — 오늘 표시가
-  // 이미 쓰는 그 한 자리를 나눠 쓰므로 칸 안에 새 글리프가 늘지 않는다.
-  //
-  // 주말은 디자인 원본대로 두 색으로 갈린다 — 일요일·공휴일은 파스텔 분홍
-  // (#FEF8F5), 토요일은 파스텔 하늘색(#F9FBFD). 값은 표에 적지 않고 그 칸의 숫자
-  // 색에서 파생한다(`--mf-cal-sun`/`-sat`) — 숫자와 배경이 언제나 같은 색조를 쓰고,
-  // 여섯 테마 × 다크에 값을 새로 정할 필요가 없다.
-  // **오늘 칸에도 배경을 주지 않는다**(요청) — 숫자가 이미 채운 원으로 말한다.
-  const bg = !inMonth
-    ? "var(--mf-cal-out)"
-    : dow === 0 || cell.dayOff
+  // 칸 면은 **여섯 가지**다(스펙 3.3): 평일 · 토 · 일/공휴일 · 이웃 달 · 오늘 · 선택
+  // (+ 오늘이면서 선택). 예전에는 고른 날과 오늘을 **숫자**로만 말했다 — 면이 이미
+  // 요일·이웃 달·드롭 대기를 겸하고 있어서였는데, 스펙은 상태마다 따로 고른 옅은 색을
+  // 준다(선택 < 오늘 < 오늘+선택, 모두 주말 틴트보다 따뜻해 겹쳐 읽히지 않는다).
+  // 우선순위: 놓일 자리 > 오늘(+선택) > 선택 > 이웃 달 > 일·공휴일 > 토 > 평일.
+  // 값은 토큰이다(`theme.ts`) — 코랄은 스펙 값 그대로, 나머지 테마·다크는 파생.
+  const weekendBg =
+    dow === 0 || cell.dayOff
       ? "var(--mf-cal-sun)"
       : dow === 6
         ? "var(--mf-cal-sat)"
         : "var(--mf-card)";
-  // 숫자 색은 **그 날이 무슨 날인가**만 말한다 — 이웃 달 칸도 토·일·공휴일이면 같은
-  // 색을 쓴다(요청). 이웃 달임은 칸의 가라앉은 면과 `opacity`가 이미 말하므로 색까지
-  // 흐릴 필요가 없다(그러면 이웃 달의 일요일이 평일과 구별되지 않는다).
+  const bg = dropHot
+    ? "var(--mf-accent-soft)"
+    : isToday
+      ? selected
+        ? "var(--mf-cal-today-sel)"
+        : "var(--mf-cal-today)"
+      : selected
+        ? "var(--mf-cal-sel)"
+        : !inMonth
+          ? "var(--mf-cal-out)"
+          : weekendBg;
+  // 숫자 색은 **그 날이 무슨 날인가**만 말한다(일·공휴일 / 토 / 평일). 오늘은 채운 코랄
+  // 상자에 흰 글자(스펙 3.4). 이웃 달은 숫자가 가라앉는다(스펙 3.3 `#CBC0B3`) — 다만 토·일·
+  // 공휴일은 **그 색조를 지킨 채** 흐려진다(요청 ④: 이웃 달의 일요일이 평일과 구별돼야 한다).
+  const dayTone =
+    dow === 0 || cell.dayOff
+      ? "var(--mf-cal-num-sun)"
+      : dow === 6
+        ? "var(--mf-cal-num-sat)"
+        : null;
   const numFg = isToday
     ? "var(--mf-accent-ink)"
-    : dow === 0 || cell.dayOff
-      ? "var(--mf-danger)"
-      : dow === 6
-        ? "var(--mf-info)"
-        : dim || !inMonth
-          ? "var(--mf-faint)"
-          : "var(--mf-subtext)";
-  // 고른 칸·오늘의 표시는 **한 곳**(`dayNumTone`)이 정한다 — 대시보드 위젯의 미니
-  // 달력이 같은 함수를 쓰므로 두 화면에서 표시가 갈릴 수 없다.
-  // 토·일·공휴일은 고른 뒤에도 그 색을 지킨다(요청 ④) — 채운 원이 그 색이 된다.
-  const dayInk =
-    dow === 0 || cell.dayOff
-      ? "var(--mf-danger)"
-      : dow === 6
-        ? "var(--mf-info)"
-        : undefined;
-  const numTone = dayNumTone(selected, isToday, dayInk);
+    : !inMonth
+      ? dayTone
+        ? `color-mix(in srgb, ${dayTone} 55%, var(--mf-cal-out))`
+        : "var(--mf-cal-num-out)"
+      : (dayTone ?? "var(--mf-cal-num)");
+  // 칸 안의 항목은 지난 날·이웃 달에서 한 톤 물러난다(숫자와 같은 뜻 — 지금 달의 앞날이
+  // 먼저 읽히게). 칸 자체의 `opacity`는 쓰지 않는다: 면 색이 스펙 값에서 벗어난다.
+  const faded = dim || !inMonth;
   const cellStyle: CSSProperties = {
     minWidth: 0,
-    // 칩이 커진 만큼 칸도(번호 18 + 칩 21 × 2 + 여백) — 격자가 화면을 채우면
-    // 실제로는 더 커지지만, 창이 낮아도 두 줄이 접히지 않는다.
-    minHeight: compact ? 48 : 86,
     display: "flex",
     flexDirection: "column",
-    gap: 2,
-    padding: compact ? "3px 3px 4px" : "5px 5px 6px",
-    // 격자선은 일반 경계선보다 한 단계 또렷하다(`--mf-cal-grid`) — 이웃 달 칸(가라앉은
-    // 면) 위에서 옅은 선이 면에 묻혀 날짜 경계가 보이지 않았다(제보).
+    gap: GAP,
+    padding: compact ? "3px 3px 4px" : "6px 6px 4px",
     borderRight: "1px solid var(--mf-cal-grid)",
     borderBottom: "1px solid var(--mf-cal-grid)",
-    background: dropHot ? "var(--mf-accent-soft)" : bg,
+    background: bg,
+    transition: "background-color .12s ease",
     // 칸에 링을 두르는 것은 **놓일 자리**뿐이다(지금 무엇이 일어나려는가가 먼저다).
     // 테두리가 아니라 안쪽 링인 이유는 굵히면 격자가 1px 밀리기 때문이다.
     ...(dropHot ? { boxShadow: "inset 0 0 0 2px var(--mf-accent)" } : {}),
-    opacity: inMonth ? 1 : 0.7,
     // 이웃 달 칸도 **평범한 칸처럼 동작한다**(제보 #3) — 격자가 담고 있는 날이면
     // 고르고, 더블클릭으로 그 날의 일정을 보고, 항목을 끌어다 놓을 수 있다.
-    // 흐린 것은 "이번 달이 아니다"라는 표시일 뿐 못 쓰는 자리라는 뜻이 아니다.
     cursor: "pointer",
     // 칸이 내용보다 좁아도 격자가 밀리지 않게 — 넘치는 칩은 접힌다(moreN).
     overflow: "hidden",
@@ -512,25 +518,22 @@ function DayCell({
       style={cellStyle}
     >
       <span
-        style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}
+        style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0, minWidth: 0 }}
       >
         <span
           data-day-num
           data-selected={selected ? "1" : undefined}
           style={{
-            // 오늘은 채운 원이라 숫자 크기를 따라간다(폰은 그대로).
-            minWidth: compact ? 18 : 20,
-            height: compact ? 18 : 20,
-            padding: "0 5px",
-            borderRadius: 999,
-            background: "transparent",
+            // 19px **둥근 사각**(스펙 3.4 — 원이 아니다). 오늘만 면을 채운다.
+            width: compact ? 18 : 19,
+            height: compact ? 18 : 19,
+            flex: "0 0 auto",
+            borderRadius: 6,
+            background: isToday ? "var(--mf-accent)" : "transparent",
             color: numFg,
             fontFamily: "'JetBrains Mono', monospace",
-            // 데스크톱 12px(폰은 칸이 좁아 11) — 13은 너무 컸다(요청).
-            fontSize: compact ? 11 : 12,
-            fontWeight: 600,
-            // 오늘·고른 날의 옷은 마지막에 얹는다(면·잉크·굵기를 함께 갈아 끼운다).
-            ...numTone,
+            fontSize: compact ? 10 : 10.5,
+            fontWeight: isToday ? 800 : 600,
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
@@ -549,9 +552,9 @@ function DayCell({
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              fontSize: compact ? 8.5 : 9.5,
+              fontSize: compact ? 8.5 : 9,
               fontWeight: 700,
-              color: cell.dayOff ? "var(--mf-danger)" : "var(--mf-faint)",
+              color: cell.dayOff ? "var(--mf-cal-num-sun)" : "var(--mf-faint)",
             }}
           >
             {cell.holiday}
@@ -668,19 +671,20 @@ function DayCell({
               key="more"
               type="button"
               data-cal-more
+              className="mf-cal-more"
               onClick={(e) => {
                 e.stopPropagation();
                 onMore(cell.iso, { x: e.clientX, y: e.clientY });
               }}
               style={{
                 border: 0,
-                background: "transparent",
-                padding: "0 5px",
+                borderRadius: 6,
+                padding: "0 4px",
                 textAlign: "left",
                 font: "inherit",
                 fontSize: compact ? 9.5 : 11,
                 fontWeight: 700,
-                color: "var(--mf-faint)",
+                color: "var(--mf-cal-num)",
                 cursor: "pointer",
                 flexShrink: 0,
                 alignSelf: "flex-start",
@@ -694,6 +698,9 @@ function DayCell({
         if (row.kind === "bar") {
           const b = row.bar;
           const chip = entryChip(b.entry, surface);
+          // 우리 기간 일정은 **종류의 옅은 면**(스펙 3.6), 구글은 예전 그대로 그 일정 색을
+          // 진하게 섞은 면(스펙 3.7 — 사용자가 구글에서 고른 색이 알아보여야 한다).
+          const ours = !b.entry.google;
           // 폰은 칸이 55px 남짓이라 `일째`까지 적으면 제목이 통째로 사라진다.
           const prog = dayProgress(b.entry, cell.iso);
           const progress = prog && compact ? prog.replace("일째", "") : prog;
@@ -702,6 +709,7 @@ function DayCell({
               key={`bar-${b.entry.docId}-${b.entry.cardId}`}
               type="button"
               data-cal-bar
+              className="mf-cal-chip-btn"
               title={`${b.entry.title} · ${b.entry.boardName}`}
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -738,11 +746,11 @@ function DayCell({
                 borderBottomLeftRadius: b.head ? 5 : 2,
                 borderTopRightRadius: b.tail ? 5 : 2,
                 borderBottomRightRadius: b.tail ? 5 : 2,
-                background: chip.bg,
+                background: ours ? chip.soft : chip.bg,
                 color: chip.fg,
                 font: "inherit",
                 fontSize: compact ? 10 : 11.5,
-                fontWeight: 700,
+                fontWeight: ours ? 800 : 700,
                 textAlign: "left",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
@@ -750,7 +758,7 @@ function DayCell({
                 flexShrink: 0,
                 opacity: isDragged(dragging, b.entry)
                   ? 0.4
-                  : cell.dim
+                  : faded
                     ? 0.6
                     : 1,
                 touchAction: "none",
@@ -792,14 +800,90 @@ function DayCell({
         }
         const e = row.entry;
         const chip = entryChip(e, surface);
-        // 요청 ①② — 종일은 **채운 칩**(기간 바와 같은 꼴이라 "하루를 통째로"가 한눈에
-        // 읽힌다), 시간 일정은 **표식 + 시작 시각 + 제목**(구글 캘린더의 관례).
-        const allDay = isAllDayEntry(e);
+        // 구글 일정은 **예전 규칙 그대로**(스펙 3.7): 종일은 그 일정 색을 채운 칩, 시간
+        // 일정은 막대 표식 + 시작 시각 + 제목(면 없음). 우리 일정·카드는 스펙 3.5의 **상자**
+        // — 종류의 옅은 면 + 1px 테두리 + 왼쪽 3px 색 바 + 둥근 사각 점.
+        if (e.google) {
+          const allDay = isAllDayEntry(e);
+          return (
+            <button
+              key={`${e.docId}-${e.cardId}`}
+              type="button"
+              data-cal-chip
+              data-cal-chip-kind="google"
+              title={`${e.title} · ${e.boardName} · ${e.colName}`}
+              onPointerDown={(ev) => {
+                ev.stopPropagation();
+                onGrab(ev, e, cell.iso);
+              }}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onPickEntry(e);
+              }}
+              onContextMenu={
+                onCtxMenu
+                  ? (ev) => {
+                      ev.preventDefault();
+                      ev.stopPropagation();
+                      onCtxMenu({ entry: e }, { x: ev.clientX, y: ev.clientY });
+                    }
+                  : undefined
+              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                minWidth: 0,
+                // 면이 없는 시간 일정은 **글자만큼만** 누른다 — 칸 폭을 다 차지하면 글자
+                // 없는 빈 오른쪽을 눌러도 상세가 열렸다(제보). 종일은 면이 곧 칩이다.
+                alignSelf: allDay ? "stretch" : "flex-start",
+                maxWidth: "100%",
+                height: CHIP_H(compact),
+                boxSizing: "border-box",
+                padding: "0 5px",
+                border: 0,
+                borderRadius: 6,
+                background: allDay ? chip.bg : "transparent",
+                color: chip.fg,
+                font: "inherit",
+                fontSize: compact ? 10 : 11.5,
+                fontWeight: 700,
+                letterSpacing: "-.01em",
+                cursor: e.readOnly ? "pointer" : "grab",
+                flexShrink: 0,
+                opacity: isDragged(dragging, e) ? 0.4 : faded ? 0.6 : 1,
+                touchAction: "none",
+              }}
+            >
+              {!allDay && <span style={markStyle(chip)} />}
+              {!allDay && e.startTime ? (
+                <span
+                  data-cal-chip-time
+                  style={{ flex: "0 0 auto", fontWeight: 800, opacity: 0.75, letterSpacing: "-.02em" }}
+                >
+                  {chipTimeLabel(e.startTime)}
+                </span>
+              ) : null}
+              {/* 참석을 거부한 일정은 **제목에 줄을 긋는다**(요청) — 지우지 않는 이유는
+                  거부한 일정도 그 시간에 무슨 일이 있는지는 말해 주기 때문이다. */}
+              <span
+                data-cal-chip-title
+                data-cal-declined={isDeclined(e) ? "1" : undefined}
+                style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...declinedStyle(e) }}
+              >
+                {roomMark(e)}
+                {e.title}
+              </span>
+            </button>
+          );
+        }
         return (
           <button
             key={`${e.docId}-${e.cardId}`}
             type="button"
             data-cal-chip
+            data-cal-chip-kind={e.event ? "event" : "card"}
+            className="mf-cal-chip-btn"
             title={`${e.title} · ${e.boardName} · ${e.colName}`}
             onPointerDown={(ev) => {
               ev.stopPropagation();
@@ -823,63 +907,77 @@ function DayCell({
               alignItems: "center",
               gap: 4,
               minWidth: 0,
-              // 칸은 세로 flex라 기본(stretch)이면 버튼이 칸 폭을 다 차지해 **글자
-              // 없는 빈 오른쪽을 눌러도** 상세가 열렸다(제보). 클릭 영역 = 점 + 글자.
-              alignSelf: "flex-start",
-              maxWidth: "100%",
-              height: compact ? 16 : 21,
-              padding: "0 5px",
-              border: 0,
+              // 칸 폭 전체가 칩이다(스펙 3.5) — 면과 테두리가 있어 누르는 자리가 눈에 보인다.
+              alignSelf: "stretch",
+              height: CHIP_H(compact),
+              boxSizing: "border-box",
+              padding: compact ? "0 4px 0 3px" : "0 6px 0 5px",
+              border: `1px solid ${chip.edge}`,
+              borderLeft: `3px solid ${chip.base}`,
               borderRadius: 6,
-              // 종일은 면을 채우고(요청 ①), 시간 일정은 배경 없이 표식·시각·제목만.
-              background: allDay ? chip.bg : "transparent",
+              background: chip.soft,
               color: chip.fg,
               font: "inherit",
               fontSize: compact ? 10 : 11.5,
               fontWeight: 700,
               letterSpacing: "-.01em",
+              textAlign: "left",
               cursor: e.readOnly ? "pointer" : "grab",
               flexShrink: 0,
-              opacity: isDragged(dragging, e) ? 0.4 : cell.dim ? 0.6 : 1,
+              opacity: isDragged(dragging, e) ? 0.4 : faded ? 0.6 : 1,
               touchAction: "none",
             }}
           >
-            {/* 채운 칩에는 표식을 두지 않는다 — 면이 이미 그 색을 말하므로 점이 겹친다.
-                시간 일정만 표식(우리 점 / 구글 막대)을 앞에 세운다. */}
-            {!allDay && <span style={markStyle(chip)} />}
-            {!allDay && e.startTime ? (
+            {/* 점 — 칸반이면 **열(상태) 색**, 일정이면 그 색(`entryChip.dot`). 5px 둥근 사각은
+                스페이스 카드의 종류 태그와 같은 언어다(스펙 3.5). */}
+            {!compact && <span data-cal-chip-dot style={markStyle(chip, true)} />}
+            {/* 폰의 칸(55px 남짓)에서는 시각을 뺀다 — 시각이 칸을 다 먹어 제목이 한 자도
+                남지 않았다(실측). 시각은 그 날 목록·상세가 말한다. */}
+            {e.startTime && !compact ? (
               <span
                 data-cal-chip-time
-                style={{
-                  flex: "0 0 auto",
-                  fontWeight: 800,
-                  opacity: 0.75,
-                  letterSpacing: "-.02em",
-                }}
+                style={{ flex: "0 0 auto", fontWeight: 800, opacity: 0.75, letterSpacing: "-.02em" }}
               >
                 {chipTimeLabel(e.startTime)}
               </span>
             ) : null}
-            {/* 참석을 거부한 일정은 **제목에 줄을 긋는다**(요청) — 지우지 않는 이유는
-                거부한 일정도 그 시간에 무슨 일이 있는지는 말해 주기 때문이다. */}
             <span
               data-cal-chip-title
-              data-cal-declined={isDeclined(e) ? '1' : undefined}
-              style={{
-                minWidth: 0,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                ...declinedStyle(e),
-              }}
+              style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             >
-              {roomMark(e)}
               {e.title}
             </span>
+            {/* 되풀이 일정 — 제목 뒤 9px 고리(스펙 3.5). 회차마다 같은 제목이 늘어서므로
+                "이것 하나만이 아니다"를 여기서 말한다. */}
+            {e.event?.recurrence ? <RepeatGlyph /> : null}
           </button>
         );
       })}
     </div>
+  );
+}
+
+/** 되풀이 표식 — 두 화살표가 도는 고리(9px, 흐리게). */
+function RepeatGlyph() {
+  return (
+    <svg
+      data-cal-chip-repeat
+      width="9"
+      height="9"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-label="반복 일정"
+      style={{ flex: "0 0 auto", opacity: 0.6 }}
+    >
+      <path d="M17 2l3 3-3 3" />
+      <path d="M4 11V9a4 4 0 0 1 4-4h12" />
+      <path d="M7 22l-3-3 3-3" />
+      <path d="M20 13v2a4 4 0 0 1-4 4H4" />
+    </svg>
   );
 }
 

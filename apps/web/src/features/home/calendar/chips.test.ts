@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entryChip, markStyle } from './chips';
+import { KIND_COLOR, entryChip, markStyle } from './chips';
 import { mixHex } from '../../editor/theme';
 import type { CalendarEntry } from './entries';
 
@@ -118,5 +118,37 @@ describe('구글 일정의 글자색(요청 ⑥)', () => {
   it('우리 일정·카드는 예전처럼 분류색에서 뽑은 잉크를 쓴다(무회귀)', () => {
     const ours = entryChip(E({ tag: '개발' }), SURFACE);
     expect(ours.fg).not.toBe(SURFACE.text);
+  });
+});
+
+describe('종류 색 · 옅은 면(일정 페이지 스펙 3.5)', () => {
+  const ev = { id: 'e1', title: '회의', startDate: '2026-08-20', endDate: '2026-08-20', allDay: true, source: 'geurio' } as const;
+
+  it('색을 정하지 않은 항목은 **종류 색** — 칸반 초록, Geurio 캘린더 보라', () => {
+    expect(entryChip(E(), SURFACE).base).toBe(KIND_COLOR.kanban);
+    expect(entryChip(E({ event: ev }), SURFACE).base).toBe(KIND_COLOR.event);
+    // 일정에는 열이 없다 — 점도 그 색이다.
+    expect(entryChip(E({ event: ev }), SURFACE).dot).toBe(KIND_COLOR.event);
+  });
+
+  it('분류색·고른 색이 있으면 그것이 먼저다(색을 고르는 기능이 죽지 않게)', () => {
+    expect(entryChip(E({ tag: '개발' }), SURFACE).base).not.toBe(KIND_COLOR.kanban);
+    expect(entryChip(E({ tagColor: '#123456', tag: '개발' }), SURFACE).base).toBe('#123456');
+    expect(entryChip(E({ event: ev, colColor: '#8a6bd1' }), SURFACE).base).toBe('#8a6bd1');
+  });
+
+  it('옅은 면은 스펙의 짝과 같은 결이다 — 칸반 #EBF5EE · Geurio #F1ECFA 근방(카드 면에서 파생)', () => {
+    const near = (hex: string, want: string) => channels(hex).every((c, i) => Math.abs(c - channels(want)[i]!) <= 8);
+    expect(near(entryChip(E(), SURFACE).soft, '#ebf5ee')).toBe(true);
+    expect(near(entryChip(E({ event: ev }), SURFACE).soft, '#f1ecfa')).toBe(true);
+    // 테두리는 면보다 한 걸음 짙다.
+    const chip = entryChip(E(), SURFACE);
+    expect(channels(chip.edge)[0]!).toBeLessThan(channels(chip.soft)[0]!);
+  });
+
+  it('일정 화면의 점은 5px 둥근 사각(radius 1.5) — 다른 소비처는 예전 원 그대로', () => {
+    const chip = entryChip(E(), SURFACE);
+    expect(markStyle(chip, true).borderRadius).toBe(1.5);
+    expect(markStyle(chip).borderRadius).toBe(999);
   });
 });

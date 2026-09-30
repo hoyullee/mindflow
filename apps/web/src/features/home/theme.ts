@@ -511,13 +511,31 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     // 쪽으로 간다. 예전에는 accent를 섞어 주황빛이 돌았고 안쪽 링까지 둘러 튀었다
     // (제보). 오늘 칸에는 배경을 주지 않는다(요청): 숫자가 이미 채운 원으로
     // 표시되므로 배경까지 바꾸면 "고른 칸"과 혼동된다.
-    '--mf-cal-sel': mixHex(t.card, t.panel2, 0.75),
+    '--mf-cal-sel': k === 'coral' ? '#fcf6ed' : mixHex(t.card, t.panel2, 0.75),
     // 주말 칸 — 일요일·공휴일은 따뜻하게(#FEF8F5), 토요일은 차갑게(#F9FBFD).
     // 디자인 원본의 고정 헥스 대신 **그 칸의 숫자 색에서 파생**한다(일=danger,
     // 토=info): 값이 한 벌이면 여섯 테마 × 다크에 전부 새로 정해야 하고, 파생하면
     // 숫자와 배경이 언제나 같은 색조를 쓴다. 섞는 양은 0.05 → **0.03**(제보: 진하다).
-    '--mf-cal-sun': mixHex(t.card, t.danger, 0.03),
-    '--mf-cal-sat': mixHex(t.card, t.info, 0.03),
+    '--mf-cal-sun': k === 'coral' ? '#fef8f5' : mixHex(t.card, t.danger, 0.03),
+    '--mf-cal-sat': k === 'coral' ? '#f9fbfd' : mixHex(t.card, t.info, 0.03),
+    // ── 일정 화면(스펙 2026-09-30) — 기본(코랄)은 스펙 값 그대로, 나머지는 같은 자리의
+    //    자기 색에서 파생한다(격자선·이웃 달과 같은 방식).
+    /** 오늘 칸 / 오늘이면서 고른 칸 — 강조색을 아주 옅게(선택 < 오늘 < 오늘+선택). */
+    '--mf-cal-today': k === 'coral' ? '#fff3ec' : mixHex(t.card, t.accent, 0.07),
+    '--mf-cal-today-sel': k === 'coral' ? '#fdefe4' : mixHex(t.card, t.accent, 0.11),
+    /** 헤더 띠의 면과 점 — 캔버스의 점 격자를 옅게(28%) 축소한 것. */
+    '--mf-cal-head': k === 'coral' ? '#fcfcfb' : mixHex(t.card, t.bg, 0.5),
+    '--mf-cal-head-dot': k === 'coral' ? 'rgba(199,186,172,.28)' : t.dotGrid,
+    /** 격자 뒤의 바탕 — 칸이 덮지 못한 자리에서 격자선과 같은 톤으로 보인다. */
+    '--mf-cal-frame': k === 'coral' ? '#ede3d6' : t.border,
+    /** 요일 머리의 주말 글자(칸 숫자보다 한 톤 옅다). */
+    '--mf-cal-dow-sun': k === 'coral' ? '#d0917f' : mixHex(t.danger, t.card, 0.3),
+    '--mf-cal-dow-sat': k === 'coral' ? '#7c9bd8' : mixHex(t.info, t.card, 0.2),
+    /** 칸의 날짜 숫자 — 평일 / 일·공휴일 / 토 / 이웃 달. */
+    '--mf-cal-num': k === 'coral' ? '#8a8078' : t.subtext,
+    '--mf-cal-num-sun': k === 'coral' ? '#c4614c' : t.danger,
+    '--mf-cal-num-sat': k === 'coral' ? '#5f81bf' : t.info,
+    '--mf-cal-num-out': k === 'coral' ? '#cbc0b3' : t.faint2,
     /** 일정 상세의 댓글 열 — 카드와 가라앉은 면 사이(디자인 원본 #FDFBF8). */
     '--mf-cal-cmt': mixHex(t.card, t.panel2, 0.35),
     /** 달력 격자선·이웃 달 칸 — 디자인 원본의 값(`#EDE1D3` / `#F5EFE7`)이다.
@@ -526,25 +544,9 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
      *  캔버스 그라데이션(#457)과 같은 방식: 기본은 정확히, 나머지는 파생. */
     '--mf-cal-grid': k === 'coral' ? '#ede1d3' : t.border,
     '--mf-cal-out': k === 'coral' ? '#f5efe7' : t.sunken,
-    /** 켜진 칩(통계 필터)의 면 — 면 없는 칩과 갈리도록 `accentSoft`보다 한 단계 진하게.
-     *  `accentSoft`는 주말 칸 틴트와 거의 같은 값이라 켜졌는지 알 수 없었다. */
-    '--mf-chip-on': mixHex(t.card, t.accent, 0.13),
-    /** 통계 칩의 색쌍 — 디자인 원본은 순위마다 `{fg, dot}` 두 값을 손으로 골랐는데
-     *  **점은 밝고 숫자는 짙다**(#D9694A / #C0563A). 우리 토큰을 그대로 쓰면 그 관계가
-     *  사라져 점이 숫자만큼 강해지고, 특히 `--mf-star`(#e0a53c)를 숫자에 쓰면 흰 면에서
-     *  읽히지 않았다(제보). 그래서 **한 색에서 두 값을 파생**한다: 점은 면 쪽으로,
-     *  숫자는 글자 쪽으로 한 걸음. 여섯 테마 × 다크에 값을 새로 정할 필요가 없다. */
+    /** 지난 마감의 숫자(헤더 요약 줄) — 위험색을 글자 쪽으로 한 걸음 눌러 흰 면에서 또렷하게
+     *  (스펙 `#C0563A`와 같은 결). */
     '--mf-stat-over': mixHex(t.danger, t.text, 0.2),
-    '--mf-stat-over-dot': mixHex(t.danger, t.card, 0.18),
-    '--mf-stat-today': t.accentStrong,
-    '--mf-stat-today-dot': t.accent,
-    '--mf-stat-week': mixHex(t.star, t.text, 0.32),
-    '--mf-stat-week-dot': t.star,
-    /** 사흘 안으로 다가온 마감의 면(`--mf-stat-week`가 그 위 글자) — 마감 목록의
-     *  중요도 사다리(지남 빨강 / 오늘 강조색 / 임박 앰버 / 그 뒤 중립)에서 세 번째. */
-    '--mf-due-soon-bg': mixHex(t.card, t.star, 0.16),
-    '--mf-stat-span': t.muted,
-    '--mf-stat-span-dot': t.faint2,
     '--mf-hover-bright': t.hoverBright,
     '--mf-success': t.success,
     '--mf-success-soft': t.successSoft,

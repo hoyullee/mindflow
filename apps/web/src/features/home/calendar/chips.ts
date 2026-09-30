@@ -48,7 +48,28 @@ export interface EntryChip {
    * 왼쪽 색 바(`dot`)는 그대로라, 면은 물러나고 바가 출처·상태를 말한다.
    */
   tint: string;
+  /**
+   * **종류의 옅은 색**(일정 화면 스펙 3.5·4.2) — 우리 칩·날짜별 행·시간표 블록의 면.
+   * 정체성 색(`base`)을 카드 면에 11%만 섞는다: 스펙의 짝(칸반 `#4E8C67`/`#EBF5EE`,
+   * Geurio `#8B5CF6`/`#F1ECFA` …)이 모두 이 근방이고, 색은 왼쪽 3px 바가 말한다.
+   */
+  soft: string;
+  /** 그 면의 1px 테두리 — 면보다 한 걸음 짙게(칩이 이웃 칸 면에 묻히지 않게). */
+  edge: string;
 }
+
+/**
+ * **종류 색**(스펙 3.5) — 사용자가 색을 정하지 않은 항목의 정체성 색.
+ *
+ * 우리 쪽 원천은 둘이다: 칸반 카드(분류가 없으면)와 Geurio 일정(색을 고르지 않았으면).
+ * 예전에는 둘 다 **빈 이름의 해시**로 팔레트에서 한 색을 뽑아 "왜 이 색인가"가 없었다 —
+ * 이제 종류가 말한다(칸반=초록, Geurio 캘린더=보라). 분류색·고른 색이 있으면 그것이 먼저다
+ * (그 색을 고르는 기능이 죽지 않게). 공책·마인드맵·화이트보드는 달력에 항목을 내지 않는다.
+ */
+export const KIND_COLOR = {
+  kanban: '#4e8c67',
+  event: '#8b5cf6',
+} as const;
 
 /**
  * `surface`는 칩이 놓이는 면(홈 테마의 카드 면·글자색)이다. hue는 고정 팔레트에서,
@@ -63,9 +84,12 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
   // **Geurio 일정에 지정한 색**(요청 ⑤)이 있으면 그것이 정체성이다 — 고른 색이 달력에
   // 보이지 않으면 고르는 뜻이 없다(`eventEntries`가 `color`를 `colColor`에 실어 준다).
   // 칸반 카드는 그대로 분류색이다: 그쪽 `colColor`는 **열 색**이라 뜻이 다르다.
-  const own = e.google ? (e.colColor ?? GOOGLE_MARK) : e.event ? e.colColor : undefined;
-  const base = own ?? e.tagColor ?? tagColor(e.tag, UI_THEME.palette);
-  const dot = e.google ? base : columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
+  const own = e.google ? (e.colColor ?? GOOGLE_MARK) : e.event ? (e.colColor ?? KIND_COLOR.event) : undefined;
+  // 분류가 없는 칸반 카드는 **종류 색**(칸반 초록) — 빈 이름의 해시는 뜻이 없었다.
+  const base = own ?? e.tagColor ?? (e.tag ? tagColor(e.tag, UI_THEME.palette) : KIND_COLOR.kanban);
+  // 점은 칸반이면 **열(상태) 색**이다 — 바가 정체성을, 점이 "지금 어느 단계인가"를 말한다.
+  // Geurio·구글 일정에는 열이 없으므로 정체성 색 그대로.
+  const dot = e.google || e.event ? base : columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
   return {
     base,
     // **채운 칩·기간 바의 면**. 예전 0.16은 너무 옅어 "구글에서 지정한 색"이
@@ -86,6 +110,8 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
     // rgb(241,245,251) — 시안(252)과 파랑 1/255 차이(카드 파랑이 251이라 한 비율로는
     // 못 올린다). 육안 구분 불가라 파생 규칙을 지키는 쪽을 골랐다.
     tint: e.google ? mixHex(surface.card, '#63a4ff', 0.09) : mixHex(surface.card, '#9b8059', 0.08),
+    soft: mixHex(surface.card, base, 0.11),
+    edge: mixHex(surface.card, base, 0.24),
   };
 }
 
@@ -122,41 +148,12 @@ export function chipTimeLabel(hhmm: string): string {
  * 소비처가 넷(월 격자 칩·기간 고스트·마감 목록·대시보드 위젯)이라 값을 흩어 두면
  * 어느 화면에서만 점으로 남는다.
  */
-export function markStyle(chip: EntryChip): CSSProperties {
+export function markStyle(chip: EntryChip, square = false): CSSProperties {
   return chip.mark === 'bar'
     ? { width: 3, height: 11, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }
-    : { width: 5, height: 5, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' };
-}
-
-/**
- * 날짜 숫자의 옷 — **오늘**과 **고른 날**을 한 곳에서 정한다(월 격자·대시보드 위젯이
- * 같은 함수를 쓴다. 값을 흩어 두면 한 화면에서만 표시가 달라진다).
- *
- * 예전에는 고른 날을 **속 빈 링**으로 둘렀는데 튀어 보였고(제보: 마음에 안 든다),
- * 오늘+선택은 지워진 토큰(`--mf-cal-ring`)을 가리켜 **아무 표시도 나오지 않았다**.
- * 지금은 애플 캘린더의 관례를 따른다 — **고른 날은 채운 원**(잉크 면 + 카드 잉크,
- * 어느 요일 틴트 위에서도 또렷하고 다크에서는 토큰이 뒤집혀 그대로 성립한다),
- * **오늘은 강조색 원**, 오늘을 고르면 그 원에 **옅은 후광**을 두른다(딱딱한 링이
- * 아니라 강조색을 물 탄 `accentMute`라 부드럽다).
- *
- * 칸 배경은 여전히 손대지 않는다 — 그 자리는 이미 세 가지(이웃 달·주말·드롭 대기)를
- * 겸하고 있어 넷째 뜻을 얹으면 어느 하나가 가려진다.
- */
-export function dayNumTone(selected: boolean, isToday: boolean, dayInk?: string): CSSProperties {
-  if (isToday) return { background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontWeight: 800, ...(selected ? { boxShadow: '0 0 0 3px var(--mf-accent-mute)' } : {}) };
-  // 고른 날은 **채운 원**이다(오늘과 같은 선택 언어).
-  //
-  // 평일은 **오늘+선택의 후광과 같은 옅은 강조색**으로 채운다(요청: 검은 원이 안
-  // 어울린다 — 그 후광 색으로 채워 보자). 잉크색 원은 화면에서 가장 어두운 덩어리라
-  // 달력의 다른 어떤 것보다 무거웠고, 오늘(진한 강조색 원)과도 뜻이 갈리지 않았다.
-  // 글자는 본문 잉크 — 옅은 면 위라 또렷하다.
-  //
-  // 토·일·공휴일은 **그 날의 색**으로 채운다(그대로) — 고르는 순간 "이 날은
-  // 일요일이다"라는 신호가 사라지지 않게.
-  if (selected) return dayInk
-    ? { background: dayInk, color: 'var(--mf-card)', fontWeight: 800 }
-    : { background: 'var(--mf-accent-mute)', color: 'var(--mf-text)', fontWeight: 800 };
-  return {};
+    : // `square` — 일정 화면의 칩(스펙 3.5): 5px **둥근 사각**(radius 1.5), 스페이스 카드의
+      // 종류 태그와 같은 언어. 다른 소비처(공책의 날짜 팝오버 등)는 예전 원 그대로다.
+      { width: 5, height: 5, borderRadius: square ? 1.5 : 999, background: chip.dot, flex: '0 0 auto', display: 'block' };
 }
 
 /**
