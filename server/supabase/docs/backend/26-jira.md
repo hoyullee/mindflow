@@ -54,7 +54,7 @@ Atlassian은 갱신할 때마다 새 refresh token을 주고 옛 것을 폐기�
 1. **Atlassian developer console**(developer.atlassian.com › Console) › Create › OAuth 2.0 integration.
    - Permissions › Jira API: `read:jira-work`, `read:jira-user`(classic).
    - Authorization › **Callback URL**: `https://<앱 주소>/auth/jira`(여러 개면 줄마다 — 로컬 개발은 `http://localhost:5173/auth/jira`).
-   - Distribution: 다른 조직에서도 쓰려면 **Sharing**을 켠다(개인정보 선언 — 우리는 accountId를 저장하지 않지만 `user_tool_prefs.work.extra`에 **직접 더한 사람의 accountId·이름**이 남는다: "Does your app store personal data?" → Yes, 그리고 Personal Data Reporting API 주기 보고가 요구된다 — 운영 백로그).
+   - Distribution: **Sharing을 켜야 나 말고 다른 사람이 연결할 수 있다** — 공유하지 않은 3LO 앱은 **만든 사람 한 명만** 승인할 수 있다(같은 조직의 동료도 막힌다). 켤 때 개인정보 선언을 묻는다: 우리는 티켓 내용을 저장하지 않지만 `user_tool_prefs.work.extra`에 **직접 더한 담당자의 accountId·이름**이 남으므로 "개인정보를 저장하는가" → **예**, 그러면 Personal Data Reporting API 주기 보고가 요구된다(운영 백로그 ⑦). 개인정보처리방침 주소는 `https://geurio.com/privacy`.
 2. Supabase secrets: `supabase secrets set ATLASSIAN_CLIENT_ID=… ATLASSIAN_CLIENT_SECRET=…`
 3. 함수 배포(손으로): `supabase functions deploy jira` — `_shared/`는 함께 묶여 올라간다.
 4. 마이그레이션 0044는 main 머지에 자동 적용.
