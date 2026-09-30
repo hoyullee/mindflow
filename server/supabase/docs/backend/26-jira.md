@@ -54,7 +54,7 @@ Atlassian은 갱신할 때마다 새 refresh token을 주고 옛 것을 폐기�
 1. **Atlassian developer console**(developer.atlassian.com › Console) › Create › OAuth 2.0 integration.
    - Permissions › Jira API: `read:jira-work`, `read:jira-user`(classic).
    - Authorization › **Callback URL**: `https://<앱 주소>/auth/jira`(여러 개면 줄마다 — 로컬 개발은 `http://localhost:5173/auth/jira`).
-   - Distribution: **Sharing을 켜야 나 말고 다른 사람이 연결할 수 있다** — 공유하지 않은 3LO 앱은 **만든 사람 한 명만** 승인할 수 있다(같은 조직의 동료도 막힌다). 켤 때 개인정보 선언을 묻는다: 우리는 티켓 내용을 저장하지 않지만 `user_tool_prefs.work.extra`에 **직접 더한 담당자의 accountId·이름**이 남으므로 "개인정보를 저장하는가" → **예**, 그러면 Personal Data Reporting API 주기 보고가 요구된다(운영 백로그 ⑦). 개인정보처리방침 주소는 `https://geurio.com/privacy`.
+   - Distribution: **Sharing을 켜야 나 말고 다른 사람이 연결할 수 있다** — 공유하지 않은 3LO 앱은 **만든 사람 한 명만** 승인할 수 있다(같은 조직의 동료도 막힌다). 켤 때 개인정보 선언을 묻는다: 우리는 티켓 내용을 저장하지 않지만 `user_tool_prefs.work.extra`에 **직접 더한 담당자의 accountId·이름**이 남으므로 "개인정보를 저장하는가" → **예**, 그러면 Personal Data Reporting API 주기 보고가 요구된다(**구현됨** — 아래 「개인정보 보고」). 개인정보처리방침 주소는 `https://geurio.com/privacy`.
 2. Supabase secrets: `supabase secrets set ATLASSIAN_CLIENT_ID=… ATLASSIAN_CLIENT_SECRET=…`
 3. 함수 배포(손으로): `supabase functions deploy jira` — `_shared/`는 함께 묶여 올라간다.
 4. 마이그레이션 0044는 main 머지에 자동 적용.
@@ -66,3 +66,41 @@ Atlassian은 갱신할 때마다 새 refresh token을 주고 옛 것을 폐기�
 셸은 바깥 주소를 시스템 브라우저로 넘긴다(`will-navigate`). 그래서 동의·교환은 **브라우저에서** 끝나고
 (그 브라우저가 같은 계정으로 로그인돼 있어야 한다 — 아니면 로그인 뒤 이어진다), 앱은 창에 포커스가 돌아올 때
 `status`를 다시 묻는다. `state`는 서버 서명이라 브라우저 저장소에 기대지 않는다.
+
+## 개인정보 보고 (Edge Function `jira-privacy` — Sharing + "개인정보 저장: Yes"의 의무)
+
+우리가 저장하는 Atlassian 사용자 정보는 `user_tool_prefs.data.work`의 두 칸이다 — `extra`(직접 더한 담당자
+`{id, name, at}`)와 `hidden`(끈 담당자의 accountId). 기기를 바꿔도 따라오게 서버에 둔다(결정 2026-09-30).
+그 대가로 Atlassian **Personal Data Reporting API**에 주기적으로(기본 7일) 보고한다.
+
+- 호출: `POST https://api.atlassian.com/app/report-accounts/`, 본문 `{accounts:[{accountId, updatedAt}]}`(한 번에 90개),
+  인증은 **사용자의 3LO 액세스 토큰**. 204 = 할 일 없음 / 200 = `accounts[{accountId, status}]`(`closed` | `updated`) / 429 = 다음 회차.
+- `closed` → **모든 사람의** `extra`·`hidden`에서 지운다. `updated` → 그 담당자를 더한 사람의 사이트에서 이름을 새로 받는다
+  (못 받으면 그대로 — 다음 회차에 다시 온다).
+- 토큰은 **연결된 사람 아무나**의 것을 쓴다 → 연결을 해제한 사람의 목록도 보고된다(재연결 때 목록이 남는 이유 — 결정 2026-09-30).
+  연결된 사람이 한 명도 없으면 보고할 수 없다(`reason: no-token` 로그) — 그 상태로 오래 두지 않는다.
+- `updatedAt`은 `extra[].at`(추가하거나 이름을 새로 받은 시각). 옛 항목처럼 없으면 그 행의 `updated_at`.
+- 순수한 부분은 `_shared/jiraPrivacy.ts`(웹 vitest `jiraPrivacy.test.ts`), 토큰 갱신은 `_shared/jiraAuth.ts`(두 함수가 공유 — 회전하는 refresh token의 낙관적 잠금이 한 곳에 있어야 한다).
+
+### 배포 — 한 번만
+1. `supabase functions deploy jira-privacy --project-ref qdzfonyqysbbchxotnrm`(`verify_jwt = false`는 `config.toml`). `jira`도 공용 모듈이 바뀌었으니 한 번 더 `deploy jira`.
+2. 새 비밀은 없다 — 멘션 메일의 `DIGEST_SECRET`을 같은 헤더(`x-digest-secret`)로 쓴다.
+3. **주 2회 cron**(Studio › SQL Editor에서 한 번 — 7일 주기에 한 번 실패해도 다음 회차가 주기 안에 든다):
+   ```sql
+   select cron.schedule(
+     'geurio-jira-privacy',
+     '17 3 * * 1,4',
+     $$
+     select net.http_post(
+       url     := 'https://qdzfonyqysbbchxotnrm.supabase.co/functions/v1/jira-privacy',
+       headers := jsonb_build_object('Content-Type', 'application/json',
+                                     'x-digest-secret', '<DIGEST_SECRET과 같은 값>'),
+       body    := '{}'::jsonb,
+       timeout_milliseconds := 60000
+     );
+     $$
+   );
+   ```
+   `pg_cron`·`pg_net`은 멘션 메일(§23) 때 이미 켰다. 지우려면 `select cron.unschedule('geurio-jira-privacy');`.
+4. 한 번 손으로 돌려 확인: 위 `net.http_post(...)` 한 줄만 SQL Editor에서 실행 → Edge Functions › `jira-privacy` › Logs에
+   `[jira-privacy] {"ok":true,...}`. 저장된 담당자가 없으면 `reported: 0`이 정상이다.

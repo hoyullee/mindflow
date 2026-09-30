@@ -335,7 +335,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
                     if (off) setVp((v) => ({ ...v, filters: v.filters.filter((f) => !(f.type === 'person' && f.id === id)) }));
                   }}
                   onAdd={(u: JiraPerson) => {
-                    setWork((w) => ({ ...w, extra: [...w.extra.filter((x) => x.id !== u.id), u], hidden: w.hidden.filter((x) => x !== u.id) }));
+                    setWork((w) => ({ ...w, extra: [...w.extra.filter((x) => x.id !== u.id), { id: u.id, name: u.name, at: new Date().toISOString() }], hidden: w.hidden.filter((x) => x !== u.id) }));
                     toolToast(`${u.name} 님을 추가했어요`);
                   }}
                   onRemove={(id) => {
