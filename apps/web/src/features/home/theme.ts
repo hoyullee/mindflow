@@ -448,6 +448,9 @@ export function homeEditorTheme(key: HomeThemeKey, palette: string[]): {
 }
 
 /** 테마 → CSS 변수 이름/값 쌍. 순수 함수(테스트·SSR 안전). */
+/** 달력의 고른 칸이 섞는 색조 — 꿀색. 테마 팔레트 밖의 고정값인 이유는 위 `--mf-cal-sel`. */
+const CAL_SEL_HUE = '#f5c542';
+
 export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
   const k = homeThemeKeyOf(key);
   const t = HOME_THEMES[k];
@@ -511,7 +514,11 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     // 쪽으로 간다. 예전에는 accent를 섞어 주황빛이 돌았고 안쪽 링까지 둘러 튀었다
     // (제보). 오늘 칸에는 배경을 주지 않는다(요청): 숫자가 이미 채운 원으로
     // 표시되므로 배경까지 바꾸면 "고른 칸"과 혼동된다.
-    '--mf-cal-sel': k === 'coral' ? '#fcf6ed' : mixHex(t.card, t.panel2, 0.75),
+    // 그런데 가라앉은 면은 **이웃 달 칸**(`--mf-cal-out`)과 같은 쪽이라 둘이 거의 같아
+    // 보였다(요청 — 코랄 ΔE 2.5). 그래서 고른 칸은 **옅은 꿀색**으로 간다: 이웃 달(회베이지)·
+    // 일·공휴일(붉은 틴트)·토(푸른 틴트)·오늘(면 없음) 어느 것과도 색조가 겹치지 않는다
+    // (코랄 `#FDF2D6` — 이웃 달과 ΔE 10). 강조색은 쓰지 않는다(코랄은 붉게 읽힌다).
+    '--mf-cal-sel': k === 'coral' ? '#fdf2d6' : mixHex(t.card, CAL_SEL_HUE, t.dark ? 0.14 : 0.2),
     // 주말 칸 — 일요일·공휴일은 따뜻하게(#FEF8F5), 토요일은 차갑게(#F9FBFD).
     // 디자인 원본의 고정 헥스 대신 **그 칸의 숫자 색에서 파생**한다(일=danger,
     // 토=info): 값이 한 벌이면 여섯 테마 × 다크에 전부 새로 정해야 하고, 파생하면
