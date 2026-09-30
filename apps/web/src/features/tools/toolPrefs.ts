@@ -24,6 +24,8 @@ export interface CompanyHoliday {
 export interface JiraPersonRef {
   id: string;
   name: string;
+  /** 이 사람의 정보를 Jira에서 받은 시각(ISO) — Atlassian 개인정보 보고의 `updatedAt`(jira-privacy). */
+  at?: string;
 }
 
 export interface WorkStatusPrefs {
@@ -81,7 +83,7 @@ export function coerceWorkPrefs(raw: unknown): WorkStatusPrefs {
       const o = obj(p);
       if (!o || typeof o.id !== 'string' || !o.id || seen.has(o.id)) continue;
       seen.add(o.id);
-      extra.push({ id: o.id, name: typeof o.name === 'string' && o.name ? o.name.slice(0, 80) : '이름 없음' });
+      extra.push({ id: o.id, name: typeof o.name === 'string' && o.name ? o.name.slice(0, 80) : '이름 없음', ...(typeof o.at === 'string' && !Number.isNaN(Date.parse(o.at)) ? { at: o.at } : {}) });
       if (extra.length >= LIST_CAP) break;
     }
   }

@@ -14,7 +14,7 @@
 // `ATLASSIAN_CLIENT_ID`·`ATLASSIAN_CLIENT_SECRET`이 없으면 200 `{ ok:false, reason:'not-configured' }`.
 // 화면은 그때 `연결` 버튼을 눌러도 "아직 준비 중"이라고 말한다(배포 순서와 무관하게 앱이 깨지지 않는다).
 
-import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   coerceProjects,
   epicFields,
@@ -31,6 +31,7 @@ import {
   type JiraProjectRef,
   type JiraTicket,
 } from '../_shared/jira.ts';
+import { accessTokenFor, Fail, fetchSites, jiraGet, jiraPost, readCredential, tokenCall, type AppCtx, type Row } from '../_shared/jiraAuth.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -43,41 +44,12 @@ function json(body: unknown, status = 200): Response {
 }
 
 const AUTH_URL = 'https://auth.atlassian.com/authorize';
-const TOKEN_URL = 'https://auth.atlassian.com/oauth/token';
-const RESOURCES_URL = 'https://api.atlassian.com/oauth/token/accessible-resources';
 /** 읽기만 한다 — `offline_access`가 없으면 refresh token이 오지 않아 한 시간마다 끊긴다. */
 const SCOPES = ['read:jira-work', 'read:jira-user', 'offline_access'];
 /** 인가 요청의 `state`가 유효한 시간 — 동의 화면에서 머뭇거리는 시간을 넉넉히. */
 const STATE_TTL_MS = 20 * 60 * 1000;
 /** 한 번의 조회가 끌어오는 티켓 상한(100 × 10쪽) — 넘으면 `truncated`로 알린다. */
 const MAX_PAGES = 10;
-
-interface Row {
-  user_id: string;
-  refresh_token: string;
-  access_token: string | null;
-  access_expires_at: string | null;
-  version: number;
-  scope: string | null;
-  cloud_id: string | null;
-  site_url: string | null;
-  site_name: string | null;
-  projects: unknown;
-  start_field: string | null;
-  start_field_name: string | null;
-}
-
-interface Site {
-  id: string;
-  url: string;
-  name: string;
-}
-
-class Fail extends Error {
-  constructor(readonly reason: string, readonly detail = '') {
-    super(reason);
-  }
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -146,11 +118,8 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-interface Ctx {
-  admin: SupabaseClient;
+interface Ctx extends AppCtx {
   uid: string;
-  clientId: string;
-  clientSecret: string;
 }
 
 // ── 인가 ─────────────────────────────────────────────────────────────
@@ -213,8 +182,7 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
 // ── 상태 · 사이트 · 프로젝트 ─────────────────────────────────────────────
 
 async function readRow(ctx: Ctx): Promise<Row | null> {
-  const { data } = await ctx.admin.from('jira_credentials').select('*').eq('user_id', ctx.uid).maybeSingle();
-  return (data as Row | null) ?? null;
+  return readCredential(ctx.admin, ctx.uid);
 }
 
 async function mustRow(ctx: Ctx): Promise<Row> {
@@ -363,99 +331,6 @@ async function users(ctx: Ctx, p: Record<string, unknown>) {
   const token = await accessTokenFor(ctx, row);
   const body = await jiraGet(token, row.cloud_id, `/rest/api/3/user/search?${new URLSearchParams({ query, maxResults: '20' }).toString()}`);
   return { ok: true, users: normalizeUsers(body) };
-}
-
-// ── 토큰 ─────────────────────────────────────────────────────────────
-
-interface TokenResponse {
-  access_token?: string;
-  refresh_token?: string;
-  expires_in?: number;
-  scope?: string;
-  error?: string;
-  error_description?: string;
-}
-
-async function tokenCall(ctx: Ctx, params: Record<string, string>): Promise<TokenResponse> {
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: ctx.clientId, client_secret: ctx.clientSecret, ...params }),
-  });
-  return (await res.json().catch(() => ({}))) as TokenResponse;
-}
-
-/**
- * 쓸 수 있는 액세스 토큰. 1분 넘게 남았으면 그대로, 아니면 갱신한다.
- *
- * refresh token이 **회전**하므로 갱신 결과는 `version`을 조건으로 건 UPDATE로 적는다.
- * 0행이면 다른 요청이 먼저 갱신한 것 — 그쪽이 적은 토큰을 다시 읽어 쓴다(우리가 받은
- * 새 토큰도 유효하지만, 저장된 refresh token과 짝이 맞는 쪽을 쓰는 편이 다음 갱신이 안전하다).
- */
-async function accessTokenFor(ctx: Ctx, row: Row): Promise<string> {
-  const fresh = (r: Row) => !!r.access_token && !!r.access_expires_at && Date.parse(r.access_expires_at) - Date.now() > 60_000;
-  if (fresh(row)) return row.access_token as string;
-  const t = await tokenCall(ctx, { grant_type: 'refresh_token', refresh_token: row.refresh_token });
-  if (!t.access_token || !t.expires_in) {
-    // 이미 다른 요청이 이 refresh token을 써 버렸을 수 있다 — 행을 다시 읽어 본다.
-    const again = await readRow(ctx);
-    if (again && again.version !== row.version && fresh(again)) return again.access_token as string;
-    if (t.error === 'invalid_grant' || t.error === 'unauthorized_client') {
-      await ctx.admin.from('jira_credentials').delete().eq('user_id', ctx.uid).eq('version', row.version);
-      throw new Fail('revoked');
-    }
-    throw new Fail('refresh-failed', t.error_description || t.error || '');
-  }
-  const { data } = await ctx.admin
-    .from('jira_credentials')
-    .update({
-      access_token: t.access_token,
-      access_expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
-      refresh_token: t.refresh_token ?? row.refresh_token,
-      version: row.version + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('user_id', ctx.uid)
-    .eq('version', row.version)
-    .select('user_id');
-  if (!data || data.length === 0) {
-    const again = await readRow(ctx);
-    if (again && fresh(again)) return again.access_token as string;
-  }
-  return t.access_token;
-}
-
-async function fetchSites(token: string): Promise<Site[]> {
-  const res = await fetch(RESOURCES_URL, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-  if (res.status === 401) throw new Fail('revoked');
-  if (!res.ok) throw new Fail('jira-error', String(res.status));
-  const list = (await res.json()) as { id?: string; url?: string; name?: string; scopes?: string[] }[];
-  return list
-    .filter((s) => typeof s.id === 'string' && (s.scopes ?? []).includes('read:jira-work'))
-    .map((s) => ({ id: s.id as string, url: s.url ?? '', name: s.name ?? '' }));
-}
-
-async function jiraGet(token: string, cloudId: string, path: string): Promise<unknown> {
-  return jiraCall(token, cloudId, path, { method: 'GET' });
-}
-
-async function jiraPost(token: string, cloudId: string, path: string, body: unknown): Promise<unknown> {
-  return jiraCall(token, cloudId, path, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-}
-
-async function jiraCall(token: string, cloudId: string, path: string, init: RequestInit): Promise<unknown> {
-  const res = await fetch(`https://api.atlassian.com/ex/jira/${encodeURIComponent(cloudId)}${path}`, {
-    ...init,
-    headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}`, Accept: 'application/json' },
-  });
-  if (res.status === 401) throw new Fail('revoked');
-  if (res.status === 403) throw new Fail('forbidden');
-  if (res.status === 429) throw new Fail('rate-limited', res.headers.get('Retry-After') ?? '');
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Fail('jira-error', `${res.status} ${text.slice(0, 300)}`);
-  }
-  return res.json();
 }
 
 // ── state 서명 ───────────────────────────────────────────────────────
