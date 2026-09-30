@@ -5515,13 +5515,18 @@ describe('공책 50판 — 형광펜 상자 · 툴바 툴팁 · 링크 주소 ·
   };
 
   /**
-   * **줄 첫 글자의 `:` 뒤에 한글을 치면 `:`가 위로 튄다**(제보) — Pretendard의 `clig`가 한글
-   * 곁의 쌍점을 한글 높이 가운데로 끌어올린다. jsdom은 글꼴을 모양내지 않으므로 규칙을 지키고,
-   * 효과는 헤드리스 크로뮴으로 쟀다(점의 세로 범위 26–46 → 30–50, `:` 혼자일 때와 같다).
+   * **`:` 뒤에 한글을 치면 `:`가 위로 튄다**(제보 두 번) — Pretendard가 다음 글자(대문자·숫자·한글)를
+   * 보고 쌍점을 올린 `colon.case`로 갈아 끼운다. 첫 수정은 `clig`만 껐다가 실기기에서 그대로였다 —
+   * HarfBuzz로 직접 모양내면 `calt`까지 꺼야 보통 쌍점이다. jsdom은 글꼴을 모양내지 않으므로 규칙을
+   * 지킨다: 편집기 전체 · 줄 · **입력칸**(폼 요소는 글꼴 설정을 물려받지 않는다 — 제목 `input`이
+   * `normal`이었다).
    */
-  it('본문 줄은 문맥 합자(`clig`)를 끈다 — 한글이 이어져도 `:`가 움직이지 않게', () => {
-    const rule = /\.mf-note-line \{([^}]*)\}/.exec(css())?.[1] ?? '';
-    expect(rule).toMatch(/font-feature-settings:\s*'clig' 0/);
+  it('공책 편집기는 문맥 대체(`calt`·`clig`)를 끈다 — 입력칸까지', () => {
+    const src = css();
+    const block = (sel: string): string => new RegExp(sel.replace(/[[\]().*]/g, (m) => `\\${m}`) + ' \\{([^}]*)\\}').exec(src)?.[1] ?? '';
+    expect(block('[data-note-editor]')).toMatch(/font-feature-settings:\s*'calt' 0, 'clig' 0/);
+    expect(block('.mf-note-line')).toMatch(/font-feature-settings:\s*'calt' 0, 'clig' 0/);
+    expect(src).toMatch(/\[data-note-editor\] input,\s*\[data-note-editor\] textarea \{\s*font-feature-settings:\s*inherit;/);
   });
 
   it('형광펜은 **자리를 넓히지 않는다** — 좌우 여백을 음수로 되돌린다(제보 1)', () => {
@@ -8695,6 +8700,30 @@ describe('공책 71판 — 칩 팝오버에서 여는 일정 팝업(요청 5·6)
     expect(document.querySelector('[data-note-datepop]')).toBeNull();
   });
 
+  /**
+   * **일정 블록의 일정도 공책 안에서 연다**(제보: 블록 넣기로 넣은 달력에서 일정을 누르면 일정 화면으로
+   * 건너갔다). 칩 팝오버·우측 「일정」 탭과 같은 길(`NoteEventOpenerContext` → `noteEventOpenOf`)이다.
+   */
+  it('일정 블록의 일정을 누르면 **공책 안에서** 상세가 열린다 — 일정 화면으로 건너가지 않는다', async () => {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('mf_events', JSON.stringify([{ id: 'e9', title: '블록 속 회의', startDate: today, endDate: today, allDay: false, startTime: '10:00', endTime: '11:00' }]));
+    localStorage.setItem('mindflow_doc_ev9', JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 's1', kind: 'sched', sched: 'month', schedDay: today }] }] }));
+    const { container } = renderEditor('/editor?map=ev9&title=x');
+    const row = (await waitFor(() => {
+      const el = container.querySelector('[data-sched-entry="e9"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    fireEvent.click(row);
+
+    await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+    const detail = document.querySelector('[data-event-detail]') as HTMLElement;
+    await waitFor(() => expect([...detail.querySelectorAll('input')].some((i) => i.value === '블록 속 회의')).toBe(true));
+    expect(document.body.textContent).not.toContain('HOME_PAGE');
+    expect(document.querySelector('[data-note-editor]')).toBeTruthy();
+  });
+
   it('「이 날에 일정 추가」는 **새 일정 만들기** 팝업을 연다(요청 6)', async () => {
     await hover('ev2');
     const add = (await waitFor(() => document.querySelector('[data-datepop-new]'))) as HTMLElement;
@@ -11024,5 +11053,100 @@ describe('공책 90판 — 손가락 여러 줄 선택 · 문서 링크 팝업 �
     expect(pop.querySelector('[data-note-link-option][data-focus="1"]')?.getAttribute('data-note-link-option')).toBe('d1');
     fireEvent.keyDown(pop.querySelector('[data-note-docpick-q]')!, { key: 'ArrowDown' });
     await waitFor(() => expect(pop.querySelector('[data-note-link-option][data-focus="1"]')?.getAttribute('data-note-link-option')).toBe('d2'));
+  });
+});
+
+describe('공책 91판 — 접기의 안내 문구와 여러 줄 지우기(제보 2·3)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const t = (s: string) => [{ t: s, b: false, c: null }];
+  const text = (runs?: { t: string }[]) => (runs ?? []).map((x) => x.t).join('');
+  /** 두 줄에 걸쳐 끈다(31판과 같은 폴백 — 시작 줄은 머리부터, 끝 줄은 끝까지). */
+  function dragOver(container: HTMLElement, fromKey: string, toKey: string): void {
+    const a = container.querySelector(`[data-note-line="${fromKey}"]`) as HTMLElement;
+    const b = container.querySelector(`[data-note-line="${toKey}"]`) as HTMLElement;
+    fireEvent.pointerDown(a, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(b, { clientX: 0, clientY: 0 });
+  }
+  async function open(id: string, blocks: unknown[]): Promise<HTMLElement> {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    await waitFor(() => expect(container.querySelector('[data-note-line="tg"]')).toBeTruthy());
+    return container;
+  }
+
+  it('3 — 접기 **이름부터 내용까지** 골라 Backspace하면 둘 다 지워진다(이름이 남았다)', async () => {
+    const c = await open('tg1', [
+      { id: 'tg', kind: 'toggle', open: true, runs: t('접기 이름'), items: [{ id: 'i1', runs: t('접기 내용') }] },
+      { id: 'z', kind: 'p', runs: t('뒤') },
+    ]);
+    dragOver(c, 'tg', 'tg:body');
+    await waitFor(() => expect(c.querySelector('[data-note-painting="1"]')).toBeTruthy());
+    // 끌기를 이름에서 시작하면 초점이 **이름 줄에 남는다** — 키도 거기서 출발한다.
+    const title = c.querySelector('[data-note-line="tg"]') as HTMLElement;
+    fireEvent.keyDown(title, { key: 'Backspace' });
+    await waitFor(() => expect(c.querySelector('[data-note-line="tg:body"]')?.textContent).toBe(''));
+    saveNow();
+    await waitFor(() => expect(text(saved('tg1').pages[0].blocks[0].runs)).toBe(''));
+    const tg = saved('tg1').pages[0].blocks[0];
+    // 접기는 접기로 남는다(예전에는 「맨 앞 Backspace」가 문단으로 되돌렸다) — 내용 줄은 비운 채.
+    expect(tg.kind).toBe('toggle');
+    expect(tg.items.map((it: { runs: { t: string }[] }) => text(it.runs))).toEqual(['']);
+    expect(c.querySelector('[data-note-line="tg"]')?.textContent).toBe('');
+    expect(text(saved('tg1').pages[0].blocks[1].runs)).toBe('뒤');
+  });
+
+  it('3 — 접기의 **내용에서 다음 블록까지** 골라도 내용이 지워지고 뒤 글이 거기 붙는다', async () => {
+    const c = await open('tg2', [
+      { id: 'tg', kind: 'toggle', open: true, runs: t('이름'), items: [{ id: 'i1', runs: t('내용') }] },
+      { id: 'z', kind: 'p', runs: t('뒤 문단') },
+      { id: 'y', kind: 'p', runs: t('끝') },
+    ]);
+    dragOver(c, 'tg:body', 'z');
+    await waitFor(() => expect(c.querySelector('[data-note-painting="1"]')).toBeTruthy());
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    await waitFor(() => expect(c.querySelector('[data-note-line="z"]')).toBeNull());
+    saveNow();
+    await waitFor(() => expect(saved('tg2').pages[0].blocks).toHaveLength(2));
+    const [tg, y] = saved('tg2').pages[0].blocks;
+    expect(text(tg.runs)).toBe('이름');
+    expect(tg.items.map((it: { runs: { t: string }[] }) => text(it.runs))).toEqual(['']);
+    expect(text(y.runs)).toBe('끝');
+  });
+
+  it('3 — **한 번도 안 쓴** 내용 줄까지 골라도 이름이 지워진다(항목이 없는 접기)', async () => {
+    const c = await open('tg3', [
+      { id: 'tg', kind: 'toggle', open: true, runs: t('이름만') },
+      { id: 'z', kind: 'p', runs: t('뒤') },
+    ]);
+    dragOver(c, 'tg', 'tg:body');
+    await waitFor(() => expect(c.querySelector('[data-note-painting="1"]')).toBeTruthy());
+    fireEvent.keyDown(c.querySelector('[data-note-line="tg"]')!, { key: 'Backspace' });
+    await waitFor(() => expect(c.querySelector('[data-note-line="tg"]')?.textContent).toBe(''));
+    saveNow();
+    await waitFor(() => expect(text(saved('tg3').pages[0].blocks[0].runs)).toBe(''));
+    expect(saved('tg3').pages[0].blocks[0].kind).toBe('toggle');
+  });
+
+  it('2 — 안내 문구는 **글이 한 자도 없을 때만** — 끝에 `<br>`이 남은 줄에는 켜지지 않는다', async () => {
+    const c = await open('tg4', [{ id: 'tg', kind: 'toggle', open: true, runs: t('이름'), items: [{ id: 'i1', runs: [] }] }]);
+    const body = c.querySelector('[data-note-line="tg:body"]') as HTMLElement;
+    await waitFor(() => expect(body.hasAttribute('data-note-blank')).toBe(true));
+    // 한글 조합 중의 Shift+Enter처럼 우리가 못 가로챈 줄바꿈이 남기는 모양 — `:only-child`는
+    // 글자 노드를 세지 않아 예전 CSS는 이것을 "빈 줄"로 읽었다.
+    body.innerHTML = '내용입니다<br>';
+    await waitFor(() => expect(body.hasAttribute('data-note-blank')).toBe(false));
+    // 다 지워 브라우저가 `<br>` 하나만 남기면 다시 켜진다.
+    body.innerHTML = '<br>';
+    await waitFor(() => expect(body.hasAttribute('data-note-blank')).toBe(true));
+    // 빈 줄 **여러 개**(`<br>` 둘)는 값이 `\n`이라 비지 않았다.
+    body.innerHTML = '<br><br>';
+    await waitFor(() => expect(body.hasAttribute('data-note-blank')).toBe(false));
+    expect(c.querySelector('[data-note-line="tg"]')!.hasAttribute('data-note-blank')).toBe(false);
   });
 });

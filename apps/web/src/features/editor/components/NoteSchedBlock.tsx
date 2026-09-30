@@ -7,7 +7,7 @@
 // 글이 없는 **위젯 블록**이라 캐럿이 서지 않는다(구분선·그림과 같은 갈래). 고르기·
 // 옮기기·지우기는 블록 단위이고, 안쪽 조작(세그먼트·달력·일정 줄)은 전파를 끊는다.
 
-import { useMemo, useState } from 'react';
+import { useContext, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { NoteBlock } from '@mindflow/mindmap-core';
 import type { CalendarEntry } from '../../home/calendar/entries';
@@ -17,6 +17,7 @@ import { entryChip } from '../../home/calendar/chips';
 import { focusCalendar } from '../../home/calendarFocus';
 import { schedDays, useNoteAgenda, type SchedKind } from '../noteAgenda';
 import type { EditorController } from '../useEditorState';
+import { NoteEventOpenerContext, noteEventOpenOf } from './NoteEventPopups';
 
 /** 날짜 칸의 숫자 색 — 큰 달력과 같은 규칙(오늘·일요일·토요일). */
 function dayInk(iso: string, today: string): string {
@@ -62,7 +63,17 @@ export function NoteSchedBlock({
   const days = useMemo(() => schedDays(kind, agenda.entries, today, day), [kind, agenda.entries, today, day]);
   const surface = useMemo(() => ({ card: th.panel, text: th.text }), [th.panel, th.text]);
 
-  const openEntry = (e: CalendarEntry): void => {
+  const openInNote = useContext(NoteEventOpenerContext);
+  /**
+   * 일정을 누르면 **공책 안에서** 그 팝업을 연다(제보: 일정 화면으로 건너가 버렸다) — 날짜 칩·
+   * 우측 「일정」 탭과 같은 길이고, 어느 상세를 여는가도 같은 한 자리(`noteEventOpenOf`)가 정한다.
+   * 편집기 밖(공급자가 없는 미리보기)에서만 예전처럼 일정 화면으로 보낸다.
+   */
+  const openEntry = (e: CalendarEntry, iso: string): void => {
+    if (openInNote) {
+      openInNote(noteEventOpenOf(e, e.due || iso));
+      return;
+    }
     focusCalendar({ date: e.due, ...(e.google || e.event ? { eventId: e.cardId } : {}), ...(e.google ? { source: 'google' as const } : e.event ? { source: 'geurio' as const } : {}) });
     navigate('/home');
   };
@@ -78,7 +89,7 @@ export function NoteSchedBlock({
         className="mf-note-sched-row"
         onClick={(ev) => {
           ev.stopPropagation();
-          openEntry(e);
+          openEntry(e, iso);
         }}
         style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '6px 8px', borderRadius: 8, border: 0, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}
       >

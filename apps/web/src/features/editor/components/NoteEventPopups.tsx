@@ -18,7 +18,7 @@
  * 목록에서 그 일정을 찾을 수 있다.
  */
 
-import { useMemo, useState } from 'react';
+import { createContext, useMemo, useState } from 'react';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import type { CalendarEntry } from '../../home/calendar/entries';
 import { EventDetail, geurioCalendarChips } from '../../home/calendar/EventDetail';
@@ -62,6 +62,17 @@ export function noteEventOpenOf(e: CalendarEntry, at: string): NoteEventOpen {
   }
   return { kind: 'card', entry: e, at };
 }
+
+/**
+ * 공책 안에서 **일정 팝업을 여는 함수** — 편집기 맨 위(`NoteEditor`)가 쥔 상태를 블록 깊은 곳까지
+ * 내려 준다. 일정 블록(`NoteSchedBlock`)이 그 소비자다(제보: 블록의 일정을 누르면 일정 화면으로
+ * 건너가 버렸다 — 칩 팝오버와 우측 「일정」 탭은 이미 공책 안에서 열고 있었다).
+ *
+ * 블록마다 prop으로 내려 보내지 않은 이유: 일정 블록은 블록 부품의 여러 층 아래에 있고, 그
+ * 사이의 부품들은 이 값을 쓰지 않는다. 공급자가 없으면(`null` — 편집기 밖의 미리보기 등)
+ * 소비자는 예전처럼 일정 화면으로 보낸다.
+ */
+export const NoteEventOpenerContext = createContext<((open: NoteEventOpen) => void) | null>(null);
 
 export function NoteEventPopups({ open, isMobile, theme, onClose }: { open: NoteEventOpen | null; isMobile: boolean; theme: Theme; onClose: () => void }) {
   const at = open ? partsOf(open.at) : null;
