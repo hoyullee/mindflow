@@ -4448,10 +4448,10 @@ describe('홈 우클릭 메뉴', () => {
       expect(mapCard.querySelector('[data-board-badge]')?.textContent).toContain('마인드맵');
       // 썸네일 바탕은 이제 **그 문서의 캔버스 배경**이다(제보: 에디터 배경색 미반영).
       // 그래서 종류를 알리는 일은 배지가 맡는다 — 화이트보드의 캔버스도 에디터에서는
-      // 같은 기본 캔버스(`#F7FBF1` — 코랄 맵과 화이트 보드가 함께 쓴다)라 바탕만으로는 갈리지 않는다.
+      // 같은 기본 캔버스(`#FCFCFB` — 코랄 맵과 화이트 보드가 함께 쓴다)라 바탕만으로는 갈리지 않는다.
       const thumbBg = (card: HTMLElement) => ((card.querySelector('.map-thumb') as HTMLElement).style.background || '');
-      expect(thumbBg(boardCard)).toContain('#f7fbf1');
-      expect(thumbBg(mapCard)).toContain('#f7fbf1');
+      expect(thumbBg(boardCard)).toContain('#fcfcfb');
+      expect(thumbBg(mapCard)).toContain('#fcfcfb');
       expect(thumbBg(mapCard)).not.toContain('--mf-wash');
       expect(boardCard.querySelector('[data-dot-grid]')).toBeTruthy();
       expect(mapCard.querySelector('[data-dot-grid]')).toBeTruthy();

@@ -21,16 +21,17 @@ export interface Theme {
 export type ThemeKey = 'coral' | 'ocean' | 'forest' | 'grape' | 'dark' | 'mono' | 'white';
 
 /**
- * **기본 캔버스의 배경색**(요청: 마인드맵·화이트보드 배경을 `#F7FBF1`로) — 맵의 기본 테마
+ * **기본 캔버스의 배경색**(요청: 마인드맵·화이트보드 배경을 `#FCFCFB`로 — 첫 판은 잘못 전달된
+ * `#F7FBF1`이었다) — 앱 껍데기의 면(`UI_THEME.appBg`)과 같은 값이다. 맵의 기본 테마
  * (코랄)와 화이트보드의 기본 테마(화이트)가 함께 쓴다. **단색**이다: 예전의 방사형
  * 그라데이션은 원본 디자인의 따뜻한 스톱(`#fffdfb → #fbf2eb`)이라 이 색 위에 얹으면
  * 가운데가 다시 누렇게 뜬다(`canvasWash` 머리말).
  *
  * 코랄의 **앱 껍데기 쪽 값은 옛 색을 지킨다** — `UI_THEME`(공유·피드백 팝업의 가라앉은
- * 행)과 홈의 `sunken`이 `THEMES.coral.canvasBg`를 빌려 썼다. 캔버스 색이 바뀌었다고
- * 홈의 면까지 초록으로 물들면 안 된다(`OLD_CORAL_SUNKEN`).
+ * 행)과 홈의 `sunken`이 `THEMES.coral.canvasBg`를 빌려 썼다. 가라앉은 행은 면보다 한 톤 **어두워야** 가라앉아 보인다 — 캔버스 색(= 면 색)을 따라가면
+ * 행이 면에 묻힌다(`OLD_CORAL_SUNKEN`).
  */
-export const CANVAS_BG = '#f7fbf1';
+export const CANVAS_BG = '#fcfcfb';
 /** 코랄 캔버스의 옛 값 — 앱 껍데기(`UI_THEME`·홈 `sunken`)가 계속 쓴다. */
 export const OLD_CORAL_SUNKEN = '#f5ece5';
 
