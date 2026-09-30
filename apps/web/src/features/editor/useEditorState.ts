@@ -7223,10 +7223,37 @@ export function useEditorState(): EditorController {
         if (rest && /^r\d+c\d+$/.test(rest)) return null; // 표의 칸
         return { blockId, itemId: rest ?? null };
       };
-      const a = parse(first.key);
-      const b = parse(last.key);
-      if (!a || !b) return null;
       const blocks = notePage.blocks;
+      /**
+       * **접기의 내용 줄은 키가 `<블록>:body`다**(항목 id가 아니다) — 실제 항목으로 푼다.
+       *
+       * 제보: 접기 이름과 내용을 함께 골라 지우면 한쪽이 남는다. 예전에는 `body`를 항목
+       * id로 찾다가 못 찾아 그 줄을 **빈 줄**로 읽었다 — 꼬리가 비고, 들어낼 항목도 없어
+       * 내용이 그대로 남았다.
+       *
+       * 내용 줄에 아직 항목이 없으면(한 번도 안 쓴 접기) 그 줄은 빈 줄이다:
+       * - **끝**이 거기면 「제목 끝까지」와 같다(빈 줄의 맨 앞 = 제목의 맨 끝 다음).
+       * - **시작**이 거기면 남을 꼬리를 담을 항목을 **지금** 만든다(커밋 함수 안에서
+       *   만들면 리액트가 두 번 불러 id가 어긋난다 — `pasteNoteText` 머리말).
+       */
+      const bodyOf = (blockId: string) => blocks.find((x) => x.id === blockId)?.items?.[0];
+      let lastAt = last.at;
+      let freshBody: NoteListItem | null = null;
+      const pa = parse(first.key);
+      const pb = parse(last.key);
+      if (!pa || !pb) return null;
+      const a = pa.itemId === 'body' ? { blockId: pa.blockId, itemId: bodyOf(pa.blockId)?.id ?? (freshBody = emptyItem()).id } : pa;
+      let b = pb;
+      if (pb.itemId === 'body') {
+        const body = bodyOf(pb.blockId);
+        if (body) b = { blockId: pb.blockId, itemId: body.id };
+        else {
+          // 빈 내용 줄에서 시작해 거기서 끝났다 — 지울 글이 없다.
+          if (freshBody && pa.blockId === pb.blockId) return null;
+          b = { blockId: pb.blockId, itemId: null };
+          lastAt = runsText(blocks.find((x) => x.id === pb.blockId)?.runs ?? []).length;
+        }
+      }
       const x1 = blocks.findIndex((bk) => bk.id === a.blockId);
       const x2 = blocks.findIndex((bk) => bk.id === b.blockId);
       if (x1 < 0 || x2 < 0 || x2 < x1) return null;
@@ -7245,7 +7272,7 @@ export function useEditorState(): EditorController {
       const headRuns = lineRuns(a.blockId, a.itemId);
       const tailRuns = lineRuns(b.blockId, b.itemId);
       const head = cut(headRuns, 0, first.at);
-      const tail = cut(tailRuns, last.at, Number.MAX_SAFE_INTEGER);
+      const tail = cut(tailRuns, lastAt, Number.MAX_SAFE_INTEGER);
       const merged = normalizeRuns([...head, ...tail]);
 
       commitPage(
@@ -7258,7 +7285,17 @@ export function useEditorState(): EditorController {
           const one = pg.blocks[i1] as NoteBlock;
           if (i1 === i2) {
             // 한 블록 안 — 문단이면 그 줄, 목록이면 **두 항목 사이**를 들어낸다.
-            if (!a.itemId || !b.itemId) out.push({ ...one, runs: merged });
+            if (!a.itemId && b.itemId) {
+              /**
+               * **접기: 제목에서 내용까지** — 내용의 뒷부분은 제목에 이어 붙였으니 내용
+               * 줄은 **비운 채 남긴다**(항목째 빼면 다음에 칠 때 항목부터 새로 세워야 한다).
+               */
+              const items = one.items ?? [];
+              const j2 = items.findIndex((it) => it.id === b.itemId);
+              const rest = items.slice(j2 + 1);
+              const kept = items[j2];
+              out.push({ ...one, runs: merged, items: rest.length || !kept ? rest : [{ ...kept, runs: [] }] });
+            } else if (!a.itemId || !b.itemId) out.push({ ...one, runs: merged });
             else {
               const items = one.items ?? [];
               const j1 = items.findIndex((it) => it.id === a.itemId);
@@ -7274,7 +7311,9 @@ export function useEditorState(): EditorController {
             else {
               const items = one.items ?? [];
               const j1 = items.findIndex((it) => it.id === a.itemId);
-              out.push({ ...one, items: [...items.slice(0, j1), { ...(items[j1] as NoteListItem), runs: merged }] });
+              // 항목이 없던 접기의 내용 줄에서 시작했다 — 위에서 만든 항목에 담는다.
+              if (j1 < 0) out.push({ ...one, items: [...items, { ...(freshBody ?? emptyItem()), runs: merged }] });
+              else out.push({ ...one, items: [...items.slice(0, j1), { ...(items[j1] as NoteListItem), runs: merged }] });
             }
             // 마지막 블록: 그 줄까지 버리고 **남은 항목이 있으면** 블록을 살린다.
             const end = pg.blocks[i2] as NoteBlock;

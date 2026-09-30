@@ -449,19 +449,33 @@ input[type='search']::-webkit-search-results-decoration {
 /* 빈 줄의 안내 — **절대 배치**다(제보: 캐럿이 안내 글 끝에 가 있는 것처럼 보인다).
    흐름 안에 두면 `::before`의 글자 폭만큼 캐럿이 오른쪽으로 밀려, 실제로는 줄 맨
    앞인데도 안내문 끝을 가리키는 것처럼 보인다. */
+/* **치는 동안 앞 글자의 모양이 바뀌지 않게 — 문맥 대체(`calt`·`clig`)를 끈다**(제보 두 번: 줄 첫
+   글자로 `:`를 치고 한글을 이어 치면 `:`가 위로 튄다).
+   Pretendard는 **다음 글자를 보고** 앞 글자를 바꾼다: 대문자·숫자·**한글** 곁의 쌍점은 그 높이의
+   가운데로 올린 `colon.case`가 된다. `:` 혼자일 때는 보통 쌍점이었다가 한글을 치는 순간 올린
+   쌍점으로 갈아 끼워져 약 5px 튄다. 첫 수정은 `clig`만 껐는데 **실기기에서 그대로였다** —
+   HarfBuzz로 직접 모양내 보니 `clig`만 끄면 여전히 `colon.case`이고 **`calt`까지 꺼야** 보통 쌍점이
+   된다(헤드리스 크로뮴은 `clig`만으로 풀려 보여 거기서 멈췄다 — 한 엔진의 한 판으로 결론을 낸 실수).
+   대가(같은 도구로 확인): `12:30`·`A:B`의 쌍점과 `A-B`의 붙임표가 가운데로 오르지 않고, `1x2`가
+   `1×2`로, `->`·`<-`·`=>`가 화살표로 합쳐 보이지 않는다 — 전부 **친 그대로** 보인다. 편집기에서는
+   그쪽이 맞다: 이 기능들은 모두 다음 글자를 치는 순간 앞 글자를 바꿔 **글자가 움직이게** 한다. */
+[data-note-editor] {
+  font-feature-settings: 'calt' 0, 'clig' 0;
+}
+/* 입력칸·글상자는 **물려받지 않는다**(브라우저 기본 시트가 폼 요소의 글꼴을 따로 정한다 — 실측:
+   공책 제목 `input`의 계산값이 `normal`이었다). 제목·태그·댓글 입력에서도 같은 일이 생기므로 잇는다. */
+[data-note-editor] input,
+[data-note-editor] textarea {
+  font-feature-settings: inherit;
+}
 .mf-note-line {
   position: relative;
-  /* **문맥 합자(`clig`)를 끈다**(제보: 줄 첫 글자로 `:`를 치고 한글을 이어 치면 `:`가 위로 튄다).
-     Pretendard의 `clig`는 **한글 곁의 쌍점을 한글 높이의 가운데로** 끌어올린다 — `:` 혼자일
-     때는 제자리였다가 다음 글자가 한글이 되는 순간 약 5px 올라가, 치는 동안 글자가 움직였다
-     (헤드리스 크로뮴 실측: 40px에서 점의 세로 범위 30–50 → 26–46, `clig` 0이면 30–50 그대로).
-     `calt`·`case`·`locl`·`kern`을 꺼도 그대로였고 `clig`만이 그 자리다. 숫자·대문자 사이의
-     쌍점 정렬(`12:30`·`A:B`)은 다른 기능이 맡아 그대로다. 대가 하나: `->`가 화살표로 합쳐
-     보이던 합자가 풀린다 — 글자는 원래도 `->`였고 **보이는 모양**만 친 그대로가 된다. */
-  font-feature-settings: 'clig' 0;
+  /* 문맥 대체는 공책 편집기 전체에서 끈다 — 아래 `[data-note-editor]` 규칙의 머리말. 줄에도
+     한 번 더 적는 이유: 줄 부품이 편집기 밖에 놓이는 날(미리보기·임베드)에도 같은 모양이어야 한다. */
+  font-feature-settings: 'calt' 0, 'clig' 0;
 }
 .mf-note-line:empty::before,
-.mf-note-line:has(> br:only-child)::before {
+.mf-note-line[data-note-blank]::before {
   content: attr(data-placeholder);
   position: absolute;
   left: 0;
@@ -1174,7 +1188,7 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-code-op { color: #b6aa9b; }
 /* 코드 판 안에서는 안내 글도 어두운 면에 맞춘다 — 밝은 면용 회색은 읽히지 않는다. */
 [data-note-kind='code'] .mf-note-line:empty::before,
-[data-note-kind='code'] .mf-note-line:has(> br:only-child)::before {
+[data-note-kind='code'] .mf-note-line[data-note-blank]::before {
   color: #8a7f72;
 }
 

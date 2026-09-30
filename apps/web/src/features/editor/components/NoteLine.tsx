@@ -243,6 +243,33 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
   }, []);
 
   /**
+   * **글이 한 자도 없을 때만 안내 문구를 켠다**(제보: 접기 내용 줄에서 Shift+Enter를 치면
+   * 「펼쳤을 때 보일 내용」이 글자 위에 겹쳐 그려진다).
+   *
+   * 예전 규칙은 CSS 하나였다 — `:empty` 또는 `:has(> br:only-child)`. 뒤의 것은 줄을
+   * 비우면 브라우저가 남기는 `<br>` 하나를 "비었다"로 읽으려던 것인데, `:only-child`는
+   * **요소만** 센다(글자 노드는 형제로 치지 않는다). 그래서 `내용<br>`도 "br이 유일한
+   * 자식"이 되어 문구가 켜졌다 — 한글 조합 중의 Shift+Enter처럼 우리가 가로채지 못한
+   * 줄바꿈이 끝에 `<br>`을 하나 남기면 바로 그 모양이다(실브라우저로 재현).
+   * CSS로는 글자 노드를 셀 수 없으므로 **DOM이 바뀔 때마다 JS가 표식을 단다**
+   * (`data-note-blank`). 이 박스의 `innerHTML`은 여기 말고도 여러 곳(툴바 서식·되돌리기의
+   * `redrawBox`)이 갈아 끼우므로, 쓰는 쪽마다 부르지 않고 관찰자 하나로 받는다.
+   */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof MutationObserver === 'undefined') return;
+    const mark = (): void => {
+      // `<br>` 둘 이상은 **빈 줄 여러 개**다(Shift+Enter만 친 줄) — 값이 `\n`이라 비지 않았다.
+      const blank = (el.textContent ?? '') === '' && el.getElementsByTagName('br').length <= 1;
+      if (blank !== el.hasAttribute('data-note-blank')) el.toggleAttribute('data-note-blank', blank);
+    };
+    mark();
+    const mo = new MutationObserver(mark);
+    mo.observe(el, { childList: true, characterData: true, subtree: true });
+    return () => mo.disconnect();
+  }, []);
+
+  /**
    * **글을 고친 적이 있는가** — 초점을 잃을 때 커밋할지 가르는 표식이다(요청 8).
    *
    * 왜 필요한가: 비제어 박스는 떠날 때 DOM을 읽어 커밋한다(`onBlur`). 그런데

@@ -49,7 +49,7 @@ import { NoteCommentWindow } from './NoteCommentWindow';
 import { NoteSchedBlock } from './NoteSchedBlock';
 import { NoteSchedPicker } from './NoteSchedPicker';
 import { NoteDatePop } from './NoteDatePop';
-import { NoteEventPopups, type NoteEventOpen } from './NoteEventPopups';
+import { NoteEventOpenerContext, NoteEventPopups, type NoteEventOpen } from './NoteEventPopups';
 import { NoteProfileCard, seedNoteComment } from './NoteProfileCard';
 import type { ShareParticipant } from '../../../adapters/ports';
 import { CHIP_SELECTOR, applyHolidayMarks, caretText, chipAtCaret, headChipCaret, outerTextSpot } from '../noteChip';
@@ -3368,6 +3368,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
   if (!page) return null;
 
   return (
+    <NoteEventOpenerContext.Provider value={setEventOpen}>
     <div
       data-note-editor
       // 우리가 선택을 칠할 수 있는 브라우저인가 — CSS가 이 표식을 보고 본문 줄의
@@ -4110,6 +4111,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
         )}
       </div>
     </div>
+    </NoteEventOpenerContext.Provider>
   );
 }
 
@@ -7247,6 +7249,11 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
           onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
           onEnter={enterBlock}
           onBackspaceAtStart={backBlock}
+          onSelectOut={selectOut}
+          onSelectSide={selectSide}
+          onSelectAll={selectAll}
+          onSelectDoc={selectDoc}
+          selecting={selecting}
           style={{ flex: 1, minWidth: 0, fontSize: 13.5, lineHeight: 1.75, color: 'var(--mf-text)' }}
         />
       </div>
@@ -7296,6 +7303,21 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
             }}
             onSoftEnter={leaveToggle}
             onBackspaceAtStart={backBlock}
+            /**
+             * **여러 줄이 칠해져 있으면 이 줄은 키를 받지 않는다**(제보: 접기 이름과 내용을
+             * 함께 고르고 Backspace를 치면 이름이 남는다).
+             *
+             * 제목 줄에만 `selecting`이 빠져 있었다 — 드래그를 제목에서 시작하면 초점이
+             * 제목에 남는데, 그 줄이 Backspace를 먼저 받아 「맨 앞 Backspace」(`backBlock`
+             * — 글이 있으면 문단으로 되돌린다)를 했다. 그래서 내용은 사라지고 제목 글은
+             * 문단이 되어 남았다. 칠한 선택을 지우는 문서 리스너까지 가지 못한 것이다.
+             * 다른 줄과 같게 선택 손(Shift+방향키로 줄 넘기·⌘A 두 번)도 함께 단다.
+             */
+            onSelectOut={selectOut}
+            onSelectSide={selectSide}
+            onSelectAll={selectAll}
+            onSelectDoc={selectDoc}
+            selecting={selecting}
             style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 700, lineHeight: 1.8, color: 'var(--mf-text)' }}
           />
         </div>
