@@ -502,9 +502,9 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-border-hover': t.borderHover,
     '--mf-wash': t.wash,
     '--mf-dot-grid': t.dotGrid,
-    // 달력 칸의 세 색 — 표에 적지 않고 **강조색에서 파생**한다(여섯 테마 × 다크에
-    // 값을 따로 정할 필요가 없다). 디자인 원본의 세 값과 같은 관계다:
-    // 선택(#FCF6ED, 아주 옅게) < 오늘(#FFF3EC) < 오늘+선택(#FDEFE4).
+    // 달력 칸의 색 — 표에 적지 않고 **테마의 면에서 파생**한다(여섯 테마 × 다크에
+    // 값을 따로 정할 필요가 없다). 디자인 원본의 오늘(#FFF3EC)·오늘+선택(#FDEFE4)
+    // 면은 뺐다(요청: 평일인데 휴일처럼 붉게 읽혔다 — 오늘은 숫자 상자가 말한다).
     // 예전에는 `--mf-accent-soft`(오늘)·`--mf-accent-mute`(선택)를 그대로 써서
     // 칸이 통째로 진하게 칠해졌다(제보: 부자연스럽다).
     // **고른 칸**(디자인 원본 #FCF6ED) — 강조색이 아니라 그 테마의 **가라앉은 면**
@@ -520,9 +520,6 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-cal-sat': k === 'coral' ? '#f9fbfd' : mixHex(t.card, t.info, 0.03),
     // ── 일정 화면(스펙 2026-09-30) — 기본(코랄)은 스펙 값 그대로, 나머지는 같은 자리의
     //    자기 색에서 파생한다(격자선·이웃 달과 같은 방식).
-    /** 오늘 칸 — 강조색을 아주 옅게(선택 < 오늘). 골라도 같은 면이다(요청 — 스펙의
-     *  「오늘+선택」 `#FDEFE4`는 눌렀을 때 칸이 한 톤 짙어져 이상해 보여 뺐다). */
-    '--mf-cal-today': k === 'coral' ? '#fff3ec' : mixHex(t.card, t.accent, 0.07),
     /** 헤더 띠의 면과 점 — 캔버스의 점 격자를 옅게(28%) 축소한 것. */
     '--mf-cal-head': k === 'coral' ? '#fcfcfb' : mixHex(t.card, t.bg, 0.5),
     '--mf-cal-head-dot': k === 'coral' ? 'rgba(199,186,172,.28)' : t.dotGrid,

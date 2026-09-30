@@ -709,22 +709,23 @@ describe('일정 화면', () => {
     expect(main.style.overflowY).toBe('hidden');
   });
 
-  it('칸 면은 여섯 가지 — 오늘·선택이 각자 면을 가지고 오늘은 골라도 면이 그대로다, 날짜 숫자는 19px 둥근 사각(스펙 3.3·3.4)', async () => {
+  it('오늘은 면을 따로 갖지 않는다(붉게 칠하지 않는다) — 선택 면만, 날짜 숫자는 19px 둥근 사각(스펙 3.4)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const cell = () => document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
     const num = () => cell().querySelector('[data-day-num]') as HTMLElement;
-    // 진입하면 오늘이 골라져 있다(스펙 5) — 그래도 면은 오늘 면 그대로(요청).
-    expect(cell().style.background).toBe('var(--mf-cal-today)');
+    // 진입하면 오늘이 골라져 있다(스펙 5) — 여느 고른 칸과 같은 선택 면.
+    expect(cell().style.background).toBe('var(--mf-cal-sel)');
     expect(num().style.background).toBe('var(--mf-accent)');
     expect(num().style.width).toBe('19px');
     expect(num().style.borderRadius).toBe('6px');
     expect(num().style.fontSize).toBe('10.5px');
-    // 다른 날을 고르면 오늘은 **오늘 면**으로, 고른 칸은 선택 면으로.
+    // 다른 날을 고르면 오늘은 **그 날이 무슨 날인가**의 면(평일·토·일/공휴일)으로 —
+    // 코랄 틴트의 오늘 면은 평일인데도 휴일처럼 붉게 읽혔다(요청).
     const other = [...document.querySelectorAll<HTMLElement>('[data-day-cell]')].find((c) => !c.dataset.today && !c.dataset.outMonth)!;
     fireEvent.click(other);
     await waitFor(() => expect(other.style.background).toBe('var(--mf-cal-sel)'));
-    expect(cell().style.background).toBe('var(--mf-cal-today)');
+    expect(['var(--mf-card)', 'var(--mf-cal-sat)', 'var(--mf-cal-sun)']).toContain(cell().style.background);
     // 고른 날의 숫자는 면을 채우지 않는다 — 면이 이미 말한다.
     expect((other.querySelector('[data-day-num]') as HTMLElement).style.background).toBe('transparent');
     // 링은 **놓일 자리**만의 것이다.
