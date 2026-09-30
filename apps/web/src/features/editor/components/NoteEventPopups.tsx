@@ -30,6 +30,7 @@ import { googleDirectoryOf, googleTargetsOf } from '../../home/calendar/googleWi
 import { partsOf } from '../../home/calendar/model';
 import { useNoteAgenda } from '../noteAgenda';
 import { NoteCardPeek } from './NoteCardPeek';
+import { Modal, MODAL_DIM } from '../../../components/Modal';
 import type { Theme } from '../theme';
 
 /** 지금 열려 있는 것 — 셋 중 하나이거나 아무것도 아니다. */
@@ -73,6 +74,48 @@ export function noteEventOpenOf(e: CalendarEntry, at: string): NoteEventOpen {
  * 소비자는 예전처럼 일정 화면으로 보낸다.
  */
 export const NoteEventOpenerContext = createContext<((open: NoteEventOpen) => void) | null>(null);
+
+/**
+ * **일정을 받아 오는 동안의 판**(요청: 일정 칩·일정 블록의 일정을 누르면 팝업이 뜨기까지 틈이
+ * 있다 — 그 사이에 로딩 애니메이션을).
+ *
+ * 틈의 정체: 이 팝업은 **열릴 때 비로소** 그 달의 일정(그리오·구글·칸반)을 받는다(파일 머리의
+ * 「조회는 팝업이 열렸을 때만」). 받기 전에는 고른 일정을 목록에서 찾지 못해 아무것도 그리지
+ * 않았다 — 누른 것이 먹었는지 알 수 없는 시간이었다. 상세 팝업과 **같은 막·같은 z**에 스피너
+ * 카드만 띄운다: 도착하면 그 자리에 상세가 선다. 막·Esc로 닫으면 여는 것 자체를 그만둔다.
+ */
+function EventLoading({ isMobile, onClose }: { isMobile: boolean; onClose: () => void }) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      label="일정 불러오는 중"
+      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 321, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      card={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '14px 18px',
+        borderRadius: 14,
+        background: 'var(--mf-card)',
+        border: '1px solid var(--mf-border)',
+        boxShadow: 'var(--mf-card-shadow)',
+        color: 'var(--mf-subtext)',
+        fontSize: 13,
+        fontWeight: 600,
+        animation: 'mf-fade .2s ease',
+        ...(isMobile ? { marginBottom: 'calc(24px + env(safe-area-inset-bottom))' } : {}),
+      }}
+      cardAttrs={{ 'data-note-event-loading': '1' }}
+    >
+      <span
+        aria-hidden="true"
+        style={{ width: 18, height: 18, flexShrink: 0, boxSizing: 'border-box', border: '2px solid var(--mf-border)', borderTopColor: 'var(--mf-accent)', borderRadius: '50%', animation: 'mf-spin .7s linear infinite' }}
+      />
+      <span role="status">일정을 불러오는 중…</span>
+    </Modal>
+  );
+}
 
 export function NoteEventPopups({ open, isMobile, theme, onClose }: { open: NoteEventOpen | null; isMobile: boolean; theme: Theme; onClose: () => void }) {
   const at = open ? partsOf(open.at) : null;
@@ -133,6 +176,8 @@ export function NoteEventPopups({ open, isMobile, theme, onClose }: { open: Note
   }
 
   if (open.kind === 'google') {
+    // 아직 그 달의 구글 일정이 오지 않았다 — 받는 동안 스피너(상세는 목록에서 찾아 그린다).
+    if (agenda.loading && !google.events.some((e) => e.id === open.id)) return <EventLoading isMobile={isMobile} onClose={onClose} />;
     return (
       <GoogleDetailHost
         openId={open.id}
@@ -148,10 +193,10 @@ export function NoteEventPopups({ open, isMobile, theme, onClose }: { open: Note
     );
   }
 
-  // 그리오 일정 — 목록이 아직이거나 지워졌으면 조용히 아무것도 그리지 않는다
-  // (일정 화면의 상세와 같은 태도다: 없는 것을 억지로 세우지 않는다).
+  // 그리오 일정 — 목록이 **아직이면 스피너**(`EventLoading`), 다 받았는데도 없으면(지워졌다)
+  // 조용히 아무것도 그리지 않는다(일정 화면의 상세와 같은 태도 — 없는 것을 억지로 세우지 않는다).
   const ev: CalendarEvent | undefined = events.events.find((e) => e.id === open.id);
-  if (!ev) return null;
+  if (!ev) return agenda.loading ? <EventLoading isMobile={isMobile} onClose={onClose} /> : null;
   return (
     <EventDetail
       key={ev.id}

@@ -155,6 +155,20 @@ export function cellListTab(el: HTMLElement, back: boolean, onChange: (runs: Ric
   return true;
 }
 
+/**
+ * **툴바의 글머리·번호** — 고른 줄들(없으면 캐럿의 줄)에 마커를 걸거나 걷는다(요청: 접기 내용에도
+ * 번호·기호를). 이 상자는 줄이 블록이 아니라 **값 안의 글자**라(파일 머리) 블록을 바꾸는 길
+ * (`retypeNoteLine`)이 닿지 않는다 — 그러면 접기가 통째로 목록 블록이 되거나, 표 아래에 빈 목록이
+ * 새로 생겼다. 규칙은 코어 `applyListOp`의 `toggle` 하나(맵의 도형·메모와 같은 판정)다.
+ */
+export function boxListToggle(el: HTMLElement, kind: 'ul' | 'ol', onChange: (runs: RichRun[]) => void): boolean {
+  const st = boxState(el);
+  const edits = applyListOp(st.text, st.a, st.b, { type: 'toggle', kind });
+  if (!edits.length) return false;
+  commitEdits(el, st, edits, shiftOffset(st.b, edits), onChange);
+  return true;
+}
+
 /** Shift+Enter — 리스트 줄이면 다음 줄에 마커를 잇는다(빈 항목이면 내어쓰기/종료). */
 export function cellListBreak(el: HTMLElement, onChange: (runs: RichRun[]) => void): boolean {
   const st = boxState(el);

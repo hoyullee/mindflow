@@ -42,6 +42,7 @@ import { NOTE_ARMED_EVENT, NOTE_EDIT_ATTR, applyNoteFormat, applyNoteFormatRange
 import { codeEdgeCaret, codeEdgeMark, type CodeCaretSpot } from '../noteCodeEdge';
 
 import { buildLineSelection, buildSelection, caretAt, caretRectAt, charOffset, lineLength, lineText, rowHeight, rowStepInLine, clearPaint as clearSelectionPaint, paint as paintSelection, findRangesIn, paintFind, paintRanges, paintSlash, pointAt, rangeOfChars, supportsHighlight, type LineSel } from '../noteTextSelect';
+import { boxListToggle } from '../noteCellList';
 import { NoteLine } from './NoteLine';
 import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { useCommentParticipants } from './CommentPanel';
@@ -6038,7 +6039,8 @@ function FormatToolbar({
           : { b: false, i: false, s: false, u: false, k: false, c: null, hl: null };
       setMarks((cur) => (sameMarks(cur, next) ? cur : next));
       const key = el?.getAttribute('data-note-line') ?? '';
-      const cell = isCellKey(key);
+      // 칸과 접기 내용은 같은 제약이다 — 글머리·번호 말고는 담을 자리가 없다.
+      const cell = isValueListKey(key);
       setInCell((cur) => (cur === cell ? cur : cell));
       setLineKey((cur) => (cur === key ? cur : key));
       const bold = caretDrawsBold(el);
@@ -6098,6 +6100,15 @@ function FormatToolbar({
    */
   const insert = (kind: NoteBlockKind) => {
     const key = boxRef.current?.getAttribute('data-note-line') || '';
+    /**
+     * **마커를 글자로 드는 줄**(표의 칸·접기의 내용)에서는 글머리·번호를 **그 줄 안에** 건다
+     * (요청: 접기 내용에도 번호·기호를). 블록을 바꾸는 아래 길로 가면 접기가 통째로 목록
+     * 블록이 되거나(`retypeNoteLine`), 표 아래에 빈 목록이 새로 선다.
+     */
+    const box = boxRef.current;
+    if ((kind === 'ul' || kind === 'ol') && box && isValueListKey(key)) {
+      if (boxListToggle(box, kind, (runs) => commitLine(controller, key, runs))) return;
+    }
     const id = curBlockId();
     // 이미지는 **고르개부터**(요청) — 고르지 않고 닫으면 빈 자리가 남지 않는다.
     if (kind === 'img') {
@@ -6449,7 +6460,7 @@ function FormatToolbar({
             type="button"
             data-note-insert={t.kind}
             disabled={off}
-            data-tip={off ? `${t.name} — 표의 칸에는 넣을 수 없어요` : t.name}
+            data-tip={off ? `${t.name} — ${lineKey.endsWith(':body') ? '접기 내용' : '표의 칸'}에는 넣을 수 없어요` : t.name}
             aria-label={t.name}
             className="btn mf-note-tb"
             onMouseDown={stop}
@@ -7332,6 +7343,16 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
               runs={block.items?.[0]?.runs}
               readOnly={readOnly}
               placeholder="펼쳤을 때 보일 내용"
+              /**
+               * **내용 줄 안의 목록**(요청: 접기 내용에도 번호·기호를) — 표의 칸과 같은 판이다.
+               * 내용은 한 블록의 한 값이라(접기 머리말) 목록 블록을 담을 자리가 없어, 마커를
+               * **글자로** 든다(`noteCellList`): `- `·`1. ` 단축, Tab·Shift+Tab 들여쓰기, 마커
+               * Backspace, 그리고 목록 줄의 Enter가 다음 마커를 잇는다(`listEnter` — Shift+Enter는
+               * 여전히 접기를 빠져나간다). 툴바의 글머리·번호 단추도 이 줄에 건다(`insert`).
+               */
+              listBox
+              listKeys
+              listEnter
               onArrowOut={moveNoteCaret}
               onEdgeOut={(dir) => moveNoteCaret(dir)}
       onSelectOut={selectOut}
@@ -7339,11 +7360,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
       onSelectAll={selectAll}
       onSelectDoc={selectDoc}
       selecting={selecting}
-              onChange={(runs) => {
-                const itemId = block.items?.[0]?.id;
-                if (itemId) controller.setNoteItemRuns(block.id, itemId, runs);
-                else controller.addNoteItem(block.id);
-              }}
+              onChange={(runs) => commitLine(controller, `${block.id}:body`, runs)}
               onSoftEnter={leaveToggle}
               style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--mf-subtext)' }}
             onSlash={(at, tail) => {
@@ -11668,6 +11685,16 @@ function commitLine(controller: EditorController, key: string, runs: RichRun[]):
     controller.setNoteCell(blockId, Number(cell[1]), Number(cell[2]), runs);
     return;
   }
+  /**
+   * **접기의 내용 줄은 키가 `<블록>:body`다**(항목 id가 아니다) — 실제 항목으로 푼다.
+   * 예전에는 `body`를 항목 id로 넘겨 **아무 항목에도 걸리지 않았다**: 툴바로 내용 줄에 건
+   * 서식이 저장되지 않았고, 항목이 아직 없는 접기에서는 첫 글이 버려졌다(항목만 세웠다).
+   */
+  if (rest === 'body') {
+    const itemId = controller.notePage?.blocks.find((b) => b.id === blockId)?.items?.[0]?.id ?? controller.addNoteItem(blockId);
+    if (itemId) controller.setNoteItemRuns(blockId, itemId, runs);
+    return;
+  }
   controller.setNoteItemRuns(blockId, rest, runs);
 }
 
@@ -12357,6 +12384,15 @@ function blockClipLines(block: NoteBlock): ClipLine[] {
 /** 그 키가 **표의 칸**인가 — 칸은 줄이 아니라 값이라 블록 조작이 닿지 않는다. */
 function isCellKey(key: string): boolean {
   return /^[^:]+:r\d+c\d+$/.test(key);
+}
+
+/**
+ * 그 키가 **마커를 글자로 드는 줄**인가 — 표의 칸과 접기의 내용(`<블록>:body`). 둘 다 줄이
+ * 블록이 아니라 한 값 안의 글자라, 목록은 그 값 안에서 걸고(`boxListToggle`) 블록을 넣는
+ * 단추는 담을 자리가 없다.
+ */
+function isValueListKey(key: string): boolean {
+  return isCellKey(key) || /^[^:]+:body$/.test(key);
 }
 
 /**
