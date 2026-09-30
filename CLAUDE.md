@@ -5,7 +5,7 @@
 
 **이 파일은 세션마다 통째로 실립니다 — 그래서 짧게 유지합니다.** 라운드별 기록은
 `docs/changelog.md`, 프로브 함정은 `docs/probe-pitfalls.md`, 배포·CI·운영 백로그 원문은
-`docs/operations.md`, 백엔드 운영은 `server/supabase/docs/backend.md`에 있고 **넷 다 자동으로 읽히지 않습니다**(필요할 때
+`docs/operations.md`, 백엔드 운영은 `server/supabase/docs/backend.md`(색인 — 섹션마다 `backend/NN-*.md`)에 있고 **넷 다 자동으로 읽히지 않습니다**(필요할 때
 `grep`으로 찾아 읽습니다). 여기에 남기는 것은 **다음 세션이 모르면 안 되는 것**뿐입니다 —
 규칙 · 아키텍처 · 현재 상태 · 배포 절차.
 
@@ -118,6 +118,7 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
   같은 일을 되풀이하지 않는다. 다만 코어(`packages/mindmap-core`)나 여러 화면이 함께 쓰는 부품
   (`components/`·`theme.ts`·`chrome.ts` 등)을 건드렸으면 그 파급 범위까지 지정해 돌린다.
 - **작업을 마치면 `docs/changelog.md` 끝에 한 항목을 더한다**(원인·결정·검증·트레이드오프).
+  그 파일은 1.5MB가 넘는다 — **통째로 Read하지 말고** `grep`으로 찾고 `cat >>`로 덧붙인다.
   `CLAUDE.md`는 **규칙·아키텍처·「지금 있는 것」이 바뀔 때만** 고친다 — 라운드 기록을 여기에
   쌓으면 그만큼 매 세션의 컨텍스트를 먹는다(956KB까지 자랐다가 가른 이력이 있다).
   「최근 라운드」 목록은 제목만 **12줄 안쪽**으로 유지한다(넘치면 오래된 것부터 지운다 — changelog에 있다).
