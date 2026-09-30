@@ -43,6 +43,7 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
 | §24c | [설치형 앱의 멘션 배너 — 푸시 없이 같은 일을 한다](backend/24c-desktop-mention-banner.md) | 6KB |
 | §24b | [처음 배포할 때 실제로 걸린 것들 (2026-09-15 실측)](backend/24b-first-deploy-notes.md) | 5KB |
 | §25 | [공책 태그 판 (0042 `note_tags`) — 계정에 딸린 한 벌](backend/25-note-tags.md) | 3KB |
+| §26 | [Jira 연결 (0044 `jira_credentials`·`user_tool_prefs` + Edge Function `jira`) — 도구 · 작업 현황](backend/26-jira.md) | 5KB |
 
 ---
 

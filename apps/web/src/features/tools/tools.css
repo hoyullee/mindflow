@@ -1,0 +1,88 @@
+/* 도구(LNB 도구 구획 · 도구 관리 · 작업 현황) — 인라인으로 못 쓰는 상태만 여기에. */
+
+.mf-tool-connect {
+  background: #3a352f;
+  color: #fffdfb;
+  transition: background 0.14s ease;
+}
+.mf-tool-connect:hover:not(:disabled) {
+  background: #e85e33;
+}
+.mf-tool-spin {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 253, 251, 0.35);
+  border-top-color: #fffdfb;
+  animation: mf-tool-spin 0.8s linear infinite;
+}
+@keyframes mf-tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mf-tool-label:hover,
+.mf-tool-label:hover b {
+  color: #c0563a !important;
+}
+.mf-tool-row:hover {
+  background: var(--mf-panel2);
+}
+.mf-tool-nav[aria-current='page'] {
+  background: var(--mf-accent-soft);
+}
+.mf-tool-nav:hover {
+  background: var(--mf-panel2);
+}
+.mf-tool-nav[aria-current='page']:hover {
+  background: var(--mf-accent-soft);
+  filter: brightness(var(--mf-hover-bright));
+}
+.mf-tool-manage:hover,
+.mf-tool-manage[data-open='1'] {
+  background: var(--mf-accent-soft) !important;
+  color: var(--mf-text) !important;
+}
+@keyframes mf-tool-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-tool-spin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* 작업 현황 */
+.mf-ws-spin {
+  animation: mf-tool-spin 0.9s linear infinite;
+}
+.mf-ws-arrow:hover {
+  background: var(--mf-ws-hover) !important;
+  color: var(--mf-ws-ink2) !important;
+}
+.mf-ws-bar:hover {
+  filter: brightness(0.96);
+}
+.mf-ws-avail-row:hover {
+  background: var(--mf-ws-avail) !important;
+}
+.mf-ws-quick:hover {
+  background: #f1f7f2 !important;
+  border-color: #cfe3d3 !important;
+  color: #2f7d57 !important;
+}
+.mf-ws-x:hover {
+  background: #fbe7de !important;
+  color: #d8542a !important;
+}
+.mf-ws-trash:hover {
+  background: #fbf1ee !important;
+  color: #c0563a !important;
+}

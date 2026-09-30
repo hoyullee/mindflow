@@ -59,6 +59,12 @@ export function PrivacyPolicy() {
           <li>작성한 문서의 저장, 기기 간 동기화, 실시간 협업 제공</li>
           <li>계정 관련 필수 안내(이메일 인증, 비밀번호 재설정) 발송</li>
           <li>이용자가 연동을 켠 경우, 일정 화면에 Google 캘린더 일정 표시 및 이용자가 만든 일정의 반영(아래 4항)</li>
+          <li>
+            이용자가 Jira를 연결한 경우, 도구 · 작업 현황 화면에 이용자가 고른 프로젝트의 에픽·티켓(키·제목·담당자 이름·상태·
+            시작일·기한) 표시. 서비스는 Jira에 <strong>읽기만</strong> 하며(쓰기 권한을 받지 않습니다), 티켓 내용은 화면을
+            그리는 동안만 쓰이고 저장하지 않습니다. 서버에 남는 것은 연결 유지를 위한 토큰과 고른 사이트·프로젝트 목록,
+            화면 설정(담당자 목록·휴일)뿐이며 연결을 해제하면 토큰은 지워집니다.
+          </li>
         </ul>
       </LegalSection>
 
@@ -74,6 +80,10 @@ export function PrivacyPolicy() {
           <li>
             <strong>Google</strong> — Google 계정 로그인(OAuth) 처리 및 이용자가 직접 켠 경우의 Google 캘린더 연동
             (아래 4항). 서비스는 이 과정에서 이용자의 Google 비밀번호에 접근할 수 없습니다.
+          </li>
+          <li>
+            <strong>Atlassian</strong> — 이용자가 직접 켠 경우의 Jira 연결(OAuth). Jira 조회는 Supabase의 서버 함수가
+            대신하며, 서비스는 이 과정에서 이용자의 Atlassian 비밀번호에 접근할 수 없습니다.
           </li>
         </ul>
       </LegalSection>

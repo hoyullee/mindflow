@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Login } from './features/auth/Login';
 import { DesktopHandoff } from './features/auth/DesktopHandoff';
+import { JiraCallback } from './features/tools/jira/JiraCallback';
 import { hadSession, loginUrlWithNext, noteSessionExpired, rememberSignedIn } from './features/auth/sessionNotice';
 import type { AuthSession } from './adapters/ports';
 import { Home } from './features/home/Home';
@@ -123,6 +124,17 @@ export function App() {
           {/* 설치형 앱의 Google 캘린더 연동이 브라우저에서 끝나는 자리 —
               구글 콘솔의 **승인된 리디렉션 URI**가 이 주소다(backend.md §19). */}
           <Route path="/auth/gcal" element={<DesktopHandoff kind="gcal" />} />
+          {/* Jira(도구 · 작업 현황) 동의 화면이 돌아오는 자리 — Atlassian developer console의
+              **Callback URL**이 이 주소다(backend/26-jira.md). 교환은 이 사용자의 자격 증명을
+              만들므로 문지기 안이다. */}
+          <Route
+            path="/auth/jira"
+            element={
+              <RequireAuth>
+                <JiraCallback />
+              </RequireAuth>
+            }
+          />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<Terms />} />
           <Route

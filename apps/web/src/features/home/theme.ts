@@ -551,6 +551,26 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     /** 지난 마감의 숫자(헤더 요약 줄) — 위험색을 글자 쪽으로 한 걸음 눌러 흰 면에서 또렷하게
      *  (스펙 `#C0563A`와 같은 결). */
     '--mf-stat-over': mixHex(t.danger, t.text, 0.2),
+    // ── 작업 현황(도구 · Jira — 작업 현황 스펙) — 일정 화면과 같은 방식: 기본(코랄)은 스펙 값
+    //    그대로, 나머지 테마는 같은 자리의 자기 색에서 파생한다(다크에서 흰 면이 튀지 않게).
+    '--mf-ws-bg': k === 'coral' ? '#fbf7f1' : t.bg,
+    '--mf-ws-card': k === 'coral' ? '#fffdfb' : t.card,
+    '--mf-ws-ink': k === 'coral' ? '#3a352f' : t.text,
+    '--mf-ws-ink2': k === 'coral' ? '#6e675f' : t.subtext,
+    '--mf-ws-mut': k === 'coral' ? '#8a8078' : t.muted,
+    '--mf-ws-mut2': k === 'coral' ? '#a29b90' : mixHex(t.muted, t.faint, 0.5),
+    '--mf-ws-faint': k === 'coral' ? '#b7aca1' : t.faint,
+    '--mf-ws-line': k === 'coral' ? '#ede1d3' : t.border,
+    '--mf-ws-line2': k === 'coral' ? '#e6e1da' : t.border,
+    '--mf-ws-chip-line': k === 'coral' ? '#eadfd3' : t.borderSoft,
+    '--mf-ws-soft': k === 'coral' ? '#f1eae1' : t.panel2,
+    '--mf-ws-hover': k === 'coral' ? '#f3f0eb' : t.panel2,
+    '--mf-ws-sunk': k === 'coral' ? '#fbf7f1' : t.panelGrey,
+    '--mf-ws-sat': k === 'coral' ? '#f1f5fb' : mixHex(t.card, t.info, 0.07),
+    '--mf-ws-sun': k === 'coral' ? '#fbefec' : mixHex(t.card, t.danger, 0.07),
+    '--mf-ws-off-head': k === 'coral' ? '#f7f2eb' : mixHex(t.card, t.panel2, 0.8),
+    '--mf-ws-off': k === 'coral' ? '#faf6f0' : mixHex(t.card, t.panel2, 0.45),
+    '--mf-ws-avail': k === 'coral' ? '#f4f7f1' : mixHex(t.card, t.success, 0.07),
     '--mf-hover-bright': t.hoverBright,
     '--mf-success': t.success,
     '--mf-success-soft': t.successSoft,

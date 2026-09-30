@@ -1,0 +1,400 @@
+/**
+ * 작업 현황의 **계산** — 화면과 떨어진 순수 함수들(작업 현황 스펙 §2.3).
+ *
+ * 날짜는 전부 `YYYY-MM-DD` 문자열로 비교하고, Date는 요일을 구할 때만 **UTC로** 만든다
+ * (스펙 §12 — 날짜만 다루는 화면이라 시간대가 끼면 하루가 밀린다).
+ */
+import type { JiraEpic, JiraPerson, JiraTicket, TicketStatus } from '../jira/jiraApi';
+import type { CompanyHoliday, WorkStatusPrefs } from '../toolPrefs';
+import { HOLIDAYS } from './holidays';
+
+// ── 날짜 ─────────────────────────────────────────────────────────────
+
+const pad = (n: number) => String(n).padStart(2, '0');
+export const ymd = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`;
+const parse = (s: string) => {
+  const [y, m, d] = s.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d));
+};
+export function addDays(s: string, n: number): string {
+  const dt = parse(s);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return ymd(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
+}
+export const dowOf = (s: string) => parse(s).getUTCDay();
+export const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+export const monthDays = (y: number, m: number) => Array.from({ length: daysInMonth(y, m) }, (_, i) => ymd(y, m, i + 1));
+export const isWeekend = (s: string) => {
+  const w = dowOf(s);
+  return w === 0 || w === 6;
+};
+export const DOW = ['일', '월', '화', '수', '목', '금', '토'] as const;
+/** `09.21` — 패널·툴팁의 짧은 날짜. */
+export const shortDate = (s: string) => s.slice(5).replace('-', '.');
+
+/** 두 날짜 사이의 날 수(끝 포함). */
+export function spanDays(from: string, to: string): number {
+  return Math.round((parse(to).getTime() - parse(from).getTime()) / 86_400_000) + 1;
+}
+
+// ── 휴일 · 영업일 ────────────────────────────────────────────────────
+
+export interface Holiday {
+  name: string;
+  /** 추가 휴일(사용자가 등록) — 달력이 건물 아이콘을 붙인다. */
+  company: boolean;
+}
+
+/** 추가 휴일이 그 날에 걸리는가 — 반복은 **등록한 날 이후**부터만(스펙 §2.3). */
+export function companyHits(h: CompanyHoliday, d: string): boolean {
+  if (h.repeat === 'none') return d === h.d;
+  if (d < h.d) return false;
+  if (h.repeat === 'yearly') return d.slice(5) === h.d.slice(5);
+  if (h.repeat === 'monthly') return d.slice(8) === h.d.slice(8);
+  return dowOf(d) === dowOf(h.d);
+}
+
+export type HolidayRules = Pick<WorkStatusPrefs, 'country' | 'weekend' | 'exceptions' | 'company'>;
+
+export function holidayOf(d: string, rules: HolidayRules): Holiday | null {
+  const c = rules.company.find((h) => companyHits(h, d));
+  if (c) return { name: c.name, company: true };
+  const name = HOLIDAYS[rules.country]?.[d];
+  if (name && !rules.exceptions.includes(d)) return { name, company: false };
+  return null;
+}
+
+/** 공휴일 목록(모달 §10-3) — 그 달부터 `limit`개. 근무일로 처리한 날도 싣는다(되돌릴 수 있게). */
+export function publicHolidaysFrom(from: string, country: WorkStatusPrefs['country'], limit: number): { d: string; name: string }[] {
+  return Object.entries(HOLIDAYS[country] ?? {})
+    .filter(([d]) => d >= from)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(0, limit)
+    .map(([d, name]) => ({ d, name }));
+}
+
+export function isBizDay(d: string, rules: HolidayRules): boolean {
+  if (!rules.weekend && isWeekend(d)) return false;
+  return !holidayOf(d, rules);
+}
+
+export interface MonthBiz {
+  days: string[];
+  biz: string[];
+  /** 영업일에서 뺀 날을 **처음 뺀 이유 하나로만** 센다 — 주말 → 공휴일 → 추가 휴일 순.
+   *  토요일에 걸린 추석을 주말과 공휴일에서 두 번 빼면 식이 영업일과 안 맞는다
+   *  (프로토타입의 `공휴일 4`가 그 경우였다 — 실제 뺀 평일 공휴일은 3일). */
+  weekend: number;
+  holiday: number;
+  company: number;
+}
+
+export function monthBiz(y: number, m: number, rules: HolidayRules): MonthBiz {
+  const days = monthDays(y, m);
+  const out: MonthBiz = { days, biz: [], weekend: 0, holiday: 0, company: 0 };
+  for (const d of days) {
+    if (!rules.weekend && isWeekend(d)) {
+      out.weekend++;
+      continue;
+    }
+    const h = holidayOf(d, rules);
+    if (!h) out.biz.push(d);
+    else if (h.company) out.company++;
+    else out.holiday++;
+  }
+  return out;
+}
+
+/** 기간의 영업일 — 일정 맞춰보기(최대 120일, 스펙 §2.3). */
+export function bizDaysIn(from: string, to: string, rules: HolidayRules, cap = 120): string[] {
+  const out: string[] = [];
+  for (let d = from, i = 0; d <= to && i < cap; d = addDays(d, 1), i++) if (isBizDay(d, rules)) out.push(d);
+  return out;
+}
+
+// ── 색 ───────────────────────────────────────────────────────────────
+
+export const EPIC_PALETTE = [
+  { c: '#E85E33', bg: '#FBEDE6' },
+  { c: '#5B8DEF', bg: '#E9F0FC' },
+  { c: '#4E8C67', bg: '#EBF5EE' },
+  { c: '#8B5CF6', bg: '#F1ECFA' },
+  { c: '#D8A24F', bg: '#FBF3E4' },
+  { c: '#3A9BB5', bg: '#E7F3F6' },
+] as const;
+export const PERSON_PALETTE = ['#E8845C', '#7C9BD8', '#69B08A', '#B58CD9', '#D9A45C', '#5FA8B8'] as const;
+
+function hash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
+ * 키마다 색을 정한다 — **키의 해시로 자리를 잡고, 겹치면 다음 빈 색**으로.
+ *
+ * 순서대로 돌려 배정하면 에픽 하나가 늘거나 빠질 때 뒤의 색이 전부 밀린다(어제의 파랑이
+ * 오늘 초록). 해시로 자리를 잡으면 같은 키는 대개 같은 색이고, 팔레트보다 많아지면 그때만 겹친다.
+ */
+export function assignColors(keys: string[], size: number): Map<string, number> {
+  const out = new Map<string, number>();
+  const used = new Set<number>();
+  for (const k of [...new Set(keys)].sort()) {
+    let i = hash(k) % size;
+    if (used.size < size) while (used.has(i)) i = (i + 1) % size;
+    used.add(i);
+    out.set(k, i);
+  }
+  return out;
+}
+
+// ── 데이터 묶음 ─────────────────────────────────────────────────────
+
+export interface Person {
+  id: string;
+  name: string;
+  ini: string;
+  c: string;
+  /** 검색으로 직접 더한 사람 — 담당자 팝오버에서 뺄 수 있다. */
+  extra: boolean;
+}
+
+export interface Epic {
+  key: string;
+  name: string;
+  start: string | null;
+  end: string | null;
+  c: string;
+  bg: string;
+}
+
+export type Ticket = JiraTicket;
+
+export interface Dataset {
+  people: Person[];
+  epics: Epic[];
+  tickets: Ticket[];
+  pById: Map<string, Person>;
+  eByKey: Map<string, Epic>;
+}
+
+/** 이름 첫 글자 — 성이 앞인 한글 이름이면 성이고, 영문이면 첫 글자 대문자. */
+export const initialOf = (name: string) => (name.trim()[0] ?? '?').toUpperCase();
+
+export function buildDataset(epics: JiraEpic[], tickets: JiraTicket[], extra: JiraPerson[]): Dataset {
+  const people = new Map<string, JiraPerson>();
+  for (const t of tickets) if (!people.has(t.person.id)) people.set(t.person.id, t.person);
+  const extraIds = new Set(extra.map((p) => p.id));
+  for (const p of extra) if (!people.has(p.id)) people.set(p.id, p);
+  const pColor = assignColors([...people.keys()], PERSON_PALETTE.length);
+  const eColor = assignColors(epics.map((e) => e.key), EPIC_PALETTE.length);
+  // 티켓 수가 많은 사람부터 — 달력 칩·순위의 기본 순서(이름은 동률일 때).
+  const count = new Map<string, number>();
+  tickets.forEach((t) => count.set(t.person.id, (count.get(t.person.id) ?? 0) + 1));
+  const ps: Person[] = [...people.values()]
+    .map((p) => ({ id: p.id, name: p.name, ini: initialOf(p.name), c: PERSON_PALETTE[pColor.get(p.id) ?? 0] as string, extra: extraIds.has(p.id) }))
+    .sort((a, b) => (count.get(b.id) ?? 0) - (count.get(a.id) ?? 0) || a.name.localeCompare(b.name, 'ko'));
+  const es: Epic[] = epics
+    .map((e) => {
+      const pal = EPIC_PALETTE[eColor.get(e.key) ?? 0]!;
+      return { key: e.key, name: e.name, start: e.start, end: e.end, c: pal.c, bg: pal.bg };
+    })
+    .sort((a, b) => (a.start ?? '9999').localeCompare(b.start ?? '9999') || a.key.localeCompare(b.key));
+  return { people: ps, epics: es, tickets, pById: new Map(ps.map((p) => [p.id, p])), eByKey: new Map(es.map((e) => [e.key, e])) };
+}
+
+// ── 필터 ─────────────────────────────────────────────────────────────
+
+export type FilterType = 'person' | 'epic' | 'ticket';
+export interface Filter {
+  type: FilterType;
+  id: string;
+}
+
+/** 같은 종류끼리는 OR, 다른 종류끼리는 AND(스펙 §4.2). */
+export function passes(t: Ticket, filters: Filter[]): boolean {
+  if (!filters.length) return true;
+  const by = (type: FilterType) => filters.filter((f) => f.type === type).map((f) => f.id);
+  const P = by('person');
+  const E = by('epic');
+  const K = by('ticket');
+  return (!P.length || P.includes(t.person.id)) && (!E.length || E.includes(t.epic)) && (!K.length || K.includes(t.key));
+}
+
+export const activeOn = (t: { start: string; end: string }, d: string) => t.start <= d && d <= t.end;
+export const overlaps = (t: { start: string; end: string }, from: string, to: string) => t.start <= to && t.end >= from;
+
+// ── 진행 일수 ────────────────────────────────────────────────────────
+
+const WORKED: TicketStatus[] = ['doing', 'done'];
+
+/**
+ * 그 사람(과 그 에픽)의 **진행 중·완료 티켓이 걸친 영업일의 합집합**(스펙 §2.3).
+ * 같은 날 여러 티켓은 1일이다.
+ */
+export function workedDays(tickets: Ticket[], biz: string[], personId: string, epicKey?: string): number {
+  const s = new Set<string>();
+  for (const t of tickets) {
+    if (t.person.id !== personId || (epicKey && t.epic !== epicKey) || !WORKED.includes(t.status)) continue;
+    for (const d of biz) if (activeOn(t, d)) s.add(d);
+  }
+  return s.size;
+}
+
+export interface StatRow {
+  person: Person;
+  cells: { epic: Epic; days: number }[];
+  total: number;
+  pct: number;
+}
+
+export interface Stats {
+  rows: StatRow[];
+  /** 에픽별 인일(사람 × 일) 합 — 담당자 합계의 총합과 다를 수 있다(같은 날 두 에픽). */
+  foot: number[];
+  grand: number;
+  /** 담당자 합계의 총합 — `grand`와 다르면 화면이 그 사실을 한 줄로 말한다. */
+  totalSum: number;
+}
+
+export function computeStats(people: Person[], epics: Epic[], tickets: Ticket[], biz: string[]): Stats {
+  const rows = people.map((person) => {
+    const cells = epics.map((epic) => ({ epic, days: workedDays(tickets, biz, person.id, epic.key) }));
+    const total = workedDays(tickets, biz, person.id);
+    return { person, cells, total, pct: biz.length ? Math.round((total / biz.length) * 100) : 0 };
+  });
+  const foot = epics.map((_, i) => rows.reduce((a, r) => a + (r.cells[i]?.days ?? 0), 0));
+  return { rows, foot, grand: foot.reduce((a, b) => a + b, 0), totalSum: rows.reduce((a, r) => a + r.total, 0) };
+}
+
+/** 집계 칸의 히트맵 단계(스펙 §9) — 0 / 1–3 / 4–8 / 9–13 / 14+. */
+export function heatLevel(v: number): 0 | 1 | 2 | 3 | 4 {
+  if (v <= 0) return 0;
+  if (v < 4) return 1;
+  if (v < 9) return 2;
+  if (v < 14) return 3;
+  return 4;
+}
+
+// ── 달력 칸 ──────────────────────────────────────────────────────────
+
+export interface DayChip {
+  epic: Epic;
+  tickets: Ticket[];
+  people: Person[];
+}
+
+/** 그 날 걸친 티켓을 **에픽별로** 묶는다 — 티켓 수가 많은 에픽부터(스펙 §5.2). */
+export function dayChips(tickets: Ticket[], d: string, data: Dataset): DayChip[] {
+  const groups = new Map<string, Ticket[]>();
+  for (const t of tickets) if (activeOn(t, d)) groups.set(t.epic, [...(groups.get(t.epic) ?? []), t]);
+  const out: DayChip[] = [];
+  for (const [key, ts] of groups) {
+    const epic = data.eByKey.get(key);
+    if (!epic) continue;
+    const people = [...new Set(ts.map((t) => t.person.id))].map((id) => data.pById.get(id)).filter((p): p is Person => !!p);
+    out.push({ epic, tickets: ts, people });
+  }
+  return out.sort((a, b) => b.tickets.length - a.tickets.length || a.epic.key.localeCompare(b.epic.key));
+}
+
+/** 칩이 셋을 넘으면 둘만 보이고 나머지는 `+N개 프로젝트`(스펙 §5.2). */
+export function visibleChips<T>(chips: T[]): { shown: T[]; more: number } {
+  return chips.length > 3 ? { shown: chips.slice(0, 2), more: chips.length - 2 } : { shown: chips, more: 0 };
+}
+
+/** 달력 격자의 첫 칸(그 달 1일이 든 주의 일요일)부터 42칸. */
+export function gridDays(y: number, m: number): string[] {
+  const first = ymd(y, m, 1);
+  const start = addDays(first, -dowOf(first));
+  return Array.from({ length: 42 }, (_, i) => addDays(start, i));
+}
+
+// ── 타임라인 레인 ────────────────────────────────────────────────────
+
+export interface Bar<T> {
+  item: T;
+  /** 그 달 안의 0부터 센 시작·끝 칸(달 경계 밖은 잘린다). */
+  s: number;
+  e: number;
+  lane: number;
+}
+
+/** 겹치는 막대를 레인으로 나눈다 — 시작이 이른 것부터, 들어갈 수 있는 가장 위 레인에. */
+export function layLanes<T extends { start: string; end: string }>(items: T[], days: string[]): { bars: Bar<T>[]; lanes: number } {
+  const first = days[0] ?? '';
+  const last = days[days.length - 1] ?? '';
+  const n = days.length;
+  const lanes: number[] = [];
+  const bars: Bar<T>[] = [];
+  const idx = (d: string) => spanDays(first, d) - 1;
+  for (const item of [...items].filter((t) => overlaps(t, first, last)).sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))) {
+    const s = item.start < first ? 0 : idx(item.start);
+    const e = item.end > last ? n - 1 : idx(item.end);
+    let lane = lanes.findIndex((end) => end < s);
+    if (lane < 0) {
+      lane = lanes.length;
+      lanes.push(e);
+    } else lanes[lane] = e;
+    bars.push({ item, s, e, lane });
+  }
+  return { bars, lanes: lanes.length };
+}
+
+// ── 일정 맞춰보기 ────────────────────────────────────────────────────
+
+export type AvailLevel = 0 | 1 | 2 | 3;
+export const AVAIL_LABEL = ['전부 가능', '일부 겹침', '거의 불가', '불가'] as const;
+
+export interface AvailRow {
+  person: Person;
+  total: number;
+  busy: number;
+  free: number;
+  ratio: number;
+  level: AvailLevel;
+  conflicts: Ticket[];
+}
+
+/**
+ * 기간 안 영업일 중 그 사람의 **예정·진행 중** 티켓이 걸친 날 = 바쁨(스펙 §2.3).
+ * 레벨: 0 전부 가능(바쁨 0) / 1 일부 겹침(여유 ≥ 50%) / 2 거의 불가(여유 > 0) / 3 불가.
+ * 정렬: 레벨 오름차순 → 여유 내림차순.
+ */
+export function availability(people: Person[], tickets: Ticket[], biz: string[]): AvailRow[] {
+  const from = biz[0];
+  const to = biz[biz.length - 1];
+  return people
+    .map((person) => {
+      const mine = from && to ? tickets.filter((t) => t.person.id === person.id && t.status !== 'done' && overlaps(t, from, to)) : [];
+      const busySet = new Set<string>();
+      for (const t of mine) for (const d of biz) if (activeOn(t, d)) busySet.add(d);
+      const busy = busySet.size;
+      const free = biz.length - busy;
+      const ratio = biz.length ? free / biz.length : 0;
+      const level: AvailLevel = busy === 0 ? 0 : ratio >= 0.5 ? 1 : ratio > 0 ? 2 : 3;
+      return { person, total: biz.length, busy, free, ratio, level, conflicts: mine.sort((a, b) => a.start.localeCompare(b.start)) };
+    })
+    .sort((a, b) => a.level - b.level || b.free - a.free || a.person.name.localeCompare(b.person.name, 'ko'));
+}
+
+// ── 검색 제안 ────────────────────────────────────────────────────────
+
+export interface Suggestions {
+  people: Person[];
+  epics: Epic[];
+  tickets: Ticket[];
+}
+
+export function suggest(q: string, data: Dataset, people: Person[]): Suggestions {
+  const s = q.trim().toLowerCase();
+  if (!s) return { people: [], epics: [], tickets: [] };
+  return {
+    people: people.filter((p) => p.name.toLowerCase().includes(s)),
+    epics: data.epics.filter((e) => e.name.toLowerCase().includes(s) || e.key.toLowerCase().includes(s)),
+    tickets: data.tickets.filter((t) => t.key.toLowerCase().includes(s) || t.summary.toLowerCase().includes(s)).slice(0, 6),
+  };
+}
