@@ -24,8 +24,8 @@ const DRAWER_EXIT_MS = 280;
  */
 const SHOW_DRIVE_LNB = false;
 
-/** LNB 구획 구분선 — 두 줄(스페이스↔모아보기 / 공유받음↔휴지통)과 오늘 묶음의 아래 선,
- * 프로필 카드의 위 선이 **같은 값**을 쓴다. 굵기가 달라 보인다는 제보의 원인은 `flexShrink`였다: 기본값
+/** LNB 구획 구분선 — 스페이스↔모아보기 한 줄과 오늘 묶음의 아래 선, 프로필 카드의 위 선이
+ * **같은 값**을 쓴다(공유받음↔휴지통 선은 요청으로 걷었다). 굵기가 달라 보인다는 제보의 원인은 `flexShrink`였다: 기본값
  * 1이면 세로 공간이 빠듯할 때 1px 선이 0.x px로 눌려 더 옅게 그려진다(사이드바는
  * flex 열이다). 눌리지 않게 0으로 못박는다 — 선은 줄어들 수 있는 여백이 아니다. */
 const LNB_DIVIDER = { height: 1, background: 'var(--mf-border-soft)', flexShrink: 0 } as const;
@@ -402,9 +402,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         </>
       )}
 
-      {/* 공유받음(남의 문서)과 휴지통(지운 내 문서)은 성격이 다른 묶음이라 선으로 가른다(요청). */}
-      <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px' }} />
-
+      {/* 공유받음과 휴지통 사이에는 **선을 두지 않는다**(요청 — 예전에는 "남의 문서 / 지운 내
+          문서"로 성격이 달라 갈랐다). 셋이 모아보기 한 구획의 나란한 목록이고 아코디언으로 하나씩
+          펴므로, 선이 있으면 한 구획이 둘로 쪼개져 보인다 — 즐겨찾기·공유받음 사이와 같은 간격. */}
       <LnbListSection
         open={state.trashOpen}
         onToggle={controller.toggleTrashList}
