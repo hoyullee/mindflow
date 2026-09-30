@@ -9,11 +9,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SpaceStore, WorkspaceData } from '../ports';
 import { coerceCalendarColors } from '../../features/home/calendar/googleCalendar';
+import { calendarHiddenOf } from '../../features/home/calendar/entries';
 
 const TABLE = 'workspaces';
 
 interface WorkspaceRow {
-  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; homeLanding?: unknown; dashboards?: unknown; google?: unknown; reminders?: unknown } | null;
+  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; homeLanding?: unknown; dashboards?: unknown; google?: unknown; reminders?: unknown; calendarHidden?: unknown } | null;
 }
 
 export class SupabaseSpaceStore implements SpaceStore {
@@ -54,7 +55,10 @@ export class SupabaseSpaceStore implements SpaceStore {
     const reminders = r && typeof r === 'object'
       ? { ...(typeof r.on === 'boolean' ? { on: r.on } : {}), ...(typeof r.google === 'boolean' ? { google: r.google } : {}) }
       : undefined;
-    return { spaces: body.spaces, mapFolders, recent, theme, homeLanding, dashboards, google, ...(reminders && Object.keys(reminders).length ? { reminders } : {}) };
+    // 일정에 반영하지 않을 보드(요청) — 위 ⚠️와 같은 이유로 여기에도 실어야 한다
+    // (빠뜨리면 뺀 보드가 로드마다 다시 달력에 들어온다). 검증은 `calendarHiddenOf`가.
+    const calendarHidden = calendarHiddenOf(body.calendarHidden);
+    return { spaces: body.spaces, mapFolders, recent, theme, homeLanding, dashboards, google, ...(reminders && Object.keys(reminders).length ? { reminders } : {}), ...(calendarHidden.length ? { calendarHidden } : {}) };
   }
 
   async save(data: WorkspaceData): Promise<void> {
@@ -63,7 +67,7 @@ export class SupabaseSpaceStore implements SpaceStore {
     // saves (mirrors `documents.owner`'s default — migration 0004/RLS enforce it).
     const { error } = await this.client
       .from(TABLE)
-      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, ...(data.homeLanding ? { homeLanding: data.homeLanding } : {}), dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}), ...(data.reminders ? { reminders: data.reminders } : {}) }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
+      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, ...(data.homeLanding ? { homeLanding: data.homeLanding } : {}), dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}), ...(data.reminders ? { reminders: data.reminders } : {}), ...(data.calendarHidden?.length ? { calendarHidden: data.calendarHidden } : {}) }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
     if (error) throw new Error(error.message);
   }
 }

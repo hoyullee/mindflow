@@ -32,6 +32,15 @@ describe('LocalSpaceStore', () => {
     expect(reloaded!.recent).toEqual([]);
   });
 
+  it('일정에 반영하지 않을 보드(`calendarHidden`)를 왕복한다 — 비면 키를 싣지 않는다', async () => {
+    const store = new LocalSpaceStore();
+    await store.save({ spaces: [{ id: 'g', name: 'x' }], mapFolders: {}, calendarHidden: ['d1', 'd2'] });
+    expect((await store.load())!.calendarHidden).toEqual(['d1', 'd2']);
+    await store.save({ spaces: [{ id: 'g', name: 'x' }], mapFolders: {}, calendarHidden: [] });
+    expect((await store.load())!.calendarHidden).toBeUndefined();
+    expect(JSON.parse(localStorage.getItem('mf_spaces')!)).not.toHaveProperty('calendarHidden');
+  });
+
   it('drops non-string recent entries on load', async () => {
     const store = new LocalSpaceStore();
     localStorage.setItem('mf_spaces', JSON.stringify({ v: 1, spaces: [{ id: 'g', name: 'x' }], mapFolders: {}, recent: ['맵 1', 42, null, '맵 2'] }));

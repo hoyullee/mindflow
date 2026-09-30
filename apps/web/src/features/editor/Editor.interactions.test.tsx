@@ -1003,7 +1003,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     // 그라디언트가 매 프레임 다시 래스터되지 않도록 분리 — Viewport.tsx 주석).
     const vp = container.querySelector('[data-canvas-bg]') as HTMLElement;
     const chromeBgBefore = topbar.style.background;
-    expect(vp.style.backgroundColor).toBe('rgb(245, 236, 229)'); // coral canvasBg #f5ece5
+    expect(vp.style.backgroundColor).toBe('rgb(247, 251, 241)'); // coral canvasBg #f7fbf1(요청)
 
     await user.click(screen.getByRole('button', { name: '스타일' }));
     await user.click(screen.getByRole('button', { name: '다크' }));

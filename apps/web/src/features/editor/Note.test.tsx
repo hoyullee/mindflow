@@ -8870,6 +8870,17 @@ describe('공책 73판 — 칩 팝오버가 **칸반 마감**도 센다(제보 2
     expect(rows()).toEqual([]);
     expect(document.querySelector('[data-datepop-count]')?.textContent).toBe('일정 0개');
   });
+
+  it('**일정에 반영하지 않기로 한 보드**는 세지 않는다 — 일정 화면과 같은 목록(요청)', async () => {
+    seedBoard([{ id: 'k1', col: 'c1', pos: 1, text: '빠진 보드 카드', due: ISO }]);
+    const ws = JSON.parse(localStorage.getItem('mf_spaces')!);
+    localStorage.setItem('mf_spaces', JSON.stringify({ ...ws, calendarHidden: ['kbb'] }));
+    localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '남는 일정', startDate: ISO, endDate: ISO, allDay: true }]));
+    await hover('kbn4');
+    await waitFor(() => expect(rows().length).toBe(1));
+    expect(rows()[0]).toContain('남는 일정');
+    expect(rows().join(' ')).not.toContain('빠진 보드 카드');
+  });
 });
 
 describe('공책 74판 — 줄이 비면 브라우저의 타이핑 스타일도 비운다(제보 5)', () => {

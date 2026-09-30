@@ -294,6 +294,24 @@ const NOTE_SKETCHES: [NoteSketch, string][] = [
   ['none', '없음'],
 ];
 
+const CalendarIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+    <line x1="3" y1="9.5" x2="21" y2="9.5" />
+    <line x1="8" y1="2.5" x2="8" y2="6.5" />
+    <line x1="16" y1="2.5" x2="16" y2="6.5" />
+  </svg>
+);
+/** 달력에 사선 — 「일정에 반영하지 않기」(태그 없음의 `TagOffIcon`과 같은 문법). */
+const CalendarOffIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+    <line x1="3" y1="9.5" x2="21" y2="9.5" />
+    <line x1="8" y1="2.5" x2="8" y2="6.5" />
+    <line x1="16" y1="2.5" x2="16" y2="6.5" />
+    <line x1="4" y1="21" x2="20" y2="5" />
+  </svg>
+);
 const ShareIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
     <path d="M15 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -426,7 +444,7 @@ function buildItems(target: NonNullable<HomeState['ctxMenu']>['target'], state: 
       if (picked.length > 1) return multiItems(picked, controller);
     }
     const card = findCard(view, target.key);
-    return card ? mapItems(card, controller) : [];
+    return card ? mapItems(card, controller, state.calendarHidden) : [];
   }
   if (target.kind === 'folder') {
     // **폴더도 일괄 메뉴에 낀다**(요청: 폴더도 다중 선택) — 맵과 같은 규칙이다.
@@ -535,7 +553,7 @@ function multiItems(picked: Pick[], controller: HomeController): HomeMenuItem[] 
   return items;
 }
 
-function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[] {
+function mapItems(card: CardViewData, controller: HomeController, calendarHidden: readonly string[] = []): HomeMenuItem[] {
   const items: HomeMenuItem[] = [];
   // "새 탭에서 열기"는 #345에서 넣었다가 사용자 결정으로 뺐다 — 안 쓰는 항목은
   // 목록만 늘린다. 새 탭이 필요하면 카드 링크를 Ctrl/⌘+클릭하면 된다(카드는
@@ -593,6 +611,20 @@ function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[
         })),
       ],
     });
+  }
+  /**
+   * **칸반만의 한 줄 — 일정에 반영할까**(요청: 보드마다 일정 페이지의 달력에 넣고 뺀다).
+   *
+   * 자리를 보드 카드 메뉴로 둔 이유: 설정이 **보드 하나**에 걸리고, 여러 보드를 훑어
+   * 보며 켜고 끄는 곳이 이 목록이다(에디터 안에 두면 보드마다 열어야 한다). 값은 **내**
+   * 워크스페이스에 적힌다 — 공유받은 보드를 빼도 다른 사람의 달력은 그대로라, 보기
+   * 전용 보드에도 이 줄이 선다. 문구는 즐겨찾기·즐겨찾기 해제와 같은 짝으로 지금 상태를
+   * 뒤집는 동사를 적는다.
+   */
+  if (card.isKanban && card.docId) {
+    const docId = card.docId;
+    const off = calendarHidden.includes(docId);
+    items.push({ key: 'calendar', icon: off ? CalendarIcon : CalendarOffIcon, label: off ? '일정에 반영하기' : '일정에 반영하지 않기', onSelect: () => controller.toggleCalendarFor(docId) });
   }
   // 공유(요청) — 맵을 열지 않고 여기서 바로 초대·링크 공유. 팝업은 에디터가 쓰는
   // 그 `ShareModal` 그대로다(색만 홈 테마).

@@ -27,7 +27,7 @@ import { googlePrefsOf, useGoogleCalendar, type GoogleCalendarApi, type GoogleCa
 import { useSpaceStore } from '../../adapters/BackendContext';
 import type { DocStore, ShareStore, SpaceStore } from '../../adapters/ports';
 import { useDocStore, useShareStore } from '../../adapters/BackendContext';
-import { calendarEntries, type CalendarSource } from '../home/calendar/entries';
+import { calendarEntries, calendarHiddenOf, type CalendarSource } from '../home/calendar/entries';
 import { coerceSpaces } from '../home/storage';
 
 type GooglePrefBlob = { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string } | null;
@@ -43,7 +43,7 @@ let prefCache: { at: Promise<GooglePrefBlob> } | null = null;
  * (`previewDocs`) 새로운 비용의 종류는 아니다 — 새로운 것은 **공책에서도** 치른다는
  * 점이다.
  */
-let boardCache: { at: Promise<{ sources: CalendarSource[]; bodies: Record<string, string> }> } | null = null;
+let boardCache: { at: Promise<{ sources: CalendarSource[]; bodies: Record<string, string>; hidden: string[] }> } | null = null;
 
 /** 테스트가 탭 캐시를 비운다(`clearGoogleSessionCache`와 같은 자리). */
 export function clearNoteAgendaPrefCache(): void {
@@ -82,7 +82,8 @@ function loadBoards(spaceStore: SpaceStore, docStore: DocStore, shareStore: Shar
             if (raw) bodies[s.docId] = raw;
           }),
         );
-        return { sources, bodies };
+        // 일정에 반영하지 않기로 한 보드(요청) — 일정 화면과 **같은 목록**으로 거른다.
+        return { sources, bodies, hidden: calendarHiddenOf(ws?.calendarHidden) };
       })(),
     };
   }
@@ -144,7 +145,7 @@ export function useNoteAgenda(y: number, m: number, enabled = true): NoteAgenda 
   const [prefs, setPrefs] = useState<GoogleCalendarPrefs>(() => googlePrefsOf(null));
   const [prefsReady, setPrefsReady] = useState(false);
   /** 칸반 마감의 원천 — 받아 오기 전에는 `null`("아직 모름")이다. */
-  const [boards, setBoards] = useState<{ sources: CalendarSource[]; bodies: Record<string, string> } | null>(null);
+  const [boards, setBoards] = useState<{ sources: CalendarSource[]; bodies: Record<string, string>; hidden: string[] } | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -181,7 +182,7 @@ export function useNoteAgenda(y: number, m: number, enabled = true): NoteAgenda 
     const gs = googleEntries(google.events);
     // 칸반 카드의 **마감·기간** — 일정 화면의 첫 번째 원천이다(제보: 공책에는 그것이
     // 빠져 있어 「3/3일째」·종일 항목이 통째로 보이지 않았다).
-    const ks = boards ? calendarEntries(boards.sources, boards.bodies) : [];
+    const ks = boards ? calendarEntries(boards.sources, boards.bodies, boards.hidden) : [];
     return [...ks, ...evs, ...gs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
   }, [enabled, events.events, google.events, boards, y, m]);
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
-import { calendarEntries, datedCards, eventEntries } from './entries';
+import { calendarEntries, calendarHiddenOf, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
 import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW, calendarBrief, calendarBriefLine, nextTimeSlot, TIME_STEP } from './model';
 
@@ -18,6 +18,19 @@ describe('일정 수집기(entries)', () => {
     const out = calendarEntries(SRC, { d1: kanban([card(), card({ id: 'k2', text: '날짜 없음', due: undefined })]) });
     expect(out.length).toBe(1);
     expect(out[0]).toMatchObject({ docId: 'd1', cardId: 'k1', title: '카드', due: '2026-08-20', colName: '할 일', colIndex: 0, boardName: '스프린트 보드', spaceName: '일반 스페이스' });
+  });
+
+  it('**일정에 반영하지 않기로 한 보드**는 통째로 빠진다 — 다른 보드는 그대로(요청)', () => {
+    const src = [...SRC, { docId: 'd2', boardName: '다른 보드', spaceName: '일반 스페이스' }];
+    const bodies = { d1: kanban([card()]), d2: kanban([card({ id: 'x1', text: '남는 카드' })]) };
+    expect(calendarEntries(src, bodies).map((e) => e.title)).toEqual(['남는 카드', '카드']);
+    expect(calendarEntries(src, bodies, ['d1']).map((e) => e.title)).toEqual(['남는 카드']);
+  });
+
+  it('`calendarHiddenOf` — 문자열만·겹치면 하나로·모양이 어긋나면 빈 목록', () => {
+    expect(calendarHiddenOf(['d1', 'd1', 42, '', null, 'd2'])).toEqual(['d1', 'd2']);
+    expect(calendarHiddenOf(undefined)).toEqual([]);
+    expect(calendarHiddenOf({ d1: true })).toEqual([]);
   });
 
   it('완료(마지막) 열의 카드는 달력에서 빠진다', () => {

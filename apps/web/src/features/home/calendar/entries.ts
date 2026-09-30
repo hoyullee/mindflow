@@ -158,6 +158,15 @@ export function datedCards(docId: string, raw: string | undefined): DatedCard[] 
   return cards;
 }
 
+/**
+ * **일정에 반영하지 않을 보드**(요청 — 워크스페이스 블롭의 `calendarHidden`)를 읽는다.
+ * 모양이 어긋난 값은 버리고 겹친 id는 하나로 — 어댑터 둘과 홈이 **같은 규칙**을 쓴다.
+ */
+export function calendarHiddenOf(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.filter((x): x is string => typeof x === 'string' && x.length > 0))];
+}
+
 /** 어느 문서를 훑을지 — 스페이스 목록에서 (docId, 보드 이름, 스페이스 이름)을 뽑는다. */
 export interface CalendarSource {
   docId: string;
@@ -299,9 +308,13 @@ export function holidayMap(events: readonly GoogleEvent[]): Record<string, Holid
 /**
  * 전 스페이스의 일정 항목. 같은 문서가 여러 목록에 있어도 한 번만 읽는다.
  * 결과는 기한 → 제목 순으로 안정 정렬(같은 날 순서가 렌더마다 흔들리지 않게).
+ *
+ * @param hidden **일정에 반영하지 않을 보드**(요청 — 홈 보드 카드 메뉴). 여기서 거르는
+ *   이유: 이 함수를 지나는 곳이 셋이다(일정 화면·위젯 / LNB 요약 / 공책의 일정). 부르는
+ *   쪽마다 거르면 한 곳을 빠뜨리는 날 두 화면의 「일정 N개」가 달라진다.
  */
-export function calendarEntries(sources: readonly CalendarSource[], bodies: Record<string, string | undefined>): CalendarEntry[] {
-  const seen = new Set<string>();
+export function calendarEntries(sources: readonly CalendarSource[], bodies: Record<string, string | undefined>, hidden: readonly string[] = []): CalendarEntry[] {
+  const seen = new Set<string>(hidden);
   const out: CalendarEntry[] = [];
   for (const s of sources) {
     if (!s.docId || seen.has(s.docId)) continue;
