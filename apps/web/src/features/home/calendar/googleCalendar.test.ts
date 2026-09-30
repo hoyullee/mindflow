@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
-  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, HOLIDAY_COUNTRIES, HOLIDAY_OFF, holidayCountryOf, holidayCountryOfId, isManagedHolidayId, parseCalendarList, parseEvents, probeCalendar, calendarAddError, mergeExtraCalendars, coerceExtraCalendars, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleCalendarColor, GOOGLE_CALENDAR_PALETTE, modernGoogleHex, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, HOLIDAY_COUNTRIES, HOLIDAY_OFF, holidayCountryOf, holidayCountryOfId, isManagedHolidayId, parseCalendarList, parseEvents, probeCalendar, calendarAddError, mergeExtraCalendars, coerceExtraCalendars, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -514,6 +514,9 @@ describe('구글 일정 색(요청 ⑤ — 그 일정에 지정한 색을 그대
   it('`/colors`는 배경 hex만 걸러 읽고, 비었으면 null이다(폴백 표를 쓴다)', async () => {
     vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({ event: { '1': { background: '#7986cb', foreground: '#1d1d1d' }, '2': { background: 3 } } }) }) as unknown as Response);
     expect(await fetchEventColors('tok')).toEqual({ '1': '#7986cb' });
+    // 실제 응답은 **클래식** 값이다 — 구글 캘린더 웹이 그리는 모던 값으로 돌려준다(제보).
+    vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({ event: { '6': { background: '#ffb878' }, '7': { background: '#46d6db' } } }) }) as unknown as Response);
+    expect(await fetchEventColors('tok')).toEqual({ '6': '#f4511e', '7': '#039be5' });
     vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({}) }) as unknown as Response);
     expect(await fetchEventColors('tok')).toBeNull();
     vi.stubGlobal('fetch', async () => ({ ok: false, status: 403, json: async () => ({}) }) as unknown as Response);
@@ -865,5 +868,42 @@ describe('캘린더 더하기 — 그리오 목록', () => {
         { id: 'b@x', name: 'b@x' },
       ],
     });
+  });
+});
+
+describe('구글 색 — API의 클래식 팔레트 → 구글 캘린더 웹의 모던 팔레트(제보)', () => {
+  it('클래식 값은 모던 짝으로, 그 밖(사용자 지정·이미 모던)은 그대로', () => {
+    expect(modernGoogleHex('#9fe1e7')).toBe('#039be5'); // 캘린더 14 Peacock
+    expect(modernGoogleHex('#FFAD46')).toBe('#f09300'); // 캘린더 6 Mango(대소문자 무관)
+    expect(modernGoogleHex('#a4bdfc')).toBe('#7986cb'); // 일정 1 Lavender
+    expect(modernGoogleHex('#dc2127')).toBe('#d50000'); // 일정 11 Tomato
+    expect(modernGoogleHex('#123456')).toBe('#123456');
+    expect(modernGoogleHex('#039be5')).toBe('#039be5');
+  });
+
+  it('캘린더 24색 전부 번호·클래식 hex가 짝을 이룬다 — 표의 오타가 곧 색 어긋남이다', () => {
+    const ids = Object.keys(GOOGLE_CALENDAR_PALETTE);
+    expect(ids).toHaveLength(24);
+    for (const id of ids) {
+      const c = GOOGLE_CALENDAR_PALETTE[id]!;
+      expect(googleCalendarColor(c.classic, id)).toBe(c.modern);
+    }
+  });
+
+  it('캘린더 목록 한 줄: 사용자 지정 hex는 그대로, 팔레트 색은 **번호**가 정한다, 번호만 있어도 된다', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(googleCalendarColor('#123abc', '14')).toBe('#123abc');
+    expect(googleCalendarColor(undefined, '6')).toBe('#f09300');
+    expect(googleCalendarColor('#9fe1e7', undefined)).toBe('#039be5');
+    // 번호와 hex가 서로 다른 칸을 가리키면 번호를 따르고, 한 번 남긴다
+    expect(googleCalendarColor('#9fe1e7', '6', 'cal-x')).toBe('#f09300');
+    expect(googleCalendarColor('#9fe1e7', '6', 'cal-x')).toBe('#f09300');
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('parseCalendarList가 그 색을 싣는다', () => {
+    const list = parseCalendarList({ items: [{ id: 'me@example.com', summary: '나', primary: true, colorId: '14', backgroundColor: '#9fe1e7' }] });
+    expect(list[0]!.color).toBe('#039be5');
   });
 });

@@ -1600,6 +1600,59 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(markOf('색 없는 회의')).toBe('rgb(66, 133, 244)');
   });
 
+  it('구글 API의 **클래식** 색을 구글 캘린더 웹과 같은 **모던** 색으로 그린다 — 캘린더 색·일정 색·색 고르개(제보)', async () => {
+    // 실제 응답 모양 그대로다: 구글 API는 언제나 클래식 팔레트를 준다(`/colors`의 1번은
+    // `#a4bdfc`, 캘린더 14번은 `#9fe1e7`). 구글 캘린더 웹은 같은 번호를 모던 팔레트로 그린다
+    // (Lavender `#7986cb` · Tangerine `#f4511e` · Peacock `#039be5`). 예전 이 파일의 시드는
+    // `/colors`에 **모던 값을 심어서** 이 차이를 가렸다(위 테스트의 `'11': '#d50000'`).
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    const classic = { '1': '#a4bdfc', '2': '#7ae7bf', '3': '#dbadff', '4': '#ff887c', '5': '#fbd75b', '6': '#ffb878', '7': '#46d6db', '8': '#e1e1e1', '9': '#5484ed', '10': '#51b749', '11': '#dc2127' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/colors')) return ok({ event: Object.fromEntries(Object.entries(classic).map(([id, background]) => [id, { background, foreground: '#1d1d1d' }])) });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, colorId: '14', backgroundColor: '#9fe1e7', foregroundColor: '#000000', accessRole: 'owner' }] });
+        return ok({
+          items: [
+            { id: 'g1', summary: '귤색 회의', colorId: '6', start: { dateTime: `${day}T09:00:00+09:00` }, end: { dateTime: `${day}T10:00:00+09:00` } },
+            { id: 'g3', summary: '색 없는 회의', start: { dateTime: `${day}T13:00:00+09:00` }, end: { dateTime: `${day}T14:00:00+09:00` } },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const cell = await waitFor(() => {
+      const el = container.querySelector<HTMLElement>(`[data-day-cell="${day}"]`);
+      expect(el?.textContent).toContain('귤색 회의');
+      return el as HTMLElement;
+    });
+    const markOf = (title: string) => {
+      const chip = [...cell.querySelectorAll<HTMLElement>('[data-cal-chip]')].find((c) => c.textContent?.includes(title))!;
+      return chip.querySelector<HTMLElement>('span[style*="border-radius"]')?.style.background ?? '';
+    };
+    // 일정 색 6번 — 클래식 `#ffb878`(옅은 살구)이 아니라 Tangerine `#f4511e`
+    await waitFor(() => expect(markOf('귤색 회의')).toBe('rgb(244, 81, 30)'));
+    // 색 없는 일정 = 캘린더 색 — 14번 클래식 `#9fe1e7`(옅은 청록)이 아니라 Peacock `#039be5`
+    expect(markOf('색 없는 회의')).toBe('rgb(3, 155, 229)');
+    // 색 고르개의 칸도 구글 웹의 그 칸이다(Lavender부터)
+    await user.click([...cell.querySelectorAll<HTMLElement>('[data-cal-chip]')].find((c) => c.textContent?.includes('귤색 회의'))!);
+    const swatches = await waitFor(() => {
+      const list = [...document.querySelectorAll<HTMLElement>('[data-event-color]')].filter((b) => b.getAttribute('data-event-color') !== '기본');
+      expect(list.length).toBe(11);
+      return list;
+    });
+    expect(swatches[0]!.style.background).toBe('rgb(121, 134, 203)');
+    expect(swatches.map((b) => b.style.background)).not.toContain('rgb(164, 189, 252)');
+  });
+
   it('참석을 **거부한** 일정은 칸에서 취소선으로 선다(요청)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();

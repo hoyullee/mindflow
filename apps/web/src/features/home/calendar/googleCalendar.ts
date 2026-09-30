@@ -828,7 +828,97 @@ export const GOOGLE_EVENT_COLORS: Record<string, string> = {
 };
 
 /**
+ * **구글 API의 색은 언제나 "클래식" 팔레트다**(제보: 구글 캘린더에서 본 색과 그리오의 색이
+ * 다르다). `/colors`도 캘린더 목록의 `backgroundColor`도 2011년 판 파스텔 값(`#a4bdfc`·
+ * `#9fe1e7` …)을 주는데, 구글 캘린더 웹은 **같은 번호를 새(모던) 팔레트로** 그린다 — 번호와
+ * 이름은 같고 hex만 다르다(gcsa 문서: "Google's API always returns classic colors").
+ * 우리는 그 hex를 그대로 칠해서 모든 캘린더·일정 색이 구글과 다른 톤으로 보였다
+ * (실측: 캘린더 14번이 우리 화면에선 옅은 청록 `#9fe1e7`, 구글에선 Peacock `#039be5`).
+ *
+ * 그래서 색이 들어오는 **두 입구**(`fetchEventColors` · `parseCalendarList`)에서 한 번
+ * 모던 값으로 바꿔 둔다 — 그 뒤의 소비처(격자·시간표·색 고르개·LNB·공책)는 손대지 않는다.
+ */
+export const GOOGLE_CALENDAR_PALETTE: Record<string, { classic: string; modern: string }> = {
+  '1': { classic: '#ac725e', modern: '#795548' }, // Cocoa
+  '2': { classic: '#d06b64', modern: '#e67c73' }, // Flamingo
+  '3': { classic: '#f83a22', modern: '#d50000' }, // Tomato
+  '4': { classic: '#fa573c', modern: '#f4511e' }, // Tangerine
+  '5': { classic: '#ff7537', modern: '#ef6c00' }, // Pumpkin
+  '6': { classic: '#ffad46', modern: '#f09300' }, // Mango
+  '7': { classic: '#42d692', modern: '#009688' }, // Eucalyptus
+  '8': { classic: '#16a765', modern: '#0b8043' }, // Basil
+  '9': { classic: '#7bd148', modern: '#7cb342' }, // Pistachio
+  '10': { classic: '#b3dc6c', modern: '#c0ca33' }, // Avocado
+  '11': { classic: '#fbe983', modern: '#e4c441' }, // Citron
+  '12': { classic: '#fad165', modern: '#f6bf26' }, // Banana
+  '13': { classic: '#92e1c0', modern: '#33b679' }, // Sage
+  '14': { classic: '#9fe1e7', modern: '#039be5' }, // Peacock
+  '15': { classic: '#9fc6e7', modern: '#4285f4' }, // Cobalt
+  '16': { classic: '#4986e7', modern: '#3f51b5' }, // Blueberry
+  '17': { classic: '#9a9cff', modern: '#7986cb' }, // Lavender
+  '18': { classic: '#b99aff', modern: '#b39ddb' }, // Wisteria
+  '19': { classic: '#c2c2c2', modern: '#616161' }, // Graphite
+  '20': { classic: '#cabdbf', modern: '#a79b8e' }, // Birch
+  '21': { classic: '#cca6ac', modern: '#ad1457' }, // Radicchio
+  '22': { classic: '#f691b2', modern: '#d81b60' }, // Cherry Blossom
+  '23': { classic: '#cd74e6', modern: '#8e24aa' }, // Grape
+  '24': { classic: '#a47ae2', modern: '#9e69af' }, // Amethyst
+};
+
+/** `/colors`의 이벤트 팔레트가 주는 클래식 값 — 번호가 같으면 모던 값은 `GOOGLE_EVENT_COLORS`. */
+const GOOGLE_EVENT_CLASSIC: Record<string, string> = {
+  '1': '#a4bdfc',
+  '2': '#7ae7bf',
+  '3': '#dbadff',
+  '4': '#ff887c',
+  '5': '#fbd75b',
+  '6': '#ffb878',
+  '7': '#46d6db',
+  '8': '#e1e1e1',
+  '9': '#5484ed',
+  '10': '#51b749',
+  '11': '#dc2127',
+};
+
+/** 클래식 hex → 모던 hex(캘린더 24색 + 일정 11색 — 두 표의 값은 겹치지 않는다). */
+const CLASSIC_TO_MODERN: ReadonlyMap<string, string> = new Map([
+  ...Object.values(GOOGLE_CALENDAR_PALETTE).map((c) => [c.classic, c.modern] as const),
+  ...Object.entries(GOOGLE_EVENT_CLASSIC).map(([id, hex]) => [hex, GOOGLE_EVENT_COLORS[id]!] as const),
+]);
+
+/**
+ * 구글이 준 hex를 **구글 캘린더 웹이 그리는 색**으로 — 클래식 팔레트 값이면 모던 짝으로,
+ * 아니면(사용자 지정 색·이미 모던 값) 그대로. 대소문자를 가리지 않는다.
+ */
+export function modernGoogleHex(hex: string): string {
+  return CLASSIC_TO_MODERN.get(hex.toLowerCase()) ?? hex;
+}
+
+/**
+ * 캘린더 목록 한 줄의 색 — `backgroundColor`와 `colorId`를 함께 본다.
+ *
+ * - **사용자 지정 색**(팔레트 밖의 hex): 구글 웹도 그 hex를 그대로 그린다 → 그대로.
+ * - **팔레트 색**: 구글 웹은 **번호**(`colorId`)의 모던 색을 그린다 → 번호가 정한다. 번호와
+ *   hex가 서로 다른 팔레트 칸을 가리키는 행이 있으면(한쪽이 늦게 갱신된 것) 번호를 믿고,
+ *   그 사실을 콘솔에 한 번 남긴다 — 그래도 구글과 색이 다르다는 제보가 오면 그 줄이 답이다.
+ */
+const warnedCalendarColors = new Set<string>();
+export function googleCalendarColor(backgroundColor: unknown, colorId: unknown, calendarId = ''): string | undefined {
+  const bg = typeof backgroundColor === 'string' && /^#[0-9a-f]{3,8}$/i.test(backgroundColor) ? backgroundColor.toLowerCase() : undefined;
+  const byId = typeof colorId === 'string' ? GOOGLE_CALENDAR_PALETTE[colorId] : undefined;
+  if (!bg) return byId?.modern;
+  if (!CLASSIC_TO_MODERN.has(bg)) return bg;
+  if (byId && byId.classic !== bg && !warnedCalendarColors.has(calendarId)) {
+    warnedCalendarColors.add(calendarId);
+    console.warn(`[geurio] 캘린더 색 번호와 hex가 다르다 — 번호(${String(colorId)})를 따릅니다(backgroundColor ${bg})`);
+  }
+  return byId ? byId.modern : modernGoogleHex(bg);
+}
+
+/**
  * `/colors`의 이벤트 팔레트 — 번호 → 배경 hex. 실패하면 `null`(폴백 표를 쓴다).
+ * 받은 값은 **모던 색으로 바꿔** 돌려준다(`modernGoogleHex` 머리말) — 색 고르개의 칸과
+ * 칩의 색이 구글 캘린더 웹의 그 칸과 같아야 한다.
  *
  * **실패를 드러낸다**(제보: 구글에서 지정한 색과 표식 색이 달랐다). 이 조회가 조용히
  * 실패하면 화면은 레거시 폴백 표로 그리고, 구글이 팔레트를 넓힌 뒤 지정한 색은 표에
@@ -845,7 +935,7 @@ export async function fetchEventColors(token: string): Promise<Record<string, st
     }
     const out: Record<string, string> = {};
     for (const [id, v] of Object.entries(src)) {
-      if (typeof v?.background === 'string') out[id] = v.background;
+      if (typeof v?.background === 'string') out[id] = modernGoogleHex(v.background);
     }
     // 몇 색을 받았는지는 **화면이 이미 말한다** — 색 칸의 개수가 곧 이 응답의 개수다
     // (우리가 목록을 적어 두지 않는다). 그래서 그것을 콘솔에 한 줄 더 찍지 않는다
@@ -967,7 +1057,8 @@ export function parseCalendarList(json: unknown): GoogleCalendarMeta[] {
     // 숨긴 캘린더는 구글 화면에서도 안 보인다 — 우리도 목록에 올리지 않는다.
     if (it.hidden === true) continue;
     const summary = typeof it.summaryOverride === 'string' && it.summaryOverride ? it.summaryOverride : typeof it.summary === 'string' ? it.summary : id;
-    const color = typeof it.backgroundColor === 'string' ? it.backgroundColor : undefined;
+    // 구글 캘린더 웹이 그리는 그 색으로(클래식 → 모던, 번호 우선) — `googleCalendarColor`.
+    const color = googleCalendarColor(it.backgroundColor, it.colorId, id);
     out.push({
       id,
       summary,

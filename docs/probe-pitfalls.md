@@ -58,6 +58,7 @@
 | `::selection` 규칙을 적었는데 크로뮴에서 **걸리지 않는다** | 선택자 목록에 `::-moz-selection`이 섞이면 크로뮴은 규칙 전체를 버린다 · jsdom은 `::selection`을 계산하지 않는다 | [F38](probe-pitfalls-detail.md#f38) |
 | 넘치면 흐르게 했는데 **실브라우저에서 한 번도 안 흐른다**(jsdom 테스트는 통과) | 인라인 요소의 `scrollWidth`는 늘 0 · 테스트가 그 값을 **심어서** 가렸다 | [F39](probe-pitfalls-detail.md#f39) |
 | 글꼴 기능을 껐더니 헤드리스에선 풀렸는데 **실기기에선 그대로다** | 한 엔진·한 판의 모양내기로 결론을 냈다 — 폰트를 HarfBuzz로 직접 모양내 규칙을 확인한다 | [F40](probe-pitfalls-detail.md#f40) |
+| 외부 API 변환 버그가 테스트로 **안 잡힌다**(제보는 온다) | 시드를 API의 실제 값이 아니라 **화면에 나올 값**으로 지었다 — 구글은 클래식 색을 준다 | [F41](probe-pitfalls-detail.md#f41) |
 | 폭 비교가 3px 어긋난다 | 기울어진 요소는 bounding box가 부푼다 | [D3](probe-pitfalls-detail.md#d3) |
 | 서식을 걸었더니 글이 밀렸다고 나온다 | `Range` 사각형은 인라인 스팬의 **padding까지** 센다 | [D5](probe-pitfalls-detail.md#d5) |
 | 클릭이 엉뚱한 것을 잡는다 | 그 자리에 칩·시트가 먼저 있다 | [D4](probe-pitfalls-detail.md#d4) |
