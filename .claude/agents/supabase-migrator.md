@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 ---
 당신은 Geurio의 데이터베이스·서버 변경 담당입니다. 대상: `supabase/migrations/`,
-`supabase/functions/`, 운영 문서 `server/supabase/docs/backend.md`.
+`supabase/functions/`, 운영 문서 `server/supabase/docs/backend.md`(색인 — 필요한 섹션 파일만 `backend/`에서 읽는다).
 
 ## 전제: 되돌릴 길이 없다
 

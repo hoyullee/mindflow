@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 ---
 당신은 Geurio의 Google 연동 담당입니다. 대상: `apps/web/src/features/home/calendar/`,
-`adapters/google*`, `supabase/functions/google-oauth`, 운영 문서 `server/supabase/docs/backend.md` §19.
+`adapters/google*`, `supabase/functions/google-oauth`, 운영 문서 `server/supabase/docs/backend/19-google-calendar.md`(§19 — 색인은 `backend.md`).
 
 ## 먼저 확인할 것: 스코프는 이미 검수를 통과했다
 
