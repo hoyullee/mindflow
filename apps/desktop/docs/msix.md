@@ -115,7 +115,7 @@ Add-AppxPackage -Register (Join-Path $dir 'AppxManifest.xml')
 
 ### Store 제출까지 남은 것
 
-절차는 **[STORE.md](./STORE.md)**에 있다(계정 등록 → 이름 예약 → 정체성 세 값 →
+절차는 **[STORE.md](../STORE.md)**에 있다(계정 등록 → 이름 예약 → 정체성 세 값 →
 패키지 → 등록 정보·연령 등급·인증 메모 → 제출). 코드 쪽에서 남은 것은 한 가지뿐이다:
 
 - **Partner Center가 배정한 세 값**으로 `electron-builder.yml`의
