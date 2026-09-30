@@ -76,8 +76,6 @@ describe('home theme', () => {
       '--mf-cal-sel': '#fcf6ed',
       '--mf-cal-sun': '#fef8f5',
       '--mf-cal-sat': '#f9fbfd',
-      '--mf-cal-today': '#fff3ec',
-      '--mf-cal-today-sel': '#fdefe4',
       '--mf-cal-head': '#fcfcfb',
       '--mf-cal-head-dot': 'rgba(199,186,172,.28)',
       '--mf-cal-frame': '#ede3d6',
