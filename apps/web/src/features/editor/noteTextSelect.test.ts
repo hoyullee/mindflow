@@ -3,7 +3,7 @@
 // 왜 이 파일이 있나(제보): `2222`를 골라 굵게를 눌렀는데 `222`가 굵어졌다.
 // 고른 자리는 텍스트 노드만 훑어 셌고(`<br>`을 세지 않았다) 서식을 거는 쪽은
 // 값(`domToRuns`)의 좌표를 기대했다 — `<br>` 하나만큼 어긋나 있었다.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { charOffset, drawSelLayer, lineLength, lineText, pointAt } from './noteTextSelect';
 
 function box(html: string): HTMLElement {
@@ -113,6 +113,45 @@ describe('drawSelLayer — 줄 높이의 띠', () => {
 
     drawSelLayer([]);
     expect(layer.children).toHaveLength(0);
+    col.remove();
+  });
+
+  /**
+   * 제보 — 접기 내용(표의 칸과 같은 **글자 마커** 줄)을 고르면 번호·기호까지 칠해졌다.
+   * `Range.getClientRects()`가 마커 스팬과 마커를 품은 행 상자까지 주기 때문이다.
+   */
+  it('마커를 글자로 드는 줄에서는 **마커를 칠하지 않는다** — 띠는 글자에서 시작한다', () => {
+    const col = document.createElement('div');
+    col.setAttribute('data-note-col', '');
+    const line = document.createElement('div');
+    line.setAttribute('data-note-line', 't:body');
+    line.setAttribute('data-list-box', '');
+    line.style.lineHeight = '26px';
+    line.innerHTML = '<div><span data-list-marker>• </span><span>가나다</span></div>';
+    const layer = document.createElement('div');
+    layer.setAttribute('data-note-sel-layer', '');
+    col.append(line, layer);
+    document.body.appendChild(col);
+    layer.getBoundingClientRect = () => rect(0, 0, 0, 0);
+    // 조각의 자리 — 마커 글자는 0~12, 내용 글자는 12~60, 통째로 든 행 상자는 0~60.
+    // jsdom의 Range에는 `getClientRects`가 없다 — 자리를 세워 두고 그 위에 스파이를 건다.
+    const had = 'getClientRects' in Range.prototype;
+    if (!had) Object.defineProperty(Range.prototype, 'getClientRects', { value: () => [], configurable: true, writable: true });
+    const spy = vi.spyOn(Range.prototype, 'getClientRects').mockImplementation(function (this: Range) {
+      const n = this.startContainer;
+      if (n.nodeType !== 3) return [rect(0, 100, 60, 26)] as unknown as DOMRectList;
+      return [n.parentElement?.hasAttribute('data-list-marker') ? rect(0, 104, 12, 17) : rect(12, 104, 48, 17)] as unknown as DOMRectList;
+    });
+    const r = document.createRange();
+    r.selectNodeContents(line);
+
+    drawSelLayer([r]);
+    const bands = [...layer.querySelectorAll<HTMLElement>('[data-note-sel-band]')].map((b) => [b.style.left, b.style.width]);
+    expect(bands).toEqual([['12px', '48px']]);
+
+    drawSelLayer([]);
+    spy.mockRestore();
+    if (!had) delete (Range.prototype as { getClientRects?: unknown }).getClientRects;
     col.remove();
   });
 });

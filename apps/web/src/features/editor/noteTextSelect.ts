@@ -507,6 +507,35 @@ function bandHeight(line: HTMLElement | null, glyph: number): number {
   return lh > glyph ? lh : glyph;
 }
 
+/**
+ * 그 구간이 칠할 **사각형들** — 마커를 글자로 드는 줄(표의 칸·접기의 내용 — `data-list-box`)에서는
+ * **마커 밖의 글자**만 잰다(제보: 접기 내용의 번호·기호까지 선택 배경이 칠해진다).
+ *
+ * `Range.getClientRects()`는 구간 안의 글자 조각에 더해 **통째로 들어온 요소의 상자**까지 준다 —
+ * 마커 스팬도, 마커를 품은 행(`display:flex` 줄)도 그렇게 들어와 띠가 마커 위까지 뻗었다. 마커의
+ * `::selection`은 이미 투명이지만(시트) 이 덮개는 선택이 아니라 우리가 그리는 상자라 그 규칙이
+ * 닿지 않는다. 그래서 그런 줄에서는 글자 노드를 하나씩 걸러 그 조각만 잰다. 마커가 없는 줄은
+ * 예전 그대로다(빈 줄·칩의 상자가 띠를 만드는 길을 건드리지 않는다).
+ */
+function rangeRects(r: Range): DOMRect[] {
+  const line = lineOfNode(r.startContainer);
+  const boxed = !!line?.hasAttribute('data-list-box') && !!line.querySelector('[data-list-marker]');
+  if (!boxed) return typeof r.getClientRects === 'function' ? [...r.getClientRects()] : [];
+  const root = r.commonAncestorContainer;
+  const out: DOMRect[] = [];
+  const walk = document.createTreeWalker(root.nodeType === 3 ? (root.parentNode ?? root) : root, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode() as Text | null; n; n = walk.nextNode() as Text | null) {
+    if (!r.intersectsNode(n)) continue;
+    if (n.parentElement?.closest('[data-list-marker]')) continue; // 마커는 장식 — 칠하지 않는다
+    const piece = document.createRange();
+    piece.setStart(n, n === r.startContainer ? r.startOffset : 0);
+    piece.setEnd(n, n === r.endContainer ? r.endOffset : (n.nodeValue ?? '').length);
+    if (piece.collapsed) continue;
+    if (typeof piece.getClientRects === 'function') out.push(...piece.getClientRects());
+  }
+  return out;
+}
+
 export function drawSelLayer(ranges: Range[]): void {
   if (typeof document === 'undefined') return;
   for (const l of document.querySelectorAll('[data-note-sel-layer]')) l.replaceChildren();
@@ -536,7 +565,7 @@ export function drawSelLayer(ranges: Range[]): void {
   for (const r of ranges) {
     let rects: DOMRect[];
     try {
-      rects = typeof r.getClientRects === 'function' ? [...r.getClientRects()] : [];
+      rects = rangeRects(r);
     } catch {
       continue; // 구간이 끊겼다(DOM을 다시 심었다)
     }
