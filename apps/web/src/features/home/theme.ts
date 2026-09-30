@@ -520,9 +520,9 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-cal-sat': k === 'coral' ? '#f9fbfd' : mixHex(t.card, t.info, 0.03),
     // ── 일정 화면(스펙 2026-09-30) — 기본(코랄)은 스펙 값 그대로, 나머지는 같은 자리의
     //    자기 색에서 파생한다(격자선·이웃 달과 같은 방식).
-    /** 오늘 칸 — 강조색을 아주 옅게(선택 < 오늘). 골라도 같은 면이다(요청 — 스펙의
-     *  「오늘+선택」 `#FDEFE4`는 눌렀을 때 칸이 한 톤 짙어져 이상해 보여 뺐다). */
+    /** 오늘 칸 / 오늘이면서 고른 칸 — 강조색을 아주 옅게(선택 < 오늘 < 오늘+선택). */
     '--mf-cal-today': k === 'coral' ? '#fff3ec' : mixHex(t.card, t.accent, 0.07),
+    '--mf-cal-today-sel': k === 'coral' ? '#fdefe4' : mixHex(t.card, t.accent, 0.11),
     /** 헤더 띠의 면과 점 — 캔버스의 점 격자를 옅게(28%) 축소한 것. */
     '--mf-cal-head': k === 'coral' ? '#fcfcfb' : mixHex(t.card, t.bg, 0.5),
     '--mf-cal-head-dot': k === 'coral' ? 'rgba(199,186,172,.28)' : t.dotGrid,
