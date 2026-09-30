@@ -57,7 +57,7 @@ jobs:
           want="${GITHUB_REF_NAME#desktop-v}"
           have="$(node -p "require('./apps/desktop/package.json').version")"
           if [ "$want" != "$have" ]; then
-            echo "::error title=버전 불일치::태그는 $want 인데 apps/desktop/package.json은 $have 입니다. 버전을 먼저 올려 라이브까지 배포한 뒤 태그하세요(apps/desktop/README.md의 「새 판을 내보내는 절차」)."
+            echo "::error title=버전 불일치::태그는 $want 인데 apps/desktop/package.json은 $have 입니다. 버전을 먼저 올려 라이브까지 배포한 뒤 태그하세요(apps/desktop/docs/release.md의 「새 판을 내보내는 절차」)."
             exit 1
           fi
           echo "태그 $GITHUB_REF_NAME ↔ 셸 $have — 일치"
@@ -144,7 +144,7 @@ jobs:
         #              (또는 APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID)
         #            그때 electron-builder.yml의 `mac.identity: null`을 지우고
         #            `hardenedRuntime`을 **true로** 바꾼다 — 공증이 요구한다.
-        #            절차 전체는 apps/desktop/README.md의 「macOS 공증」.
+        #            절차 전체는 apps/desktop/docs/signing.md의 「macOS 공증」.
         env:
           # 무서명 빌드에서 electron-builder가 인증서를 찾다 실패하지 않게.
           CSC_IDENTITY_AUTO_DISCOVERY: false
