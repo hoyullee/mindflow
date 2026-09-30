@@ -904,13 +904,27 @@ export function pasteNoteBlocks(
    * (`adopt`), 문장 가운데면 예전처럼 글자로 남는다(요청의 단서).
    */
   const dropMark = listed && first.kind !== null;
+  /**
+   * **목록에 붙여넣으면 깊이는 붙이는 자리를 기준으로 옮긴다**(제보: 1·2번 줄 중 2번을
+   * 들여쓰고 둘을 복사한 뒤, 2번 줄에서 Enter로 만든 — 들여쓴 — 3번 줄에 붙여넣으면
+   * 1번 줄의 내용이 3번 줄의 깊이가 아니라 **내어쓴 맨 왼쪽**에서 시작했다).
+   *
+   * 예전에는 첫 줄이 같은 종류의 표식을 달고 오면(`adopt`) 복사해 온 **원래 깊이**를
+   * 그대로 썼다 — 복사할 때의 깊이는 원래 목록의 자리를 말할 뿐, 붙이는 자리와는 무관하다.
+   * 이제 첫 줄은 **붙이는 항목의 깊이**에 서고, 이어지는 줄은 첫 줄과의 **차이**를 지킨다
+   * (복사한 두 줄의 계단 모양이 그대로 옮겨 간다 — 노션·구글 문서와 같은 규칙). 0 밑으로는
+   * 내려가지 않는다. 목록이 아닌 줄에 붙일 때는 예전처럼 표식의 깊이를 그대로 쓴다.
+   */
+  const depth = j >= 0 && listed ? itemDepth(items[j] as NoteListItem) : 0;
+  const shift = listed ? depth - (first.kind !== null ? first.indent : 0) : 0;
+  const moved = (n: number): number => Math.max(0, Math.min(NOTE_LIST_MAX_INDENT, n + shift));
   interface Out { kind: 'ul' | 'ol' | 'ck' | null; indent: number; done?: boolean; start?: number; chars: ReturnType<typeof plainChars> }
   const out: Out[] = lines.map((ln, k) => {
     if (k === 0) {
       const keep = adopt || dropMark ? ln.text : ln.raw;
       return {
         kind: adopt ? ln.kind : listed ? src.kind : null,
-        indent: adopt ? ln.indent : j >= 0 ? itemDepth(items[j] as NoteListItem) : 0,
+        indent: listed ? depth : adopt ? ln.indent : 0,
         ...(adopt ? { done: ln.done, start: ln.start } : { done: (items[j] as NoteListItem | undefined)?.done }),
         chars: [...head, ...plainChars(keep)],
       } as Out;
@@ -924,7 +938,7 @@ export function pasteNoteBlocks(
      * 제 표식을 달고 온 줄은 그대로 제 종류를 쓴다.
      */
     if (!ln.kind && listed) return { kind: src.kind as 'ul' | 'ol' | 'ck', indent: itemDepth(items[j] as NoteListItem), chars: plainChars(ln.text) };
-    return { kind: ln.kind, indent: ln.indent, done: ln.done, start: ln.start, chars: plainChars(ln.text) };
+    return { kind: ln.kind, indent: listed && ln.kind ? moved(ln.indent) : ln.indent, done: ln.done, start: ln.start, chars: plainChars(ln.text) };
   });
   const lastOut = out[out.length - 1] as Out;
   // 캐럿은 **붙인 글의 끝**이다 — 뒤에 따라붙는 꼬리 앞.

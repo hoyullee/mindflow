@@ -587,6 +587,31 @@ describe('평문을 본문에 붙여넣는다 — 표식을 살려서', () => {
     expect(out?.blocks[0]?.items?.map((x) => x.id)).toEqual(['i1', expect.any(String), 'i2']);
   });
 
+  /**
+   * 제보 — 1·2번 줄 중 2번을 들여쓰고 둘을 복사, 2번 줄에서 Enter로 만든 3번 줄(들여쓴
+   * 자리)에 붙여넣으면 1번 줄의 내용이 **내어쓴 맨 왼쪽**에서 시작했다. 복사해 온 깊이
+   * (0·1)를 그대로 썼기 때문이다 — 깊이는 **붙이는 자리 기준**으로 옮겨야 한다.
+   */
+  it('들여쓴 항목에 붙이면 **첫 줄은 그 깊이에**, 나머지는 계단 모양을 지킨다(제보)', () => {
+    const blocks: NoteBlock[] = [
+      { id: 'b1', kind: 'ol', items: [{ id: 'i1', runs: textRuns('하나') }, { id: 'i2', runs: textRuns('둘'), indent: 1 }, { id: 'i3', runs: textRuns(''), indent: 1 }] },
+    ];
+    // 우리 복사가 싣는 모양 그대로 — 들여쓴 번호는 `a.`로 나간다.
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i3', from: 0, to: 0 }, '1. 하나\n  a. 둘');
+    const items = out?.blocks[0]?.items ?? [];
+    expect(items.map((x) => runsText(x.runs))).toEqual(['하나', '둘', '하나', '둘']);
+    expect(items.map((x) => x.indent ?? 0)).toEqual([0, 1, 1, 2]);
+    // 붙인 자리의 항목 id는 그대로다.
+    expect(items[2]?.id).toBe('i3');
+  });
+
+  it('글머리 목록도 같다 — 깊이 0 자리에 들여쓴 두 줄을 붙이면 계단째 왼쪽으로 옮긴다', () => {
+    const blocks: NoteBlock[] = [{ id: 'b1', kind: 'ul', items: [{ id: 'i1', runs: textRuns('') }] }];
+    const out = pasteNoteBlocks(blocks, { blockId: 'b1', itemId: 'i1', from: 0, to: 0 }, '  - 가\n    - 나\n- 다');
+    // 첫 줄(깊이 1)이 0에 서므로 모두 한 칸씩 — 0 밑으로는 내려가지 않는다.
+    expect(out?.blocks[0]?.items?.map((x) => x.indent ?? 0)).toEqual([0, 1, 0]);
+  });
+
   it('들여쓴 단계도 따라온다', () => {
     const out = pasteNoteBlocks(page(), { blockId: 'b1', from: 0, to: 0 }, '- 하나\n  - 둘');
     expect(out?.blocks[0]?.items?.map((x) => x.indent ?? 0)).toEqual([0, 1]);

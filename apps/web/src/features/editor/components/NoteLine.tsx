@@ -166,6 +166,12 @@ interface Props {
   codeBox?: boolean;
   listBox?: boolean;
   /**
+   * **목록 줄을 잇는 키가 Enter다**(접기 내용 줄) — 기본은 Shift+Enter(표의 칸: Enter는 편집을
+   * 여닫는다). 접기 내용에서 Shift+Enter는 접기를 **빠져나가는** 키라(`onSoftEnter`) 잇기를
+   * Enter로 옮긴다 — 본문 목록과 같은 손버릇이다. 목록 줄이 아니면 Enter는 예전 그대로다.
+   */
+  listEnter?: boolean;
+  /**
    * **이 박스가 목록 글쇠를 받는가** — Tab·Shift+Enter·마커 Backspace.
    *
    * 그리는 것(`listBox`)과 나누는 이유: 표의 칸은 **고른 상태**와 **고치는 상태**가
@@ -185,7 +191,7 @@ interface Props {
   onFocusLine?: (el: HTMLElement) => void;
 }
 
-export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, armed, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectDoc, onSelectSide, onSelectAll, onTab, onSlash, onMention, onPasteText, listBox, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
+export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecting, armed, onEnter, onSoftEnter, onBackspaceAtStart, onArrowOut, onEdgeOut, onSelectOut, onSelectDoc, onSelectSide, onSelectAll, onTab, onSlash, onMention, onPasteText, listBox, listEnter, codeBox, listKeys, autoFocus, lineKey, onFocusLine }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** 조합 중에는 `innerHTML`을 갈지 않는다 — 갈면 자모가 갈린다(공책에서 겪은 제보). */
   const composing = useRef(false);
@@ -514,7 +520,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         e.stopPropagation();
         return;
       }
-      if (e.key === 'Enter' && e.shiftKey && !mod && cellListBreak(el, onChange)) {
+      if (e.key === 'Enter' && e.shiftKey === !listEnter && !mod && cellListBreak(el, onChange)) {
         e.preventDefault();
         e.stopPropagation();
         return;

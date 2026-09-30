@@ -11161,3 +11161,73 @@ describe('공책 91판 — 접기의 안내 문구와 여러 줄 지우기(제�
     expect(c.querySelector('[data-note-line="tg"]')!.hasAttribute('data-note-blank')).toBe(false);
   });
 });
+
+describe('공책 92판 — 접기 내용 줄에 번호·기호(요청 1)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const t = (s: string) => [{ t: s, b: false, c: null }];
+  const bodyText = (id: string) => (saved(id).pages[0].blocks[0].items ?? []).map((it: { runs: { t: string }[] }) => it.runs.map((r) => r.t).join(''));
+  async function open(id: string, items?: unknown[]): Promise<HTMLElement> {
+    localStorage.setItem(`mindflow_doc_${id}`, JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: [{ id: 'tg', kind: 'toggle', open: true, runs: t('접기'), ...(items ? { items } : {}) }] }] }));
+    const { container } = renderEditor(`/editor?map=${id}&title=x`);
+    return (await waitFor(() => container.querySelector('[data-note-line="tg:body"]'))) as HTMLElement;
+  }
+
+  it('`- `를 치면 내용 줄 안에 **글머리 기호**가 선다 — 접기는 접기로 남는다', async () => {
+    const body = await open('tl1', [{ id: 'i1', runs: [] }]);
+    // 목록 판(표의 칸과 같은 `listBox`)이라는 표식.
+    expect(body.hasAttribute('data-list-box')).toBe(true);
+    type(body, '- ');
+    await waitFor(() => expect(body.textContent).toBe('• '));
+    saveNow();
+    await waitFor(() => expect(bodyText('tl1')).toEqual(['• ']));
+    expect(saved('tl1').pages[0].blocks[0].kind).toBe('toggle');
+  });
+
+  it('툴바의 **번호 매기기**가 내용 줄 안에 걸린다(예전에는 접기가 통째로 목록 블록이 됐다)', async () => {
+    const body = await open('tl2', [{ id: 'i1', runs: t('할 일') }]);
+    body.focus();
+    const range = document.createRange();
+    range.setStart(body.firstChild ?? body, 0);
+    range.collapse(true);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    fireEvent.click(document.querySelector('[data-note-insert="ol"]')!);
+    await waitFor(() => expect(body.textContent).toBe('1. 할 일'));
+    saveNow();
+    await waitFor(() => expect(bodyText('tl2')).toEqual(['1. 할 일']));
+    expect(saved('tl2').pages[0].blocks.map((b: { kind: string }) => b.kind)).toEqual(['toggle']);
+  });
+
+  it('목록 줄의 **Enter는 다음 마커를 잇는다** · Tab은 들여쓴다', async () => {
+    const body = await open('tl3', [{ id: 'i1', runs: t('• 하나') }]);
+    // 줄 끝에 캐럿.
+    body.focus();
+    const last = [...body.querySelectorAll('span')].pop()!;
+    const range = document.createRange();
+    range.selectNodeContents(last);
+    range.collapse(false);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    fireEvent.keyDown(body, { key: 'Enter' });
+    await waitFor(() => expect(body.textContent).toBe('• 하나• '));
+    fireEvent.keyDown(body, { key: 'Tab' });
+    // 들여쓴 칸은 그리는 쪽이 en 공백(U+2002)으로 그린다 — 글자만 견준다.
+    const flat = (x: string | null | undefined) => (x ?? '').replace(/[\u00a0\u2002]/g, ' ').replace(/[\u200b\ufeff]/g, '');
+    await waitFor(() => expect(flat(body.textContent)).toBe('• 하나  ◦ '));
+    saveNow();
+    await waitFor(() => expect(bodyText('tl3').map(flat)).toEqual(['• 하나\n  ◦ ']));
+  });
+
+  it('항목이 **한 번도 없던** 접기의 내용 줄에 친 첫 글이 버려지지 않는다', async () => {
+    const body = await open('tl4');
+    type(body, '첫 글');
+    saveNow();
+    await waitFor(() => expect(bodyText('tl4')).toEqual(['첫 글']));
+  });
+});
