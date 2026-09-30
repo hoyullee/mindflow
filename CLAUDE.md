@@ -88,7 +88,7 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
 - 공책·홈 4건 — **내 사진은 한 원천**(`adapters/myAvatar` — 세션 사진은 구글 재로그인 때마다 구글 사진으로 덮인다 · 서버→캐시→세션 순) · 일정 블록 머리 띠 제거 · `/`의 날짜 제거 · 본문 `clig` 끔(한글 앞 `:`가 튄다)
 - 홈 LNB·프로필 메뉴·설정 팝업 스펙 — 오늘 묶음(44px·마키·날짜 글리프·캐럿)·프로필 바닥 고정·피드백 떠 있는 단추·설정 헤어라인 목록(스펙 반영 + 기능 판단 9건)
 - 공책 4건 — 일정 블록의 일정을 **공책 안에서** · 안내 문구는 글이 한 자도 없을 때만(`:only-child`는 글자를 안 센다) · 접기 제목에 빠진 `selecting` · `:`는 `calt`까지 꺼야 했다
-- 에디터 2건 — 맵·화이트보드 캔버스 `#F7FBF1`(단색 · 앱 껍데기는 옛 색) · 칸반 보드별 **일정 반영**(홈 카드 메뉴 · 내 워크스페이스의 `calendarHidden` · `calendarEntries` 한 곳에서 거른다)
+- 에디터 2건 — 맵·화이트보드 캔버스 `#FCFCFB`(단색 — 첫 판의 `#F7FBF1`은 정정 · 앱 껍데기의 가라앉은 행은 옛 색) · 칸반 보드별 **일정 반영**(홈 카드 메뉴 · 내 워크스페이스의 `calendarHidden` · `calendarEntries` 한 곳에서 거른다)
 
 ### 운영 요약 — 원문은 `docs/operations.md`(자동으로 읽히지 않는다 · 해당 일을 할 때 읽는다)
 - 📌 **라이브 배포 = 머지가 아니다.** 작업 브랜치 → PR(CI `verify`) → 스쿼시 머지 → base `claude/mindflow-design-impl-iyxiol` CI → `main` fast-forward(`git push origin <base의 원격 sha>:refs/heads/main` — 로컬 동명 브랜치는 뒤처져 있을 수 있다) → **Production 승격 확인**(`GET /repos/hoyullee/mindflow/deployments?environment=Production&per_page=1`의 sha가 방금 커밋인가. 아니면 Vercel이 같은 sha의 Preview를 중복으로 봐 승격하지 않은 것 — Promote 또는 새 커밋 한 바퀴). **main 푸시는 사용자 확인 없이 한다**(2026-09-11 상시 승인 — 거둬 달라는 요청이 오면 이 줄을 고친다). 완료 지점은 라이브다. 문서만 고친 PR은 main 푸시가 필요 없다.

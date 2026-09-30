@@ -6,12 +6,12 @@ import { THEMES, UI_THEME, canvasWash } from './theme';
 describe('canvasWash', () => {
   const DESIGN = 'radial-gradient(1200px 700px at 62% 46%, #fffdfb 0%, #fdf7f2 55%, #fbf2eb 100%)';
 
-  it('코랄 맵·화이트(화이트보드 기본) 캔버스는 **단색 `#F7FBF1`**(요청 — 옛 따뜻한 그라데이션이 아니다)', () => {
-    expect(THEMES.coral.canvasBg).toBe('#f7fbf1');
-    expect(THEMES.white.canvasBg).toBe('#f7fbf1');
+  it('코랄 맵·화이트(화이트보드 기본) 캔버스는 **단색 `#FCFCFB`**(요청 — 옛 따뜻한 그라데이션이 아니다)', () => {
+    expect(THEMES.coral.canvasBg).toBe('#fcfcfb');
+    expect(THEMES.white.canvasBg).toBe('#fcfcfb');
     for (const k of ['coral', 'white'] as const) {
       const w = canvasWash(THEMES[k].canvasBg);
-      expect(w).toBe('linear-gradient(#f7fbf1, #f7fbf1)');
+      expect(w).toBe('linear-gradient(#fcfcfb, #fcfcfb)');
       expect(w).not.toContain('#fbf2eb');
     }
   });
