@@ -5,6 +5,7 @@ import { folderCardKey } from '../viewModel';
 import { useCardActivation } from './useCardActivation';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useLongPressSelect } from './useLongPressSelect';
+import { FolderArt } from './FolderArt';
 
 interface Props {
   folder: FolderCardViewData;
@@ -174,27 +175,10 @@ export function FolderCard({ folder, controller }: Props) {
         </div>
       )}
 
-      {/* 아이콘 타일 — 옅은 세로 그라디언트 + 선 아이콘(디자인 원본). 강조색을 쓰지
-          않는 이유: 폴더는 강조 대상이 아니라 담는 그릇이고, 강조색은 지금 "선택"과
-          1차 버튼이 쓴다. */}
-      <div
-        style={{
-          width: 46,
-          height: 46,
-          borderRadius: 14,
-          background: 'linear-gradient(180deg, var(--mf-accent-soft), var(--mf-panel2))',
-          border: '1px solid var(--mf-border)',
-          color: 'var(--mf-accent-strong)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 7h5l2 2h9a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
-        </svg>
-      </div>
+      {/* 폴더 그림 — **모바일 스페이스와 같은 그림**(요청). 예전의 옅은 그라디언트 타일 + 선 아이콘을
+          갈아 끼웠다: 같은 폴더가 기기마다 다른 얼굴이면 같은 것으로 읽히지 않는다. 문서가 들어 있으면
+          종이가 꽂힌 모양이다. 크기는 예전 타일(46px) 줄에 맞춰 52px 폭 — 카드 높이가 그대로다. */}
+      <FolderArt full={folder.count > 0} width={52} />
       <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</div>
         <div style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>파일 {folder.count}개</div>

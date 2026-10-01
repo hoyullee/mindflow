@@ -5395,6 +5395,19 @@ describe('홈 카드 다중 선택', () => {
     expect(keys(container)).toHaveLength(3);
   });
 
+  it('PC 폴더 카드도 모바일 스페이스와 같은 폴더 그림이다(요청) — 비면 앞판만, 차면 종이가 꽂힌 모양', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const folder = container.querySelector('[data-card-key="folder:fx"]') as HTMLElement;
+    const art = folder.querySelector('[data-folder-art]');
+    expect(art).toBeTruthy();
+    const n = Number(/파일 (\d+)개/.exec(folder.textContent ?? '')?.[1]);
+    expect(art!.getAttribute('data-folder-art')).toBe(n > 0 ? 'full' : 'empty');
+    // 예전의 그라디언트 타일 + 선 아이콘은 없다.
+    expect(folder.innerHTML).not.toContain('linear-gradient');
+  });
+
   it('마퀴(드래그 사각형)에도 폴더가 잡힌다', async () => {
     seedThree();
     const { container } = renderHomeWithDocStore([]);
