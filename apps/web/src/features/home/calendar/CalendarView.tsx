@@ -57,7 +57,8 @@ export function CalendarView({
   state: HomeState;
   controller: HomeController;
   isMobile: boolean;
-  onOpenNav: () => void;
+  /** 폰의 ☰(서랍 열기). 하단 탭이 생긴 뒤로 홈은 넘기지 않는다 — 없으면 단추도 없다. */
+  onOpenNav?: () => void;
 }) {
   const today = todayISO();
   // 폰 ☰의 점 — 알림이 LNB로 옮겨 갔으므로 이 화면의 문에도 표시가 있어야 한다.
@@ -271,7 +272,7 @@ export function CalendarView({
       >
         <div data-cal-title-group style={{ display: 'flex', flexDirection: 'column', minWidth: 0, ...(isMobile ? { flex: '1 1 0' } : {}) }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: -8, minWidth: 0 }}>
-            {isMobile && (
+            {isMobile && onOpenNav && (
               <button type="button" title={navDot.title} aria-label={navDot.label} onClick={onOpenNav} className="mf-ctl" style={{ position: 'relative', width: 30, height: 30, border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M4 7h16M4 12h16M4 17h16" />

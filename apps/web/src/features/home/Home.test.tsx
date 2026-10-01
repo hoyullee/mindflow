@@ -874,8 +874,10 @@ describe('Home', () => {
         seedFolderSpace();
         renderHomeWithDocStore([]);
         await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
-        await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
+        // 모바일은 한 번 누르면 연다(모바일 홈 디자인) — 만들기·가져오기는 ＋ 시트에 있다.
+        await user.click(screen.getByText('내폴더'));
         await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+        await user.click(screen.getByRole('button', { name: '새로 만들기' }));
 
         expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy();
         // 중첩 폴더: 폴더 안에서도 새 폴더를 만들 수 있다(현재 폴더가 부모가 된다).
@@ -2991,18 +2993,19 @@ describe('Home', () => {
         expect(stored[0]?.seenAt).toBeTruthy();
       });
 
-      it('모바일에서는 서랍이 닫혀 있어도 ☰에 점이 뜬다', async () => {
+      it('모바일에서는 「전체」 탭에 점이 뜨고, 그 안의 공유받음에 배지가 선다', async () => {
         mockMatchMedia(true);
         try {
+          const user = userEvent.setup();
           localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
           seedUnseenInvite('theirs');
           const { container } = renderHomeWithDocStore([mine, theirs]);
 
-          // 문구는 알림·공유를 **하나로** 합쳐 말한다(알림이 LNB로 옮겨 가며 ☰의
-          // 점이 둘을 함께 대변한다 — `navDotOf`).
-          const menu = await waitFor(() => screen.getByLabelText('메뉴 열기, 새 공유 1개'));
-          expect(menu.querySelector('[data-unread-dot]')).toBeTruthy();
-          expect(container).toBeTruthy();
+          // 공유받음은 「전체」 탭 안에 있다 — 닫힌 문 뒤의 알림이 되지 않게 탭에 점을 찍는다.
+          const tab = await waitFor(() => screen.getByLabelText('전체 · 새 공유 1개'));
+          expect(tab.querySelector('[data-m-tab-dot]')).toBeTruthy();
+          await user.click(tab);
+          expect(within(container.querySelector('[data-m-more-row="shared"]') as HTMLElement).getByLabelText('새로 공유됨 1개')).toBeTruthy();
         } finally {
           mockMatchMedia(false);
         }
@@ -3091,101 +3094,82 @@ describe('Home', () => {
     });
   });
 
-  describe('mobile (M6)', () => {
-    it('collapses the toolbar actions into icon-only buttons on one row (no stray action line)', async () => {
-      // On mobile the labeled 가져오기/새 폴더 pair used to wrap onto a lonely line
-      // of its own; they now render as 44px icon-only buttons inside the search
-      // row, and the primary CTA becomes an icon-only "+" — labels live on
-      // aria-label/title so they stay accessible.
-      const restore = mockMatchMedia(true);
-      try {
-        renderHome();
-        await waitFor(() => expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy());
-        const importBtn = screen.getByRole('button', { name: '가져오기' });
-        const folderBtn = screen.getByRole('button', { name: '새 폴더' });
-        // 툴바 CTA와 빈 상태 CTA가 같은 이름을 쓴다 — 첫 번째(툴바)를 잡는다.
-        const newBtn = screen.getAllByRole('button', { name: '새로 만들기' })[0]!;
-        // icon-only: the visible label text is gone…
-        expect(importBtn.textContent).toBe('');
-        expect(folderBtn.textContent).toBe('');
-        expect(newBtn.textContent).toBe(''); // toolbar CTA is icon-only (the empty-state CTA keeps its label)
-        // …and every action keeps the 44px touch target (§7)
-        expect(importBtn.style.width).toBe('44px');
-        expect(folderBtn.style.width).toBe('44px');
-        expect(newBtn.style.width).toBe('44px');
-        // all three live in the SAME row container as the search field
-        const row = screen.getByPlaceholderText('모든 스페이스에서 검색').closest('div')!.parentElement!;
-        expect(row.contains(importBtn)).toBe(true);
-        expect(row.contains(folderBtn)).toBe(true);
-        expect(row.contains(newBtn)).toBe(true);
-      } finally {
-        restore();
-      }
-    });
-
-    it('opens the drawer on a left-edge swipe right, and closes it on a swipe left', async () => {
+  // 모바일 홈(모바일 홈 디자인) — LNB 서랍(M6) 대신 하단 탭 네 개. 스페이스 화면은 제 머리·목록을
+  // 갖고(`MobileSpaceView`), 카드는 한 번 누르면 연다. 만들기는 ＋ 시트.
+  describe('mobile (하단 탭)', () => {
+    /** 나타날 때까지 기다리는 조회 — `waitFor`는 던져야 다시 묻는다(null은 통과로 친다). */
+    const must = (sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error(`${sel} not rendered`);
+      return el as HTMLElement;
+    };
+    it('LNB·서랍·☰ 없이 하단 탭 네 개가 서고, 막대 높이를 떠 있는 카드에 내려 준다', async () => {
       const restore = mockMatchMedia(true);
       try {
         const { container } = renderHome();
         expect(container.querySelector('aside')).toBeNull();
-
-        // A swipe that does NOT start at the left edge must not open the drawer…
-        fireEvent.touchStart(document, { touches: [{ clientX: 120, clientY: 300 }] });
-        fireEvent.touchMove(document, { touches: [{ clientX: 260, clientY: 300 }] });
-        fireEvent.touchEnd(document);
-        expect(container.querySelector('aside')).toBeNull();
-
-        // …and neither must a vertical (scroll) gesture that begins at the edge.
-        fireEvent.touchStart(document, { touches: [{ clientX: 8, clientY: 200 }] });
-        fireEvent.touchMove(document, { touches: [{ clientX: 16, clientY: 320 }] });
-        fireEvent.touchEnd(document);
-        expect(container.querySelector('aside')).toBeNull();
-
-        // Left-edge swipe right → drawer opens.
-        fireEvent.touchStart(document, { touches: [{ clientX: 8, clientY: 300 }] });
-        fireEvent.touchMove(document, { touches: [{ clientX: 90, clientY: 306 }] });
-        fireEvent.touchEnd(document);
-        await waitFor(() => expect(container.querySelector('aside')).toBeTruthy());
-
-        // Swipe left anywhere while open → drawer closes.
-        fireEvent.touchStart(document, { touches: [{ clientX: 220, clientY: 300 }] });
-        fireEvent.touchMove(document, { touches: [{ clientX: 120, clientY: 296 }] });
-        fireEvent.touchEnd(document);
-        await waitFor(() => expect(container.querySelector('aside')).toBeNull());
+        expect(screen.queryByRole('button', { name: /메뉴 열기/ })).toBeNull();
+        const tabs = [...container.querySelectorAll('[data-m-tab]')].map((b) => b.getAttribute('data-m-tab'));
+        expect(tabs).toEqual(['space', 'cal', 'noti', 'more']);
+        expect(container.querySelector('[data-m-tab="space"]')!.getAttribute('aria-current')).toBe('page');
+        // 설치 안내·오프라인 바가 탭 위로 올라서도록(`toastShell.ts`의 계약).
+        expect(document.documentElement.style.getPropertyValue('--mf-bottom-bar')).toMatch(/px$/);
+        // 피드백 단추는 폰에 없다 — 그 자리는 ＋이고 피드백은 「전체」에 있다.
+        await waitFor(() => expect(container.querySelector('[data-m-fab]')).toBeTruthy());
+        expect(container.querySelector('[data-feedback-fab]')).toBeNull();
       } finally {
         restore();
       }
     });
 
-    it('맵 카드는 데스크톱과 같이 한 번=선택 / 두 번(더블탭)=열기 — 한 번에 열리면 ☰ 메뉴를 쓸 수 없다', async () => {
+    it('탭으로 화면을 오간다 — 일정 · 알림 · 전체 · 스페이스', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const user = userEvent.setup();
+        const { container } = renderHome();
+        await waitFor(() => expect(container.querySelector('[data-m-space]')).toBeTruthy());
+
+        await user.click(container.querySelector('[data-m-tab="cal"]')!);
+        await waitFor(() => expect(container.querySelector('[data-cal-title-group]')).toBeTruthy());
+        expect(container.querySelector('[data-m-tab="cal"]')!.getAttribute('aria-current')).toBe('page');
+
+        await user.click(container.querySelector('[data-m-tab="noti"]')!);
+        expect(container.querySelector('[data-m-noti]')).toBeTruthy();
+        expect(container.querySelector('[data-cal-title-group]')).toBeNull();
+
+        await user.click(container.querySelector('[data-m-tab="more"]')!);
+        expect(container.querySelector('[data-m-more]')).toBeTruthy();
+        expect(container.querySelector('[data-m-more-row="settings"]')).toBeTruthy();
+
+        // 스페이스 — 일정 화면이 아니라 스페이스로 돌아온다(일정에서 왔어도).
+        await user.click(container.querySelector('[data-m-tab="space"]')!);
+        expect(container.querySelector('[data-m-space]')).toBeTruthy();
+        expect(container.querySelector('[data-m-tab="space"]')!.getAttribute('aria-current')).toBe('page');
+      } finally {
+        restore();
+      }
+    });
+
+    it('카드는 한 번 누르면 연다 — 메뉴는 길게 눌러 고른 뒤 ⋯가 맡는다', async () => {
       const restore = mockMatchMedia(true);
       try {
         const user = userEvent.setup();
         const { container } = renderHomeWithDocStore([
           { id: 'doc-m', title: '모바일 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
         ]);
-        await waitFor(() => expect(container.querySelector('a[data-title="모바일 맵"]')).toBeTruthy());
-
-        // ☰ 메뉴 탭은 여전히 이동하지 않는다.
-        const card = container.querySelector('a[data-title="모바일 맵"]') as HTMLElement;
-        await user.click(within(card).getByRole('button', { name: '메뉴' }));
-        expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
-
-        // 첫 탭: 선택만 — 에디터로 넘어가지 않아야 ☰에 손댈 수 있다.
-        await user.click(card);
-        await new Promise((r) => setTimeout(r, 1200)); // 로더 지연(900ms)을 넘겨도
-        expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
-
-        // 두 번째 탭이 임계값 안에 들어오면 연다.
-        await user.click(card);
-        await user.click(card);
+        const row = await waitFor(() => {
+          const el = container.querySelector('[data-m-board="doc-m"]');
+          if (!el) throw new Error('board row not rendered');
+          return el as HTMLElement;
+        });
+        await user.click(row);
         await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
       } finally {
         restore();
       }
     });
 
-    it('최근 항목 카드도 같은 규칙 — 한 번 탭으로는 열리지 않는다', async () => {
+    it('최근 항목도 한 번에 연다(스페이스를 가로지르는 바로가기)', async () => {
       const restore = mockMatchMedia(true);
       try {
         localStorage.setItem('mf_recent', JSON.stringify(['doc-r']));
@@ -3197,78 +3181,112 @@ describe('Home', () => {
         const { container } = renderHomeWithDocStore([
           { id: 'doc-r', title: '최근 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
         ]);
-        const tray = await waitFor(() => {
-          const el = container.querySelector('.mf-recent-scroll a');
-          if (!el) throw new Error('recent card not rendered');
+        const tile = await waitFor(() => {
+          const el = container.querySelector('[data-m-recent]');
+          if (!el) throw new Error('recent tile not rendered');
           return el as HTMLElement;
         });
-
-        await user.click(tray);
-        await new Promise((r) => setTimeout(r, 1200));
-        expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
-
-        await user.click(tray);
-        await user.click(tray);
+        expect(tile.textContent).toContain('최근 맵');
+        await user.click(tile);
         await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
       } finally {
         restore();
       }
     });
 
-    it('hides the sidebar behind a hamburger drawer and opens/closes it, crash-free', async () => {
+    it('＋ 시트 — 종류를 고르면 빈 문서와 템플릿이 서고, 빈 공책으로 시작하면 에디터로 간다', async () => {
       const restore = mockMatchMedia(true);
       try {
         const user = userEvent.setup();
-        const { container } = renderHome();
+        renderHome();
+        await user.click(await waitFor(() => must('[data-m-fab]')));
+        const sheet = await waitFor(() => must('[data-m-create-sheet="root"]'));
+        expect(within(sheet).getByRole('button', { name: '새 폴더' })).toBeTruthy();
+        expect(within(sheet).getByRole('button', { name: '가져오기' })).toBeTruthy();
+        expect([...sheet.querySelectorAll('[data-m-create-kind]')].map((b) => b.getAttribute('data-m-create-kind'))).toEqual(['note', 'map', 'board', 'kanban']);
 
-        // Drawer starts closed: no <aside> in the document at all (not just hidden).
-        expect(container.querySelector('aside')).toBeNull();
-        expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
-
-        await user.click(screen.getByRole('button', { name: '메뉴 열기' }));
-
-        const sidebar = within(container.querySelector('aside') as HTMLElement);
-        expect(sidebar.getByText('스페이스')).toBeTruthy();
-        // No ✕ button — the drawer closes via backdrop tap, left swipe, or Esc.
-        expect(screen.queryByRole('button', { name: '메뉴 닫기' })).toBeNull();
-
-        // Backdrop tap closes. The drawer plays its exit slide before unmounting
-        // (Sidebar keeps the aside mounted for DRAWER_EXIT_MS), so closing is
-        // observed via waitFor.
-        fireEvent.click(container.parentElement!.querySelector('.mf-drawer-backdrop')!);
-        expect(container.querySelector('aside')).toBeTruthy(); // still mounted, sliding out…
-        await waitFor(() => expect(container.querySelector('aside')).toBeNull()); // …then gone
-
-        // Escape closes too — the keyboard-accessible path now that ✕ is gone.
-        await user.click(screen.getByRole('button', { name: '메뉴 열기' }));
-        expect(container.querySelector('aside')).toBeTruthy();
-        await user.keyboard('{Escape}');
-        await waitFor(() => expect(container.querySelector('aside')).toBeNull());
+        await user.click(sheet.querySelector('[data-m-create-kind="note"]')!);
+        const noteSheet = await waitFor(() => must('[data-m-create-sheet="note"]'));
+        // 갤러리와 같은 템플릿 목록(공책 넷).
+        expect(noteSheet.querySelectorAll('[data-template^="note-"]').length).toBe(4);
+        // 뒤로 → 종류 고르기.
+        await user.click(noteSheet.querySelector('[data-m-create-back]')!);
+        await waitFor(() => expect(document.querySelector('[data-m-create-sheet="root"]')).toBeTruthy());
+        await user.click(document.querySelector('[data-m-create-kind="note"]')!);
+        await user.click(within(document.querySelector('[data-m-create-sheet="note"]') as HTMLElement).getByText('빈 공책으로 시작'));
+        await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
       } finally {
         restore();
       }
     });
 
-    it('animates the drawer: mounts off-screen, slides in, and slides out before unmounting', async () => {
+    it('전체 › 휴지통 — 되돌리기·완전히 삭제가 데스크톱과 같은 확인을 거친다', async () => {
       const restore = mockMatchMedia(true);
       try {
         const user = userEvent.setup();
+        const { container, docStore } = renderHomeWithDocStore([
+          { id: 'doc-p', title: '지운 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+        ]);
+        await user.click(await waitFor(() => must('[data-m-tab="more"]')));
+        const row = await waitFor(() => must('[data-m-more-row="trash"]'));
+        await waitFor(() => expect(row.textContent).toContain('1'));
+        await user.click(row);
+        const item = await waitFor(() => must('[data-m-trash="doc-p"]'));
+        expect(item.textContent).toContain('지운 맵');
+        expect(within(item).getByRole('button', { name: "'지운 맵' 되돌리기" })).toBeTruthy();
+        await user.click(within(item).getByRole('button', { name: "'지운 맵' 완전히 삭제" }));
+        const confirmBtn = screen.getAllByRole('button', { name: '영구 삭제' }).find((el) => el.tagName === 'BUTTON');
+        await user.click(confirmBtn!);
+        await waitFor(() => expect(container.querySelector('[data-m-trash="doc-p"]')).toBeNull());
+        expect(docStore.purge).toHaveBeenCalledWith('doc-p');
+        // 한 겹 들어간 화면에서 「전체」로 돌아온다.
+        await user.click(screen.getByRole('button', { name: '전체(으)로 돌아가기' }));
+        expect(container.querySelector('[data-m-more-row="trash"]')).toBeTruthy();
+      } finally {
+        restore();
+      }
+    });
+
+    it('전체 › 즐겨찾기 — 문서를 열고, 별로 해제한다', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const user = userEvent.setup();
+        const { container } = renderHomeWithDocStore([
+          { id: 'doc-f', title: '아끼는 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
+        ]);
+        await user.click(await waitFor(() => must('[data-m-tab="more"]')));
+        await user.click(await waitFor(() => must('[data-m-more-row="fav"]')));
+        const item = await waitFor(() => must('[data-m-fav="doc-f"]'));
+        await user.click(within(item).getByRole('button', { name: "'아끼는 맵' 즐겨찾기 해제" }));
+        await waitFor(() => expect(container.querySelector('[data-m-fav="doc-f"]')).toBeNull());
+        expect(container.querySelector('[data-m-sub-empty]')).toBeTruthy();
+      } finally {
+        restore();
+      }
+    });
+
+    it('스페이스 이름을 누르면 시트가 열리고, 고르면 그 스페이스로 간다', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        localStorage.setItem(
+          'mf_spaces',
+          JSON.stringify({
+            spaces: [
+              { id: 's1', name: '첫 공간', color: '#f0663f', home: true, maps: [], folders: [] },
+              { id: 's2', name: '둘째 공간', color: '#5b8def', maps: [], folders: [] },
+            ],
+            mapFolders: {},
+          }),
+        );
+        const user = userEvent.setup();
         const { container } = renderHome();
-
-        await user.click(screen.getByRole('button', { name: '메뉴 열기' }));
-        const aside = container.querySelector('aside') as HTMLElement;
-        expect(aside.className).toContain('mf-drawer'); // transition class attached
-        // Mounts at the off-screen position; the next frames flip it on-screen
-        // (double rAF), which is what makes the enter transition actually play.
-        expect(aside.style.transform).toBe('translateX(-105%)');
-        await waitFor(() => expect(aside.style.transform).toBe('translateX(0)'));
-
-        await user.keyboard('{Escape}');
-        // Exit phase: still mounted but translated back off-screen (sliding)…
-        expect(container.querySelector('aside')).toBeTruthy();
-        expect((container.querySelector('aside') as HTMLElement).style.transform).toBe('translateX(-105%)');
-        // …and only unmounts after the slide finishes.
-        await waitFor(() => expect(container.querySelector('aside')).toBeNull());
+        const title = await waitFor(() => must('[data-m-space-title]'));
+        expect(title.textContent).toContain('첫 공간');
+        await user.click(title);
+        const sheet = await waitFor(() => must('[data-m-space-sheet]'));
+        await user.click(sheet.querySelector('[data-m-space-row="s2"]')!);
+        await waitFor(() => expect((container.querySelector('[data-m-space-title]') as HTMLElement).textContent).toContain('둘째 공간'));
+        expect(document.querySelector('[data-m-space-sheet]')).toBeNull();
       } finally {
         restore();
       }
@@ -3389,10 +3407,7 @@ describe('Home', () => {
           })),
         );
         await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
-        const recent = [...container.querySelectorAll('a[data-title]')].filter((c) => {
-          const th = c.querySelector('.map-thumb') as HTMLElement | null;
-          return th?.style.height === '74px';
-        });
+        const recent = container.querySelectorAll('[data-m-recent]');
         expect(recent.length).toBe(titles.length); // all reachable by swiping
       } finally {
         restore();
@@ -4783,14 +4798,22 @@ describe('홈 우클릭 메뉴', () => {
     mockMatchMedia(true);
     try {
       const { container } = renderHomeWithDocStore([meta('doc-tt', '터치 맵')]);
-      await waitFor(() => expect(container.querySelector('a[data-title="터치 맵"]')).toBeTruthy());
-      const card = container.querySelector('a[data-title="터치 맵"]') as HTMLElement;
-
-      fireEvent.contextMenu(card, { clientX: 20, clientY: 20 });
+      const row0 = await waitFor(() => {
+        const el = container.querySelector('[data-m-board="doc-tt"]');
+        if (!el) throw new Error('row not rendered');
+        return el as HTMLElement;
+      });
+      // 폰의 메뉴는 길게 눌러 고른 뒤 선택 바의 ⋯로 연다(카드에 ☰이 없다).
+      const ev = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 });
+      Object.defineProperty(ev, 'pointerType', { value: 'touch', configurable: true });
+      fireEvent(row0, ev);
+      fireEvent.contextMenu(row0, { clientX: 20, clientY: 20 });
+      await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: '선택한 항목 메뉴' }));
       const row = (await screen.findByRole('menuitem', { name: '이름 변경' })) as HTMLElement;
       expect(row.style.minHeight).toBe('44px');
     } finally {
-      mockMatchMedia(false); // 데스크톱으로 되돌린다 — LNB는 모바일에서 드로어라 안 붙어 있다
+      mockMatchMedia(false); // 데스크톱으로 되돌린다 — 모바일에는 LNB가 없다
     }
   });
 
@@ -5482,7 +5505,10 @@ describe('모바일 홈 다중 선택', () => {
     Array.from(container.querySelectorAll('[data-card-key]'))
       .map((e) => e.getAttribute('data-card-key')!)
       .filter((k) => !k.startsWith('folder:'));
-  const checked = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-select-check] svg')).length;
+  /** 모바일 스페이스 화면의 체크 원(`data-m-select="on"`). */
+  const checked = (container: HTMLElement) => container.querySelectorAll('[data-m-select="on"]').length;
+  /** 평소 머리(스페이스 이름 + 검색 단추) — 선택 바가 그 자리를 쓰는 동안은 없다. */
+  const head = (container: HTMLElement) => container.querySelector('[data-m-space-head]');
 
   it('길게 누르면(타이머) 선택 모드 — 툴바가 선택 바로 바뀌고 탭이 토글이 된다', async () => {
     const restore = mockMatchMedia(true);
@@ -5496,12 +5522,13 @@ describe('모바일 홈 다중 선택', () => {
       touchDown(card(k1!));
       await new Promise((r) => setTimeout(r, 560)); // 길게 누르기(500ms)
 
-      // 툴바 자리를 선택 바가 쓴다 — 검색·만들기는 그 시간대의 일이 아니다.
+      // 머리 자리를 선택 바가 쓴다 — 검색·만들기는 그 시간대의 일이 아니다.
       await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
-      expect(screen.queryByPlaceholderText('모든 스페이스에서 검색')).toBeNull();
+      expect(head(container)).toBeNull();
+      expect(container.querySelector('[data-m-fab]')).toBeNull();
       expect(checked(container)).toBe(1);
 
-      // 모드 안의 탭 = 토글. 더블탭 열기는 꺼져 있다.
+      // 모드 안의 탭 = 토글(평소의 "한 번 = 열기"가 꺼진다).
       fireEvent.click(card(k2!));
       await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
       fireEvent.click(card(k2!));
@@ -5509,9 +5536,9 @@ describe('모바일 홈 다중 선택', () => {
       await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
       expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
 
-      // ✕ = 모드 종료 + 선택 비움 → 평소 툴바 복귀
+      // ✕ = 모드 종료 + 선택 비움 → 평소 머리 복귀
       fireEvent.click(screen.getByRole('button', { name: '선택 종료' }));
-      await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+      await waitFor(() => expect(head(container)).toBeTruthy());
       expect(checked(container)).toBe(0);
     } finally {
       restore();
@@ -5530,7 +5557,7 @@ describe('모바일 홈 다중 선택', () => {
       fireEvent.contextMenu(card, { clientX: 40, clientY: 40 });
 
       await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
-      // 길게 누르기의 옛 뜻(카드 메뉴)은 ☰이 맡는다 — 여기서 메뉴가 뜨면 둘이 겹친다.
+      // 카드 메뉴(그리고 빈 자리 메뉴)는 뜨지 않는다 — 메뉴는 선택 바의 ⋯가 맡는다.
       expect(screen.queryByRole('menu')).toBeNull();
     } finally {
       restore();
@@ -5550,7 +5577,7 @@ describe('모바일 홈 다중 선택', () => {
       await new Promise((r) => setTimeout(r, 560));
 
       expect(screen.queryByText('1개 선택')).toBeNull();
-      expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
+      expect(head(container)).toBeTruthy();
     } finally {
       restore();
     }
@@ -5570,7 +5597,7 @@ describe('모바일 홈 다중 선택', () => {
 
       // 예전에는 폴더가 다중 선택 대상이 아니라 모드 안에서 죽어 있었다(흐리게).
       // 이제는 맵과 같이 **탭이 곧 체크 토글**이다.
-      const folder = screen.getByText('보관함').closest('.map-card') as HTMLElement;
+      const folder = container.querySelector('[data-m-folder="fx"]') as HTMLElement;
       fireEvent.click(folder);
       await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
       expect(checked(container)).toBe(2);
@@ -5591,7 +5618,7 @@ describe('모바일 홈 다중 선택', () => {
       seedTwo();
       const { container } = renderHomeWithDocStore([]);
       await waitFor(() => expect(keys(container)).toHaveLength(2));
-      const folder = screen.getByText('보관함').closest('.map-card') as HTMLElement;
+      const folder = container.querySelector('[data-m-folder="fx"]') as HTMLElement;
 
       touchDown(folder);
       await new Promise((r) => setTimeout(r, 560)); // 길게 누르기(500ms)
@@ -5632,7 +5659,7 @@ describe('모바일 홈 다중 선택', () => {
       await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
       // 맵 둘만 고르면 예전 그대로 — 폴더로 옮긴다.
-      fireEvent.click(screen.getByText('보관함').closest('.map-card') as HTMLElement);
+      fireEvent.click(container.querySelector('[data-m-folder="fx"]') as HTMLElement);
       await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
 
       fireEvent.click(screen.getByRole('button', { name: '선택한 항목 메뉴' }));
@@ -5648,7 +5675,7 @@ describe('모바일 홈 다중 선택', () => {
         expect(ws.mapFolders?.[k2!]).toBe('fx');
       });
       // 일괄 동작이 끝나면 모드도 나간다 — 옮긴 카드는 이 목록에서 사라진다.
-      await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+      await waitFor(() => expect(head(container)).toBeTruthy());
     } finally {
       restore();
     }

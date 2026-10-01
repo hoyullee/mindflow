@@ -72,7 +72,7 @@ const localToday = () => {
  * 도구 · **작업 현황**(작업 현황 스펙) — Jira 에픽·티켓을 한 달 단위로 본다(달력·타임라인·집계).
  * 홈 본문을 꽉 채우고(LNB는 그대로 — 도구 스펙 §5), 안에서 스스로 스크롤한다.
  */
-export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onOpenNav: () => void }) {
+export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onOpenNav?: () => void }) {
   const today = useMemo(localToday, []);
   const [ym, setYm] = useState(() => ({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) }));
   const [sel, setSel] = useState(today);
@@ -245,7 +245,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
       <div style={{ padding: pad, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 14, background: 'var(--mf-cal-head)', backgroundImage: 'radial-gradient(var(--mf-cal-head-dot) 1px, transparent 1px)', backgroundSize: '18px 18px', backgroundPosition: '-9px -9px', flexShrink: 0 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 700, color: 'var(--mf-ws-mut)' }}>
-            {isMobile && (
+            {isMobile && onOpenNav && (
               <button type="button" aria-label="메뉴 열기" onClick={onOpenNav} className="btn mf-ws-arrow" style={{ width: 30, height: 30, marginLeft: -6, border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-ws-mut)', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M4 7h16M4 12h16M4 17h16" />
