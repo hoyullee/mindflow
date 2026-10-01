@@ -12,6 +12,7 @@
 // 그 뒤로는 사용자의 입력이 DOM의 진실이고 우리가 그것을 읽어 문서에 커밋한다.
 // 서식 버튼처럼 **우리가** 내용을 갈아야 할 때는 에디터가 `applyNoteFormat`으로 직접 그린다.
 
+import { clipText } from '../clipText';
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { RichRun } from '@mindflow/mindmap-core';
@@ -1013,7 +1014,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         // 여러 줄이 칠해져 있으면 **문서 리스너가 맡는다**(`selecting` 머리말).
         if (readOnly || selecting) return;
         const el = ref.current;
-        const text = e.clipboardData?.getData('text/plain') ?? '';
+        const text = clipText(e.clipboardData);
         if (!el || !text) return;
         const span = selectedRange(el);
         if (onPasteText?.(text, span.from, span.to)) {
