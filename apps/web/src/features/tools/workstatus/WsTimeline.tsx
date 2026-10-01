@@ -21,6 +21,11 @@ interface Props {
   onPickPerson: (id: string) => void;
   onPickEpic: (key: string) => void;
   onOpenIssue: (key: string) => void;
+  /**
+   * 폰 판(모바일 디자인 W2) — 이름 열 118px · 하루 20px라 **두 주가 한 화면**에 든다. 묶음(담당자·프로젝트)
+   * 고르기는 표 위로 올라가고(`WorkStatusView`), 이름 열 머리는 무엇의 줄인지만 적는다.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -28,6 +33,8 @@ interface Props {
  * 26px씩 아래로, 달 경계 밖은 잘라서. 가로로 넘치면 스크롤하고 이름 칸은 왼쪽에 붙어 있는다.
  */
 export function WsTimeline(p: Props) {
+  const LW = p.compact ? 118 : LEFT;
+  const CW = p.compact ? 20 : COL;
   const n = p.days.length;
   const first = p.days[0] ?? '';
   const last = p.days[n - 1] ?? '';
@@ -39,16 +46,16 @@ export function WsTimeline(p: Props) {
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el || todayIdx < 0 || el.scrollWidth <= el.clientWidth) return;
-    const col = (el.scrollWidth - LEFT) / n;
-    el.scrollLeft = Math.max(0, LEFT + col * (todayIdx + 1) - el.clientWidth + col * 2);
-  }, [month, todayIdx, n]);
+    const col = (el.scrollWidth - LW) / n;
+    el.scrollLeft = Math.max(0, LW + col * (todayIdx + 1) - el.clientWidth + col * 2);
+  }, [month, todayIdx, n, LW]);
   const offs = p.days.map((d) => (!p.rules.weekend && (dowOf(d) === 0 || dowOf(d) === 6)) || !!holidayOf(d, p.rules));
 
   const ticketRow = (t: Ticket, ep: Epic, nested: boolean) => {
     const person = p.data.pById.get(t.person.id);
     const b = layLanes([t], p.days).bars[0];
     return (
-      <Row key={t.key} h={44} offs={offs} left={
+      <Row key={t.key} lw={LW} h={44} offs={offs} left={
         <button type="button" className="btn" onClick={() => p.onOpenIssue(t.key)} style={{ ...leftBtn, paddingLeft: nested ? 22 : 12, position: 'relative' }}>
           {nested && <span aria-hidden="true" style={{ position: 'absolute', left: 14, top: 8, width: 8, height: 14, borderLeft: '1px solid var(--mf-ws-line)', borderBottom: '1px solid var(--mf-ws-line)', borderBottomLeftRadius: 4 }} />}
           <span style={{ minWidth: 0, flex: '1 1 auto' }}>
@@ -77,7 +84,7 @@ export function WsTimeline(p: Props) {
       const { bars, lanes } = layLanes(mine, p.days);
       const h = 16 + Math.max(1, lanes) * 26;
       rows.push(
-        <Row key={person.id} h={h} offs={offs} left={
+        <Row key={person.id} lw={LW} h={h} offs={offs} left={
           <button type="button" className="btn" onClick={() => p.onPickPerson(person.id)} style={leftBtn}>
             <Avatar ini={person.ini} c={person.c} size={26} />
             <span style={{ minWidth: 0 }}>
@@ -109,7 +116,7 @@ export function WsTimeline(p: Props) {
       const ee = ep.end ?? ts.reduce<string | null>((a, t) => (!a || t.end > a ? t.end : a), null);
       const span = es && ee && es <= last && ee >= first ? layLanes([{ start: es, end: ee }], p.days).bars[0] : undefined;
       rows.push(
-        <Row key={ep.key} h={48} offs={offs} leftBg="var(--mf-ws-sunk)" left={
+        <Row key={ep.key} lw={LW} h={48} offs={offs} leftBg="var(--mf-ws-sunk)" left={
           <div style={{ ...leftBtn, cursor: 'default' }}>
             <button type="button" className="btn" aria-label={open ? '접기' : '펼치기'} aria-expanded={open} onClick={() => p.onToggleEpic(ep.key)} style={{ width: 22, height: 22, flexShrink: 0, border: 0, borderRadius: 6, background: 'transparent', color: 'var(--mf-ws-mut)', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .14s ease' }}>
@@ -138,27 +145,31 @@ export function WsTimeline(p: Props) {
 
   return (
     <div ref={scrollRef} data-ws-timeline className="lnb-scroll" style={{ height: '100%', boxSizing: 'border-box', background: 'var(--mf-ws-card)', borderTop: '1px solid var(--mf-ws-line)', overflow: 'auto' }}>
-      <div style={{ minWidth: LEFT + n * COL, position: 'relative' }}>
+      <div style={{ minWidth: LW + n * CW, position: 'relative' }}>
         <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 3, background: 'var(--mf-ws-card)', borderBottom: '1px solid var(--mf-ws-line)' }}>
-          <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, zIndex: 2, background: 'var(--mf-ws-card)', display: 'flex', alignItems: 'center', padding: '0 12px', boxSizing: 'border-box', borderRight: '1px solid var(--mf-ws-line)' }}>
-            <Seg items={[['person', '담당자별'], ['epic', '프로젝트별']]} value={p.group} onChange={p.onGroup} height={22} font={11} pad={9} label="타임라인 묶음" />
+          <div style={{ width: LW, flexShrink: 0, position: 'sticky', left: 0, zIndex: 2, background: 'var(--mf-ws-card)', display: 'flex', alignItems: p.compact ? 'flex-end' : 'center', padding: p.compact ? '0 0 6px 20px' : '0 12px', boxSizing: 'border-box', borderRight: '1px solid var(--mf-ws-line)' }}>
+            {p.compact ? (
+              <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em', color: 'var(--mf-ws-faint)' }}>{p.group === 'person' ? '담당자' : '프로젝트'}</span>
+            ) : (
+              <Seg items={[['person', '담당자별'], ['epic', '프로젝트별']]} value={p.group} onChange={p.onGroup} height={22} font={11} pad={9} label="타임라인 묶음" />
+            )}
           </div>
-          <div style={{ flex: '1 1 auto', display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(${COL}px, 1fr))` }}>
+          <div style={{ flex: '1 1 auto', display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(${CW}px, 1fr))` }}>
             {p.days.map((d, i) => {
               const w = dowOf(d);
               const isT = d === p.today;
               const hol = !!holidayOf(d, p.rules);
               return (
                 <div key={d} style={{ height: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: offs[i] ? 'var(--mf-ws-off-head)' : 'transparent', borderRight: '1px solid var(--mf-ws-line)' }}>
-                  <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: isT ? 800 : 600, color: isT ? '#E85E33' : hol || w === 0 ? '#C4614C' : w === 6 ? '#5F81BF' : 'var(--mf-ws-ink2)' }}>{Number(d.slice(8))}</span>
-                  <span style={{ fontSize: 8.5, color: isT ? '#E85E33' : 'var(--mf-ws-faint)' }}>{DOW[w]}</span>
+                  <span style={{ fontFamily: MONO, fontSize: p.compact ? 10.5 : 11, fontWeight: isT ? 800 : 600, color: isT ? '#E85E33' : hol || w === 0 ? '#C4614C' : w === 6 ? '#5F81BF' : 'var(--mf-ws-ink2)' }}>{Number(d.slice(8))}</span>
+                  <span style={{ fontSize: p.compact ? 8 : 8.5, color: isT ? '#E85E33' : 'var(--mf-ws-faint)' }}>{DOW[w]}</span>
                 </div>
               );
             })}
           </div>
         </div>
         {rows.length ? rows : <div style={{ padding: '40px 0', textAlign: 'center', fontSize: 13, color: 'var(--mf-ws-faint)' }}>조건에 맞는 {p.group === 'person' ? '담당자' : '프로젝트'}가 없어요</div>}
-        {todayIdx >= 0 && <div aria-hidden="true" style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${LEFT}px + (100% - ${LEFT}px) * ${(todayIdx + 0.5) / n})`, width: 1.5, background: '#E85E33', pointerEvents: 'none', zIndex: 2 }} />}
+        {todayIdx >= 0 && <div aria-hidden="true" style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${LW}px + (100% - ${LW}px) * ${(todayIdx + 0.5) / n})`, width: 1.5, background: '#E85E33', pointerEvents: 'none', zIndex: 2 }} />}
       </div>
     </div>
   );
@@ -168,10 +179,10 @@ const leftBtn = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', 
 const nameStyle = (size: number, weight: number) => ({ display: 'block', fontSize: size, fontWeight: weight, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0 });
 const subStyle = { display: 'block', fontSize: 10.5, color: 'var(--mf-ws-mut2)', marginTop: 1, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' };
 
-function Row({ h, offs, left, leftBg, children }: { h: number; offs: boolean[]; left: ReactNode; leftBg?: string; children: ReactNode }) {
+function Row({ lw, h, offs, left, leftBg, children }: { lw: number; h: number; offs: boolean[]; left: ReactNode; leftBg?: string; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', height: h, borderBottom: '1px solid var(--mf-ws-line)' }}>
-      <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, zIndex: 2, background: leftBg ?? 'var(--mf-ws-card)', borderRight: '1px solid var(--mf-ws-line)' }}>{left}</div>
+      <div style={{ width: lw, flexShrink: 0, position: 'sticky', left: 0, zIndex: 2, background: leftBg ?? 'var(--mf-ws-card)', borderRight: '1px solid var(--mf-ws-line)' }}>{left}</div>
       <div style={{ flex: '1 1 auto', position: 'relative' }}>
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: `repeat(${offs.length}, 1fr)` }}>
           {offs.map((o, i) => (

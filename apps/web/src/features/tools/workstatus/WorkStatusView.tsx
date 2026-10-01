@@ -31,6 +31,8 @@ import { quickRanges, WsAvail } from './WsAvail';
 import { WsMembers } from './WsMembers';
 import { WsHolidayModal } from './WsHolidayModal';
 import { Avatar, AvatarStack, CalCheckIcon, MONO, popPanel, RoundButton, Seg, useDismiss } from './wsUi';
+import { WsMobileCalendar, WsMobileStats } from './WsMobile';
+import { MobileSheet } from '../../home/mobile/parts';
 
 type View = 'cal' | 'tl' | 'stats';
 interface ViewPrefs {
@@ -72,7 +74,7 @@ const localToday = () => {
  * 도구 · **작업 현황**(작업 현황 스펙) — Jira 에픽·티켓을 한 달 단위로 본다(달력·타임라인·집계).
  * 홈 본문을 꽉 채우고(LNB는 그대로 — 도구 스펙 §5), 안에서 스스로 스크롤한다.
  */
-export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onOpenNav?: () => void }) {
+export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: boolean; onOpenNav?: () => void; /** 폰의 `‹ 전체` — 전체 탭으로 돌아간다. */ onBack?: () => void }) {
   const today = useMemo(localToday, []);
   const [ym, setYm] = useState(() => ({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) }));
   const [sel, setSel] = useState(today);
@@ -238,6 +240,238 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
     <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트에서 담당자가 있는 티켓을 달력·타임라인·집계에 보여 줘요(에픽이 있으면 에픽별로)." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
   ) : null;
 
+  const membersPanel = (
+    <WsMembers
+      people={data.people}
+      hidden={hidden}
+      monthCount={monthCount}
+      onToggle={(id) => {
+        const off = !hidden.includes(id);
+        setWork((w) => ({ ...w, hidden: off ? [...w.hidden, id] : w.hidden.filter((x) => x !== id) }));
+        // 끄면 그 사람 필터도 함께 뺀다(스펙 §4.3).
+        if (off) setVp((v) => ({ ...v, filters: v.filters.filter((f) => !(f.type === 'person' && f.id === id)) }));
+      }}
+      onAdd={(u: JiraPerson) => {
+        setWork((w) => ({ ...w, extra: [...w.extra.filter((x) => x.id !== u.id), { id: u.id, name: u.name, at: new Date().toISOString() }], hidden: w.hidden.filter((x) => x !== u.id) }));
+        toolToast(`${u.name} 님을 추가했어요`);
+      }}
+      onRemove={(id) => {
+        const p = data.pById.get(id);
+        setWork((w) => ({ ...w, extra: w.extra.filter((x) => x.id !== id), hidden: w.hidden.filter((x) => x !== id) }));
+        setVp((v) => ({ ...v, filters: v.filters.filter((f) => !(f.type === 'person' && f.id === id)) }));
+        toolToast(`${p?.name ?? ''} 님을 목록에서 뺐어요`);
+      }}
+    />
+  );
+  const availPanel = (
+    <WsAvail from={range.from} to={range.to} onRange={(f, t) => setRange({ name: '', from: f, to: t })} rows={availRows} bizN={availBiz.length} loading={availData.loading} data={data} onClose={() => setAvailOpen(false)} onPickPerson={(id) => addFilter('person', id)} />
+  );
+  const goThisMonth = () => {
+    setYm({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) });
+    setSel(today);
+  };
+  const notices = (
+    <>
+      {month.error && (
+        <div role="alert" data-ws-error style={{ display: 'flex', alignItems: 'center', gap: 10, margin: isMobile ? '0 20px 10px' : '10px 20px', padding: '10px 14px', borderRadius: 12, background: '#FBEDE6', color: '#C0563A', fontSize: 12.5, fontWeight: 700 }}>
+          {month.error}
+          <button type="button" className="btn" onClick={month.reload} style={{ marginLeft: 'auto', border: 0, background: 'transparent', color: '#C0563A', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
+            다시 시도
+          </button>
+        </div>
+      )}
+      {month.data && !month.data.tickets.length && !month.error && (
+        // 텅 빈 달 — 대개 날짜가 비어 있거나 다른 필드에 적혀 있다(제보 2026-10-01). 고칠 자리로 바로 보낸다.
+        <div data-ws-nodata style={{ display: 'flex', alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: isMobile ? '4px 10px' : 10, margin: isMobile ? '0 20px 10px' : '10px 20px 0', padding: '10px 14px', borderRadius: 12, background: 'var(--mf-ws-sunk)', color: 'var(--mf-ws-mut)', fontSize: 12.5, fontWeight: 600 }}>
+          이 달에 그릴 티켓이 없어요 · 담당자가 있고 날짜가 이 달에 걸린 티켓만 보여요
+          <button type="button" className="btn" onClick={() => openJiraSetup(undefined, { focus: 'dates' })} style={{ marginLeft: 'auto', flexShrink: 0, border: 0, background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
+            날짜 기준 바꾸기
+          </button>
+        </div>
+      )}
+      {month.data?.truncated && <div style={{ margin: isMobile ? '0 20px 10px' : '8px 20px 0', fontSize: 12, color: 'var(--mf-ws-mut)' }}>티켓이 많아 앞의 1,000건만 불러왔어요 · 프로젝트를 줄여 보세요</div>}
+    </>
+  );
+  const suggestList = (
+    <>
+      {sugGroups.map((g) => (
+        <div key={g.name}>
+          <div style={{ padding: '8px 8px 4px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em', color: 'var(--mf-ws-faint)' }}>{g.name}</div>
+          {g.items.map((it) => (
+            <button key={it.key} type="button" className="btn mf-tool-row" onClick={it.pick} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', height: isMobile ? 44 : 34, padding: '0 8px', border: 0, borderRadius: 9, background: it.on ? '#F7F0E8' : 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+              {it.icon}
+              <span style={{ fontSize: isMobile ? 14 : 13, fontWeight: 700, color: 'var(--mf-ws-ink)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
+              <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: 'var(--mf-ws-faint)', flexShrink: 0 }}>{it.meta}</span>
+            </button>
+          ))}
+        </div>
+      ))}
+      {!sugGroups.length && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-ws-faint)' }}>일치하는 항목이 없어요</div>}
+    </>
+  );
+
+  if (isMobile) {
+    /**
+     * **폰 판**(모바일 디자인 A — W1~W5). 데스크톱 머리는 [도구 · 이름 / 월 / 요약] · 검색 · [담당자 · 보기 · 맞춰보기 · 설정 ·
+     * 패널 · 휴일]을 한 줄에 세운다 — 390px에서는 단추가 세 줄로 접혀 달력이 화면 아래로 밀렸다. 폰은 넷으로 나눈다:
+     * 맨 위 `‹ 전체`와 휴일, 월 제목과 보기 세그먼트, 검색 + 담당자 + 맞춰보기, 그리고 보기. 오른쪽 패널(고른 날의 작업)은
+     * 달력 **아래 목록**이 되고, 담당자·맞춰보기는 바닥 시트로 연다. `Jira 설정`은 빈 달 안내와 전체 탭의 `도구 관리`가 맡는다.
+     */
+    const topBtn = { height: 40, minWidth: 40, border: 0, borderRadius: 12, background: 'transparent', color: 'var(--mf-ws-mut)', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' } as const;
+    return (
+      <div data-work-status data-ws-mobile style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--mf-ws-bg)', color: 'var(--mf-ws-ink)' }}>
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 2, height: 44, padding: '0 8px' }}>
+          {onBack && (
+            <button type="button" className="btn" data-ws-back onClick={onBack} style={{ ...topBtn, gap: 2, padding: '0 8px', fontSize: 15, fontWeight: 700 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+              전체
+            </button>
+          )}
+          <span style={{ flex: 1 }} />
+          {!isNow && (
+            <button type="button" className="btn" data-ws-this-month onClick={goThisMonth} style={{ height: 30, padding: '0 12px', marginRight: 2, borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              이번 달
+            </button>
+          )}
+          {ready && (
+            <button type="button" className="btn" aria-label="새로 불러오기" onClick={month.reload} style={topBtn}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={month.loading ? 'mf-ws-spin' : undefined}>
+                <path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" />
+              </svg>
+            </button>
+          )}
+          <button type="button" className="btn" data-ws-holiday-btn aria-label="휴일 · 영업일 설정" onClick={() => setHolidayOpen(true)} style={topBtn}>
+            <CalCheckIcon size={20} />
+          </button>
+        </div>
+
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', gap: 8, padding: '0 20px 10px' }}>
+          <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--mf-ws-faint)', minWidth: 0 }}>
+              <ToolIcon tool="jira" size={14} radius={4} font={8} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, marginLeft: -8 }}>
+              <MonthArrow dir={-1} onClick={() => shift(-1)} />
+              <h1 data-ws-month style={{ margin: 0, fontSize: 'clamp(20px, 6.2vw, 26px)', fontWeight: 800, letterSpacing: '-.04em', color: 'var(--mf-ws-ink)', whiteSpace: 'nowrap' }}>
+                {y}년 {m}월
+              </h1>
+              <MonthArrow dir={1} onClick={() => shift(1)} />
+            </span>
+          </span>
+          <span style={{ flexShrink: 0, paddingBottom: 1 }}>
+            <Seg items={[['cal', '달력'], ['tl', '타임라인'], ['stats', '집계']]} value={vp.view} onChange={(v) => setVp((x) => ({ ...x, view: v }))} height={28} font={12} pad={10} label="보기" />
+          </span>
+        </div>
+
+        {!empty && (
+          <>
+            <div ref={searchRef} style={{ flex: '0 0 auto', position: 'relative', display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 10px' }}>
+              <label style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, height: 38, padding: '0 12px', borderRadius: 999, border: `1px solid ${sugOpen && q ? '#E8A25F' : 'var(--mf-ws-line2)'}`, background: 'var(--mf-ws-card)', boxSizing: 'border-box' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-ws-faint)" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <input data-ws-search value={q} onChange={(e) => { setQ(e.target.value); setSugOpen(true); }} onFocus={() => setSugOpen(!!q)} onKeyDown={onSearchKey} placeholder="담당자, 프로젝트, 티켓" aria-label="담당자, 프로젝트, 티켓 키로 걸러 보기" enterKeyHint="search" style={{ flex: '1 1 auto', minWidth: 0, border: 0, outline: 'none', background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 16 }} />
+              </label>
+              <button type="button" className="btn" data-ws-members-btn aria-label={`담당자 ${peopleOn.length}/${data.people.length}`} onClick={() => setMemberOpen(true)} style={{ flexShrink: 0, height: 38, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 9px 0 7px', borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', cursor: 'pointer' }}>
+                <AvatarStack people={peopleOn} size={20} max={3} overlap={6} ring="var(--mf-ws-card)" />
+                <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700 }}>{peopleOn.length}</span>
+              </button>
+              <button type="button" className="btn" data-ws-avail-btn aria-label="일정 맞춰보기" aria-expanded={availOpen} onClick={() => setAvailOpen(true)} style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 999, border: '1px solid color-mix(in srgb, var(--mf-success-ink) 24%, transparent)', background: 'var(--mf-success-soft)', color: 'var(--mf-success-ink)', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CalCheckIcon size={17} />
+              </button>
+              {sugOpen && !!q.trim() && (
+                <div data-ws-suggest className="lnb-scroll" style={popPanel({ top: 44, left: 16, right: 16, maxHeight: 'min(360px, 50dvh)', overflowY: 'auto', padding: 6 })}>
+                  {suggestList}
+                </div>
+              )}
+            </div>
+            {chips.length > 0 && (
+              <div data-ws-mchips className="mf-m-scroll" style={{ flex: '0 0 auto', display: 'flex', gap: 6, overflowX: 'auto', padding: '0 20px 10px' }}>
+                {chips.map((c) => (
+                  <span key={c.key} data-ws-chip-filter={c.key} style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 4px 0 10px', borderRadius: 99, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', fontSize: 12, fontWeight: 700, color: 'var(--mf-ws-ink)', whiteSpace: 'nowrap' }}>
+                    <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: c.round ? 99 : 2, background: c.c }} />
+                    {c.name}
+                    <button type="button" className="btn" aria-label={`${c.name} 필터 빼기`} onClick={() => removeFilter(c.key)} style={{ width: 22, height: 22, border: 0, borderRadius: 99, background: 'transparent', color: 'var(--mf-ws-faint)', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+                {chips.length > 1 && (
+                  <button type="button" className="btn" data-ws-chips-clear onClick={() => setVp((v) => ({ ...v, filters: [] }))} style={{ flex: '0 0 auto', height: 28, padding: '0 10px', borderRadius: 99, border: 0, background: 'transparent', color: 'var(--mf-ws-mut)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    모두 지우기
+                  </button>
+                )}
+              </div>
+            )}
+            {notices}
+          </>
+        )}
+
+        <div className="mf-m-scroll" data-ws-body style={{ flex: '1 1 auto', minHeight: 0, overflowY: vp.view === 'tl' ? 'hidden' : 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {empty ??
+            (!month.data && month.loading ? (
+              <div aria-busy="true" style={{ padding: '60px 0', textAlign: 'center', fontSize: 13, color: 'var(--mf-ws-faint)' }}>
+                Jira에서 불러오는 중…
+              </div>
+            ) : vp.view === 'cal' ? (
+              <WsMobileCalendar y={y} m={m} today={today} sel={sel} onPick={setSel} onShift={shift} tickets={tickets} data={data} rules={rules} avail={availOpen ? range : null} onOpenIssue={openIssue} />
+            ) : vp.view === 'tl' ? (
+              <>
+                {/* 묶음 고르기는 표 위로 — 폰의 이름 열(118px)에는 세그먼트가 들어가지 않는다(디자인 W2). */}
+                <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '0 20px 10px' }}>
+                  <Seg items={[['person', '담당자'], ['epic', '프로젝트']]} value={vp.tlGroup} onChange={(g) => setVp((v) => ({ ...v, tlGroup: g }))} height={24} font={11.5} pad={10} label="타임라인 묶음" />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: 'var(--mf-ws-mut2)', whiteSpace: 'nowrap' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                    옆으로 밀어 날짜 이동
+                  </span>
+                </div>
+                <div style={{ flex: '1 1 auto', minHeight: 0 }}>
+                  <WsTimeline
+                    compact
+                    days={days}
+                    today={today}
+                    rules={rules}
+                    tickets={tickets}
+                    data={data}
+                    people={visiblePeople}
+                    epics={visibleEpics}
+                    worked={worked}
+                    group={vp.tlGroup}
+                    onGroup={(g) => setVp((v) => ({ ...v, tlGroup: g }))}
+                    epicOpen={vp.epicOpen}
+                    onToggleEpic={(key) => setVp((v) => ({ ...v, epicOpen: { ...v.epicOpen, [key]: v.epicOpen[key] === false } }))}
+                    onPickPerson={(id) => addFilter('person', id)}
+                    onPickEpic={(key) => addFilter('epic', key)}
+                    onOpenIssue={openIssue}
+                  />
+                </div>
+              </>
+            ) : (
+              <WsMobileStats stats={stats} biz={biz} month={m} onOpenHoliday={() => setHolidayOpen(true)} />
+            ))}
+        </div>
+
+        <MobileSheet open={memberOpen} onClose={() => setMemberOpen(false)} label="담당자" attrs={{ 'data-ws-members-sheet': '' }}>
+          <div className="mf-m-scroll" style={{ overflowY: 'auto', minHeight: 0, padding: '4px 4px 8px' }}>
+            {membersPanel}
+          </div>
+        </MobileSheet>
+        <MobileSheet open={availOpen} onClose={() => setAvailOpen(false)} label="일정 맞춰보기" attrs={{ 'data-ws-avail-sheet': '' }} maxHeight="calc(100% - 180px)">
+          {availPanel}
+        </MobileSheet>
+        <WsHolidayModal open={holidayOpen} onClose={() => setHolidayOpen(false)} prefs={work} onChange={setWork} y={y} m={m} onToast={toolToast} />
+      </div>
+    );
+  }
+
   const pad = isMobile ? '12px 14px 12px' : '16px 20px 14px 32px';
   return (
     <div data-work-status style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--mf-ws-bg)', color: 'var(--mf-ws-ink)' }}>
@@ -264,7 +498,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
             </h1>
             <MonthArrow dir={1} onClick={() => shift(1)} />
             {!isNow && (
-              <button type="button" className="btn" data-ws-this-month onClick={() => { setYm({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) }); setSel(today); }} style={{ height: 28, padding: '0 11px', marginLeft: 4, borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              <button type="button" className="btn" data-ws-this-month onClick={goThisMonth} style={{ height: 28, padding: '0 11px', marginLeft: 4, borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                 이번 달
               </button>
             )}
@@ -305,19 +539,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
           </label>
           {sugOpen && !!q.trim() && (
             <div data-ws-suggest className="lnb-scroll" style={popPanel({ top: 40, left: 0, width: 320, maxWidth: 'calc(100vw - 24px)', maxHeight: 320, overflowY: 'auto', padding: 6 })}>
-              {sugGroups.map((g) => (
-                <div key={g.name}>
-                  <div style={{ padding: '8px 8px 4px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em', color: 'var(--mf-ws-faint)' }}>{g.name}</div>
-                  {g.items.map((it) => (
-                    <button key={it.key} type="button" className="btn mf-tool-row" onClick={it.pick} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', height: 34, padding: '0 8px', border: 0, borderRadius: 9, background: it.on ? '#F7F0E8' : 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
-                      {it.icon}
-                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--mf-ws-ink)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
-                      <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: 'var(--mf-ws-faint)', flexShrink: 0 }}>{it.meta}</span>
-                    </button>
-                  ))}
-                </div>
-              ))}
-              {!sugGroups.length && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-ws-faint)' }}>일치하는 항목이 없어요</div>}
+              {suggestList}
             </div>
           )}
           <FilterChips chips={chips} onRemove={removeFilter} onClear={() => setVp((v) => ({ ...v, filters: [] }))} />
@@ -337,27 +559,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
             </button>
             {memberOpen && (
               <div style={popPanel({ top: 38, right: 0, width: 300, maxWidth: 'calc(100vw - 24px)' })}>
-                <WsMembers
-                  people={data.people}
-                  hidden={hidden}
-                  monthCount={monthCount}
-                  onToggle={(id) => {
-                    const off = !hidden.includes(id);
-                    setWork((w) => ({ ...w, hidden: off ? [...w.hidden, id] : w.hidden.filter((x) => x !== id) }));
-                    // 끄면 그 사람 필터도 함께 뺀다(스펙 §4.3).
-                    if (off) setVp((v) => ({ ...v, filters: v.filters.filter((f) => !(f.type === 'person' && f.id === id)) }));
-                  }}
-                  onAdd={(u: JiraPerson) => {
-                    setWork((w) => ({ ...w, extra: [...w.extra.filter((x) => x.id !== u.id), { id: u.id, name: u.name, at: new Date().toISOString() }], hidden: w.hidden.filter((x) => x !== u.id) }));
-                    toolToast(`${u.name} 님을 추가했어요`);
-                  }}
-                  onRemove={(id) => {
-                    const p = data.pById.get(id);
-                    setWork((w) => ({ ...w, extra: w.extra.filter((x) => x.id !== id), hidden: w.hidden.filter((x) => x !== id) }));
-                    setVp((v) => ({ ...v, filters: v.filters.filter((f) => !(f.type === 'person' && f.id === id)) }));
-                    toolToast(`${p?.name ?? ''} 님을 목록에서 뺐어요`);
-                  }}
-                />
+                {membersPanel}
               </div>
             )}
           </div>
@@ -369,7 +571,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
             </button>
             {availOpen && (
               <div style={popPanel({ top: 38, right: 0, width: 380, maxWidth: 'calc(100vw - 24px)', borderRadius: 16 })}>
-                <WsAvail from={range.from} to={range.to} onRange={(f, t) => setRange({ name: '', from: f, to: t })} rows={availRows} bizN={availBiz.length} loading={availData.loading} data={data} onClose={() => setAvailOpen(false)} onPickPerson={(id) => addFilter('person', id)} />
+                {availPanel}
               </div>
             )}
           </div>
@@ -403,24 +605,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
         <div className="lnb-scroll" data-ws-body style={{ flex: '1 1 auto', minWidth: 0, overflowY: vp.view === 'tl' ? 'hidden' : 'auto', overflowX: 'hidden', scrollbarWidth: 'thin' }}>
           {empty ?? (
             <>
-              {month.error && (
-                <div role="alert" data-ws-error style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 20px', padding: '10px 14px', borderRadius: 12, background: '#FBEDE6', color: '#C0563A', fontSize: 12.5, fontWeight: 700 }}>
-                  {month.error}
-                  <button type="button" className="btn" onClick={month.reload} style={{ marginLeft: 'auto', border: 0, background: 'transparent', color: '#C0563A', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
-                    다시 시도
-                  </button>
-                </div>
-              )}
-              {month.data && !month.data.tickets.length && !month.error && (
-                // 텅 빈 달 — 대개 날짜가 비어 있거나 다른 필드에 적혀 있다(제보 2026-10-01). 고칠 자리로 바로 보낸다.
-                <div data-ws-nodata style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 20px 0', padding: '10px 14px', borderRadius: 12, background: 'var(--mf-ws-sunk)', color: 'var(--mf-ws-mut)', fontSize: 12.5, fontWeight: 600 }}>
-                  이 달에 그릴 티켓이 없어요 · 담당자가 있고 날짜가 이 달에 걸린 티켓만 보여요
-                  <button type="button" className="btn" onClick={() => openJiraSetup(undefined, { focus: 'dates' })} style={{ marginLeft: 'auto', flexShrink: 0, border: 0, background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
-                    날짜 기준 바꾸기
-                  </button>
-                </div>
-              )}
-              {month.data?.truncated && <div style={{ margin: '8px 20px 0', fontSize: 12, color: 'var(--mf-ws-mut)' }}>티켓이 많아 앞의 1,000건만 불러왔어요 · 프로젝트를 줄여 보세요</div>}
+              {notices}
               {!month.data && month.loading ? (
                 <div aria-busy="true" style={{ padding: '60px 0', textAlign: 'center', fontSize: 13, color: 'var(--mf-ws-faint)' }}>
                   Jira에서 불러오는 중…

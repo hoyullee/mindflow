@@ -138,9 +138,18 @@ export function Home() {
   // 화면이 바뀌면(스페이스·일정·도구 — 알림의 일정 항목, 전체의 작업 현황 …) 알림·전체 탭을
   // 걷는다. 탭 막대가 그 화면을 가리키도록 한 곳에서 다룬다 — 행마다 닫기를 챙기면 새 길이
   // 생길 때마다 빠뜨린다(서랍 시절의 같은 교훈).
+  // 화면을 닫으면서 **전체 탭으로** 돌아가는 길(작업 현황의 `‹ 전체`)은 걷지 않고 그 탭을 세운다 —
+  // 도구를 닫지 않고 탭만 바꾸면 전체 탭의 작업 현황 줄이 같은 화면을 다시 열지 못한다(`activeTool`이 그대로라
+  // 위의 규칙이 돌지 않는다).
+  const nextPanel = useRef<'noti' | 'more' | null>(null);
   useEffect(() => {
-    setMPanel(null);
+    setMPanel(nextPanel.current);
+    nextPanel.current = null;
   }, [state.activeSpace, state.activeCal, state.activeTool]);
+  const backToMore = () => {
+    nextPanel.current = 'more';
+    controller.closeTool();
+  };
   // 데스크톱 폭으로 넘어가면 모바일 탭 상태는 뜻을 잃는다(LNB가 다시 선다).
   useEffect(() => {
     if (!isMobile) setMPanel(null);
@@ -151,6 +160,10 @@ export function Home() {
     // 고르던 것은 다른 탭으로 가면 놓는다 — 선택 바가 없는 화면에 선택만 남으면 다음 길게
     // 누르기가 "이미 모드 안"으로 읽혀 첫 항목을 잡지 못한다.
     if (state.selectMode) controller.exitSelectMode();
+    if (tab === 'more' && state.activeTool) {
+      backToMore();
+      return;
+    }
     if (tab === 'noti' || tab === 'more') {
       setMPanel(tab);
       return;
@@ -267,7 +280,7 @@ export function Home() {
         ) : state.activeTool === 'jira' ? (
           /* 도구 화면(작업 현황) — LNB는 그대로 두고 본문만 갈아 끼운다(도구 스펙 §5). */
           <div data-tool-screen="jira" style={{ position: 'absolute', inset: 0, animation: 'mf-fade .3s ease' }}>
-            <WorkStatusView isMobile={isMobile} />
+            <WorkStatusView isMobile={isMobile} onBack={backToMore} />
           </div>
         ) : state.activeCal ? (
           /* 일정 보기 — 스페이스와 나란한 두 번째 화면. */
