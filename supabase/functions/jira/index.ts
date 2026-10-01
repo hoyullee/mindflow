@@ -17,13 +17,18 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   coerceProjects,
+  coerceRule,
+  dateFields,
   epicFields,
   epicFromParent,
   epicsJql,
-  isCustomField,
+  isDate,
+  isEndField,
+  isStartField,
   normalizeEpic,
   normalizeTicket,
   normalizeUsers,
+  overlaps,
   pickStartField,
   ticketFields,
   ticketsJql,
@@ -96,6 +101,8 @@ Deno.serve(async (req: Request) => {
         return json(await selectSite(ctx, payload));
       case 'projects':
         return json(await projects(ctx, payload));
+      case 'fields':
+        return json(await fields(ctx));
       case 'save-projects':
         return json(await saveProjects(ctx, payload));
       case 'issues':
@@ -157,7 +164,7 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
   if (!t.access_token || !t.expires_in) throw new Fail('exchange-failed', t.error_description || t.error || '');
   if (!t.refresh_token) throw new Fail('no-offline');
   const list = await fetchSites(t.access_token);
-  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name').eq('user_id', ctx.uid).maybeSingle();
+  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name,end_field,end_field_name,fill_dates').eq('user_id', ctx.uid).maybeSingle();
   // 사이트가 하나면 곧바로 고른다(v1은 사이트 하나 — 스펙 §7). 다시 연결했는데 예전 사이트가
   // 여전히 목록에 있으면 **고른 프로젝트를 그대로 둔다**(해제 후 재연결 때 되살아나게).
   const keep = prev?.cloud_id ? list.find((s) => s.id === prev.cloud_id) : undefined;
@@ -175,6 +182,9 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
     projects: keep ? (prev?.projects ?? []) : [],
     start_field: keep ? (prev?.start_field ?? null) : null,
     start_field_name: keep ? (prev?.start_field_name ?? null) : null,
+    end_field: keep ? (prev?.end_field ?? null) : null,
+    end_field_name: keep ? (prev?.end_field_name ?? null) : null,
+    fill_dates: keep ? prev?.fill_dates !== false : true,
     updated_at: new Date().toISOString(),
   };
   const { error } = await ctx.admin.from('jira_credentials').upsert(row);
@@ -200,6 +210,8 @@ function statusOf(row: Row) {
     site: row.cloud_id ? { id: row.cloud_id, url: row.site_url ?? '', name: row.site_name ?? '' } : null,
     projects: coerceProjects(row.projects),
     startField: row.start_field ? { id: row.start_field, name: row.start_field_name ?? row.start_field } : null,
+    endField: row.end_field ? { id: row.end_field, name: row.end_field_name ?? row.end_field } : null,
+    fillDates: row.fill_dates !== false,
   };
 }
 
@@ -227,7 +239,7 @@ async function selectSite(ctx: Ctx, p: Record<string, unknown>) {
     cloud_id: site.id,
     site_url: site.url,
     site_name: site.name,
-    ...(same ? {} : { projects: [], start_field: null, start_field_name: null }),
+    ...(same ? {} : { projects: [], start_field: null, start_field_name: null, end_field: null, end_field_name: null, fill_dates: true }),
     updated_at: new Date().toISOString(),
   };
   await ctx.admin.from('jira_credentials').update(patch).eq('user_id', ctx.uid);
@@ -248,23 +260,51 @@ async function projects(ctx: Ctx, p: Record<string, unknown>) {
   return { ok: true, projects: coerceProjects(list) };
 }
 
+/** 이 사이트의 커스텀 날짜 필드 + 자동으로 고른 시작일 — 프로젝트 고르기의 날짜 칸. */
+async function fields(ctx: Ctx) {
+  const row = await mustRow(ctx);
+  if (!row.cloud_id) throw new Fail('no-site');
+  const token = await accessTokenFor(ctx, row);
+  const all = await jiraGet(token, row.cloud_id, '/rest/api/3/field');
+  return { ok: true, fields: dateFields(all), suggested: pickStartField(all) };
+}
+
+const fieldName = (v: unknown, id: string) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : id);
+
 async function saveProjects(ctx: Ctx, p: Record<string, unknown>) {
   const row = await mustRow(ctx);
   if (!row.cloud_id) throw new Fail('no-site');
   const list: JiraProjectRef[] = coerceProjects(p.projects);
-  // 시작일 필드는 **프로젝트를 고를 때마다** 다시 찾는다 — 연결 뒤에 관리자가 필드를
-  // 만들었을 수 있다. 실패해도 저장은 한다(그때 티켓은 기한 하루로 그린다).
-  let startField = row.start_field;
-  let startName = row.start_field_name;
-  try {
-    const token = await accessTokenFor(ctx, row);
-    const f = pickStartField(await jiraGet(token, row.cloud_id, '/rest/api/3/field'));
-    startField = f?.id ?? null;
-    startName = f?.name ?? null;
-  } catch (e) {
-    if (e instanceof Fail && e.reason === 'revoked') throw e;
+  let patch: Record<string, unknown>;
+  const rule = p.rule && typeof p.rule === 'object' ? (p.rule as Record<string, unknown>) : null;
+  if (rule) {
+    // 사용자가 날짜 칸에서 고른 것 — 모양만 확인한다(이름은 표시용이라 받은 그대로 자른다).
+    const start = isStartField(rule.start) ? rule.start : null;
+    const end = isEndField(rule.end) && rule.end !== 'duedate' ? rule.end : null;
+    patch = {
+      projects: list,
+      start_field: start,
+      start_field_name: start ? fieldName(rule.startName, start) : null,
+      end_field: end,
+      end_field_name: end ? fieldName(rule.endName, end) : null,
+      fill_dates: rule.fill !== false,
+    };
+  } else {
+    // 날짜 칸 없이 저장(예전 화면) — 시작일 필드는 **고를 때마다** 다시 찾는다(연결 뒤에 관리자가
+    // 필드를 만들었을 수 있다). 실패해도 저장은 한다(그때 티켓은 기한 하루로 그린다).
+    let startField = row.start_field;
+    let startName = row.start_field_name;
+    try {
+      const token = await accessTokenFor(ctx, row);
+      const f = pickStartField(await jiraGet(token, row.cloud_id, '/rest/api/3/field'));
+      startField = f?.id ?? null;
+      startName = f?.name ?? null;
+    } catch (e) {
+      if (e instanceof Fail && e.reason === 'revoked') throw e;
+    }
+    patch = { projects: list, start_field: startField, start_field_name: startName };
   }
-  const patch = { projects: list, start_field: startField, start_field_name: startName, updated_at: new Date().toISOString() };
+  patch.updated_at = new Date().toISOString();
   await ctx.admin.from('jira_credentials').update(patch).eq('user_id', ctx.uid);
   return { ok: true, ...statusOf({ ...row, ...patch } as Row) };
 }
@@ -276,10 +316,12 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
   if (!row.cloud_id) throw new Fail('no-site');
   const proj = coerceProjects(row.projects).map((x) => x.key);
   if (!proj.length) return { ok: true, epics: [], tickets: [], truncated: false };
-  const sf = row.start_field && isCustomField(row.start_field) ? row.start_field : null;
+  const rule = coerceRule(row.start_field, row.end_field, row.fill_dates);
   const from = typeof p.from === 'string' ? p.from : '';
   const to = typeof p.to === 'string' ? p.to : '';
-  const jql = ticketsJql(proj, from, to, sf);
+  // 사용자의 오늘(시간대가 다르다) — 아직 안 끝난 티켓을 어디까지 그릴지.
+  const today = isDate(p.today) ? p.today : undefined;
+  const jql = ticketsJql(proj, from, to, rule);
   if (!jql) throw new Fail('bad-range');
   const token = await accessTokenFor(ctx, row);
 
@@ -290,13 +332,13 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
   for (let page = 0; page < MAX_PAGES; page++) {
     const body = (await jiraPost(token, row.cloud_id, '/rest/api/3/search/jql', {
       jql,
-      fields: ticketFields(sf),
+      fields: ticketFields(rule),
       maxResults: 100,
       ...(next ? { nextPageToken: next } : {}),
     })) as { issues?: unknown[]; nextPageToken?: string; isLast?: boolean };
     for (const it of body.issues ?? []) {
-      const t = normalizeTicket(it, sf);
-      if (!t) continue;
+      const t = normalizeTicket(it, rule, today);
+      if (!t || !overlaps(t, from, to)) continue;
       tickets.push(t);
       if (!epicNames.has(t.epic)) {
         const e = epicFromParent(it);
@@ -314,9 +356,9 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
     const q = epicsJql(keys.slice(i, i + 50));
     if (!q) continue;
     try {
-      const body = (await jiraPost(token, row.cloud_id, '/rest/api/3/search/jql', { jql: q, fields: epicFields(sf), maxResults: 50 })) as { issues?: unknown[] };
+      const body = (await jiraPost(token, row.cloud_id, '/rest/api/3/search/jql', { jql: q, fields: epicFields(rule), maxResults: 50 })) as { issues?: unknown[] };
       for (const it of body.issues ?? []) {
-        const e = normalizeEpic(it, sf);
+        const e = normalizeEpic(it, rule);
         if (e) epicNames.set(e.key, e);
       }
     } catch (e) {

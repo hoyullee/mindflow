@@ -102,7 +102,8 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const days = useMemo(() => monthDays(y, m), [y, m]);
   const from = days[0] as string;
   const to = days[days.length - 1] as string;
-  const projKey = conn.projects.map((p) => p.key).join(',');
+  // 프로젝트와 **날짜 규칙**이 질문이다 — 어느 쪽이 바뀌어도 새로 묻는다.
+  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}`;
   const ready = conn.connected && !!conn.site && conn.projects.length > 0;
   const month = useWorkStatusData(from, to, projKey, ready);
   const availData = useWorkStatusData(range.from, range.to, projKey, ready && availOpen);
@@ -223,7 +224,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const empty = !conn.connected ? (
     <Empty title="Jira 연결이 끊겼어요" body="다시 연결하면 에픽과 티켓 일정을 이 화면에 모아요." action="Jira 연결" onAction={() => void beginJiraConnect().then((err) => err && toolToast(err))} />
   ) : !conn.site || !conn.projects.length ? (
-    <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트의 에픽과 하위 티켓을 달력·타임라인·집계로 보여 줘요." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
+    <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트의 티켓을 에픽(없으면 프로젝트)별로 달력·타임라인·집계에 보여 줘요." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
   ) : null;
 
   const pad = isMobile ? '12px 14px 12px' : '16px 20px 14px 32px';
@@ -382,6 +383,15 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
                   {month.error}
                   <button type="button" className="btn" onClick={month.reload} style={{ marginLeft: 'auto', border: 0, background: 'transparent', color: '#C0563A', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
                     다시 시도
+                  </button>
+                </div>
+              )}
+              {month.data && !month.data.tickets.length && !month.error && (
+                // 텅 빈 달 — 대개 날짜가 비어 있거나 다른 필드에 적혀 있다(제보 2026-10-01). 고칠 자리로 바로 보낸다.
+                <div data-ws-nodata style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 20px 0', padding: '10px 14px', borderRadius: 12, background: 'var(--mf-ws-sunk)', color: 'var(--mf-ws-mut)', fontSize: 12.5, fontWeight: 600 }}>
+                  이 달에 그릴 티켓이 없어요 · 담당자가 있고 날짜가 이 달에 걸린 티켓만 보여요
+                  <button type="button" className="btn" onClick={() => openJiraSetup()} style={{ marginLeft: 'auto', flexShrink: 0, border: 0, background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
+                    날짜 기준 바꾸기
                   </button>
                 </div>
               )}

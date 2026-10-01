@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { mockMatchMedia } from '../../test/matchMedia';
 import { resetToolPrefs } from './toolPrefsStore';
 import { resetJiraStore } from './jira/jiraStore';
 import { monthBiz } from './workstatus/model';
+import { demoJira } from './jira/jiraDemo';
 
 // 도구(LNB 구획 · 도구 관리 · 작업 현황) — 로컬 모드라 Jira는 **데모 소스**가 답한다(`jiraDemo.ts`).
 
@@ -137,7 +138,14 @@ describe('연결에서 돌아오기', () => {
     expect(window.location.search).toBe('');
     await user.click(await wait(() => within(modal).queryByText('결제')));
     await user.click(within(modal).getByText('온보딩'));
+    // 날짜 기준 — 사이트의 날짜 필드가 칸에 서고, 고른 것이 저장에 실린다(제보 2026-10-01).
+    await wait(() => within(modal).queryAllByRole('option', { name: 'Target end' })[0]);
+    expect((q('[data-jira-rule-start]') as HTMLSelectElement).value).toBe('customfield_10015');
+    await user.selectOptions(q('[data-jira-rule-end]')!, 'resolutiondate');
+    const save = vi.spyOn(demoJira, 'saveProjects');
     await user.click(q('[data-jira-setup-save]')!);
+    expect(save.mock.calls[0]?.[1]).toMatchObject({ start: 'customfield_10015', end: 'resolutiondate', endName: '해결된 날짜 (아직이면 오늘)', fill: true });
+    save.mockRestore();
     await waitFor(() => expect(q('[data-jira-setup]')).toBeNull());
     await wait(() => q('[data-ws-chip]'));
     expect(q('[data-ws-chip="SRCH-1"]')).toBeNull();

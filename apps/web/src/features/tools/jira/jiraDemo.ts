@@ -117,6 +117,7 @@ export const demoJira: JiraSource = {
   sites: () => need(() => ok({ sites: [SITE] })),
   selectSite: () => need((s) => ok(status(s))),
   projects: (query) => need(() => ok({ projects: PROJECTS.filter((p) => !query || `${p.key} ${p.name}`.toLowerCase().includes(query.toLowerCase())) })),
+  fields: () => need(() => ok({ fields: [{ id: 'customfield_10015', name: 'Start date' }, { id: 'customfield_10020', name: 'Target end' }], suggested: { id: 'customfield_10015', name: 'Start date' } })),
   saveProjects: (projects) =>
     need(() => {
       const next = { connected: true, projects };

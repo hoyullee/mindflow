@@ -21,6 +21,10 @@ export interface Row {
   projects: unknown;
   start_field: string | null;
   start_field_name: string | null;
+  /** 0045 — null이면 기한(`duedate`). */
+  end_field?: string | null;
+  end_field_name?: string | null;
+  fill_dates?: boolean | null;
 }
 
 export interface Site {

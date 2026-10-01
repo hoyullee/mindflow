@@ -62,7 +62,7 @@ export function WsTimeline(p: Props) {
         }>
           {bars.map((b) => {
             const ep = p.data.eByKey.get(b.item.epic);
-            return <BarEl key={b.item.key} n={n} s={b.s} e={b.e} top={8 + b.lane * 26} c={ep?.c ?? '#B7ACA1'} bg={ep?.bg ?? '#F3EEE8'} code={b.item.key} text={b.item.summary} dim={b.item.status === 'todo'} title={`${b.item.key} ${b.item.summary}\n${ep?.name ?? b.item.epic} · ${b.item.start} ~ ${b.item.end}${b.item.startMissing ? ' · 시작일 없음' : ''}${b.item.endMissing ? ' · 기한 없음' : ''}`} onClick={() => p.onOpenIssue(b.item.key)} />;
+            return <BarEl key={b.item.key} n={n} s={b.s} e={b.e} top={8 + b.lane * 26} c={ep?.c ?? '#B7ACA1'} bg={ep?.bg ?? '#F3EEE8'} code={b.item.key} text={b.item.summary} dim={b.item.status === 'todo'} title={`${b.item.key} ${b.item.summary}\n${ep?.name ?? b.item.epic} · ${b.item.start} ~ ${b.item.end}${b.item.startMissing ? ' · 시작일 없음' : ''}${b.item.endMissing ? ' · 기한 없음' : ''}${b.item.filled ? ' · 날짜 없음(만든 날~해결된 날)' : ''}`} onClick={() => p.onOpenIssue(b.item.key)} />;
           })}
         </Row>,
       );

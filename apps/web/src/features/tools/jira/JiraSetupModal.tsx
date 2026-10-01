@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Modal } from '../../../components/Modal';
-import { jiraReasonText, jiraSource, type JiraProjectRef, type JiraSite } from './jiraApi';
+import { jiraReasonText, jiraSource, type JiraDateChoice, type JiraField, type JiraProjectRef, type JiraSite } from './jiraApi';
 import { applyJiraStatus, useJiraConn } from './jiraStore';
 import { toolToast } from '../ui';
 
@@ -61,6 +61,32 @@ function SetupBody() {
   const [picked, setPicked] = useState<JiraProjectRef[]>(conn.projects);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // 날짜 기준(0045) — 어느 필드로 막대를 그릴지. 사이트마다 필드가 달라 열 때 한 번 묻는다.
+  const [fields, setFields] = useState<JiraField[] | null>(null);
+  const [rule, setRule] = useState<JiraDateChoice>(() => ({
+    start: conn.startField?.id ?? null,
+    startName: conn.startField?.name,
+    end: conn.endField?.id ?? 'duedate',
+    endName: conn.endField?.name,
+    fill: conn.fillDates !== false,
+  }));
+
+  useEffect(() => {
+    if (needSite || !conn.connected) return;
+    let alive = true;
+    void jiraSource()
+      .fields()
+      .then((r) => {
+        if (!alive) return;
+        // 못 받아도 고르기는 된다 — 기본 칸(기한·만든 날·해결된 날)과 지금 값은 늘 있다.
+        setFields(r.ok ? r.fields : []);
+        // 처음 고르는 사람에게는 찾아 둔 시작일 필드를 먼저 채워 둔다.
+        if (r.ok && r.suggested && !conn.startField && !conn.projects.length) setRule((v) => (v.start ? v : { ...v, start: r.suggested!.id, startName: r.suggested!.name }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [needSite, conn.connected]);
 
   useEffect(() => {
     if (!needSite) return;
@@ -108,7 +134,7 @@ function SetupBody() {
 
   const save = async () => {
     setSaving(true);
-    const r = await jiraSource().saveProjects(picked);
+    const r = await jiraSource().saveProjects(picked, rule);
     setSaving(false);
     if (!r.ok) {
       setError(jiraReasonText(r.reason));
@@ -168,7 +194,7 @@ function SetupBody() {
   const rows = [...picked.filter((p) => !shown.some((x) => x.key === p.key)), ...shown];
   return (
     <>
-      {head('Jira 프로젝트 고르기', `${conn.site?.name || conn.site?.url || 'Jira'} · 고른 프로젝트의 에픽과 티켓을 작업 현황에 모아요`)}
+      {head('Jira 프로젝트 고르기', `${conn.site?.name || conn.site?.url || 'Jira'} · 고른 프로젝트의 티켓을 에픽(없으면 프로젝트)별로 모아요`)}
       <div style={{ padding: '12px 22px 6px' }}>
         <input
           data-jira-project-search
@@ -179,7 +205,7 @@ function SetupBody() {
           style={{ width: '100%', boxSizing: 'border-box', height: 34, padding: '0 14px', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
         />
       </div>
-      <div className="lnb-scroll" style={{ flex: '1 1 auto', minHeight: 120, maxHeight: 360, overflowY: 'auto', padding: '4px 12px' }}>
+      <div className="lnb-scroll" style={{ flex: '1 1 auto', minHeight: 120, maxHeight: 280, overflowY: 'auto', padding: '4px 12px' }}>
         {list === null && !error && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-muted)' }}>프로젝트를 불러오는 중…</div>}
         {rows.map((p) => {
           const on = picked.some((x) => x.key === p.key);
@@ -194,6 +220,7 @@ function SetupBody() {
         {list !== null && !rows.length && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-muted)' }}>일치하는 프로젝트가 없어요</div>}
         {error && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-danger)' }}>{error}</div>}
       </div>
+      <DateRuleSection fields={fields} rule={rule} onChange={setRule} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px 16px', borderTop: '1px solid var(--mf-hairline)' }}>
         <span style={{ fontSize: 12, color: 'var(--mf-muted)' }}>{picked.length ? `${picked.length}개 고름` : '하나 이상 골라 주세요'}</span>
         <button
@@ -208,5 +235,47 @@ function SetupBody() {
         </button>
       </div>
     </>
+  );
+}
+
+const SELECT_STYLE = { flex: '1 1 0', minWidth: 0, height: 32, padding: '0 10px', border: '1px solid var(--mf-border)', borderRadius: 10, background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5 } as const;
+
+/**
+ * **날짜 기준** — 막대의 시작·끝을 어느 필드에서 읽을지(제보 2026-10-01: 시작 날짜·기한을 안 쓰는
+ * 프로젝트라 화면이 텅 비었다). 기본 칸 셋(기한·만든 날·해결된 날) + 사이트의 커스텀 날짜 필드.
+ */
+function DateRuleSection({ fields, rule, onChange }: { fields: JiraField[] | null; rule: JiraDateChoice; onChange: (r: JiraDateChoice) => void }) {
+  const custom = fields ?? [];
+  // 지금 값이 목록에 없으면(필드를 못 받았거나 지워졌다) 그 값도 칸에 남긴다 — 고른 것이 사라지지 않게.
+  const withCurrent = (id: string | null, name: string | undefined) => (id && id.startsWith('customfield_') && !custom.some((f) => f.id === id) ? [{ id, name: name ?? id }, ...custom] : custom);
+  const startOpts = [{ id: '', name: '없음 · 끝 날짜 하루로' }, { id: 'created', name: '만든 날짜' }, ...withCurrent(rule.start, rule.startName)];
+  const endOpts = [{ id: 'duedate', name: '기한' }, { id: 'resolutiondate', name: '해결된 날짜 (아직이면 오늘)' }, ...withCurrent(rule.end, rule.endName)];
+  const nameOf = (opts: { id: string; name: string }[], id: string) => opts.find((o) => o.id === id)?.name;
+  return (
+    <div data-jira-date-rule style={{ padding: '10px 22px 12px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--mf-text)' }}>
+        날짜 기준 <span style={{ fontWeight: 500, color: 'var(--mf-faint)' }}>· 티켓 막대를 어느 날짜로 그릴지{fields === null ? ' · 필드를 불러오는 중…' : ''}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <label style={{ fontSize: 11.5, color: 'var(--mf-muted)', width: 28, flexShrink: 0 }} htmlFor="jira-rule-start">시작</label>
+        <select id="jira-rule-start" data-jira-rule-start value={rule.start ?? ''} onChange={(e) => onChange({ ...rule, start: e.target.value || null, startName: nameOf(startOpts, e.target.value) })} style={SELECT_STYLE}>
+          {startOpts.map((o) => (
+            <option key={o.id || 'none'} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <label style={{ fontSize: 11.5, color: 'var(--mf-muted)', width: 28, flexShrink: 0 }} htmlFor="jira-rule-end">끝</label>
+        <select id="jira-rule-end" data-jira-rule-end value={rule.end} onChange={(e) => onChange({ ...rule, end: e.target.value, endName: nameOf(endOpts, e.target.value) })} style={SELECT_STYLE}>
+          {endOpts.map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--mf-subtext)', cursor: 'pointer' }}>
+        <input type="checkbox" data-jira-rule-fill checked={rule.fill} onChange={(e) => onChange({ ...rule, fill: e.target.checked })} style={{ width: 15, height: 15, accentColor: '#E85E33', flexShrink: 0 }} />
+        두 날짜가 다 비면 만든 날 ~ 해결된 날(아직이면 오늘)로 그리기
+      </label>
+    </div>
   );
 }

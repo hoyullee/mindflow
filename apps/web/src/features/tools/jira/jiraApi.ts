@@ -23,6 +23,24 @@ export interface JiraStatus {
   site: JiraSite | null;
   projects: JiraProjectRef[];
   startField: { id: string; name: string } | null;
+  /** 끝 날짜 필드 — null이면 기한(0045). 서버가 옛 함수면 빠져 온다. */
+  endField?: { id: string; name: string } | null;
+  /** 두 날짜가 다 비면 만든 날 ~ 해결된 날로 그린다(기본 켬). */
+  fillDates?: boolean;
+}
+
+/** 프로젝트 고르기에서 정하는 **날짜 규칙**(`_shared/jira.ts`의 `DateRule` + 표시 이름). */
+export interface JiraDateChoice {
+  start: string | null;
+  startName?: string;
+  end: string;
+  endName?: string;
+  fill: boolean;
+}
+
+export interface JiraField {
+  id: string;
+  name: string;
 }
 
 export interface JiraIssues {
@@ -44,8 +62,11 @@ export interface JiraSource {
   sites(): Promise<JiraResult<{ sites: JiraSite[] }>>;
   selectSite(cloudId: string): Promise<JiraResult<JiraStatus>>;
   projects(query: string): Promise<JiraResult<{ projects: JiraProjectRef[] }>>;
-  saveProjects(projects: JiraProjectRef[]): Promise<JiraResult<JiraStatus>>;
-  issues(from: string, to: string): Promise<JiraResult<JiraIssues>>;
+  /** 이 사이트의 커스텀 날짜 필드 + 자동으로 찾은 시작일 필드. */
+  fields(): Promise<JiraResult<{ fields: JiraField[]; suggested: JiraField | null }>>;
+  saveProjects(projects: JiraProjectRef[], rule?: JiraDateChoice): Promise<JiraResult<JiraStatus>>;
+  /** `today`: 사용자의 오늘 — 아직 안 끝난 티켓을 어디까지 그릴지(서버는 시간대를 모른다). */
+  issues(from: string, to: string, today?: string): Promise<JiraResult<JiraIssues>>;
   users(query: string): Promise<JiraResult<{ users: JiraPerson[] }>>;
   disconnect(): Promise<JiraResult<object>>;
 }
@@ -71,8 +92,9 @@ const serverJira: JiraSource = {
   sites: () => invoke({ action: 'sites' }),
   selectSite: (cloudId) => invoke({ action: 'select-site', cloudId }),
   projects: (query) => invoke({ action: 'projects', query }),
-  saveProjects: (projects) => invoke({ action: 'save-projects', projects }),
-  issues: (from, to) => invoke({ action: 'issues', from, to }),
+  fields: () => invoke({ action: 'fields' }),
+  saveProjects: (projects, rule) => invoke({ action: 'save-projects', projects, ...(rule ? { rule } : {}) }),
+  issues: (from, to, today) => invoke({ action: 'issues', from, to, ...(today ? { today } : {}) }),
   users: (query) => invoke({ action: 'users', query }),
   disconnect: () => invoke({ action: 'disconnect' }),
 };
