@@ -43,6 +43,7 @@
 | "보일 때만 읽기"가 영영 안 읽는다 | 나중에 서는 노드를 `ref.current`로 관측했다 | [F18](probe-pitfalls-detail.md#f18) |
 | 「모두 펼치기」로 찍었는데 **전부 접혀** 있다 | 그 버튼은 토글이고 기본값이 이미 펴져 있었다 | [F19](probe-pitfalls-detail.md#f19) |
 | 터치를 길게 눌러도 우클릭 메뉴가 안 뜬다 | 헤드리스는 그 제스처로 `contextmenu`를 만들지 않는다 | [F20](probe-pitfalls-detail.md#f20) |
+| 직접 쏜 `contextmenu`가 **어떤 탭 뒤로는** 안 연다 | 마지막 누름이 손가락이면 `noteTouchMenu`가 길게 누르기로 온 것만 통과시킨다 | [F42](probe-pitfalls-detail.md#f42) |
 | 끌기 뒤의 단정이 늘 실패한다(앱은 멀쩡) | `pointermove`의 상태 갱신은 모아서 흘린다 | [F21](probe-pitfalls-detail.md#f21) |
 | 테스트 네 개가 한꺼번에 타임아웃 | 가짜 시계 안에서 `waitFor`를 기다렸다 | [F22](probe-pitfalls-detail.md#f22) |
 | 줄 끝 공백이 줄바꿈되는지 캐럿 y로는 안 보인다 | `Range` 사각형이 앞 행으로 접힌다 — 행 수를 센다 | [F23](probe-pitfalls-detail.md#f23) |
