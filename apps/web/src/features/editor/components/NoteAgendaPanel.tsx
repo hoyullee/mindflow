@@ -21,6 +21,7 @@
 // 어느 상세를 여는가는 칩 팝오버와 **같은 한 자리**가 정한다(`noteEventOpenOf`).
 
 import { useEffect, useState } from 'react';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CalendarSide } from '../../home/calendar/CalendarSide';
 import type { CalendarEntry } from '../../home/calendar/entries';
 import { partsOf, todayISO } from '../../home/calendar/model';
@@ -42,6 +43,9 @@ function readDay(): string {
 
 export function NoteAgendaPanel({ controller, onClose, onOpenEvent }: { controller: EditorController; onClose: () => void; onOpenEvent: (open: NoteEventOpen) => void }) {
   const th = controller.uiTheme;
+  // 폰은 옆 열이 설 폭이 없다 — 296px 열이 본문을 한 글자 폭으로 짜부라뜨렸다(실측). 본문 위를
+  // **통째로 덮는 판**으로 연다(닫기는 판의 ✕ · 바닥 독의 「일정」).
+  const mobile = useIsMobile();
   const today = todayISO();
   const [day, setDay] = useState(readDay);
   const at = partsOf(day) ?? partsOf(today)!;
@@ -63,7 +67,7 @@ export function NoteAgendaPanel({ controller, onClose, onOpenEvent }: { controll
       className="mf-note-agenda"
       aria-label="일정"
       style={{
-        flex: '0 0 296px',
+        ...(mobile ? { position: 'absolute', inset: 0, zIndex: 19 } : { flex: '0 0 296px' }),
         minWidth: 0,
         /**
          * **가로 flex다.** 세로로 두면 `CalendarSide`의 `flex: 0 0 300px`가 폭이
@@ -71,7 +75,7 @@ export function NoteAgendaPanel({ controller, onClose, onOpenEvent }: { controll
          * 폭은 이 aside가 잡고(296), 안쪽은 `editor.css`가 늘려 준다.
          */
         display: 'flex',
-        borderLeft: `1px solid ${th.border}`,
+        borderLeft: mobile ? 0 : `1px solid ${th.border}`,
         background: 'var(--mf-note-bar, var(--mf-panel2))',
         overflow: 'hidden',
       }}

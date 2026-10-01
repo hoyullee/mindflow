@@ -72,6 +72,8 @@ import { DropLine, useBlockDrag } from './noteBlockDrag';
 import { agoLabel, boardDocIdFromUrl, embedKindName, embedKindOf, embedSize, type EmbedKind } from '../noteEmbed';
 import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
+import { NoteBookTitle } from './NoteBookTitle';
+import { NoteMobileTopBar } from './NoteMobileChrome';
 import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
 import { comboLabel, keyLabel } from '../shortcutLabels';
@@ -3410,29 +3412,33 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
         style={
           mobile
             ? {
+                /**
+                 * **바닥에서 올라오는 시트**(모바일 공책 디자인 E2) — 예전에는 왼쪽 서랍이었다.
+                 * 폰에서 목록은 "고르고 닫는" 자리라, 손가락이 이미 있는 아래에서 올라오는 편이
+                 * 닿기 쉽고 홈의 다른 시트(스페이스·새로 만들기)와 같은 문법이다. 위로 본문 머리가
+                 * 조금 남아(64px) 어느 공책 위에 떠 있는지 보인다.
+                 */
                 position: 'absolute',
                 zIndex: 30,
-                top: 0,
+                top: 64,
                 bottom: 0,
                 left: 0,
+                right: 0,
                 display: 'flex',
-                /**
-                 * 폭을 **여기서** 못박는다 — 안쪽 목록이 이 값을 채운다(`narrow`).
-                 *
-                 * 서랍은 화면보다 좁아야 한다: 옆의 빈자리가 곧 "눌러서 닫는 곳"이다.
-                 * 그런데 폭을 `max-width`로만 주면 안쪽의 292px 고정 단이 그대로 남아
-                 * **넘친 만큼이 닫힌 뒤에도 화면에 보인다**(실측: 320px 화면에서 6px).
-                 */
-                width: 'min(292px, 86vw)',
-                // 닫을 때는 **제 폭만큼** 물러난다 — 폭을 0으로 접으면 안쪽 글이
-                // 찌그러졌다 펴지며 튄다(데스크톱의 집중 모드와 같은 처방).
-                transform: pagesOpen ? 'translateX(0)' : 'translateX(-100%)',
-                boxShadow: pagesOpen ? '0 18px 44px -24px rgba(46,42,38,.55)' : 'none',
-                transition: 'transform .24s cubic-bezier(.2,.9,.3,1)',
+                flexDirection: 'column',
+                borderRadius: '24px 24px 0 0',
+                overflow: 'hidden',
+                background: 'var(--mf-panel)',
+                // 닫을 때는 **제 높이만큼** 내려간다 — 높이를 0으로 접으면 안쪽 글이 찌그러졌다 펴지며 튄다.
+                transform: pagesOpen ? 'translateY(0)' : 'translateY(100%)',
+                visibility: pagesOpen ? 'visible' : 'hidden',
+                boxShadow: pagesOpen ? '0 -20px 50px -30px rgba(46,42,38,.5)' : 'none',
+                transition: pagesOpen ? 'transform .26s cubic-bezier(.2,.8,.2,1)' : 'transform .22s ease, visibility 0s linear .22s',
               }
             : { display: 'contents' }
         }
       >
+        {mobile && <span aria-hidden="true" style={{ alignSelf: 'center', flex: '0 0 auto', width: 36, height: 4, margin: '8px 0 2px', borderRadius: 99, background: 'var(--mf-border)', display: 'block' }} />}
         <PageList controller={controller} collapsed={!mobile && focus} onQuery={setFindQ} narrow={mobile} onPick={mobile ? onClosePages : undefined} />
       </div>
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -3703,7 +3709,8 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
             // 좁은 화면에서는 **막대 자리를 비워 두지 않는다**(모바일 막대는 겹쳐 뜬다)
             // — 412px에서 그 15px은 한 줄에 글자 한 개 차이다.
             ...(mobile ? {} : { scrollbarGutter: 'stable' as const }),
-            padding: mobile ? '18px 0 44px' : '26px 0 56px',
+            // 폰은 바닥 독(일정·댓글·기록)이 떠 있으므로 그만큼 더 비운다 — 마지막 줄이 독 밑에 깔리지 않게.
+            padding: mobile ? '18px 0 110px' : '26px 0 56px',
             background: 'var(--mf-note-body)',
           }}
         >
@@ -4522,7 +4529,6 @@ export function NoteTopBar({
   /** 우측 「일정」 탭(스펙 5절) — 상태는 에디터 레이아웃이 든다(패널도 거기 선다). */
   agenda?: { on: boolean; toggle: () => void };
 }) {
-  const titleEnterRef = useRef(false); // 조합 중에 눌린 Enter — 조합이 끝나면 놓는다
   const mobile = useIsMobile();
   const page = controller.notePage;
   const space = controller.noteSpaceName;
@@ -4536,6 +4542,8 @@ export function NoteTopBar({
     { name: '댓글', on: controller.commentsOpen, onPick: () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) },
     { name: '기록', on: controller.historyOpen, onPick: () => controller.setHistoryOpen(!controller.historyOpen) },
   ];
+  // 폰은 머리 한 줄이 따로다(모바일 공책 디자인 E0) — 일정·댓글·기록은 바닥 독이, 공유·저장은 ⋯ 시트가 맡는다.
+  if (mobile) return <NoteMobileTopBar controller={controller} pagesOpen={pagesOpen} onTogglePages={onTogglePages} />;
   return (
     <div
       data-note-topbar
@@ -4613,56 +4621,7 @@ export function NoteTopBar({
             이름을 읽기 전에 색으로 먼저 온다(목록의 고른 줄과 같은 표식). */}
         <span aria-hidden="true" style={{ width: 3, height: 24, flex: '0 0 auto', borderRadius: 999, background: cover, display: 'block' }} />
         <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-          <input
-            data-note-book-title
-            defaultValue={controller.docTitle}
-            readOnly={readOnly}
-            maxLength={40}
-            placeholder="공책 이름"
-            title="눌러서 공책 이름 수정"
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              /* **조합 중의 Enter로는 놓지 않는다**(제보: `공책 이름`이 `공책 이름름`으로
-                 저장됐다). 한글을 조합하는 도중 Enter의 keydown에서 칸을 놓으면 맥의 IME가
-                 조합을 끝내며 마지막 글자를 **한 번 더** 넣는다. 조합이 끝난 뒤에 놓는다 —
-                 뒤따르는 보통 Enter가 오면 그것이, 안 오면 `compositionend`가 놓는다. */
-              if (e.nativeEvent.isComposing || e.keyCode === 229) {
-                titleEnterRef.current = true;
-                return;
-              }
-              titleEnterRef.current = false;
-              e.currentTarget.blur();
-            }}
-            onCompositionEnd={(e) => {
-              if (!titleEnterRef.current) return;
-              const el = e.currentTarget;
-              window.setTimeout(() => {
-                if (!titleEnterRef.current) return;
-                titleEnterRef.current = false;
-                el.blur();
-              }, 0);
-            }}
-            onBlur={(e) => {
-              titleEnterRef.current = false;
-              controller.commitTitle(e.currentTarget.value);
-            }}
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: 0,
-              border: 0,
-              borderBottom: '1.5px dashed transparent',
-              background: 'transparent',
-              fontFamily: 'inherit',
-              fontSize: 13,
-              fontWeight: 800,
-              letterSpacing: '-.02em',
-              color: 'var(--mf-text)',
-              outline: 'none',
-            }}
-          />
+          <NoteBookTitle controller={controller} />
           {/* `6쪽 · 저장됨` — 시안의 아래 줄. 쪽수가 먼저인 이유는 그것이 이 공책의
               크기이고, 저장 상태는 대개 `저장됨`으로 잠잠하기 때문이다. 잠잠하지 않을
               때만(저장 전·저장 중) 글자에 색이 든다. */}

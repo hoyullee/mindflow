@@ -7105,31 +7105,35 @@ describe('공책 54판 — 좁은 화면 배치(제보: 모바일에서 틀어�
     return container;
   }
 
-  it('페이지 목록은 **서랍**이다 — 본문을 밀지 않고 덮는다', async () => {
+  it('페이지 목록은 **바닥 시트**다 — 본문을 밀지 않고 아래에서 덮는다(모바일 공책 디자인 E2)', async () => {
     const c = await open('mb1');
     const slot = c.querySelector('[data-note-pages-slot]') as HTMLElement;
 
     expect(slot.style.position).toBe('absolute');
-    // 닫힌 채로 선다 — 제 폭만큼 물러나 화면에 남지 않는다.
-    expect(slot.style.transform).toBe('translateX(-100%)');
-    expect(slot.style.width).toBe('min(292px, 86vw)');
+    // 닫힌 채로 선다 — 제 높이만큼 내려가 화면에 남지 않는다(가려진 채 초점도 받지 않는다).
+    expect(slot.style.transform).toBe('translateY(100%)');
+    expect(slot.style.visibility).toBe('hidden');
+    expect(slot.style.left).toBe('0px');
+    expect(slot.style.right).toBe('0px');
     expect(c.querySelector('[data-note-pages-scrim]')).toBeNull();
     // 안쪽 목록은 292 고정이 아니라 슬롯을 채운다(작은 폰에서 넘치지 않게).
     expect((c.querySelector('[data-note-pages]') as HTMLElement).style.width).toBe('100%');
   });
 
-  it('☰로 열고 덮개를 눌러 닫는다', async () => {
+  it('머리의 「페이지 N」으로 열고 덮개를 눌러 닫는다', async () => {
     const c = await open('mb2');
     const toggle = (await waitFor(() => c.querySelector('[data-note-pages-toggle]'))) as HTMLElement;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // 쪽수가 곧 단추 이름이다.
+    expect(toggle.textContent).toContain('페이지');
 
     fireEvent.click(toggle);
     await waitFor(() => expect(c.querySelector('[data-note-pages-scrim]')).toBeTruthy());
-    expect((c.querySelector('[data-note-pages-slot]') as HTMLElement).style.transform).toBe('translateX(0)');
+    expect((c.querySelector('[data-note-pages-slot]') as HTMLElement).style.transform).toBe('translateY(0)');
 
     fireEvent.pointerDown(c.querySelector('[data-note-pages-scrim]')!);
     await waitFor(() => expect(c.querySelector('[data-note-pages-scrim]')).toBeNull());
-    expect((c.querySelector('[data-note-pages-slot]') as HTMLElement).style.transform).toBe('translateX(-100%)');
+    expect((c.querySelector('[data-note-pages-slot]') as HTMLElement).style.transform).toBe('translateY(100%)');
   });
 
   it('페이지를 고르면 서랍이 **스스로 닫힌다** — 고른 글이 바로 보여야 한다', async () => {
@@ -7151,16 +7155,37 @@ describe('공책 54판 — 좁은 화면 배치(제보: 모바일에서 틀어�
     expect(tb.getAttribute('data-note-narrow')).toBe('1');
   });
 
-  it('상단 바 — 경로를 감추고 문서 칸의 고정 292를 놓는다', async () => {
+  it('폰 머리 — 경로·공유·탭 없이 [‹ · 이름 · 페이지 N · ⋯], 일정·댓글·기록은 바닥 독, 공유는 ⋯ 시트(E0)', async () => {
     const c = await open('mb5');
-    await waitFor(() => expect(c.querySelector('[data-doc-chip]')).toBeTruthy());
+    await waitFor(() => expect(c.querySelector('[data-note-topbar-mobile]')).toBeTruthy());
 
-    // 경로(`스페이스 › 공책 › 페이지`)는 좁은 화면에서 뜨지 않는다 — 셋 중 둘이 겹친다.
+    // 경로(`스페이스 › 공책 › 페이지`)·공유·상단 탭은 머리에 없다 — 이름이 서너 글자에서 잘렸다.
     expect(c.querySelector('nav[aria-label="위치"]')).toBeNull();
-    // 292가 아니라 남는 만큼 — 공유·댓글·기록이 화면 밖으로 밀리지 않게.
-    expect((c.querySelector('[data-doc-chip]') as HTMLElement).style.flex).toBe('1 1 auto');
-    // 「공유」라는 낱말은 빼고 아이콘과 얼굴만 남긴다.
-    expect(c.querySelector('[data-note-share]')?.textContent).not.toContain('공유');
+    expect(c.querySelector('[data-note-topbar] [data-note-share]')).toBeNull();
+    expect(c.querySelector('[data-note-topbar] [data-note-tab]')).toBeNull();
+    expect(c.querySelector('[data-note-topbar] [data-note-book-title]')).toBeTruthy();
+    // 펼칠 것은 바닥 독 — 순서는 데스크톱 탭과 같다.
+    expect([...c.querySelectorAll('[data-note-dock] [data-note-tab]')].map((b) => b.getAttribute('data-note-tab'))).toEqual(['일정', '댓글', '기록']);
+    fireEvent.click(c.querySelector('[data-note-dock] [data-note-tab="댓글"]')!);
+    // 댓글 시트가 뜨면 독은 비킨다(같은 자리를 덮는다).
+    await waitFor(() => expect(c.querySelector('[data-note-dock]')).toBeNull());
+  });
+
+  it('바닥 독의 「일정」은 본문을 **덮는 판**으로 연다 — 옆 열이 본문을 짜부라뜨리지 않게', async () => {
+    const c = await open('mb7');
+    fireEvent.click((await waitFor(() => c.querySelector('[data-note-dock] [data-note-tab="일정"]'))) as HTMLElement);
+    const panel = (await waitFor(() => c.querySelector('[data-note-agenda]'))) as HTMLElement;
+    expect(panel.style.position).toBe('absolute');
+    expect(panel.style.flex).toBe('');
+  });
+
+  it('⋯ 시트의 「공유」는 공유 창을 연다', async () => {
+    const c = await open('mb6');
+    fireEvent.click((await waitFor(() => c.querySelector('[data-note-more]'))) as HTMLElement);
+    const share = (await waitFor(() => document.querySelector('[data-note-more-sheet] [data-note-more-share]'))) as HTMLElement;
+    fireEvent.click(share);
+    await waitFor(() => expect(document.querySelector('[data-note-more-sheet]')).toBeNull());
+    await waitFor(() => expect(screen.getByRole('dialog', { name: /공유/ })).toBeTruthy());
   });
 });
 
