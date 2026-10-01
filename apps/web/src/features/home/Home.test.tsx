@@ -3265,6 +3265,29 @@ describe('Home', () => {
       }
     });
 
+    it('전체 › 설정은 전체 화면 — 상세는 ‹ 설정으로, 첫 화면은 ‹ 전체로 닫는다', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const user = userEvent.setup();
+        renderHome();
+        await user.click(await waitFor(() => must('[data-m-tab="more"]')));
+        await user.click(await waitFor(() => must('[data-m-more-row="settings"]')));
+        await waitFor(() => expect(must('[data-settings-mobile-head]')).toBeTruthy());
+        expect(must('[data-settings-title]').textContent).toBe('설정');
+        // 닫기 ✕는 없다 — 첫 화면의 ‹가 「전체」로 닫는다.
+        expect(screen.queryByRole('button', { name: '닫기' })).toBeNull();
+        await user.click(screen.getByText('계정 설정'));
+        await waitFor(() => expect(must('[data-settings-title]').textContent).toBe('계정'));
+        await user.click(screen.getByRole('button', { name: '설정으로 돌아가기' }));
+        await waitFor(() => expect(must('[data-settings-title]').textContent).toBe('설정'));
+        await user.click(screen.getByRole('button', { name: '전체로 돌아가기' }));
+        await waitFor(() => expect(document.querySelector('[data-settings-mobile-head]')).toBeNull());
+        expect(document.querySelector('[data-m-more]')).toBeTruthy();
+      } finally {
+        restore();
+      }
+    });
+
     it('스페이스 이름을 누르면 시트가 열리고, 고르면 그 스페이스로 간다', async () => {
       const restore = mockMatchMedia(true);
       try {
