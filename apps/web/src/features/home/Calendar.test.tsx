@@ -19,7 +19,7 @@ import type { Backend, DocMeta, DocStore, LoadedDoc } from '../../adapters/ports
 import { onCalendarChanged } from '../reminders/calendarChanged';
 import { ACTIVE_VIEW_KEY } from './storage';
 import { focusCalendar } from './calendarFocus';
-import { addDays, addMonth, daysBetween, hhmm, isoOf, minutesOf, nextTimeSlot, timeLabel, todayISO } from './calendar/model';
+import { addDays, addMonth, dateLabel, daysBetween, hhmm, isoOf, minutesOf, nextTimeSlot, timeLabel, todayISO } from './calendar/model';
 import { tagColor } from '../editor/kanbanMeta';
 import { UI_THEME } from '../editor/theme';
 
@@ -772,12 +772,45 @@ describe('일정 화면', () => {
       await waitFor(() => expect(document.querySelector('[data-m-calendars-sheet]')).toBeTruthy());
     });
 
-    it('＋는 고른 날로 새 일정을 연다', async () => {
+    it('＋는 고른 날로 **전체 화면** 새 일정을 연다 — 종일을 끄면 시각, 등록하면 그 날 목록에 선다', async () => {
       await openMobileCalendar();
       const tomorrow = shiftDays(1);
       fireEvent.click(day(tomorrow));
       fireEvent.click(document.querySelector('[data-m-cal] [data-m-fab]')!);
-      await waitFor(() => expect(screen.getByRole('dialog', { name: /새 일정/ })).toBeTruthy());
+      const form = await waitFor(() => {
+        const el = document.querySelector('[data-new-event-mobile]');
+        if (!el) throw new Error('no form');
+        return el as HTMLElement;
+      });
+      // 머리 [취소 · 새 일정 · 등록] — 제목이 없으면 등록이 눌리지 않는다.
+      const submit = form.querySelector('[data-new-submit]') as HTMLButtonElement;
+      expect(submit.disabled).toBe(true);
+      expect(form.querySelector('[data-new-date]')!.textContent).toContain(dateLabel(tomorrow));
+      // 종일이 기본 — 끄면 시작·종료 시각이 선다.
+      expect(form.querySelector('[data-new-start]')).toBeNull();
+      fireEvent.click(within(form).getByRole('switch', { name: '종일' }));
+      await waitFor(() => expect(form.querySelector('[data-new-start]')).toBeTruthy());
+      expect(form.querySelector('[data-new-end]')).toBeTruthy();
+      fireEvent.click(within(form).getByRole('switch', { name: '종일' }));
+      fireEvent.change(form.querySelector('[data-new-title]')!, { target: { value: '폰에서 만든 일정' } });
+      expect(submit.disabled).toBe(false);
+      fireEvent.click(submit);
+      await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
+      await waitFor(() => expect(titles()).toContain('폰에서 만든 일정'));
+    });
+
+    it('새 일정의 취소는 아무것도 남기지 않는다', async () => {
+      await openMobileCalendar();
+      fireEvent.click(document.querySelector('[data-m-cal] [data-m-fab]')!);
+      const form = await waitFor(() => {
+        const el = document.querySelector('[data-new-event-mobile]');
+        if (!el) throw new Error('no form');
+        return el as HTMLElement;
+      });
+      fireEvent.change(form.querySelector('[data-new-title]')!, { target: { value: '버릴 일정' } });
+      fireEvent.click(form.querySelector('[data-new-cancel]')!);
+      await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
+      expect(JSON.parse(localStorage.getItem('mf_events') ?? '[]')).toHaveLength(0);
     });
   });
 

@@ -115,17 +115,17 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
       // 때 저장하고, `close`가 그 커밋을 태운다). 달력 항목을 흘깃 보는 팝업의 관례.
       dismissOnBackdrop
       // 막·등장 효과는 설정 팝업과 같은 것(요청) — 예전에는 배경이 그대로 보였다(제보).
-      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 320, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 320, alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? 0 : 32 }}
       card={{
-        // 원본: 900×640. 폰은 바텀 시트(우리 모달 관례).
+        // 원본: 900×640. 폰은 전체 화면(모바일 홈 디자인 — 일정 상세는 N5와 같은 자리).
         width: isMobile ? '100%' : 900,
         maxWidth: '100%',
-        height: isMobile ? '88dvh' : 640,
+        height: isMobile ? '100%' : 640,
         maxHeight: '100%',
         boxSizing: 'border-box',
-        borderRadius: isMobile ? '22px 22px 0 0' : 22,
+        borderRadius: isMobile ? 0 : 22,
         background: 'var(--mf-card)',
-        border: '1px solid var(--mf-border)',
+        border: isMobile ? 0 : '1px solid var(--mf-border)',
         boxShadow: 'var(--mf-card-shadow)',
         display: 'flex',
         flexDirection: 'column',

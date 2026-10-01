@@ -29,6 +29,8 @@ import { buildRecurrence, eventWindowIso, RECURRENCE_OFF, type RecurrenceSpec } 
 import { MapLink } from './fieldBits';
 import { EventColorField, geurioColorOptions, googleColorOptions } from './eventColor';
 import type { CalendarEventInput } from '../../../adapters/ports';
+import { Switch } from '../../../components/Switch';
+import { M_FONT } from '../mobile/parts';
 
 /** 어디에 저장할까 — `google`이면 그 캘린더 id가 함께 온다. */
 export type NewEventTarget = { kind: 'geurio' } | { kind: 'google'; calendarId: string; fields: GoogleFieldsValue };
@@ -220,6 +222,167 @@ export function NewEventModal({
       target,
     );
   };
+
+  // 폰 — **전체 화면**(모바일 홈 디자인 N1·N2). 상태·저장 규칙은 위의 것 그대로이고 자리만
+  // 다르다: 머리 [취소 · 새 일정 · 등록], 큰 제목, 목적지 세그먼트, 날짜·시간 묶음, 구글 묶음,
+  // 위치·반복·알림, 색, 메모. 팝업의 두 열(구글 열)은 폰에 없다 — 한 열에 이어 붙인다.
+  if (isMobile) {
+    const primaryGoogle = googleTargets.find((t) => t.primary) ?? googleTargets[0];
+    const onGoogle = target.kind === 'google';
+    const segBtn = (on: boolean): CSSProperties => ({ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 38, border: 0, borderRadius: 9, background: on ? 'var(--mf-m-card)' : 'transparent', boxShadow: on ? '0 1px 3px rgba(46,42,38,.12)' : 'none', color: on ? 'var(--mf-m-ink)' : 'var(--mf-m-mut)', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' });
+    const badTime = !allDay && durMin !== null && durMin <= 0;
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        label="새 일정"
+        dismissOnBackdrop={false}
+        dim={{ zIndex: 322, alignItems: 'stretch', background: 'var(--mf-m-bg)' }}
+        card={{ width: '100%', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', background: 'var(--mf-m-bg)', color: 'var(--mf-m-ink)', fontFamily: M_FONT, outline: 'none' }}
+        cardClass="mf-m-sheet"
+        cardAttrs={{ 'data-new-event': '1', 'data-new-event-mobile': '1' }}
+      >
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', height: 52, padding: '0 8px', paddingTop: 'env(safe-area-inset-top)' }}>
+          <button type="button" data-new-cancel className="btn mf-m-press" onClick={onClose} style={{ height: 40, padding: '0 12px', border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-m-mut)', fontFamily: 'inherit', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+            취소
+          </button>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 800, letterSpacing: '-.02em' }}>새 일정</span>
+          <button type="button" data-new-submit className="btn mf-m-press" disabled={!canSave || saving} onClick={submit} style={{ height: 40, padding: '0 12px', border: 0, borderRadius: 10, background: 'transparent', color: canSave && !saving ? 'var(--mf-accent)' : 'var(--mf-m-faint2)', fontFamily: 'inherit', fontSize: 15, fontWeight: 800, cursor: canSave && !saving ? 'pointer' : 'default' }}>
+            {saving ? '등록 중…' : '등록'}
+          </button>
+        </div>
+        <div className="mf-m-scroll" data-new-main style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px 40px' }}>
+          <input
+            autoFocus
+            aria-label="일정 제목"
+            data-new-title
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="일정 제목"
+            maxLength={200}
+            enterKeyHint="done"
+            style={{ display: 'block', width: '100%', boxSizing: 'border-box', margin: '6px 0 14px', padding: '6px 4px', border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 24, fontWeight: 800, letterSpacing: '-.03em', color: 'var(--mf-m-ink)', caretColor: 'var(--mf-accent)', outline: 'none' }}
+          />
+
+          {googleTargets.length > 0 && (
+            <>
+              <MLabel>저장할 캘린더</MLabel>
+              <div role="radiogroup" aria-label="저장할 캘린더" style={{ display: 'flex', padding: 3, borderRadius: 12, background: 'var(--mf-m-soft)' }}>
+                <button type="button" role="radio" aria-checked={!onGoogle} data-new-cal="geurio" onClick={() => setDest('geurio')} style={segBtn(!onGoogle)}>
+                  <span aria-hidden="true" style={destDotStyle('var(--mf-accent)')} />
+                  Geurio
+                </button>
+                <button type="button" role="radio" aria-checked={onGoogle} data-new-cal="google" onClick={() => primaryGoogle && !onGoogle && setDest(primaryGoogle.id)} style={segBtn(onGoogle)}>
+                  <span aria-hidden="true" style={destDotStyle(primaryGoogle?.color ?? 'var(--mf-info)')} />
+                  Google
+                </button>
+              </div>
+              {/* 구글 캘린더가 여럿이면 어느 것에 둘지 — 칩 한 줄(가로로 민다). 하나면 이름만 적는다. */}
+              {onGoogle && googleTargets.length > 1 ? (
+                <div className="mf-m-scroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '8px 2px 0' }}>
+                  {googleTargets.map((t) => (
+                    <button key={t.id} type="button" data-new-cal-target={t.id} aria-pressed={dest === t.id} onClick={() => setDest(t.id)} style={{ ...destChipStyle(dest === t.id, t.color ?? 'var(--mf-info)'), height: 32 }}>
+                      <span style={destDotStyle(t.color ?? 'var(--mf-info)')} />
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                onGoogle && <span style={{ display: 'block', padding: '6px 6px 0', fontSize: 11.5, color: 'var(--mf-m-faint)' }}>{primaryGoogle?.name}</span>
+              )}
+            </>
+          )}
+
+          <MLabel top>날짜와 시간</MLabel>
+          <MCard>
+            <MRow label="종일">
+              <Switch
+                checked={allDay}
+                label="종일"
+                accent="var(--mf-accent)"
+                track="var(--mf-m-btn-line)"
+                knob="var(--mf-m-card)"
+                onCheckedChange={() => {
+                  if (allDay && !timePicked.current) {
+                    const slot = nextTimeSlot();
+                    setStartTime(slot.start);
+                    setEndTime(slot.end);
+                  }
+                  setAllDay((v) => !v);
+                }}
+              />
+            </MRow>
+            <MRow label="시작" line>
+              <span style={M_DATE}>
+                <DateButton label={allDay ? '시작 날짜' : '날짜'} value={startDate} clearable={false} attrs={{ 'data-new-date': '1' }} onPick={(iso) => iso && pickStartDate(iso)} height={34} />
+              </span>
+              {!allDay && (
+                <span style={M_TIME}>
+                  <TimeButton label="시작 시각" value={startTime} attrs={{ 'data-new-start': '1' }} onPick={pickStart} />
+                </span>
+              )}
+            </MRow>
+            <MRow label="종료" line>
+              {allDay ? (
+                <span style={M_DATE}>
+                  <DateButton label="종료 날짜" value={endDate} min={startDate} clearable={false} attrs={{ 'data-new-enddate': '1' }} onPick={(iso) => iso && setEndDate(iso)} height={34} />
+                </span>
+              ) : (
+                <span style={M_TIME}>
+                <TimeButton
+                  label="종료 시각"
+                  value={endTime}
+                  min={startTime}
+                  attrs={{ 'data-new-end': '1' }}
+                  onPick={(v) => {
+                    timePicked.current = true;
+                    setEndTime(v);
+                  }}
+                />
+                </span>
+              )}
+            </MRow>
+          </MCard>
+          {badTime && <span data-new-dur style={{ display: 'block', padding: '6px 6px 0', fontSize: 12, color: 'var(--mf-danger)' }}>종료 시각이 시작보다 앞서요</span>}
+
+          {onGoogle && (
+            <>
+              <MLabel top>Google</MLabel>
+              <MCard pad>
+                <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} when={roomWindow} {...(directory ? { directory } : {})} />
+              </MCard>
+            </>
+          )}
+
+          <div style={{ height: 14 }} />
+          <MCard>
+            <MRow label="위치">
+              <input aria-label="위치" data-new-loc value={location} onChange={(e) => setLocation(e.target.value)} placeholder="주소 또는 장소 이름" maxLength={200} style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', textAlign: 'right', fontFamily: 'inherit', fontSize: 14.5, color: 'var(--mf-m-ink)', outline: 'none' }} />
+              <MapLink query={location} />
+            </MRow>
+            <div style={{ padding: '12px 16px', borderTop: '1px solid var(--mf-m-line)' }}>
+              <RecurrenceField value={rep} onChange={setRep} baseDate={startDate} />
+            </div>
+            <div style={{ padding: '12px 16px', borderTop: '1px solid var(--mf-m-line)' }}>
+              <ReminderField value={allDay ? undefined : gf.reminderMinutes} onChange={(m) => setGf((v) => ({ ...v, reminderMinutes: m }))} kind={target.kind === 'geurio' ? 'geurio' : 'google'} disabled={allDay} />
+            </div>
+          </MCard>
+
+          <div style={{ padding: '18px 2px 0' }}>
+            {onGoogle ? (
+              <EventColorField value={gf.colorId ?? null} options={googleColorOptions(googleColors)} onPick={(v) => setGf((x) => ({ ...x, ...(v ? { colorId: v } : { colorId: undefined }) }))} />
+            ) : (
+              <EventColorField value={color} options={geurioColorOptions()} onPick={setColor} />
+            )}
+          </div>
+
+          <MLabel top>메모</MLabel>
+          <RichMemo value={note} onChange={setNote} attr="data-new-note" />
+          {error && <span data-new-foot style={{ display: 'block', padding: '12px 6px 0', fontSize: 12.5, color: 'var(--mf-danger)' }}>{error}</span>}
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -534,6 +697,30 @@ const fieldStyle: CSSProperties = {
   color: 'var(--mf-text)',
   outline: 'none',
 };
+
+/** 폰 — 날짜·시각 단추의 폭(트리거가 줄을 다 먹지 않게 상자가 정한다). */
+const M_DATE: CSSProperties = { flex: '0 1 150px', minWidth: 0 };
+const M_TIME: CSSProperties = { flex: '0 0 112px' };
+
+/** 폰 — 묶음 머리(옅은 굵은 글자). */
+function MLabel({ children, top = false }: { children: ReactNode; top?: boolean }) {
+  return <span style={{ display: 'block', padding: top ? '20px 4px 8px' : '0 4px 8px', fontSize: 12, fontWeight: 800, color: 'var(--mf-m-faint)' }}>{children}</span>;
+}
+
+/** 폰 — 둥근 카드 한 묶음(줄은 가는 선으로 가른다). */
+function MCard({ children, pad = false }: { children: ReactNode; pad?: boolean }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', borderRadius: 14, background: 'var(--mf-m-card)', border: '1px solid var(--mf-m-card-line)', overflow: 'hidden', ...(pad ? { padding: 14 } : {}) }}>{children}</div>;
+}
+
+/** 폰 — 카드 안의 한 줄(52px): 왼쪽 이름, 오른쪽 값. */
+function MRow({ label, line = false, children }: { label: string; line?: boolean; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 52, padding: '0 14px 0 16px', borderTop: line ? '1px solid var(--mf-m-line)' : 0 }}>
+      <span style={{ flex: '0 0 auto', fontSize: 15, fontWeight: 700, color: 'var(--mf-m-ink)', marginRight: 'auto' }}>{label}</span>
+      {children}
+    </div>
+  );
+}
 
 function Label({ children }: { children: ReactNode }) {
   return <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>{children}</span>;
