@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { Login } from './features/auth/Login';
 import { DesktopHandoff } from './features/auth/DesktopHandoff';
 import { JiraCallback } from './features/tools/jira/JiraCallback';
+import { isDesktopState } from './features/tools/jira/desktopJira';
 import { hadSession, loginUrlWithNext, noteSessionExpired, rememberSignedIn } from './features/auth/sessionNotice';
 import type { AuthSession } from './adapters/ports';
 import { Home } from './features/home/Home';
@@ -28,6 +29,21 @@ import { DesktopMentionNotifier } from './platform/DesktopMentionNotifier';
 // behaves exactly as before M4.
 /** 인증 문지기 — 테스트에서 직접 렌더할 수 있게 export한다(supabase 모드에서만
  * 도는 경로가 있고, `App`은 자기 `BackendProvider`를 들고 있어 주입이 안 된다). */
+/**
+ * Jira 동의가 돌아오는 자리. **설치형 앱에서 시작한 연결**(`state`가 `d.`로 시작)이면 이 브라우저에서
+ * 교환하지 않고 딥링크로 앱을 깨운다 — 교환은 앱의 세션으로 하므로 브라우저는 로그인돼 있을 필요가 없다
+ * (문지기 밖). 웹에서 시작한 연결은 이 사용자의 자격 증명을 만들므로 문지기 안에서 교환한다.
+ */
+function JiraCallbackRoute() {
+  const desktop = isDesktopState(new URLSearchParams(window.location.search).get('state'));
+  if (desktop) return <DesktopHandoff kind="jira" />;
+  return (
+    <RequireAuth>
+      <JiraCallback />
+    </RequireAuth>
+  );
+}
+
 export function RequireAuth({ children }: { children: ReactNode }) {
   const backend = useBackend();
   const location = useLocation();
@@ -127,14 +143,7 @@ export function App() {
           {/* Jira(도구 · 작업 현황) 동의 화면이 돌아오는 자리 — Atlassian developer console의
               **Callback URL**이 이 주소다(backend/26-jira.md). 교환은 이 사용자의 자격 증명을
               만들므로 문지기 안이다. */}
-          <Route
-            path="/auth/jira"
-            element={
-              <RequireAuth>
-                <JiraCallback />
-              </RequireAuth>
-            }
-          />
+          <Route path="/auth/jira" element={<JiraCallbackRoute />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<Terms />} />
           <Route

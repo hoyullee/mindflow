@@ -41,6 +41,7 @@ import { WorkStatusView } from '../tools/workstatus/WorkStatusView';
 import { JiraSetupHost, openJiraSetup } from '../tools/jira/JiraSetupModal';
 import { ToolToastHost, toolToast } from '../tools/ui';
 import { jiraReasonText } from '../tools/jira/jiraApi';
+import { onJiraConnected } from '../tools/jira/jiraStore';
 
 /**
  * React port of Home.dc.html — the map home. State/behavior lives in
@@ -112,6 +113,23 @@ export function Home() {
     toolToast('Jira를 연결했어요 · 도구에 작업 현황이 생겼어요');
     if (sig === 'setup') openJiraSetup();
   }, [state.loaded, controller]);
+
+  // 설치형 앱의 Jira 연결 — 브라우저가 딥링크로 돌려준 코드를 앱이 교환하면 여기로 온다(웹의 `?jira=…`와 같은 일).
+  const openToolRef = useRef(controller.openTool);
+  openToolRef.current = controller.openTool;
+  useEffect(
+    () =>
+      onJiraConnected((e) => {
+        if (!e.ok) {
+          toolToast(`연결하지 못했어요 · ${jiraReasonText(e.reason)}`);
+          return;
+        }
+        openToolRef.current('jira');
+        toolToast('Jira를 연결했어요 · 도구에 작업 현황이 생겼어요');
+        if (e.needsSetup) openJiraSetup();
+      }),
+    [],
+  );
 
   // Closing the drawer when the layout crosses back to desktop keeps it from
   // lingering "open" (and blocking the backdrop) after a resize/rotation.

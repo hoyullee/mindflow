@@ -5244,3 +5244,23 @@ Enter는 예전 그대로 줄바꿈). 빈 항목에서 Enter면 한 단계 내�
   `Deno` 전역 선언)로 `jira`·`jira-privacy`와 공용 모듈 셋을 strict로 검사, 0건.
 - Atlassian 문서 사이트는 이 환경에서 막혀 있어 형식은 검색 결과로 맞췄다(엔드포인트·본문·90개·closed/updated·7일). 실제 보고는
   배포 후 SQL Editor에서 한 번 손으로 돌려 Logs로 확인한다(`26-jira.md`).
+
+## 도구 · Jira — 설치형 앱에서 연결하면 앱으로 돌아온다 (제보)
+
+### 원인
+- 앱에서 `연결`을 누르면 셸이 Atlassian 주소를 시스템 브라우저로 넘긴다(`will-navigate`). 동의 뒤 Atlassian은 `geurio.com/auth/jira`로
+  돌려보내는데, 그 페이지가 **브라우저에서 교환까지 하고 `/home?jira=setup`으로** 갔다 — 앱으로 돌아오는 길이 없어 크롬에서 웹 홈이 열렸다.
+  구글 캘린더는 같은 자리에서 `geurio://` 딥링크로 앱을 깨우는데(`/auth/gcal`), Jira는 그 갈래를 빠뜨렸다.
+
+### 고침 — 구글 캘린더와 같은 길
+- 서버 `authorize { desktop: true }` → `state` = `d.<ts>.<sig>`(표시도 HMAC 안 — `verifyState`가 두 꼴을 다 받는다).
+- 앱(`beginJiraConnect`): 데스크톱이면 `openExternal`로 동의 주소를 열고 그 `state`를 기억, `onDeepLink`로 `geurio://jira`를 기다린다.
+  **기억한 `state`와 같을 때만** 교환(한 번 쓰면 비운다) → `onJiraConnected` → 홈이 작업 현황 + 프로젝트 고르기.
+- `/auth/jira`: `state`가 `d.`면 `DesktopHandoff kind="jira"`(문지기 밖 — 브라우저 로그인 불필요, 교환은 앱의 세션), 아니면 예전처럼 문지기 안에서 교환.
+- `resetJiraStore`가 딥링크 구독·대기 `state`도 비운다(계정 전환 · 테스트 사이에 남던 구독).
+
+### 검증
+- 새 테스트 7건: 딥링크 모양 · `d.` 판별 · 시스템 브라우저로 열고 이 창은 떠나지 않음 · 남의 `state`는 무시 · 한 번 쓴 `state` 재사용 거절 ·
+  실패 사유 전달 · App 라우트(`d.`면 핸드오프 + 딥링크, 표시 없으면 예전처럼 홈).
+- 도구·auth·App 16파일 138건 · lint · typecheck · Edge Function 타입 검사(임시 tsconfig) 0건.
+- 실기기(설치형 앱)는 확인 못 했다 — 이 컨테이너는 리눅스·헤드리스다. **함수 재배포(`deploy jira`)가 있어야** `d.` 표시가 붙는다.

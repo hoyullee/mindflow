@@ -132,7 +132,10 @@ interface Ctx extends AppCtx {
 async function authorize(ctx: Ctx, p: Record<string, unknown>) {
   const redirectUri = validRedirect(p.redirectUri);
   if (!redirectUri) throw new Fail('bad-redirect');
-  const state = await signState(ctx, Date.now());
+  // 설치형 앱에서 시작한 연결이면 `state`에 그 표시(`d.`)를 싣는다 — 동의는 시스템 브라우저에서 끝나므로,
+  // 콜백 페이지(`/auth/jira`)가 그 표시를 보고 **브라우저에서 교환하지 않고** 딥링크로 앱을 깨운다(앱이 교환).
+  // 표시도 서명 안에 든다 — 브라우저 쪽에서 붙이거나 떼면 교환이 거절된다.
+  const state = await signState(ctx, Date.now(), p.desktop === true);
   const q = new URLSearchParams({
     audience: 'api.atlassian.com',
     client_id: ctx.clientId,
@@ -342,16 +345,20 @@ async function hmac(secret: string, msg: string): Promise<string> {
   return b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg)));
 }
 
-async function signState(ctx: Ctx, ts: number): Promise<string> {
-  return `${ts}.${await hmac(ctx.clientSecret, `${ctx.uid}.${ts}`)}`;
+async function signState(ctx: Ctx, ts: number, desktop = false): Promise<string> {
+  return desktop ? `d.${ts}.${await hmac(ctx.clientSecret, `${ctx.uid}.${ts}.d`)}` : `${ts}.${await hmac(ctx.clientSecret, `${ctx.uid}.${ts}`)}`;
 }
 
+/** 웹 `ts.sig` / 설치형 앱 `d.ts.sig` — 둘 다 이 사용자·시각에 묶인 서명이어야 한다. */
 async function verifyState(ctx: Ctx, raw: unknown): Promise<boolean> {
   if (typeof raw !== 'string') return false;
-  const [tsRaw, sig] = raw.split('.');
+  const parts = raw.split('.');
+  const desktop = parts[0] === 'd';
+  const [tsRaw, sig] = desktop ? [parts[1], parts[2]] : [parts[0], parts[1]];
+  if (parts.length !== (desktop ? 3 : 2)) return false;
   const ts = Number(tsRaw);
   if (!sig || !Number.isFinite(ts) || Date.now() - ts > STATE_TTL_MS || ts > Date.now() + 60_000) return false;
-  return (await hmac(ctx.clientSecret, `${ctx.uid}.${ts}`)) === sig;
+  return (await hmac(ctx.clientSecret, desktop ? `${ctx.uid}.${ts}.d` : `${ctx.uid}.${ts}`)) === sig;
 }
 
 /** 받아 줄 리디렉션 — **우리 콜백 경로**(`/auth/jira`)만. 로컬 개발만 http를 허락한다. */
