@@ -30,7 +30,7 @@ export interface JiraConn extends JiraStatus {
 }
 
 const CACHE_PREFIX = 'mf_jira_status:';
-const EMPTY: JiraConn = { connected: false, site: null, projects: [], startField: null, endField: null, fillDates: true, issueTypes: [], known: false, unavailable: null, busy: false, sync: { state: 'idle', at: null, reason: null }, demo: false };
+const EMPTY: JiraConn = { connected: false, site: null, projects: [], startField: null, endField: null, fillDates: true, issueTypes: [], releaseField: null, known: false, unavailable: null, busy: false, sync: { state: 'idle', at: null, reason: null }, demo: false };
 
 let snap: JiraConn = EMPTY;
 let userKey: string | null = null;
@@ -55,8 +55,8 @@ function readCache(key: string): Partial<JiraStatus> | null {
 function writeCache(s: JiraStatus): void {
   if (!userKey) return;
   try {
-    const { connected, site, projects, startField, endField, fillDates, issueTypes } = s;
-    localStorage.setItem(CACHE_PREFIX + userKey, JSON.stringify({ connected, site, projects, startField, endField, fillDates, issueTypes }));
+    const { connected, site, projects, startField, endField, fillDates, issueTypes, releaseField } = s;
+    localStorage.setItem(CACHE_PREFIX + userKey, JSON.stringify({ connected, site, projects, startField, endField, fillDates, issueTypes, releaseField }));
   } catch {
     /* 캐시일 뿐 */
   }
@@ -64,7 +64,7 @@ function writeCache(s: JiraStatus): void {
 
 /** 서버가 알려 준 상태를 들인다(프로젝트 저장·사이트 선택의 응답도 여기로). */
 export function applyJiraStatus(s: JiraStatus): void {
-  const next = { connected: s.connected, site: s.site ?? null, projects: s.projects ?? [], startField: s.startField ?? null, endField: s.endField ?? null, fillDates: s.fillDates !== false, issueTypes: s.issueTypes ?? [] };
+  const next = { connected: s.connected, site: s.site ?? null, projects: s.projects ?? [], startField: s.startField ?? null, endField: s.endField ?? null, fillDates: s.fillDates !== false, issueTypes: s.issueTypes ?? [], releaseField: s.releaseField ?? null };
   writeCache(next);
   emit({ ...next, known: true, unavailable: null });
 }

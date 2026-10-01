@@ -69,6 +69,8 @@ function SetupBody() {
     end: conn.endField?.id ?? 'duedate',
     endName: conn.endField?.name,
     fill: conn.fillDates !== false,
+    release: conn.releaseField?.id ?? null,
+    releaseName: conn.releaseField?.name,
   }));
 
   // 이슈 유형 — 고른 프로젝트들의 것. 이름으로 고르고(팀 관리 프로젝트는 같은 이름이 프로젝트마다 다른 id) 저장은 id로.
@@ -106,6 +108,9 @@ function SetupBody() {
         setFields(r.ok ? r.fields : []);
         // 처음 고르는 사람에게는 찾아 둔 시작일 필드를 먼저 채워 둔다.
         if (r.ok && r.suggested && !conn.startField && !conn.projects.length) setRule((v) => (v.start ? v : { ...v, start: r.suggested!.id, startName: r.suggested!.name }));
+        // 배포 예정일도 이름으로 한 번 짐작해 둔다(처음 고를 때만 — 고른 것을 덮지 않는다).
+        const rel = r.ok && !conn.releaseField ? r.fields.find((f) => /배포|release/i.test(f.name)) : undefined;
+        if (rel) setRule((v) => (v.release ? v : { ...v, release: rel.id, releaseName: rel.name }));
       });
     return () => {
       alive = false;
@@ -220,7 +225,7 @@ function SetupBody() {
   const rows = [...picked.filter((p) => !shown.some((x) => x.key === p.key)), ...shown];
   return (
     <>
-      {head('Jira 프로젝트 고르기', `${conn.site?.name || conn.site?.url || 'Jira'} · 고른 프로젝트의 티켓을 에픽(없으면 프로젝트)별로 모아요`)}
+      {head('Jira 프로젝트 고르기', `${conn.site?.name || conn.site?.url || 'Jira'} · 담당자가 있는 티켓을 고른 날짜 필드로 그려요`)}
       <div style={{ padding: '12px 22px 6px' }}>
         <input
           data-jira-project-search
@@ -277,11 +282,12 @@ function DateRuleSection({ fields, rule, onChange }: { fields: JiraField[] | nul
   const withCurrent = (id: string | null, name: string | undefined) => (id && id.startsWith('customfield_') && !custom.some((f) => f.id === id) ? [{ id, name: name ?? id }, ...custom] : custom);
   const startOpts = [{ id: '', name: '없음 · 끝 날짜 하루로' }, { id: 'created', name: '만든 날짜' }, ...withCurrent(rule.start, rule.startName)];
   const endOpts = [{ id: 'duedate', name: '기한' }, { id: 'resolutiondate', name: '해결된 날짜 (아직이면 오늘)' }, ...withCurrent(rule.end, rule.endName)];
+  const releaseOpts = [{ id: '', name: '표시 안 함' }, { id: 'duedate', name: '기한' }, ...withCurrent(rule.release ?? null, rule.releaseName)];
   const nameOf = (opts: { id: string; name: string }[], id: string) => opts.find((o) => o.id === id)?.name;
   return (
     <div data-jira-date-rule style={{ padding: '10px 22px 12px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--mf-text)' }}>
-        날짜 기준 <span style={{ fontWeight: 500, color: 'var(--mf-faint)' }}>· 티켓 막대를 어느 날짜로 그릴지{fields === null ? ' · 필드를 불러오는 중…' : ''}</span>
+        날짜 기준 <span style={{ fontWeight: 500, color: 'var(--mf-faint)' }}>· 시작~끝이 티켓 막대, 배포는 그 날짜에 표시{fields === null ? ' · 필드를 불러오는 중…' : ''}</span>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <label style={{ fontSize: 11.5, color: 'var(--mf-muted)', width: 28, flexShrink: 0 }} htmlFor="jira-rule-start">시작</label>
@@ -296,6 +302,14 @@ function DateRuleSection({ fields, rule, onChange }: { fields: JiraField[] | nul
         <select id="jira-rule-end" data-jira-rule-end value={rule.end} onChange={(e) => onChange({ ...rule, end: e.target.value, endName: nameOf(endOpts, e.target.value) })} style={SELECT_STYLE}>
           {endOpts.map((o) => (
             <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <label style={{ fontSize: 11.5, color: 'var(--mf-muted)', width: 28, flexShrink: 0 }} htmlFor="jira-rule-release">배포</label>
+        <select id="jira-rule-release" data-jira-rule-release value={rule.release ?? ''} onChange={(e) => onChange({ ...rule, release: e.target.value || null, releaseName: nameOf(releaseOpts, e.target.value) })} style={SELECT_STYLE}>
+          {releaseOpts.map((o) => (
+            <option key={o.id || 'none'} value={o.id}>{o.name}</option>
           ))}
         </select>
       </div>

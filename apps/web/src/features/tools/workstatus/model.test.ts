@@ -8,6 +8,9 @@ import {
   companyHits,
   computeStats,
   dayChips,
+  foldSolo,
+  releasesOn,
+  SOLO_KEY,
   gridDays,
   heatLevel,
   holidayOf,
@@ -209,5 +212,34 @@ describe('색', () => {
       ['p', true],
       ['z', true],
     ]);
+  });
+});
+
+describe('에픽 없는 티켓 · 배포 예정일', () => {
+  const tickets = [T('SQA-1', 'SQA-1', 'a', '2026-09-01', '2026-09-03'), T('SQA-2', 'SQA-2', 'a', '2026-09-02', '2026-09-04'), T('PAY-2', 'PAY-1', 'b', '2026-09-01', '2026-09-02')];
+  const data = buildDataset(
+    [
+      { key: 'SQA-1', name: '점검 1', start: null, end: null, status: 'doing', solo: true },
+      { key: 'SQA-2', name: '점검 2', start: null, end: null, status: 'doing', solo: true },
+      { key: 'PAY-1', name: '결제', start: null, end: null, status: 'doing' },
+    ],
+    tickets,
+    [],
+  );
+  it('달력은 티켓 하나가 칩 하나(묶음 키 = 티켓 키)', () => {
+    expect(dayChips(tickets, '2026-09-02', data).map((c) => [c.epic.key, !!c.epic.solo])).toEqual([
+      ['PAY-1', false],
+      ['SQA-1', true],
+      ['SQA-2', true],
+    ]);
+  });
+  it('집계는 에픽 없는 티켓을 한 열로 접는다', () => {
+    const f = foldSolo(data.epics, tickets);
+    expect(f.epics.map((e) => e.key)).toEqual(['PAY-1', SOLO_KEY]);
+    const st = computeStats(data.people, f.epics, f.tickets, ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04']);
+    expect(st.rows.find((r) => r.person.id === 'a')?.cells.map((c) => c.days)).toEqual([0, 4]);
+  });
+  it('배포 예정일인 티켓', () => {
+    expect(releasesOn([{ ...tickets[0]!, release: '2026-09-07' }, tickets[1]!], '2026-09-07').map((t) => t.key)).toEqual(['SQA-1']);
   });
 });

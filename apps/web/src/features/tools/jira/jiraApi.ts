@@ -29,6 +29,8 @@ export interface JiraStatus {
   fillDates?: boolean;
   /** 고른 이슈 유형 — 비어 있으면 전부(하위 작업·에픽 제외). */
   issueTypes?: JiraIssueTypeRef[];
+  /** 배포 예정일로 보일 필드(0046) — null이면 표시 안 함. */
+  releaseField?: { id: string; name: string } | null;
 }
 
 /** 프로젝트 고르기에서 정하는 **날짜 규칙**(`_shared/jira.ts`의 `DateRule` + 표시 이름). */
@@ -38,6 +40,8 @@ export interface JiraDateChoice {
   end: string;
   endName?: string;
   fill: boolean;
+  release?: string | null;
+  releaseName?: string;
 }
 
 export interface JiraField {

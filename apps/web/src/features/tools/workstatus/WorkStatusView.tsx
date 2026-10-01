@@ -11,6 +11,7 @@ import {
   bizDaysIn,
   buildDataset,
   computeStats,
+  foldSolo,
   monthBiz,
   monthDays,
   overlaps,
@@ -103,7 +104,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const from = days[0] as string;
   const to = days[days.length - 1] as string;
   // 프로젝트와 **날짜 규칙**이 질문이다 — 어느 쪽이 바뀌어도 새로 묻는다.
-  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}`;
+  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}|${conn.releaseField?.id ?? ''}`;
   const ready = conn.connected && !!conn.site && conn.projects.length > 0;
   const month = useWorkStatusData(from, to, projKey, ready);
   const availData = useWorkStatusData(range.from, range.to, projKey, ready && availOpen);
@@ -140,7 +141,9 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const visiblePeople = filters.length ? peopleOn.filter((p) => inMonth.some((t) => t.person.id === p.id)) : peopleOn;
   const visibleEpics = data.epics.filter((e) => inMonth.some((t) => t.epic === e.key));
   const biz = useMemo(() => monthBiz(y, m, rules), [y, m, rules]);
-  const stats = computeStats(visiblePeople, visibleEpics, tickets, biz.biz);
+  // 집계는 에픽 없는 티켓을 한 열로 접는다(티켓마다 열이면 표가 티켓 수만큼 넓어진다).
+  const folded = foldSolo(visibleEpics, tickets);
+  const stats = computeStats(visiblePeople, folded.epics, folded.tickets, biz.biz);
   const worked = new Map(visiblePeople.map((p) => [p.id, workedDays(tickets, biz.biz, p.id)]));
   const monthCount = new Map<string, number>();
   data.tickets.filter((t) => overlaps(t, from, to)).forEach((t) => monthCount.set(t.person.id, (monthCount.get(t.person.id) ?? 0) + 1));
@@ -224,7 +227,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const empty = !conn.connected ? (
     <Empty title="Jira 연결이 끊겼어요" body="다시 연결하면 에픽과 티켓 일정을 이 화면에 모아요." action="Jira 연결" onAction={() => void beginJiraConnect().then((err) => err && toolToast(err))} />
   ) : !conn.site || !conn.projects.length ? (
-    <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트의 티켓을 에픽(없으면 프로젝트)별로 달력·타임라인·집계에 보여 줘요." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
+    <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트에서 담당자가 있는 티켓을 달력·타임라인·집계에 보여 줘요(에픽이 있으면 에픽별로)." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
   ) : null;
 
   const pad = isMobile ? '12px 14px 12px' : '16px 20px 14px 32px';
@@ -261,7 +264,8 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
           <div data-ws-summary style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 7px', paddingLeft: 32, marginTop: 4, fontSize: 12.5, fontWeight: 600, color: 'var(--mf-ws-mut)' }}>
             <span>{siteHost}</span>
             {[
-              ['프로젝트', visibleEpics.length],
+              // 에픽 없는 티켓은 자기 자신이 묶음이라 세지 않는다(세면 티켓 수와 같아진다).
+              ...(visibleEpics.some((e) => !e.solo) ? [['에픽', visibleEpics.filter((e) => !e.solo).length]] : []),
               ['티켓', inMonth.length],
               ['담당자', visiblePeople.length],
               ['영업일', biz.biz.length],
@@ -421,7 +425,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
                   onOpenIssue={openIssue}
                 />
               ) : (
-                <WsStats stats={stats} epics={visibleEpics} biz={biz} month={m} filteredIds={filters.filter((f) => f.type === 'person').map((f) => f.id)} onPickPerson={(id) => addFilter('person', id)} onOpenHoliday={() => setHolidayOpen(true)} />
+                <WsStats stats={stats} epics={folded.epics} biz={biz} month={m} filteredIds={filters.filter((f) => f.type === 'person').map((f) => f.id)} onPickPerson={(id) => addFilter('person', id)} onOpenHoliday={() => setHolidayOpen(true)} />
               )}
             </>
           )}

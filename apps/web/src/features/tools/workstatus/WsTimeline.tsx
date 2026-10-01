@@ -44,6 +44,32 @@ export function WsTimeline(p: Props) {
   }, [month, todayIdx, n]);
   const offs = p.days.map((d) => (!p.rules.weekend && (dowOf(d) === 0 || dowOf(d) === 6)) || !!holidayOf(d, p.rules));
 
+  const ticketRow = (t: Ticket, ep: Epic, nested: boolean) => {
+    const person = p.data.pById.get(t.person.id);
+    const b = layLanes([t], p.days).bars[0];
+    return (
+      <Row key={t.key} h={44} offs={offs} left={
+        <button type="button" className="btn" onClick={() => p.onOpenIssue(t.key)} style={{ ...leftBtn, paddingLeft: nested ? 22 : 12, position: 'relative' }}>
+          {nested && <span aria-hidden="true" style={{ position: 'absolute', left: 14, top: 8, width: 8, height: 14, borderLeft: '1px solid var(--mf-ws-line)', borderBottom: '1px solid var(--mf-ws-line)', borderBottomLeftRadius: 4 }} />}
+          <span style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+              {!nested && <span style={{ width: 8, height: 8, borderRadius: 2, background: ep.c, flexShrink: 0 }} />}
+              <span style={nameStyle(12, 700)}>{t.summary}</span>
+              <StatusBadge status={t.status} height={15} />
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+              {person && <PersonChip person={person} />}
+              <span style={{ fontFamily: MONO, fontSize: 10, color: 'var(--mf-ws-mut2)' }}>{t.key}</span>
+            </span>
+          </span>
+        </button>
+      }>
+        <ReleaseMark t={t} days={p.days} top={9} />
+        {b && <BarEl n={n} s={b.s} e={b.e} top={9} c={ep.c} bg={ep.bg} code={t.key} text={t.summary} dim={t.status === 'todo'} title={barTitle(t, person?.name ?? '')} onClick={() => p.onOpenIssue(t.key)} />}
+      </Row>
+    );
+  };
+
   const rows: ReactNode[] = [];
   if (p.group === 'person') {
     for (const person of p.people) {
@@ -60,9 +86,10 @@ export function WsTimeline(p: Props) {
             </span>
           </button>
         }>
+          {bars.map((b) => <ReleaseMark key={`r:${b.item.key}`} t={b.item} days={p.days} top={8 + b.lane * 26} />)}
           {bars.map((b) => {
             const ep = p.data.eByKey.get(b.item.epic);
-            return <BarEl key={b.item.key} n={n} s={b.s} e={b.e} top={8 + b.lane * 26} c={ep?.c ?? '#B7ACA1'} bg={ep?.bg ?? '#F3EEE8'} code={b.item.key} text={b.item.summary} dim={b.item.status === 'todo'} title={`${b.item.key} ${b.item.summary}\n${ep?.name ?? b.item.epic} · ${b.item.start} ~ ${b.item.end}${b.item.startMissing ? ' · 시작일 없음' : ''}${b.item.endMissing ? ' · 기한 없음' : ''}${b.item.filled ? ' · 날짜 없음(만든 날~해결된 날)' : ''}`} onClick={() => p.onOpenIssue(b.item.key)} />;
+            return <BarEl key={b.item.key} n={n} s={b.s} e={b.e} top={8 + b.lane * 26} c={ep?.c ?? '#B7ACA1'} bg={ep?.bg ?? '#F3EEE8'} code={b.item.key} text={b.item.summary} dim={b.item.status === 'todo'} title={barTitle(b.item, ep && !ep.solo ? ep.name : '')} onClick={() => p.onOpenIssue(b.item.key)} />;
           })}
         </Row>,
       );
@@ -70,6 +97,11 @@ export function WsTimeline(p: Props) {
   } else {
     for (const ep of p.epics) {
       const ts = p.tickets.filter((t) => t.epic === ep.key && overlaps(t, first, last)).sort((a, b) => a.start.localeCompare(b.start));
+      if (ep.solo) {
+        // 에픽 없는 티켓 — 묶음이 곧 티켓이라 머리 줄 없이 티켓 한 줄(머리 + 같은 막대 한 줄이 겹쳐 보였다).
+        for (const t of ts) rows.push(ticketRow(t, ep, false));
+        continue;
+      }
       const open = p.epicOpen[ep.key] !== false;
       const done = ts.filter((t) => t.status === 'done').length;
       const owners = [...new Set(ts.map((t) => t.person.id))].map((id) => p.data.pById.get(id)).filter((x): x is Person => !!x);
@@ -100,29 +132,7 @@ export function WsTimeline(p: Props) {
         </Row>,
       );
       if (!open) continue;
-      for (const t of ts) {
-        const person = p.data.pById.get(t.person.id);
-        const b = layLanes([t], p.days).bars[0];
-        rows.push(
-          <Row key={t.key} h={44} offs={offs} left={
-            <button type="button" className="btn" onClick={() => p.onOpenIssue(t.key)} style={{ ...leftBtn, paddingLeft: 22, position: 'relative' }}>
-              <span aria-hidden="true" style={{ position: 'absolute', left: 14, top: 8, width: 8, height: 14, borderLeft: '1px solid var(--mf-ws-line)', borderBottom: '1px solid var(--mf-ws-line)', borderBottomLeftRadius: 4 }} />
-              <span style={{ minWidth: 0, flex: '1 1 auto' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                  <span style={nameStyle(12, 700)}>{t.summary}</span>
-                  <StatusBadge status={t.status} height={15} />
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                  {person && <PersonChip person={person} />}
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: 'var(--mf-ws-mut2)' }}>{t.key}</span>
-                </span>
-              </span>
-            </button>
-          }>
-            {b && <BarEl n={n} s={b.s} e={b.e} top={9} c={ep.c} bg={ep.bg} code={t.key} text={t.summary} dim={t.status === 'todo'} title={`${t.key} ${t.summary}\n${person?.name ?? ''} · ${t.start} ~ ${t.end}`} onClick={() => p.onOpenIssue(t.key)} />}
-          </Row>,
-        );
-      }
+      for (const t of ts) rows.push(ticketRow(t, ep, true));
     }
   }
 
@@ -196,5 +206,23 @@ function PersonChip({ person }: { person: Person }) {
       <Avatar ini={person.ini} c={person.c} size={11} font={6.5} />
       <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--mf-ws-ink2)', whiteSpace: 'nowrap' }}>{person.name}</span>
     </span>
+  );
+}
+
+function barTitle(t: Ticket, sub: string): string {
+  const flags = `${t.startMissing ? ' · 시작일 없음' : ''}${t.endMissing ? ' · 기한 없음' : ''}${t.filled ? ' · 날짜 없음(만든 날~해결된 날)' : ''}`;
+  return `${t.key} ${t.summary}\n${sub ? `${sub} · ` : ''}${t.start} ~ ${t.end}${flags}${t.release ? `\n배포 예정 ${t.release}` : ''}`;
+}
+
+/** 배포 예정일 마름모 — 그 달 안이면 막대 줄의 그 날짜 칸 가운데에(막대 위에 얹힌다). */
+function ReleaseMark({ t, days, top }: { t: Ticket; days: string[]; top: number }) {
+  const i = t.release ? days.indexOf(t.release) : -1;
+  if (i < 0) return null;
+  return (
+    <span
+      data-ws-release-mark={t.key}
+      title={`배포 예정 · ${t.key} ${t.summary} · ${t.release}`}
+      style={{ position: 'absolute', top: top + 4, left: `calc(${((i + 0.5) / days.length) * 100}% - 7px)`, width: 14, height: 14, transform: 'rotate(45deg)', borderRadius: 3, background: '#4F79C2', boxShadow: '0 0 0 2px var(--mf-ws-card)', zIndex: 2, pointerEvents: 'auto' }}
+    />
   );
 }

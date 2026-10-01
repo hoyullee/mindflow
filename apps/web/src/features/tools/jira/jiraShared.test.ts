@@ -45,8 +45,8 @@ describe('JQL', () => {
     expect(ticketsJql(['PAY'], '2026-9-1', '2026-09-30', R(null))).toBeNull();
     expect(ticketsJql(['PAY'], '2026-09-30', '2026-09-01', R(null))).toBeNull();
     expect(ticketsJql(['PAY', 'bad key'], '2026-09-01', '2026-09-30', coerceRule('cf) OR (', 'x) OR (', true))).toContain('project in (PAY)');
-    expect(coerceRule('cf) OR (', 'summary', undefined)).toEqual({ start: null, end: 'duedate', fill: true });
-    expect(coerceRule('created', 'resolutiondate', false)).toEqual({ start: 'created', end: 'resolutiondate', fill: false });
+    expect(coerceRule('cf) OR (', 'summary', undefined)).toEqual({ start: null, end: 'duedate', fill: true, release: null });
+    expect(coerceRule('created', 'resolutiondate', false)).toEqual({ start: 'created', end: 'resolutiondate', fill: false, release: null });
     expect(jqlField('summary')).toBeNull();
     expect(epicsJql(['PAY-1', 'x', 'PAY-1', 'SQA'])).toBe('key in (PAY-1)');
   });
@@ -62,15 +62,20 @@ describe('정리', () => {
     const t = normalizeTicket(issue({ duedate: '2026-09-01', customfield_10015: '2026-09-05' }), R('customfield_10015'));
     expect([t?.start, t?.end]).toEqual(['2026-09-01', '2026-09-05']);
   });
-  it('부모가 에픽이 아니면 프로젝트로 묶고, 담당자·날짜가 없거나 에픽 자신이면 뺀다', () => {
-    const proj = { project: { key: 'SQA', name: '품질팀 업무' } };
-    expect(normalizeTicket(issue({ duedate: '2026-09-01', parent: { key: 'S-1', fields: { issuetype: { hierarchyLevel: 0 } } }, ...proj }), R(null))?.epic).toBe('SQA');
-    expect(normalizeTicket(issue({ duedate: '2026-09-01', parent: null, ...proj }), R(null))?.epic).toBe('SQA');
-    expect(epicFromParent(issue({ parent: null, ...proj }))).toMatchObject({ key: 'SQA', name: '품질팀 업무' });
-    expect(normalizeTicket(issue({ duedate: '2026-09-01', parent: null }), R(null))).toBeNull();
-    expect(normalizeTicket(issue({ duedate: '2026-09-01', issuetype: { hierarchyLevel: 1 }, ...proj }), R(null))).toBeNull();
+  it('부모가 에픽이 아니면 티켓 자신이 묶음 — 담당자·날짜가 없거나 에픽 자신이면 뺀다', () => {
+    expect(normalizeTicket(issue({ duedate: '2026-09-01', parent: { key: 'S-1', fields: { issuetype: { hierarchyLevel: 0 } } } }), R(null))?.epic).toBe('PAY-101');
+    expect(normalizeTicket(issue({ duedate: '2026-09-01', parent: null }), R(null))?.epic).toBe('PAY-101');
+    expect(epicFromParent(issue({ parent: null }))).toEqual({ key: 'PAY-101', name: '결제', start: null, end: null, status: 'doing', solo: true });
+    expect(normalizeTicket(issue({ duedate: '2026-09-01', issuetype: { hierarchyLevel: 1 } }), R(null))).toBeNull();
     expect(normalizeTicket(issue({ duedate: '2026-09-01', assignee: null }), R(null))).toBeNull();
     expect(normalizeTicket(issue({}), R(null))).toBeNull();
+  });
+  it('배포 예정일은 고른 필드에서 — 막대는 그대로', () => {
+    const t = normalizeTicket(issue({ customfield_10014: '2026-09-18', duedate: '2026-10-01', customfield_10464: '2026-10-07' }), { start: 'customfield_10014', end: 'duedate', fill: false, release: 'customfield_10464' });
+    expect(t).toMatchObject({ start: '2026-09-18', end: '2026-10-01', release: '2026-10-07' });
+    expect(normalizeTicket(issue({ duedate: '2026-10-01' }), R(null))?.release).toBeUndefined();
+    expect(coerceRule(null, 'duedate', true, 'cf) OR (').release).toBeNull();
+    expect(coerceRule(null, 'duedate', true, 'customfield_10464').release).toBe('customfield_10464');
   });
   it('날짜 채우기 — 만든 날 ~ 해결된 날, 아직이면 오늘까지', () => {
     const base = { created: '2026-09-16T14:57:53.804+0900' };

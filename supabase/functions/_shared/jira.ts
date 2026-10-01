@@ -22,12 +22,14 @@ export interface JiraEpic {
   start: string | null;
   end: string | null;
   status: TicketStatus;
+  /** 묶음이 **티켓 자신**이다 — 에픽이 없는 티켓은 티켓 하나가 한 묶음(2026-10-01 — "티켓 기준으로"). */
+  solo?: boolean;
 }
 
 export interface JiraTicket {
   key: string;
   summary: string;
-  /** 부모 에픽의 키 — 에픽이 없는 티켓은 **프로젝트 키**(그 프로젝트로 묶는다 — 2026-10-01). */
+  /** 부모 에픽의 키 — 에픽이 없는 티켓은 **자기 키**(티켓 하나가 한 묶음 — `JiraEpic.solo`). */
   epic: string;
   person: JiraPerson;
   start: string;
@@ -39,6 +41,8 @@ export interface JiraTicket {
   endMissing: boolean;
   /** 두 날짜가 다 비어 만든 날 ~ 해결된 날(아직이면 오늘)로 그렸다(`DateRule.fill`). */
   filled?: boolean;
+  /** 배포 예정일(`DateRule.release`로 고른 필드) — 막대와 따로 표시만 한다. */
+  release?: string;
 }
 
 /**
@@ -46,11 +50,13 @@ export interface JiraTicket {
  * - `start`: 커스텀 날짜 필드 · `created`(만든 날) · null(시작 없이 끝 날짜 하루로)
  * - `end`: `duedate`(기한) · `resolutiondate`(해결된 날 — 아직이면 오늘까지) · 커스텀 날짜 필드
  * - `fill`: 둘 다 비면 만든 날 ~ 해결된 날(아직이면 오늘)
+ * - `release`: 배포 예정일로 보일 필드(0046 · 커스텀 날짜 필드 · 기한) — 막대를 바꾸지 않고 표시만
  */
 export interface DateRule {
   start: string | null;
   end: string;
   fill: boolean;
+  release?: string | null;
 }
 
 export const DEFAULT_RULE: DateRule = { start: null, end: 'duedate', fill: true };
@@ -79,10 +85,11 @@ const TYPE_ID_RE = /^\d{1,12}$/;
 export const isTypeId = (v: unknown): v is string => typeof v === 'string' && TYPE_ID_RE.test(v);
 export const isStartField = (v: unknown): v is string => v === 'created' || isCustomField(v);
 export const isEndField = (v: unknown): v is string => v === 'duedate' || v === 'resolutiondate' || isCustomField(v);
+export const isReleaseField = (v: unknown): v is string => v === 'duedate' || isCustomField(v);
 
 /** 저장된 값 → 규칙. 모양이 틀린 것은 기본값으로(JQL에 날것을 넣지 않는다). */
-export function coerceRule(start: unknown, end: unknown, fill: unknown): DateRule {
-  return { start: isStartField(start) ? start : null, end: isEndField(end) ? end : 'duedate', fill: fill !== false };
+export function coerceRule(start: unknown, end: unknown, fill: unknown, release?: unknown): DateRule {
+  return { start: isStartField(start) ? start : null, end: isEndField(end) ? end : 'duedate', fill: fill !== false, release: isReleaseField(release) ? release : null };
 }
 
 /** `customfield_10015` → JQL의 `cf[10015]`. 모양이 어긋나면 null(JQL에 날것을 넣지 않는다). */
@@ -151,17 +158,17 @@ export function ticketsJql(projects: string[], from: string, to: string, rule: D
 /** 정리한 티켓이 기간과 겹치는가 — JQL이 넉넉히 부른 것(열린 끝·날짜 채우기)의 마지막 판정. */
 export const overlaps = (t: { start: string; end: string }, from: string, to: string) => t.start <= to && t.end >= from;
 
-/** 에픽 몇 개의 날짜·이름을 한 번에. 키 모양이 틀린 것(프로젝트 묶음 등)은 뺀다. */
+/** 에픽 몇 개의 날짜·이름을 한 번에. 키 모양이 틀린 것은 뺀다(티켓 자신인 묶음은 부르는 쪽이 뺀다). */
 export function epicsJql(keys: string[]): string | null {
   const ok = [...new Set(keys.filter(isIssueKey))];
   return ok.length ? `key in (${ok.join(', ')})` : null;
 }
 
-const ruleFields = (rule: DateRule) => [...new Set([rule.end, ...(rule.start ? [rule.start] : []), ...(rule.fill ? ['created', 'resolutiondate'] : [])])].filter((f) => f === 'duedate' || isStartField(f) || isEndField(f));
+const ruleFields = (rule: DateRule) => [...new Set([rule.end, ...(rule.start ? [rule.start] : []), ...(rule.release ? [rule.release] : []), ...(rule.fill ? ['created', 'resolutiondate'] : [])])].filter((f) => isStartField(f) || isEndField(f));
 
 /** 조회에 실을 필드 목록 — 날짜 필드는 사이트마다·고른 규칙마다 달라 끝에 붙인다. */
 export function ticketFields(rule: DateRule = DEFAULT_RULE): string[] {
-  return [...new Set(['summary', 'assignee', 'status', 'parent', 'project', 'issuetype', ...ruleFields(rule)])];
+  return [...new Set(['summary', 'assignee', 'status', 'parent', 'issuetype', ...ruleFields(rule)])];
 }
 
 export function epicFields(rule: DateRule = DEFAULT_RULE): string[] {
@@ -196,7 +203,8 @@ function isEpicItself(f: Obj): boolean {
 /**
  * 검색 결과 한 건 → 화면의 티켓. 그릴 수 없는 것(담당자·날짜가 없음 · 에픽 자신)은 null.
  *
- * - 묶음: 부모가 에픽이면 그 에픽, 아니면 **프로젝트**(키가 곧 묶음 키 — 에픽 키와 모양이 달라 겹치지 않는다).
+ * - 묶음: 부모가 에픽이면 그 에픽, 아니면 **티켓 자신**(달력에 티켓이 하나씩 선다 — 처음엔 프로젝트로
+ *   묶었는데 "프로젝트 이름만 보이고 티켓이 그 아래로 숨는다"는 제보로 바꿨다, 2026-10-01).
  * - 날짜: 시작이 없으면 **끝 하루**(생성일로 두면 몇 달짜리 막대가 되어 진행 일수가 부풀었다 —
  *   2026-09-30 결정 — 그래서 만든 날은 사용자가 고를 때만), 끝이 없으면 시작 하루.
  *   끝이 `해결된 날`인데 아직 안 끝났으면 오늘까지. 둘 다 없고 `fill`이면 만든 날 ~ 해결된 날(아직이면 오늘).
@@ -208,9 +216,7 @@ export function normalizeTicket(issue: unknown, rule: DateRule = DEFAULT_RULE, t
   if (!it || !key || !f || isEpicItself(f)) return null;
   const parent = obj(f.parent);
   const parentKey = str(parent?.key);
-  const projectKey = str(obj(f.project)?.key);
-  const epic = parent && parentKey && isEpicParent(parent) ? parentKey : projectKey;
-  if (!epic) return null;
+  const epic = parent && parentKey && isEpicParent(parent) ? parentKey : key;
   const a = obj(f.assignee);
   const pid = str(a?.accountId);
   if (!a || !pid) return null;
@@ -236,6 +242,7 @@ export function normalizeTicket(issue: unknown, rule: DateRule = DEFAULT_RULE, t
     }
   }
   if (!start || !end) return null;
+  const rel = rule.release ? day(f[rule.release]) : null;
   // 시작이 끝보다 늦게 적힌 티켓(흔한 입력 실수) — 순서를 바로잡아 하루 이상은 그린다.
   const [s, e] = start <= end ? [start, end] : [end, start];
   return {
@@ -249,6 +256,7 @@ export function normalizeTicket(issue: unknown, rule: DateRule = DEFAULT_RULE, t
     startMissing: !filled && !st,
     endMissing: !filled && !en && !openEnd,
     ...(filled ? { filled: true } : {}),
+    ...(rel ? { release: rel } : {}),
   };
 }
 
@@ -268,7 +276,7 @@ export function normalizeEpic(issue: unknown, rule: DateRule = DEFAULT_RULE): Ji
 
 /**
  * 티켓이 든 묶음의 이름 — 부모가 에픽이면 부모 필드에서(에픽 조회가 실패해도 칩에 이름은 붙는다),
- * 아니면 프로젝트(`normalizeTicket`과 같은 판정).
+ * 아니면 티켓 자신(`normalizeTicket`과 같은 판정 — `solo`).
  */
 export function epicFromParent(issue: unknown): JiraEpic | null {
   const f = obj(obj(issue)?.fields);
@@ -278,9 +286,8 @@ export function epicFromParent(issue: unknown): JiraEpic | null {
     const pf = obj(parent.fields);
     return { key, name: str(pf?.summary) ?? key, start: null, end: null, status: statusOf(obj(obj(pf?.status)?.statusCategory)?.key) };
   }
-  const p = obj(f?.project);
-  const pk = str(p?.key);
-  return pk ? { key: pk, name: str(p?.name) ?? pk, start: null, end: null, status: 'doing' } : null;
+  const self = str(obj(issue)?.key);
+  return self ? { key: self, name: str(f?.summary) ?? self, start: null, end: null, status: statusOf(obj(obj(f?.status)?.statusCategory)?.key), solo: true } : null;
 }
 
 export interface FieldMeta {
