@@ -349,18 +349,20 @@ export function EventDetail({
        */
       dismissOnBackdrop
       // 막·등장 효과는 설정 팝업과 같은 것(요청) — 예전에는 배경이 그대로 보였다(제보).
-      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 321, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 321, alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? 0 : 32 }}
       cardRef={morphRef}
       card={{
         // 오른쪽 열이 붙으면 새 일정 팝업과 같은 900px(원본 `newEvW`) — 폭 전이도
         // `useCardMorph`가 잇는다(CSS transition을 걸면 RO가 옛 폭으로 높이를 잰다).
         width: isMobile ? '100%' : twoCol ? 900 : 560,
         maxWidth: '100%',
-        maxHeight: isMobile ? '92dvh' : '100%',
+        // 폰은 **전체 화면**(모바일 홈 디자인 N5) — 새 일정(N1·N2)과 같은 자리다.
+        maxHeight: '100%',
+        ...(isMobile ? { height: '100%' } : {}),
         boxSizing: 'border-box',
-        borderRadius: isMobile ? '22px 22px 0 0' : 22,
+        borderRadius: isMobile ? 0 : 22,
         background: 'var(--mf-card)',
-        border: '1px solid var(--mf-border)',
+        border: isMobile ? 0 : '1px solid var(--mf-border)',
         boxShadow: 'var(--mf-card-shadow)',
         display: 'flex',
         flexDirection: 'column',
