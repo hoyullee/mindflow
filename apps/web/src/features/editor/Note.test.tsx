@@ -6467,6 +6467,21 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     expect(JSON.stringify(saved('cb1c').pages[0].blocks[0])).not.toContain('href');
   });
 
+  it('윈도우 클립보드의 `\\r\\n`은 줄바꿈 **하나**다 — 잘라내기·붙여넣기마다 빈 줄이 늘지 않는다(제보)', async () => {
+    const c = await open('cb1d');
+    const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
+    caretEnd(line);
+    // 윈도우는 평문의 줄 끝을 `\r\n`으로 싣는다 — 예전에는 `\r`이 글자로 남아 한 줄이 더 그려졌다.
+    const clip = '\r\nKR1. SQA\r\n분모: 품질점검(SQA)\r\n\r\nKR2.';
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(ev, 'clipboardData', { value: { getData: (t: string) => (t === 'text/plain' ? clip : '') }, configurable: true });
+    line.dispatchEvent(ev);
+
+    saveNow();
+    await waitFor(() => expect(runsOf(saved('cb1d').pages[0].blocks[0])).toBe('const a = 1;\nKR1. SQA\n분모: 품질점검(SQA)\n\nKR2.'));
+    expect(runsOf(saved('cb1d').pages[0].blocks[0])).not.toContain('\r');
+  });
+
   it('인용의 Enter는 **인용을 끝내고 본문 줄**로 간다(제보 8)', async () => {
     const c = await open('cb2');
     const line = c.querySelector('[data-note-line="qt"]') as HTMLElement;

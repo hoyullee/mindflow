@@ -7,6 +7,7 @@
 // 팬·줌·미니맵·그리기·레이아웃이 없다(에디터가 `isNote`로 그 UI를 통째로 걷어낸다).
 // 대신 다루는 것이 순서와 글이고, 규칙은 전부 코어 `note.ts`에 있다.
 
+import { clipText } from '../clipText';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from 'react';
 import type { ClipLine, Doc, NoteBlock, NoteBlockKind, NoteCalloutTone, NoteExportScope, NotePage, RichRun, TableFillTarget } from '@mindflow/mindmap-core';
@@ -2793,7 +2794,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
      */
     const onPaste = (e: ClipboardEvent) => {
       if (readOnly || e.defaultPrevented) return;
-      const t = e.clipboardData?.getData('text/plain') ?? '';
+      const t = clipText(e.clipboardData);
       if (!t) return;
       e.preventDefault();
       const spot = removeSel(sel);
@@ -2922,7 +2923,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
     const onPaste = (e: ClipboardEvent): void => {
       const sel = crossing();
       if (!sel) return;
-      const t = e.clipboardData?.getData('text/plain') ?? '';
+      const t = clipText(e.clipboardData);
       e.preventDefault();
       demoteCol(true);
       const spot = removeSel(sel);
@@ -9036,7 +9037,7 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
        */
       onPasteCapture={(e) => {
         if (readOnly || edit !== null || !sel) return;
-        const grid = parseTableClip(e.clipboardData.getData('text/html'), e.clipboardData.getData('text/plain'));
+        const grid = parseTableClip(e.clipboardData.getData('text/html'), clipText(e.clipboardData));
         if (!grid) return;
         e.preventDefault();
         e.stopPropagation();
