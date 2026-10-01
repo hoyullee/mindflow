@@ -29,7 +29,19 @@ const KEYWORDS = new Set([
 const LITERALS = new Set(['true', 'false', 'null', 'nil', 'none', 'None', 'True', 'False', 'undefined', 'NaN', 'Infinity']);
 
 /** 조각의 갈래 — 색은 `editor.css`의 `.mf-code-*`가 준다. */
-type Tok = 'cm' | 'st' | 'nu' | 'kw' | 'li' | 'fn' | 'op';
+type Tok = 'cm' | 'st' | 'nu' | 'kw' | 'li' | 'fn' | 'op' | 'cn' | 'pr';
+
+/**
+ * **이름은 영문만이 아니다**(요청: 노션처럼 글을 써도 일부 낱말에 색이 들게).
+ *
+ * 노션(Prism)은 이름 글자에 `\xA0-\uFFFF`까지 넣어 `기간(`·`품질점검(`도 부르는 이름으로,
+ * 줄 머리·쉼표 뒤의 `분모:`도 속성 이름으로 칠한다. 우리도 글자(`\p{L}`) 전부를 이름
+ * 글자로 본다 — 한글 메모를 코드 블록에 적어도 구조(이름·괄호·문자열)가 색으로 드러난다.
+ */
+const NAME_START = /[\p{L}_$]/u;
+const NAME = /^[\p{L}\p{N}_$]+/u;
+/** 대문자로만 된 이름 — 상수(`KR1`·`SQA`·`MAX_LEN`). 한 글자(`I`·`A`)는 글에 흔해서 뺀다. */
+const CONSTANT = /^[A-Z][A-Z0-9_]+$/;
 
 interface Piece {
   t: string;
@@ -98,7 +110,7 @@ export function codePieces(src: string): Piece[] {
       continue;
     }
     // 수 — 16진수·소수·지수까지.
-    if (/[0-9]/.test(ch) && !/[A-Za-z0-9_$]/.test(src[i - 1] ?? '')) {
+    if (/[0-9]/.test(ch) && !/[\p{L}\p{N}_$]/u.test(src[i - 1] ?? '')) {
       const m = /^(0[xXbBoO][0-9a-fA-F_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9]+)?)/.exec(src.slice(i));
       if (m) {
         push(m[0], 'nu');
@@ -106,12 +118,22 @@ export function codePieces(src: string): Piece[] {
         continue;
       }
     }
-    // 낱말 — 예약어 · 값 · 부르는 이름(뒤가 `(`).
-    if (/[A-Za-z_$]/.test(ch)) {
-      const m = /^[A-Za-z0-9_$]+/.exec(src.slice(i))!;
+    // 낱말 — 예약어 · 값 · 부르는 이름(뒤가 `(`) · 속성 이름(줄 머리·`,`·`{` 뒤에 오고 뒤가 `:`) · 상수.
+    if (NAME_START.test(ch)) {
+      const m = NAME.exec(src.slice(i))!;
       const word = m[0];
       const after = src.slice(i + word.length);
-      const kind: Tok | null = LITERALS.has(word) ? 'li' : KEYWORDS.has(word) ? 'kw' : /^\s*\(/.test(after) ? 'fn' : null;
+      const kind: Tok | null = LITERALS.has(word)
+        ? 'li'
+        : KEYWORDS.has(word)
+          ? 'kw'
+          : /^\s*\(/.test(after)
+            ? 'fn'
+            : /^[ \t]*:(?!:)/.test(after) && /(^|[\n,{])[ \t]*$/.test(src.slice(0, i))
+              ? 'pr'
+              : CONSTANT.test(word)
+                ? 'cn'
+                : null;
       push(word, kind);
       i += word.length;
       continue;

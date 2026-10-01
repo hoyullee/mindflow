@@ -61,3 +61,40 @@ describe('코드 조각 나누기', () => {
     expect(codeHtml('a').endsWith('<br>')).toBe(false);
   });
 });
+
+/**
+ * 요청 — 노션의 코드 블록은 한글 메모를 적어도 일부 낱말에 색이 든다(첨부 그림의 KR1·SQA·
+ * 분모:·기간( ·'품질검토'·->). 노션(Prism)은 이름 글자에 한글까지 넣는다.
+ */
+describe('한글 메모도 구조가 색으로 드러난다(노션과 같은 규칙)', () => {
+  const pick = (src: string, k: string) => codePieces(src).filter((p) => p.k === k).map((p) => p.t.trim());
+
+  it('대문자 이름은 상수 — `KR1`·`SQA` (한 글자 `I`·`A`는 뺀다)', () => {
+    expect(pick('KR1. SQA 등록 건 수 중 I A', 'cn')).toEqual(['KR1', 'SQA']);
+  });
+
+  it('뒤가 `(`인 한글 낱말은 부르는 이름 — `기간(`·`품질점검(`·`수(`', () => {
+    expect(pick('KR2. SQA 수행 기간(1차~n차)의 평균', 'fn')).toEqual(['기간']);
+    expect(pick('분모: 품질점검(SQA) 등록 건수', 'fn')).toEqual(['품질점검']);
+    expect(pick('분모: Defect 수(not issue 제외) + 배포후이슈', 'fn')).toEqual(['수']);
+  });
+
+  it('줄 머리·쉼표 뒤에 오고 뒤가 `:`면 속성 이름 — `분모:`·`분자:`', () => {
+    expect(pick("분모: 품질점검(SQA) 등록 건수, 분자: '품질검토' 필터", 'pr')).toEqual(['분모', '분자']);
+    // 문장 가운데의 `:`나 `::`는 속성이 아니다.
+    expect(pick('비율은 a: b', 'pr')).toEqual([]);
+    expect(pick('std::vector', 'pr')).toEqual([]);
+  });
+
+  it('문자열·수·기호는 예전처럼 — 한글 뒤의 수는 이름의 일부다', () => {
+    const src = "'수행 못 함'을 제외한 건 -> (1차~n차) 건수1";
+    expect(pick(src, 'st')).toEqual(["'수행 못 함'"]);
+    expect(pick(src, 'nu')).toEqual(['1']); // `1차`의 1 — `건수1`의 1은 이름에 붙는다
+    expect(pick(src, 'op').join('')).toContain('->');
+  });
+
+  it('글자는 한 자도 잃지 않는다', () => {
+    const src = "KR1. SQA 등록\n분모: 품질점검(SQA), 분자: '품질검토' ->";
+    expect(codePieces(src).map((p) => p.t).join('')).toBe(src);
+  });
+});
