@@ -115,7 +115,7 @@ describe('home theme', () => {
       '--mf-success-ink': '#1e7a3a',
       // 일정 화면 토큰 — 기본 테마(코랄)는 **스펙 값 그대로**(일정 페이지 2026-09-30), 나머지
       // 테마·다크는 그 테마의 면·상태색에서 파생한다.
-      '--mf-cal-sel': '#fdf2d6',
+      '--mf-cal-sel': '#fcf6ed',
       '--mf-cal-sun': '#fef8f5',
       '--mf-cal-sat': '#f9fbfd',
       '--mf-cal-head': '#fcfcfb',

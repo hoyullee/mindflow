@@ -250,6 +250,8 @@ const barFor = (title: string): HTMLElement =>
     (c) => (c.querySelector('[data-cal-bar-title]')?.textContent ?? c.textContent ?? '').trim() === title,
   ) as HTMLElement;
 const detail = (): HTMLElement => document.querySelector('[role="dialog"][aria-label="일정 상세"]') as HTMLElement;
+/** 고른 칸의 안쪽 테두리(Jira 작업 현황 달력과 같은 1.5px `#E8A25F`) — jsdom은 색을 rgb로 바꿔 둘 수 있다. */
+const SEL_RING_RE = /inset.*1\.5px.*(#E8A25F|rgb\(232, 162, 95\))|(#E8A25F|rgb\(232, 162, 95\)).*1\.5px.*inset/i;
 
 /** 날짜 팝오버를 열어 그 날을 고른다 — 디자인 원본의 `pk` 달력(native input이 아니다). */
 async function pickDate(triggerSel: string, iso: string): Promise<void> {
@@ -621,9 +623,11 @@ describe('일정 화면', () => {
     expect(out.getAttribute('role')).toBe('button');
     expect(out.style.background).toBe('var(--mf-cal-out)');
     fireEvent.click(out);
-    // 고른 표시는 **칸 면**이다(스펙 3.3 — 선택 `#FCF6ED`). 숫자 상자는 오늘만 채운다.
+    // 고른 표시는 **안쪽 테두리**다(요청 — 면은 이웃 달 그대로: 고른 면이 이웃 달 면과
+    // 거의 같아 보였다). 숫자 상자는 오늘만 채운다.
     await waitFor(() => expect(out.querySelector('[data-day-num][data-selected]')).toBeTruthy());
-    expect(out.style.background).toBe('var(--mf-cal-sel)');
+    expect(out.style.background).toBe('var(--mf-cal-out)');
+    expect(out.style.boxShadow).toMatch(SEL_RING_RE);
     expect((out.querySelector('[data-day-num]') as HTMLElement).style.background).toBe('transparent');
     // 사이드가 그 날을 보여 준다 — 이번 달이 아니어도 고를 수 있다.
     const iso = out.getAttribute('data-day-cell')!;
@@ -833,13 +837,15 @@ describe('일정 화면', () => {
     expect(main.style.overflowY).toBe('hidden');
   });
 
-  it('오늘은 면을 따로 갖지 않는다(붉게 칠하지 않는다) — 선택 면만, 날짜 숫자는 19px 둥근 사각(스펙 3.4)', async () => {
+  it('오늘도 고른 칸도 면을 바꾸지 않는다 — 고른 칸은 Jira 달력과 같은 안쪽 테두리, 날짜 숫자는 19px 둥근 사각(스펙 3.4)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const cell = () => document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
     const num = () => cell().querySelector('[data-day-num]') as HTMLElement;
-    // 진입하면 오늘이 골라져 있다(스펙 5) — 여느 고른 칸과 같은 선택 면.
-    expect(cell().style.background).toBe('var(--mf-cal-sel)');
+    // 진입하면 오늘이 골라져 있다(스펙 5) — 면은 그 날이 무슨 날인가 그대로, 테두리만.
+    const dayFaces = ['var(--mf-card)', 'var(--mf-cal-sat)', 'var(--mf-cal-sun)'];
+    expect(dayFaces).toContain(cell().style.background);
+    expect(cell().style.boxShadow).toMatch(SEL_RING_RE);
     expect(num().style.background).toBe('var(--mf-accent)');
     expect(num().style.width).toBe('19px');
     expect(num().style.borderRadius).toBe('6px');
@@ -847,13 +853,15 @@ describe('일정 화면', () => {
     // 다른 날을 고르면 오늘은 **그 날이 무슨 날인가**의 면(평일·토·일/공휴일)으로 —
     // 코랄 틴트의 오늘 면은 평일인데도 휴일처럼 붉게 읽혔다(요청).
     const other = [...document.querySelectorAll<HTMLElement>('[data-day-cell]')].find((c) => !c.dataset.today && !c.dataset.outMonth)!;
+    const otherFace = other.style.background;
     fireEvent.click(other);
-    await waitFor(() => expect(other.style.background).toBe('var(--mf-cal-sel)'));
-    expect(['var(--mf-card)', 'var(--mf-cal-sat)', 'var(--mf-cal-sun)']).toContain(cell().style.background);
-    // 고른 날의 숫자는 면을 채우지 않는다 — 면이 이미 말한다.
+    await waitFor(() => expect(other.style.boxShadow).toMatch(SEL_RING_RE));
+    // 고른 칸의 면은 고르기 전 그대로, 테두리는 오늘에서 떠난다.
+    expect(other.style.background).toBe(otherFace);
+    expect(dayFaces).toContain(cell().style.background);
+    expect(cell().style.boxShadow).toBe('');
+    // 고른 날의 숫자는 면을 채우지 않는다 — 테두리가 이미 말한다.
     expect((other.querySelector('[data-day-num]') as HTMLElement).style.background).toBe('transparent');
-    // 링은 **놓일 자리**만의 것이다.
-    expect(other.style.boxShadow).not.toContain('inset');
   });
 
   // ── 제보 라운드: 텍스트 선택·선택 표시·우클릭 메뉴·통계 팝오버 ────────────────

@@ -20,6 +20,8 @@ import {
 /** 칩·바 한 줄의 높이와 줄 사이 간격 — 칸 용량 계산의 단위. */
 const CHIP_H = (compact: boolean): number => (compact ? 16 : 21);
 const GAP = 2;
+/** 고른 칸의 안쪽 테두리 색 — Jira 작업 현황 달력(`tools/workstatus/WsCalendar.tsx`)과 같은 값. */
+const SEL_RING = "#E8A25F";
 const ROW_H = (compact: boolean): number => CHIP_H(compact) + GAP;
 /** `+N개 더` 줄은 글 한 줄이라 **칩보다 낮다** — 용량 계산에서 이 차이가 한 줄을 만든다. */
 const MORE_H = (compact: boolean): number => (compact ? 12 : 13);
@@ -402,11 +404,13 @@ function DayCell({
   dropHot: boolean;
 }) {
   const { inMonth, isToday, dim, dow } = cell;
-  // 칸 면은 **다섯 가지**다: 평일 · 토 · 일/공휴일 · 이웃 달 · 선택.
+  // 칸 면은 **네 가지**다: 평일 · 토 · 일/공휴일 · 이웃 달 — 그 날이 무슨 날인가만 말한다.
   // **오늘은 면을 따로 갖지 않는다**(요청) — 스펙 3.3의 오늘 면(`#FFF3EC`)·오늘+선택
   // 면(`#FDEFE4`)은 코랄 틴트라 평일인데도 일·공휴일처럼 붉게 읽혔다. 오늘은 채운
-  // 코랄 숫자 상자(스펙 3.4)가 이미 말하므로, 면은 그 날이 무슨 날인가만 따른다.
-  // 우선순위: 놓일 자리 > 선택 > 이웃 달 > 일·공휴일 > 토 > 평일.
+  // 코랄 숫자 상자(스펙 3.4)가 이미 말한다.
+  // **고른 칸도 면을 바꾸지 않는다**(요청) — 고른 면(`--mf-cal-sel`)이 이웃 달 면과 거의
+  // 같아 보였다. 대신 Jira 작업 현황 달력(`WsCalendar`)과 같은 **안쪽 테두리**를 두른다.
+  // 우선순위: 놓일 자리 > 이웃 달 > 일·공휴일 > 토 > 평일.
   // 값은 토큰이다(`theme.ts`) — 코랄은 스펙 값 그대로, 나머지 테마·다크는 파생.
   const weekendBg =
     dow === 0 || cell.dayOff
@@ -416,11 +420,9 @@ function DayCell({
         : "var(--mf-card)";
   const bg = dropHot
     ? "var(--mf-accent-soft)"
-    : selected
-      ? "var(--mf-cal-sel)"
-      : !inMonth
-        ? "var(--mf-cal-out)"
-        : weekendBg;
+    : !inMonth
+      ? "var(--mf-cal-out)"
+      : weekendBg;
   // 숫자 색은 **그 날이 무슨 날인가**만 말한다(일·공휴일 / 토 / 평일). 오늘은 채운 코랄
   // 상자에 흰 글자(스펙 3.4). 이웃 달은 숫자가 가라앉는다(스펙 3.3 `#CBC0B3`) — 다만 토·일·
   // 공휴일은 **그 색조를 지킨 채** 흐려진다(요청 ④: 이웃 달의 일요일이 평일과 구별돼야 한다).
@@ -450,9 +452,14 @@ function DayCell({
     borderBottom: "1px solid var(--mf-cal-grid)",
     background: bg,
     transition: "background-color .12s ease",
-    // 칸에 링을 두르는 것은 **놓일 자리**뿐이다(지금 무엇이 일어나려는가가 먼저다).
-    // 테두리가 아니라 안쪽 링인 이유는 굵히면 격자가 1px 밀리기 때문이다.
-    ...(dropHot ? { boxShadow: "inset 0 0 0 2px var(--mf-accent)" } : {}),
+    // 링은 둘이다 — **놓일 자리**(강조색 2px, 지금 무엇이 일어나려는가가 먼저다)와
+    // **고른 칸**(Jira 작업 현황 달력과 같은 값 — 1.5px `#E8A25F`). 테두리가 아니라
+    // 안쪽 링인 이유는 굵히면 격자가 1px 밀리기 때문이다.
+    ...(dropHot
+      ? { boxShadow: "inset 0 0 0 2px var(--mf-accent)" }
+      : selected
+        ? { boxShadow: `inset 0 0 0 1.5px ${SEL_RING}` }
+        : {}),
     // 이웃 달 칸도 **평범한 칸처럼 동작한다**(제보 #3) — 격자가 담고 있는 날이면
     // 고르고, 더블클릭으로 그 날의 일정을 보고, 항목을 끌어다 놓을 수 있다.
     cursor: "pointer",
