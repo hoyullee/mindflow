@@ -851,6 +851,10 @@ describe('칸반 — 보드 머리(검색·진행률)', () => {
     const { container } = renderEditor('/editor?map=kq1&title=x');
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
+    // 보드 머리에 칸이 늘 펼쳐져 있지 않다 — 상단 바의 검색 아이콘(공유 왼쪽)으로 연다(요청).
+    expect(container.querySelector('[data-kanban-search]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '카드 검색' }));
+    await waitFor(() => expect(container.querySelector('[data-kanban-search]')).toBeTruthy());
     fireEvent.change(container.querySelector('[data-kanban-search]')!, { target: { value: '둘째' } });
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
     // 걸리지 않은 열은 "검색 결과가 없어요"
@@ -860,6 +864,21 @@ describe('칸반 — 보드 머리(검색·진행률)', () => {
 
     fireEvent.change(container.querySelector('[data-kanban-search]')!, { target: { value: '' } });
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+  });
+
+  it('검색 바를 닫으면 검색어도 비운다 — 걸러진 채 남지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_kq1b', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kq1b&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    fireEvent.click(screen.getByRole('button', { name: '카드 검색' }));
+    const input = (await waitFor(() => container.querySelector('[data-kanban-search]'))) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '둘째' } });
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
+    expect(container.querySelector('[data-kanban-search-count]')?.textContent).toBe('1 / 2');
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('[data-kanban-search]')).toBeNull());
+    expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2);
   });
 
   it('진행률 — 마지막 열이 완료다', async () => {
@@ -967,6 +986,8 @@ describe('칸반 — 리스트·타임라인 보기', () => {
   it('검색은 세 보기에 함께 걸린다', async () => {
     localStorage.setItem('mindflow_doc_kv3', JSON.stringify(withDue()));
     const { container } = renderEditor('/editor?map=kv3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-card]')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '카드 검색' }));
     await waitFor(() => expect(container.querySelector('[data-kanban-search]')).toBeTruthy());
 
     fireEvent.change(container.querySelector('[data-kanban-search]')!, { target: { value: '늦은' } });

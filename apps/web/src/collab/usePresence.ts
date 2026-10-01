@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Awareness } from 'y-protocols/awareness';
 import { removeAwarenessStates } from 'y-protocols/awareness';
-import { colorForSeed, nameForSeed } from './identity';
+import { accountKey, colorForSeed, nameForSeed } from './identity';
 import { EMPTY_PRESENCE_SELECTION, type PresenceCursor, type PresenceSelection, type PresenceState, type PresenceUser, type RemotePeer } from './presence';
 
 /** Cursor-move broadcasts are throttled to this interval (leading + trailing
@@ -71,7 +71,7 @@ export function usePresence(awareness: Awareness | null, authedEmail?: string | 
   // through `localStorage`, which is out of scope for this task).
   const seed = authedEmail || (awareness ? String(awareness.clientID) : 'solo');
   const localUser = useMemo<PresenceUser>(() => {
-    if (authedEmail) return { name: displayName?.trim() || authedEmail, color: colorForSeed(authedEmail), authed: true, avatar: avatarUrl || null };
+    if (authedEmail) return { name: displayName?.trim() || authedEmail, color: colorForSeed(authedEmail), authed: true, avatar: avatarUrl || null, uid: accountKey(authedEmail) };
     return { name: nameForSeed(seed), color: colorForSeed(seed) };
   }, [authedEmail, displayName, avatarUrl, seed]);
 

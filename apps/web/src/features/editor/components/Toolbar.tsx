@@ -257,16 +257,16 @@ export function Toolbar({ controller }: ToolbarProps) {
       <PresenceAvatars controller={controller} isMobile={isMobile} />
 
       {/* 맵 안 검색 — 바로 열리는 버튼(Ctrl/⌘+F와 동일). 모바일에서도 남긴다:
-          긴 맵에서 찾기는 터치 사용자가 더 아쉬운 기능이고 아이콘 하나 폭이다.
-          칸반은 캔버스 텍스트를 훑는 검색이라 아직 대상이 없다(1단계 범위 밖). */}
+          긴 맵에서 찾기는 터치 사용자가 더 아쉬운 기능이고 아이콘 하나 폭이다. */}
       {/* 공책은 **페이지 목록의 검색칸**이 그 자리다(한 권 안에서 찾는다). */}
-      {!controller.isKanban && !controller.isNote && (
+      {/* 칸반도 같은 자리다(요청) — 열면 보드 위에 「카드 검색」 바가 뜨고 카드를 걸러 보인다. */}
+      {!controller.isNote && (
       <button
         type="button"
         className="mf-ed-btn"
         onClick={() => controller.setSearchOpen(!controller.searchOpen)}
-        title={`맵에서 검색 (${keyLabel('⌘F')})`}
-        aria-label="맵에서 검색"
+        title={`${controller.isKanban ? '카드 검색' : '맵에서 검색'} (${keyLabel('⌘F')})`}
+        aria-label={controller.isKanban ? '카드 검색' : '맵에서 검색'}
         style={{
           display: 'flex',
           alignItems: 'center',

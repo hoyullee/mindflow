@@ -179,8 +179,19 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
   const [colDrag, setColDrag] = useState<ColDragState | null>(null);
-  /** 카드 검색 — 화면에서만 거른다(문서는 그대로). */
+  /**
+   * 카드 검색 — 화면에서만 거른다(문서는 그대로).
+   *
+   * 여는 자리는 **상단 바의 검색 아이콘**이다(요청: 다른 보드처럼 공유 왼쪽에) — 예전에는
+   * 보드 머리 줄에 칸이 늘 펼쳐져 있었다. 열고 닫기는 맵의 검색과 같은 `searchOpen`이라
+   * ⌘F도 그대로 통한다. **닫으면 검색어를 비운다** — 바가 사라졌는데 카드가 걸러진 채
+   * 남으면 "카드가 없어졌다"로 읽힌다.
+   */
   const [query, setQuery] = useState('');
+  const searchOpen = controller.searchOpen;
+  useEffect(() => {
+    if (!searchOpen) setQuery('');
+  }, [searchOpen]);
   /** 필터(담당·분류·긴급) — 검색어와 같은 성격이라 함께 화면에서만 거른다. */
   const [filter, setFilter] = useState<CardFilter>(EMPTY_FILTER);
   /** 카드 우클릭 메뉴 · 그 메뉴에서 여는 빠른 댓글 — 누른 자리(화면 좌표)에 뜬다. */
@@ -377,11 +388,20 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         boxSizing: 'border-box',
       }}
     >
+      {searchOpen && (
+        <KanbanSearchBar
+          theme={th}
+          isMobile={isMobile}
+          query={query}
+          onQuery={setQuery}
+          shown={shown}
+          total={cards.length}
+          onClose={() => controller.setSearchOpen(false)}
+        />
+      )}
       <BoardBar
         theme={th}
         isMobile={isMobile}
-        query={query}
-        onQuery={setQuery}
         progress={progress}
         view={view}
         onView={setView}
@@ -678,7 +698,108 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
 }
 
 /**
- * 보드 머리 줄 — 검색 · 보기 탭 · 필터, 그리고 진행률.
+ * 카드 검색 바 — 상단 바의 검색 아이콘(또는 ⌘F)으로 연다. 생김새와 자리는 맵의 검색 바와
+ * 같다(가운데 위 384px · 폰은 폭 전체). 맵처럼 "다음 일치로 이동"이 아니라 **걸러 보이기**라
+ * 이동 단추 대신 `보이는 카드 / 전체`를 적는다. Esc·✕는 닫기(닫으면 검색어도 비운다).
+ */
+function KanbanSearchBar({
+  theme: th,
+  isMobile,
+  query,
+  onQuery,
+  shown,
+  total,
+  onClose,
+}: {
+  theme: Theme;
+  isMobile: boolean;
+  query: string;
+  onQuery: (v: string) => void;
+  shown: number;
+  total: number;
+  onClose: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+  const wrap: CSSProperties = isMobile
+    ? { position: 'absolute', top: 8, left: 8, right: 8, zIndex: 30 }
+    : { position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 30, width: 384 };
+  return (
+    <div style={wrap} data-kanban-search-bar>
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          padding: isMobile ? '4px 6px' : '4px 6px 4px 12px',
+          background: th.panel,
+          border: `1px solid ${th.border}`,
+          borderRadius: 12,
+          boxShadow: '0 8px 26px rgba(0,0,0,.14)',
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true" style={{ flexShrink: 0, color: th.subtext, margin: isMobile ? '0 4px 0 8px' : '0 2px 0 0' }}>
+          <circle cx="6.4" cy="6.4" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <line x1="10" y1="10" x2="13.6" y2="13.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+        <input
+          ref={inputRef}
+          className="mf-search-input"
+          data-kanban-search
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation(); // 에디터 전역 단축키(Delete·Enter 등)와 겹치지 않게
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              onClose();
+            }
+          }}
+          placeholder="카드 검색…"
+          aria-label="카드 검색"
+          type="search"
+          name="mf-kanban-search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          style={{
+            flex: '1 1 auto',
+            minWidth: 0,
+            height: isMobile ? 40 : 30,
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            color: th.text,
+            font: 'inherit',
+            fontSize: isMobile ? 16 : 13.5, // 모바일 16px = iOS 자동 확대 방지
+          }}
+        />
+        {query.trim() && (
+          <span data-kanban-search-count style={{ flexShrink: 0, padding: '0 6px', fontSize: 12, color: th.subtext, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+            {shown} / {total}
+          </span>
+        )}
+        <button
+          type="button"
+          title="닫기"
+          aria-label="검색 닫기"
+          onClick={onClose}
+          style={{ width: isMobile ? 40 : 30, height: isMobile ? 40 : 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 8, background: 'transparent', color: th.text, fontSize: 14, cursor: 'pointer', flexShrink: 0 }}
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 보드 머리 줄 — 보기 탭 · 필터, 그리고 진행률(검색은 상단 바의 아이콘 — `KanbanSearchBar`).
  *
  * 디자인 원본의 이 자리에는 제목·저장 상태도 있었지만 이 앱에서는 좌상단 문서
  * 칩(DocChip)이 이미 말하고 있어 겹쳐 두지 않았다. 대신 도구 줄이 **그 칩과 같은
@@ -687,8 +808,6 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
 function BoardBar({
   theme: th,
   isMobile,
-  query,
-  onQuery,
   progress,
   view,
   onView,
@@ -702,8 +821,6 @@ function BoardBar({
 }: {
   theme: Theme;
   isMobile: boolean;
-  query: string;
-  onQuery: (v: string) => void;
   progress: ReturnType<typeof boardProgress>;
   view: KanbanView;
   onView: (v: KanbanView) => void;
@@ -741,7 +858,7 @@ function BoardBar({
     <div data-kanban-bar style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: isMobile ? '0 12px 12px' : '0 20px 14px' }}>
       {/* 데스크톱에서는 좌상단 문서 칩과 **같은 선**에 선다(요청) — 칩은 떠 있는
           오버레이라 자리를 차지하지 않으므로, 그 폭만큼 왼쪽을 비워 두고 오른쪽
-          끝에 [검색][보기 탭][필터]를 묶는다. 모바일은 폭이 모자라 칩 아래로. */}
+          끝에 [보기 탭][필터]를 묶는다. 모바일은 폭이 모자라 칩 아래로. */}
       <div
         data-kanban-actions
         style={{
@@ -754,25 +871,6 @@ function BoardBar({
           paddingLeft: isMobile ? 0 : CHIP_RESERVE,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: isMobile ? 40 : 34, padding: '0 12px', borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, minWidth: 0, flex: isMobile ? '1 1 100%' : '0 0 auto', width: isMobile ? undefined : 200 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.subtext} strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            className="mf-edit"
-            data-kanban-search
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-            onKeyDown={(e) => {
-              e.stopPropagation(); // 에디터 전역 단축키(Delete·Enter 등)와 겹치지 않게
-              if (e.key === 'Escape') onQuery('');
-            }}
-            placeholder="카드 검색"
-            aria-label="카드 검색"
-            style={{ border: 0, outline: 'none', background: 'transparent', fontSize: 13, color: th.text, width: '100%', minWidth: 0, fontFamily: 'inherit' }}
-          />
-        </div>
         <Segmented
           value={view}
           onChange={onView}
