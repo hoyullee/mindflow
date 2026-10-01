@@ -141,6 +141,7 @@ export async function jiraCall(token: string, cloudId: string, path: string, ini
   if (res.status === 401) throw new Fail('revoked');
   if (res.status === 403) throw new Fail('forbidden');
   if (res.status === 429) throw new Fail('rate-limited', res.headers.get('Retry-After') ?? '');
+  if (res.status === 404) throw new Fail('not-found');
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Fail('jira-error', `${res.status} ${text.slice(0, 300)}`);
