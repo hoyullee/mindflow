@@ -842,6 +842,45 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-memo-rich p {
   margin: 0 0 6px;
 }
+/* 형광펜(모바일 홈 디자인 N8) — 노란 hue를 **카드 면에 섞는다**(검색의 `--mf-mark`와 같은 이유: 어두운
+   테마에서 고정 노랑은 글자를 지운다). 코랄 카드 위에서 디자인의 `#FFF1A8`에 맞춘 비율이다. */
+.mf-memo-rich mark {
+  background: color-mix(in srgb, #ffe45c 50%, var(--mf-card));
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+/* 체크리스트 — `<ul data-check>`. 네모는 항목 **왼쪽 여백**의 의사 요소이고, 그 자리를 누르면
+   `RichMemo`가 `data-done`을 뒤집는다(누른 x가 항목 상자의 왼쪽 끝보다 왼쪽인가로 가른다). */
+.mf-memo-rich ul[data-check] {
+  list-style: none;
+  padding-left: 26px;
+}
+.mf-memo-rich ul[data-check] > li {
+  position: relative;
+}
+.mf-memo-rich ul[data-check] > li::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 0.25em;
+  top: calc(0.5lh - 8px);
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--mf-faint2);
+  border-radius: 5px;
+  background: var(--mf-card);
+  cursor: pointer;
+}
+.mf-memo-rich ul[data-check] > li[data-done]::before {
+  border-color: var(--mf-accent);
+  background: var(--mf-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5L20 7'/%3E%3C/svg%3E") center / 11px no-repeat;
+}
+.mf-memo-rich ul[data-check] > li[data-done] {
+  color: var(--mf-muted);
+  text-decoration: line-through;
+}
 
 /*
   설정의 체크박스(첨부 이미지) — 코랄 사각 + 흰 체크. `accentColor`만 주면 브라우저

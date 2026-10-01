@@ -10,6 +10,7 @@
 
 import { useCallback, useState } from 'react';
 import { EventDetail, type CalendarChip } from './EventDetail';
+import { GOOGLE_MEMO_HINT } from './RichMemo';
 import { googleColorOptions } from './eventColor';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
 import { attendeesBody, conferenceBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
@@ -252,6 +253,7 @@ export function GoogleEventDetail({
       onWhen={onWhen}
       // **초대받은 일정**(내가 참석자이고 만든 사람이 아니다)은 폰에서 초대 묶음(만든 사람 · 참석 여부)이 먼저다(N5).
       sideFirst={myRsvpOf(event) !== undefined && !(event.creator ?? event.organizer)?.self}
+      memoHint={GOOGLE_MEMO_HINT}
       readOnly={!writable}
       // 머리에는 **`Google`**만(제보 #22) — 기본 캘린더의 이름은 계정 이메일이라
       // 제목 자리에 주소가 박힌다. 어느 캘린더인지는 아래 "저장할 캘린더" 줄이 말한다.

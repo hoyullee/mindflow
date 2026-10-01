@@ -23,7 +23,7 @@ import { TimeButton } from './TimePop';
 import { addDays, daysBetween, hhmm, minutesOf, nextTimeSlot, timeLabel, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
 import { GoogleEventFields, ReminderField, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
-import { RichMemo } from './RichMemo';
+import { GOOGLE_MEMO_HINT, RichMemo } from './RichMemo';
 import { RecurrenceField } from './RecurrenceField';
 import { buildRecurrence, eventWindowIso, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
 import { MapLink } from './fieldBits';
@@ -378,7 +378,7 @@ export function NewEventModal({
           </div>
 
           <MLabel top>메모</MLabel>
-          <RichMemo value={note} onChange={setNote} attr="data-new-note" />
+          <RichMemo value={note} onChange={setNote} attr="data-new-note" {...(onGoogle ? { hint: GOOGLE_MEMO_HINT } : {})} />
           {error && <span data-new-foot style={{ display: 'block', padding: '12px 6px 0', fontSize: 12.5, color: 'var(--mf-danger)' }}>{error}</span>}
         </div>
       </Modal>
@@ -629,7 +629,7 @@ export function NewEventModal({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>
             {/* 상세 팝업과 **같은 편집기**(요청) — 서식은 두 자리가 갈리면 한쪽에만 붙는다. */}
-            <RichMemo value={note} onChange={setNote} attr="data-new-note" />
+            <RichMemo value={note} onChange={setNote} attr="data-new-note" {...(target.kind === 'google' ? { hint: GOOGLE_MEMO_HINT } : {})} />
           </div>
 
           {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}

@@ -13,8 +13,18 @@
 
 import { normalizeUrl } from '@mindflow/mindmap-core';
 
-/** 남길 태그 — 구글 캘린더가 실제로 쓰는 것들(+ 문단·줄바꿈). */
-const ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'A', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV', 'SPAN']);
+/**
+ * 남길 태그 — 구글 캘린더가 실제로 쓰는 것들(+ 문단·줄바꿈) + **형광펜**(`MARK` — 폰의 메모 서식
+ * 막대, 모바일 홈 디자인 N8). 구글 웹은 형광펜을 칠하지 않지만 값에는 그대로 남는다.
+ */
+const ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'MARK', 'A', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV', 'SPAN']);
+
+/**
+ * 속성을 다 지우는 규칙의 **예외 둘** — 체크리스트(N8)다. 목록은 `<ul data-check>`, 끝낸 항목은
+ * `<li data-done>`. 값 없는 표식이라 주소·스크립트가 실릴 자리가 없다(값은 버리고 표식만 다시 단다).
+ * 구글 웹에서는 표식이 무시돼 **글머리 목록**으로 보인다 — 내용이 사라지지 않는 물러섬이다.
+ */
+const KEEP_FLAG: Record<string, string> = { UL: 'data-check', LI: 'data-done' };
 
 /**
  * 태그가 하나라도 있으면 HTML로 본다 — 옛 값(평문)은 그대로 평문이다.
@@ -70,9 +80,12 @@ function clean(root: Element): void {
       el.replaceWith(...Array.from(el.childNodes));
       continue;
     }
-    // 주소는 속성을 지우기 **전에** 읽는다.
+    // 주소·표식은 속성을 지우기 **전에** 읽는다.
     const href = el.tagName === 'A' ? normalizeUrl(el.getAttribute('href') ?? '') : null;
+    const flag = KEEP_FLAG[el.tagName];
+    const flagged = !!flag && el.hasAttribute(flag);
     for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+    if (flag && flagged) el.setAttribute(flag, '');
     if (el.tagName !== 'A') continue;
     if (!href) {
       // 열 수 없는 주소(`javascript:` 등)면 링크를 벗기고 글자만 남긴다.

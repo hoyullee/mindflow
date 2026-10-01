@@ -121,6 +121,7 @@ export function EventDetail({
   cardAttrs,
   onWhen,
   sideFirst = false,
+  memoHint,
 }: {
   event: CalendarEvent;
   isMobile: boolean;
@@ -173,6 +174,8 @@ export function EventDetail({
    * 내 응답이 이 화면의 용건이라, 날짜·메모 아래 맨 끝에 두면 스크롤을 다 내려야 응답할 수 있었다.
    */
   sideFirst?: boolean;
+  /** 메모를 쓰는 동안 상자 아래의 한 줄 — 원천이 그리지 못하는 서식이 있으면(구글: `GOOGLE_MEMO_HINT`). */
+  memoHint?: string;
 }) {
   const colorInit = color?.value ?? null;
   const [draft, setDraft] = useState(() => draftOf(event, colorInit));
@@ -473,8 +476,10 @@ export function EventDetail({
           {isMobile && sideFirst && side}
 
           {/* 저장할 캘린더(#11) — 이 일정이 어디 것인지. 소속만 켜지고 나머지는 비활성
-              (일정을 캘린더 사이로 옮기는 기능은 없다 — 눌리는 척하는 칩이 더 나쁘다). */}
-          {calendarChips && calendarChips.length > 0 && (
+              (일정을 캘린더 사이로 옮기는 기능은 없다 — 눌리는 척하는 칩이 더 나쁘다).
+              **폰에는 없다**(모바일 홈 디자인 N5) — 머리의 `● 원천` 배지가 같은 말을 하고, 고를 수 없는
+              칩 줄이 한 화면을 먹었다. */}
+          {!isMobile && calendarChips && calendarChips.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <Label>저장할 캘린더</Label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
@@ -583,7 +588,7 @@ export function EventDetail({
                   번호·글머리·링크·서식 제거). 값은 HTML이고 두 원천이 같은 문자열을
                   담는다(`richMemo.ts` 머리말). */}
               <Field label="메모">
-                <RichMemo value={draft.note} onChange={(html) => set({ note: html })} attr="data-event-note" />
+                <RichMemo value={draft.note} onChange={(html) => set({ note: html })} attr="data-event-note" {...(memoHint ? { hint: memoHint } : {})} />
               </Field>
 
               {/* 일정 색(요청) — 원천이 팔레트를 준 경우만. 저장은 `완료`에서 한 번이다. */}

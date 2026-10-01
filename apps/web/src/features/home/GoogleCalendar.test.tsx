@@ -5238,6 +5238,13 @@ describe('폰 — 초대받은 구글 일정 상세(모바일 홈 디자인 N5)'
     await waitFor(() => expect(within(detail).getByRole('radio', { name: '참석' }).getAttribute('aria-checked')).toBe('true'));
     // 회의 링크에 「참여」.
     expect(must('[data-gf-meet-join]').getAttribute('href')).toBe(meet);
+    // 디자인에 없는 데스크톱 부품은 빠진다 — Meet 켜고 끄기(링크 카드가 `Google Meet`이라고 말한다) ·
+    // 공개 설정 · 참여 가능 여부 · 저장할 캘린더 칩(머리의 `● Google`이 같은 말을 한다).
+    expect(must('[data-gf-meet-card]').textContent).toContain('Google Meet');
+    expect(detail.querySelector('[data-gf-meet]')).toBeNull();
+    expect(detail.querySelector('[data-gf-vis]')).toBeNull();
+    expect(detail.querySelector('[data-gf-busy]')).toBeNull();
+    expect(detail.querySelector('[data-event-cal]')).toBeNull();
 
     // 응답 목록 — 셋까지 줄, 나머지는 한 줄로 센다. 내 줄은 `나`.
     const lines = [...document.querySelectorAll('[data-gf-guest-line]')];
