@@ -19,6 +19,7 @@ import { buildLabel } from '../components/modals/VersionSection';
 import { useTools } from '../../tools/useTools';
 import { Chevron, Glyph, KIND_META, M_ICON, SubPageHeader } from './parts';
 import { MobileSpaceSheet } from './MobileSpaceSheet';
+import { MobileCalendarsSheet } from '../calendar/MobileCalendarsSheet';
 
 interface Props {
   state: HomeState;
@@ -218,6 +219,7 @@ function TrashPage({ state, view, controller, onBack }: Props & { onBack: () => 
 export function MobileMorePage({ state, view, controller }: Props) {
   const [sub, setSub] = useState<Sub>('root');
   const [orderSheet, setOrderSheet] = useState(false);
+  const [calendarsSheet, setCalendarsSheet] = useState(false);
   const tools = useTools(state, controller);
   const back = () => setSub('root');
 
@@ -242,7 +244,7 @@ export function MobileMorePage({ state, view, controller }: Props) {
   ];
   const manage: Row[] = [
     { key: 'space-order', label: '스페이스 순서', icon: M_ICON.list, tint: 'var(--mf-m-mut)', count: String(state.spaces.length), onClick: () => setOrderSheet(true) },
-    { key: 'calendars', label: '보여 줄 캘린더', icon: M_ICON.cal, tint: 'var(--mf-m-mut)', onClick: controller.openGoogleCalendarSetup },
+    { key: 'calendars', label: '보여 줄 캘린더', icon: M_ICON.cal, tint: 'var(--mf-m-mut)', onClick: () => setCalendarsSheet(true) },
   ];
   const account: Row[] = [
     { key: 'settings', label: '설정', icon: M_ICON.gear, tint: 'var(--mf-m-mut)', onClick: controller.openAccountSettings },
@@ -280,6 +282,7 @@ export function MobileMorePage({ state, view, controller }: Props) {
         </span>
       </div>
       <MobileSpaceSheet open={orderSheet} onClose={() => setOrderSheet(false)} state={state} controller={controller} startInReorder />
+      <MobileCalendarsSheet open={calendarsSheet} onClose={() => setCalendarsSheet(false)} state={state} controller={controller} />
     </div>
   );
 }

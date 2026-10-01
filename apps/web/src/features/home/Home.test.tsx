@@ -3130,12 +3130,12 @@ describe('Home', () => {
         await waitFor(() => expect(container.querySelector('[data-m-space]')).toBeTruthy());
 
         await user.click(container.querySelector('[data-m-tab="cal"]')!);
-        await waitFor(() => expect(container.querySelector('[data-cal-title-group]')).toBeTruthy());
+        await waitFor(() => expect(container.querySelector('[data-m-cal]')).toBeTruthy());
         expect(container.querySelector('[data-m-tab="cal"]')!.getAttribute('aria-current')).toBe('page');
 
         await user.click(container.querySelector('[data-m-tab="noti"]')!);
         expect(container.querySelector('[data-m-noti]')).toBeTruthy();
-        expect(container.querySelector('[data-cal-title-group]')).toBeNull();
+        expect(container.querySelector('[data-m-cal]')).toBeNull();
 
         await user.click(container.querySelector('[data-m-tab="more"]')!);
         expect(container.querySelector('[data-m-more]')).toBeTruthy();

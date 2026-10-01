@@ -24,6 +24,8 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useCalendarEvents } from './useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap, workMap } from './entries';
 import { googlePrefsOf, useGoogleCalendar } from './useGoogleCalendar';
+import { MobileCalendar } from './MobileCalendar';
+import { MobileCalendarsSheet } from './MobileCalendarsSheet';
 
 /**
  * 일정 화면 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `isCal` 화면.
@@ -77,6 +79,8 @@ export function CalendarView({
   const [dayList, setDayList] = useState<{ iso: string; at: { x: number; y: number } } | null>(null);
   // 우클릭 메뉴(요청 ④) — 대상은 우클릭한 자리가 정한다(항목·날짜·화면).
   const [menu, setMenu] = useState<CalMenuState | null>(null);
+  // 폰의 「보여 줄 캘린더」 시트(N7).
+  const [calendarsSheet, setCalendarsSheet] = useState(false);
   // 메뉴에서 고른 삭제는 **한 번 묻는다** — 파괴적 동작이 메뉴 클릭 하나로 끝나지
   // 않게(상세 팝업의 삭제와 같은 확인창을 쓴다).
   const [confirmDel, setConfirmDel] = useState<CalendarEntry | null>(null);
@@ -248,165 +252,189 @@ export function CalendarView({
   const closeSide = (): void => controller.setCalSide('day');
 
   return (
-    <div data-calendar-view style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 헤더 — **월 제목이 곧 타이틀**이다(스펙 2). 아이콘 타일·`일정` 제목·부제·알약형 월
-          이동기는 걷었다(스펙 6): 이 화면에서 "지금 어디를 보고 있는가"의 답은 `2026년 8월`
-          하나다. 바탕은 캔버스의 점 격자를 옅게 축소한 띠 — 아래 경계선은 **없다**(요일 줄의
-          위 선이 헤더와 달력의 유일한 경계). */}
-      <header
-        data-cal-head
-        style={{
-          flex: '0 0 auto',
-          position: 'relative',
-          padding: isMobile ? '12px 14px 12px 16px' : '20px 20px 16px 32px',
-          backgroundColor: 'var(--mf-cal-head)',
-          backgroundImage: 'radial-gradient(var(--mf-cal-head-dot) 1px, transparent 1px)',
-          backgroundSize: '18px 18px',
-          backgroundPosition: '-9px -9px',
-          display: 'flex',
-          alignItems: isMobile ? 'flex-start' : 'center',
-          // 폰은 줄을 넘기지 않는다 — 요약 줄이 제목 묶음 **안에서** 접히고, ＋는 제목 줄 끝에 선다.
-          flexWrap: isMobile ? 'nowrap' : 'wrap',
-          gap: isMobile ? 8 : 14,
-        }}
-      >
-        <div data-cal-title-group style={{ display: 'flex', flexDirection: 'column', minWidth: 0, ...(isMobile ? { flex: '1 1 0' } : {}) }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: -8, minWidth: 0 }}>
-            {isMobile && onOpenNav && (
-              <button type="button" title={navDot.title} aria-label={navDot.label} onClick={onOpenNav} className="mf-ctl" style={{ position: 'relative', width: 30, height: 30, border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M4 7h16M4 12h16M4 17h16" />
-                </svg>
-                {/* 알림은 이제 LNB에 있다 — 서랍이 닫혀 있어도 그 사실이 보이게. */}
-                {navDot.on && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid var(--mf-page)' }} />}
-              </button>
-            )}
-            <MonthNav label="이전 달" d="m15 6-6 6 6 6" onClick={() => controller.calShiftMonth(-1)} />
-            {/* 월 제목을 누르면 연/월을 바로 고른다(달을 여러 번 넘기지 않게). */}
-            <MonthPicker y={state.calY} m={state.calM} now={nowYM} label={monthLabel(state.calY, state.calM)} onPick={controller.setCalMonth} compact={isMobile} />
-            <MonthNav label="다음 달" d="m9 6 6 6-6 6" onClick={() => controller.calShiftMonth(1)} />
-            {notNow && (
-              <button
-                type="button"
-                data-cal-today
-                onClick={controller.calGoToday}
-                className="mf-cal-pill"
-                style={{ flexShrink: 0, height: 28, marginLeft: 6, padding: '0 12px', borderRadius: 99, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
-              >
-                오늘
-              </button>
-            )}
-          </div>
-          {/* 요약 한 줄 — 예전의 통계 칩(줄 하나 + 팝오버)을 **글자**로 접었다(스펙 2.1).
-              0인 항목은 적지 않는다: "지난 마감 0"은 읽을 거리가 아니다. 들여쓰기는 월
-              제목의 글자 시작에 맞춘다(‹ 버튼 폭만큼). */}
-          <div data-cal-head-summary style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingLeft: isMobile ? 66 : 32, marginTop: 2, rowGap: 2, minWidth: 0 }}>
-            <span data-cal-head-date style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '-.01em', color: 'var(--mf-cal-num)', whiteSpace: 'nowrap' }}>
-              {todayText}
-            </span>
-            {summary.map((it) => (
-              <span key={it.key} data-cal-head-stat={it.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
-                <span aria-hidden="true" style={{ width: 3, height: 3, borderRadius: 99, background: 'var(--mf-faint2)', flexShrink: 0 }} />
-                <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
-                  <span style={{ fontSize: 12.5, color: 'var(--mf-muted)' }}>{it.label}</span>
-                  <span data-cal-head-n style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, color: it.color }}>
-                    {it.n}
+    <div data-calendar-view style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {isMobile ? (
+        /* 폰 — 달력엔 점만, 고른 날은 아래 목록(모바일 홈 디자인 M3). 상세·새 일정 팝업은
+           아래의 같은 호스트가 띄운다. */
+        <MobileCalendar
+          y={state.calY}
+          m={state.calM}
+          todayIso={today}
+          selectedDay={selectedDay}
+          cells={cells}
+          entries={entries}
+          holidays={holidays}
+          brief={brief}
+          surface={surface}
+          onSetMonth={controller.setCalMonth}
+          onPickDay={controller.selectCalDay}
+          onPickEntry={openEntry}
+          onNewEvent={(iso) => controller.openNewEvent(iso, true)}
+          onOpenCalendars={() => setCalendarsSheet(true)}
+        />
+      ) : (
+        <>
+        {/* 헤더 — **월 제목이 곧 타이틀**이다(스펙 2). 아이콘 타일·`일정` 제목·부제·알약형 월
+            이동기는 걷었다(스펙 6): 이 화면에서 "지금 어디를 보고 있는가"의 답은 `2026년 8월`
+            하나다. 바탕은 캔버스의 점 격자를 옅게 축소한 띠 — 아래 경계선은 **없다**(요일 줄의
+            위 선이 헤더와 달력의 유일한 경계). */}
+        <header
+          data-cal-head
+          style={{
+            flex: '0 0 auto',
+            position: 'relative',
+            padding: isMobile ? '12px 14px 12px 16px' : '20px 20px 16px 32px',
+            backgroundColor: 'var(--mf-cal-head)',
+            backgroundImage: 'radial-gradient(var(--mf-cal-head-dot) 1px, transparent 1px)',
+            backgroundSize: '18px 18px',
+            backgroundPosition: '-9px -9px',
+            display: 'flex',
+            alignItems: isMobile ? 'flex-start' : 'center',
+            // 폰은 줄을 넘기지 않는다 — 요약 줄이 제목 묶음 **안에서** 접히고, ＋는 제목 줄 끝에 선다.
+            flexWrap: isMobile ? 'nowrap' : 'wrap',
+            gap: isMobile ? 8 : 14,
+          }}
+        >
+          <div data-cal-title-group style={{ display: 'flex', flexDirection: 'column', minWidth: 0, ...(isMobile ? { flex: '1 1 0' } : {}) }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: -8, minWidth: 0 }}>
+              {isMobile && onOpenNav && (
+                <button type="button" title={navDot.title} aria-label={navDot.label} onClick={onOpenNav} className="mf-ctl" style={{ position: 'relative', width: 30, height: 30, border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M4 7h16M4 12h16M4 17h16" />
+                  </svg>
+                  {/* 알림은 이제 LNB에 있다 — 서랍이 닫혀 있어도 그 사실이 보이게. */}
+                  {navDot.on && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid var(--mf-page)' }} />}
+                </button>
+              )}
+              <MonthNav label="이전 달" d="m15 6-6 6 6 6" onClick={() => controller.calShiftMonth(-1)} />
+              {/* 월 제목을 누르면 연/월을 바로 고른다(달을 여러 번 넘기지 않게). */}
+              <MonthPicker y={state.calY} m={state.calM} now={nowYM} label={monthLabel(state.calY, state.calM)} onPick={controller.setCalMonth} compact={isMobile} />
+              <MonthNav label="다음 달" d="m9 6 6 6-6 6" onClick={() => controller.calShiftMonth(1)} />
+              {notNow && (
+                <button
+                  type="button"
+                  data-cal-today
+                  onClick={controller.calGoToday}
+                  className="mf-cal-pill"
+                  style={{ flexShrink: 0, height: 28, marginLeft: 6, padding: '0 12px', borderRadius: 99, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  오늘
+                </button>
+              )}
+            </div>
+            {/* 요약 한 줄 — 예전의 통계 칩(줄 하나 + 팝오버)을 **글자**로 접었다(스펙 2.1).
+                0인 항목은 적지 않는다: "지난 마감 0"은 읽을 거리가 아니다. 들여쓰기는 월
+                제목의 글자 시작에 맞춘다(‹ 버튼 폭만큼). */}
+            <div data-cal-head-summary style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingLeft: isMobile ? 66 : 32, marginTop: 2, rowGap: 2, minWidth: 0 }}>
+              <span data-cal-head-date style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '-.01em', color: 'var(--mf-cal-num)', whiteSpace: 'nowrap' }}>
+                {todayText}
+              </span>
+              {summary.map((it) => (
+                <span key={it.key} data-cal-head-stat={it.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
+                  <span aria-hidden="true" style={{ width: 3, height: 3, borderRadius: 99, background: 'var(--mf-faint2)', flexShrink: 0 }} />
+                  <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
+                    <span style={{ fontSize: 12.5, color: 'var(--mf-muted)' }}>{it.label}</span>
+                    <span data-cal-head-n style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, color: it.color }}>
+                      {it.n}
+                    </span>
                   </span>
                 </span>
-              </span>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
 
-        {!isMobile && <span aria-hidden="true" style={{ flex: '1 1 0', minWidth: 0 }} />}
+          {!isMobile && <span aria-hidden="true" style={{ flex: '1 1 0', minWidth: 0 }} />}
 
-        {/* 우측: 만들기 + 날짜별 보기. 구글 연결(G) 단추는 **두지 않는다**(스펙 6) — 연동은
-            설정 › 계정에서 켜고, 다시 이어야 할 때는 LNB 일정 행의 경고 점이 말한다. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, alignSelf: isMobile ? 'flex-start' : undefined }}>
-          <button
-            type="button"
-            data-cal-new
-            onClick={() => controller.openNewEvent(state.calDay ?? today, true)}
-            // 단색 코랄 알약(스펙 2.2) — 그라디언트·그늘 없이, hover는 한 톤 짙은 면.
-            // 폰에서는 32px 원 ＋ 하나 — 글자까지 두면 월 제목 줄에 서지 못하고 한 줄을
-            // 통째로 차지한다(실측: 390px 폭에서 60px이 빈 줄이 됐다).
-            className="mf-cal-new"
-            aria-label="새 일정"
-            title="새 일정"
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 32, width: isMobile ? 32 : undefined, padding: isMobile ? 0 : '0 15px', borderRadius: 99, border: 0, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', cursor: 'pointer', whiteSpace: 'nowrap', flex: '0 0 auto' }}
-          >
-            <svg width={isMobile ? 14 : 12} height={isMobile ? 14 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            {!isMobile && '새 일정'}
-          </button>
-          {!isMobile && (
-            <SideToggle on={state.calSide === 'day'} label="날짜별 보기" onClick={() => controller.setCalSide('day')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
-                <path d="M14.5 4.5v15" />
+          {/* 우측: 만들기 + 날짜별 보기. 구글 연결(G) 단추는 **두지 않는다**(스펙 6) — 연동은
+              설정 › 계정에서 켜고, 다시 이어야 할 때는 LNB 일정 행의 경고 점이 말한다. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, alignSelf: isMobile ? 'flex-start' : undefined }}>
+            <button
+              type="button"
+              data-cal-new
+              onClick={() => controller.openNewEvent(state.calDay ?? today, true)}
+              // 단색 코랄 알약(스펙 2.2) — 그라디언트·그늘 없이, hover는 한 톤 짙은 면.
+              // 폰에서는 32px 원 ＋ 하나 — 글자까지 두면 월 제목 줄에 서지 못하고 한 줄을
+              // 통째로 차지한다(실측: 390px 폭에서 60px이 빈 줄이 됐다).
+              className="mf-cal-new"
+              aria-label="새 일정"
+              title="새 일정"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 32, width: isMobile ? 32 : undefined, padding: isMobile ? 0 : '0 15px', borderRadius: 99, border: 0, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', cursor: 'pointer', whiteSpace: 'nowrap', flex: '0 0 auto' }}
+            >
+              <svg width={isMobile ? 14 : 12} height={isMobile ? 14 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
               </svg>
-            </SideToggle>
+              {!isMobile && '새 일정'}
+            </button>
+            {!isMobile && (
+              <SideToggle on={state.calSide === 'day'} label="날짜별 보기" onClick={() => controller.setCalSide('day')}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+                  <path d="M14.5 4.5v15" />
+                </svg>
+              </SideToggle>
+            )}
+          </div>
+        </header>
+
+        {/* 본문 행 — 달력(남는 폭 전부) + 오른쪽 패널(300px). 패널은 **헤더 아래에서** 시작한다
+            (헤더는 전체 폭). 폭이 모자라면 패널이 달력 위에 겹치고 막이 깔린다(스펙 4). */}
+        <div ref={bodyRef} data-cal-body data-cal-side-mode={sideOpen ? (overlay ? 'overlay' : 'dock') : undefined} style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, background: 'var(--mf-page)' }}>
+          <div
+            data-cal-canvas
+            className="lnb-scroll"
+            // 칸·칩이 아닌 자리의 우클릭 = **화면 메뉴**(새 일정 · 오늘로 · 사이드 토글).
+            // 칸·칩은 자기 메뉴를 열고 전파를 끊으므로 여기까지 오지 않는다.
+            onContextMenu={(e) => {
+              const t = e.target as HTMLElement;
+              if (t.closest?.('input, textarea, [contenteditable="true"], .mf-home-ctx')) return;
+              e.preventDefault();
+              setMenu({ target: { view: true }, x: e.clientX, y: e.clientY });
+            }}
+            // 카드도 여백도 없다(스펙 3) — 격자가 스크롤 영역을 좌우 끝까지, 남은 높이까지 채운다.
+            style={{ flex: '1 1 0', minWidth: 0, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}
+          >
+            <MonthGrid
+              cells={cells}
+              selected={state.calDay ?? today}
+              surface={surface}
+              compact={isMobile}
+              onPickDay={controller.selectCalDay}
+              onOpenDayList={(iso, at) => setDayList({ iso, at })}
+              onPickEntry={openEntry}
+              // `+N개 더`도 같은 팝업이다 — 접힌 것을 보려는 클릭이니 전부를 보여 준다
+              // (디자인 원본 `onMore`도 dayList를 연다).
+              onMore={(iso, at) => setDayList({ iso, at })}
+              onShift={(e, days) => void shiftEntry(e, days)}
+              onCtxMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
+              // 칸의 근무 위치 태그를 누르면 그 날의 팝업(요청 ③) — 쓸 수 없으면 넘기지
+              // 않아 태그가 누를 것 없는 표식으로 남는다(정직한 어포던스).
+              {...(workCalendar ? { onWorkLoc: openWork } : {})}
+            />
+          </div>
+
+          {overlay && <div data-cal-scrim aria-hidden="true" onClick={closeSide} style={{ position: 'absolute', inset: 0, zIndex: 5, background: 'rgba(46,42,38,.18)', animation: 'mf-dim-in .18s ease' }} />}
+          {sideOpen && (
+            <CalendarSide
+              frame="page"
+              overlay={overlay}
+              holidays={holidays}
+              entries={entries}
+              todayIso={today}
+              y={state.calY}
+              m={state.calM}
+              surface={surface}
+              selectedDay={selectedDay}
+              onPickDay={controller.selectCalDay}
+              onPickEntry={openEntry}
+              onSetMonth={controller.setCalMonth}
+              // 시간표의 빈 시간대에서 열면 **시각이 있는** 일정으로 시작한다.
+              onNewEvent={(iso, at) => controller.openNewEvent(iso, !at, at)}
+            />
           )}
         </div>
-      </header>
-
-      {/* 본문 행 — 달력(남는 폭 전부) + 오른쪽 패널(300px). 패널은 **헤더 아래에서** 시작한다
-          (헤더는 전체 폭). 폭이 모자라면 패널이 달력 위에 겹치고 막이 깔린다(스펙 4). */}
-      <div ref={bodyRef} data-cal-body data-cal-side-mode={sideOpen ? (overlay ? 'overlay' : 'dock') : undefined} style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, background: 'var(--mf-page)' }}>
-        <div
-          data-cal-canvas
-          className="lnb-scroll"
-          // 칸·칩이 아닌 자리의 우클릭 = **화면 메뉴**(새 일정 · 오늘로 · 사이드 토글).
-          // 칸·칩은 자기 메뉴를 열고 전파를 끊으므로 여기까지 오지 않는다.
-          onContextMenu={(e) => {
-            const t = e.target as HTMLElement;
-            if (t.closest?.('input, textarea, [contenteditable="true"], .mf-home-ctx')) return;
-            e.preventDefault();
-            setMenu({ target: { view: true }, x: e.clientX, y: e.clientY });
-          }}
-          // 카드도 여백도 없다(스펙 3) — 격자가 스크롤 영역을 좌우 끝까지, 남은 높이까지 채운다.
-          style={{ flex: '1 1 0', minWidth: 0, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}
-        >
-          <MonthGrid
-            cells={cells}
-            selected={state.calDay ?? today}
-            surface={surface}
-            compact={isMobile}
-            onPickDay={controller.selectCalDay}
-            onOpenDayList={(iso, at) => setDayList({ iso, at })}
-            onPickEntry={openEntry}
-            // `+N개 더`도 같은 팝업이다 — 접힌 것을 보려는 클릭이니 전부를 보여 준다
-            // (디자인 원본 `onMore`도 dayList를 연다).
-            onMore={(iso, at) => setDayList({ iso, at })}
-            onShift={(e, days) => void shiftEntry(e, days)}
-            onCtxMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
-            // 칸의 근무 위치 태그를 누르면 그 날의 팝업(요청 ③) — 쓸 수 없으면 넘기지
-            // 않아 태그가 누를 것 없는 표식으로 남는다(정직한 어포던스).
-            {...(workCalendar ? { onWorkLoc: openWork } : {})}
-          />
-        </div>
-
-        {overlay && <div data-cal-scrim aria-hidden="true" onClick={closeSide} style={{ position: 'absolute', inset: 0, zIndex: 5, background: 'rgba(46,42,38,.18)', animation: 'mf-dim-in .18s ease' }} />}
-        {sideOpen && (
-          <CalendarSide
-            frame="page"
-            overlay={overlay}
-            holidays={holidays}
-            entries={entries}
-            todayIso={today}
-            y={state.calY}
-            m={state.calM}
-            surface={surface}
-            selectedDay={selectedDay}
-            onPickDay={controller.selectCalDay}
-            onPickEntry={openEntry}
-            onSetMonth={controller.setCalMonth}
-            // 시간표의 빈 시간대에서 열면 **시각이 있는** 일정으로 시작한다.
-            onNewEvent={(iso, at) => controller.openNewEvent(iso, !at, at)}
-          />
-        )}
-      </div>
+        </>
+      )}
+      {isMobile && <MobileCalendarsSheet open={calendarsSheet} onClose={() => setCalendarsSheet(false)} state={state} controller={controller} />}
 
       {/* 그 날의 일정 전부 — 행을 고르면 닫고 그 항목의 상세로 잇는다. */}
       {dayList && (
