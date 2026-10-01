@@ -19,7 +19,7 @@ import type { Backend, DocMeta, DocStore, LoadedDoc } from '../../adapters/ports
 import { onCalendarChanged } from '../reminders/calendarChanged';
 import { ACTIVE_VIEW_KEY } from './storage';
 import { focusCalendar } from './calendarFocus';
-import { addDays, daysBetween, hhmm, isoOf, minutesOf, nextTimeSlot, timeLabel, todayISO } from './calendar/model';
+import { addDays, addMonth, daysBetween, hhmm, isoOf, minutesOf, nextTimeSlot, timeLabel, todayISO } from './calendar/model';
 import { tagColor } from '../editor/kanbanMeta';
 import { UI_THEME } from '../editor/theme';
 
@@ -676,20 +676,109 @@ describe('일정 화면', () => {
     expect(localStorage.getItem('mf_home_landing')).toBe('cal');
   });
 
-  it('폰에서는 하단 탭의 「일정」으로 들어가고, 사이드를 접는다', async () => {
-    mockMatchMedia(true);
-    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
-    // LNB(서랍)가 없다 — 일정은 하단 탭이다(모바일 홈 디자인).
-    await waitFor(() => expect(document.querySelector('[data-m-tab="cal"]')).toBeTruthy());
-    expect(document.querySelector('aside')).toBeNull();
-    fireEvent.click(document.querySelector('[data-m-tab="cal"]')!);
-    await waitFor(() => expect(document.querySelector('[data-calendar-view]')).toBeTruthy());
-    expect(document.querySelector('[data-m-tab="cal"]')!.getAttribute('aria-current')).toBe('page');
-    // ☰은 없다(넘겨받지 않았다).
-    expect(screen.queryByLabelText(/메뉴 열기/)).toBeNull();
-    // 좁은 화면에는 사이드가 없다(달력만)
-    expect(document.querySelector('[data-cal-side]')).toBeNull();
-    expect(document.querySelectorAll('[data-day-cell]').length).toBe(42);
+  // 폰(모바일 홈 디자인 M3·N6·N7) — 달력엔 점만, 고른 날은 아래 목록. 데이터·상세 팝업은 데스크톱과 같다.
+  describe('폰', () => {
+    async function openMobileCalendar() {
+      mockMatchMedia(true);
+      renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+      // LNB(서랍)가 없다 — 일정은 하단 탭이다.
+      await waitFor(() => expect(document.querySelector('[data-m-tab="cal"]')).toBeTruthy());
+      expect(document.querySelector('aside')).toBeNull();
+      fireEvent.click(document.querySelector('[data-m-tab="cal"]')!);
+      await waitFor(() => expect(document.querySelector('[data-m-cal]')).toBeTruthy());
+    }
+    const day = (iso: string) => document.querySelector(`[data-m-cal-day="${iso}"]`) as HTMLElement;
+    const titles = () => [...document.querySelectorAll('[data-m-cal-item]')].map((r) => r.querySelector('span:nth-child(3) > span')!.textContent);
+
+    it('6주 42칸 — 칸에는 점, 오늘을 고른 채 들어오고 아래 목록이 그 날을 읽는다', async () => {
+      await openMobileCalendar();
+      expect(document.querySelector('[data-m-tab="cal"]')!.getAttribute('aria-current')).toBe('page');
+      expect(screen.queryByLabelText(/메뉴 열기/)).toBeNull();
+      // 데스크톱의 칩 격자·사이드는 그리지 않는다.
+      expect(document.querySelectorAll('[data-m-cal-day]').length).toBe(42);
+      expect(document.querySelector('[data-day-cell]')).toBeNull();
+      expect(document.querySelector('[data-cal-side]')).toBeNull();
+      const today = todayISO();
+      expect(day(today).getAttribute('aria-selected')).toBe('true');
+      await waitFor(() => expect(titles()).toContain('오늘 마감 카드'));
+      expect(day(today).querySelectorAll('[data-m-cal-dot]').length).toBeGreaterThan(0);
+      expect(day(today).querySelectorAll('[data-m-cal-dot]').length).toBeLessThanOrEqual(3);
+      // 요약 — 지난 마감 하나(지난 마감 카드).
+      expect(document.querySelector('[data-m-cal-stat="over"]')!.textContent).toBe('지난 마감1');
+      // 줄을 누르면 데스크톱과 같은 상세 팝업.
+      const row = [...document.querySelectorAll('[data-m-cal-item]')].find((r) => r.textContent!.includes('오늘 마감 카드')) as HTMLElement;
+      fireEvent.click(row);
+      await waitFor(() => expect(document.querySelector('[data-cal-detail]')).toBeTruthy());
+    });
+
+    it('다른 날을 고르면 목록이 그 날로 — 빈 날은 비어 있다고 말한다', async () => {
+      await openMobileCalendar();
+      await waitFor(() => expect(titles()).toContain('오늘 마감 카드'));
+      const tomorrow = shiftDays(1);
+      fireEvent.click(day(tomorrow));
+      await waitFor(() => expect(titles()).toContain('다른 스페이스 카드'));
+      expect(day(tomorrow).getAttribute('aria-selected')).toBe('true');
+      // 일정이 하나도 없는 날(이번 달 밖의 먼 날을 고르면 그 달로 넘어간다 — 다음 달 마지막 칸).
+      const cells = [...document.querySelectorAll('[data-m-cal-day]')];
+      const empty = cells.find((c) => !c.querySelector('[data-m-cal-dot]')) as HTMLElement;
+      fireEvent.click(empty);
+      await waitFor(() => expect(document.querySelector('[data-m-cal-empty]')).toBeTruthy());
+    });
+
+    it('제목을 누르면 월 고르기 시트 — 해를 넘겨 고르면 그 달 1일이 골라진다 · 오늘로', async () => {
+      await openMobileCalendar();
+      const now = new Date();
+      fireEvent.click(document.querySelector('[data-m-cal-title]')!);
+      const sheet = await waitFor(() => {
+        const el = document.querySelector('[data-m-month-sheet]');
+        if (!el) throw new Error('no sheet');
+        return el as HTMLElement;
+      });
+      expect(sheet.querySelector('[data-m-month-year]')!.textContent).toBe(String(now.getFullYear()));
+      fireEvent.click(within(sheet).getByRole('button', { name: '다음 해' }));
+      expect(sheet.querySelector('[data-m-month-year]')!.textContent).toBe(String(now.getFullYear() + 1));
+      fireEvent.click(sheet.querySelector('[data-m-month="3"]')!);
+      await waitFor(() => expect(document.querySelector('[data-m-month-sheet]')).toBeNull());
+      expect(document.querySelector('[data-m-cal-title]')!.textContent).toContain('3월');
+      expect(document.querySelector('[data-m-cal-title]')!.textContent).toContain(String(now.getFullYear() + 1));
+      expect(day(isoOf(now.getFullYear() + 1, 3, 1)).getAttribute('aria-selected')).toBe('true');
+
+      fireEvent.click(document.querySelector('[data-m-cal-title]')!);
+      fireEvent.click(await waitFor(() => document.querySelector('[data-m-month-today]') as HTMLElement));
+      await waitFor(() => expect(day(todayISO()).getAttribute('aria-selected')).toBe('true'));
+    });
+
+    it('달력을 옆으로 밀면 달을 넘긴다 — 세로로 민 것은 넘기지 않는다', async () => {
+      await openMobileCalendar();
+      const grid = document.querySelector('[data-m-cal-grid]')!;
+      const now = new Date();
+      const next = addMonth(now.getFullYear(), now.getMonth() + 1, 1);
+      const swipe = (dx: number, dy: number) => {
+        fireEvent.touchStart(grid, { touches: [{ clientX: 200, clientY: 300 }] });
+        fireEvent.touchEnd(grid, { changedTouches: [{ clientX: 200 + dx, clientY: 300 + dy }] });
+      };
+      swipe(-20, 120); // 세로 스크롤
+      expect(document.querySelector('[data-m-cal-title]')!.textContent).toContain(`${now.getMonth() + 1}월`);
+      swipe(-120, 10); // 왼쪽으로 = 다음 달
+      await waitFor(() => expect(document.querySelector('[data-m-cal-title]')!.textContent).toContain(`${next.m}월`));
+      expect(day(isoOf(next.y, next.m, 1)).getAttribute('aria-selected')).toBe('true');
+      swipe(120, 0); // 오른쪽 = 이전 달(이번 달 — 고른 날은 오늘)
+      await waitFor(() => expect(day(todayISO()).getAttribute('aria-selected')).toBe('true'));
+    });
+
+    it('목록 아이콘은 「보여 줄 캘린더」 시트를 연다', async () => {
+      await openMobileCalendar();
+      fireEvent.click(document.querySelector('[data-m-cal-calendars]')!);
+      await waitFor(() => expect(document.querySelector('[data-m-calendars-sheet]')).toBeTruthy());
+    });
+
+    it('＋는 고른 날로 새 일정을 연다', async () => {
+      await openMobileCalendar();
+      const tomorrow = shiftDays(1);
+      fireEvent.click(day(tomorrow));
+      fireEvent.click(document.querySelector('[data-m-cal] [data-m-fab]')!);
+      await waitFor(() => expect(screen.getByRole('dialog', { name: /새 일정/ })).toBeTruthy());
+    });
   });
 
   // ── 제보 3건(프리뷰 확인) ────────────────────────────────────────────────
