@@ -5022,3 +5022,130 @@ describe('구글 일정 색 — 늦게 도착한 팔레트도 모든 화면이 �
     expect(late!.events[0]!.color).not.toBe(CAL_HEX);
   });
 });
+
+describe('폰 — 참석자·회의실은 밀어 들어가는 화면에서 고른다(모바일 홈 디자인 N3·N4)', () => {
+  beforeEach(() => mockMatchMedia(true));
+  afterEach(() => mockMatchMedia(false));
+
+  const must = <T extends Element = HTMLElement>(sel: string): T => {
+    const el = document.querySelector<T>(sel);
+    if (!el) throw new Error(`없음: ${sel}`);
+    return el;
+  };
+
+  /** 일정 탭 → ＋ → 저장할 캘린더 `Google` — 구글 묶음이 설 때까지. */
+  async function openPhoneGoogleNew(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    renderHome();
+    await waitFor(() => must('[data-m-tab="cal"]'));
+    fireEvent.click(must('[data-m-tab="cal"]'));
+    await waitFor(() => must('[data-m-cal]'));
+    fireEvent.click(must('[data-m-cal] [data-m-fab]'));
+    const form = await waitFor(() => must('[data-new-event-mobile]'));
+    await user.click(await waitFor(() => must('[data-new-cal="google"]')));
+    await waitFor(() => must('[data-google-fields]'));
+    return form;
+  }
+
+  it('참석자 — 폼에는 요약 한 줄, 누르면 검색 · 결과 체크 · 위의 칩 · 이메일로 초대(N3)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const form = await openPhoneGoogleNew(user);
+    // 폼에 검색 상자를 두지 않는다 — 후보 툴팁이 폰에서는 키보드 뒤로 숨었다.
+    expect(form.querySelector('[data-gf-guest-input]')).toBeNull();
+    expect(must('[data-gf-guest-open]').textContent).toContain('참석자 추가');
+
+    await user.click(must('[data-gf-guest-open]'));
+    const page = await waitFor(() => must('[data-gf-guest-page]'));
+    expect(page.querySelector('[data-gf-page-back]')!.textContent).toContain('새 일정');
+    await user.type(page.querySelector<HTMLInputElement>('[data-gf-guest-input]')!, '여은');
+    const hit = await waitFor(() => must('[data-gf-guest-hit="eunjin@example.com"]'));
+    expect(hit.textContent).toContain('여은진');
+    expect(hit.getAttribute('aria-pressed')).toBe('false');
+    // 누르면 들어가고(위에 칩) 다시 누르면 빠진다.
+    await user.click(hit);
+    await waitFor(() => expect(must('[data-gf-guest-hit="eunjin@example.com"]').getAttribute('aria-pressed')).toBe('true'));
+    expect(page.querySelector('[data-gf-guest-chips] [data-gf-guest="eunjin@example.com"]')).toBeTruthy();
+    await user.click(must('[data-gf-guest-hit="eunjin@example.com"]'));
+    await waitFor(() => expect(page.querySelector('[data-gf-guest="eunjin@example.com"]')).toBeNull());
+    await user.click(must('[data-gf-guest-hit="eunjin@example.com"]'));
+
+    // 주소를 끝까지 적으면 「이메일로 초대」 줄 — 입력을 놓는 것만으로는 넣지 않는다.
+    const input = page.querySelector<HTMLInputElement>('[data-gf-guest-input]')!;
+    await user.clear(input);
+    await user.type(input, 'new@corp.com');
+    await user.click(await waitFor(() => must('[data-gf-guest-email="new@corp.com"]')));
+    await waitFor(() => expect(page.querySelector('[data-gf-guest="new@corp.com"]')).toBeTruthy());
+    // 검색어를 비우면 초대한 사람이 줄로 선다.
+    await user.clear(input);
+    await waitFor(() => expect(page.querySelectorAll('[data-gf-guest-row]').length).toBe(2));
+
+    await user.click(must('[data-gf-page-done]'));
+    await waitFor(() => expect(document.querySelector('[data-gf-guest-page]')).toBeNull());
+    expect(must('[data-gf-guest-open]').textContent).toContain('여은진');
+  });
+
+  it('회의실 — 시간 알약 · 묶음 목록 · 사용 중이면 그 줄 아래에서 되묻기 · 바닥의 선택 + 완료(N4)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const busyRoom = 'room-35-01@resource.calendar.google.com';
+    const freeRoom = 'room-42-07@resource.calendar.google.com';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('admin.googleapis.com')) {
+          return ok({
+            items: [
+              { resourceEmail: busyRoom, generatedResourceName: '회의실-35-01', resourceCategory: 'CONFERENCE_ROOM', capacity: 23 },
+              { resourceEmail: freeRoom, generatedResourceName: '회의실-42-07', resourceCategory: 'CONFERENCE_ROOM', capacity: 8 },
+            ],
+          });
+        }
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if (url.includes(encodeURIComponent(busyRoom))) return ok({ items: [{ id: 'other', summary: '디자인 리뷰', organizer: { email: 'lee@example.com', displayName: '이호율' } }] });
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    await openPhoneGoogleNew(user);
+    const open = await waitFor(() => must('[data-gf-room-open]'));
+    expect(open.textContent).toContain('회의실 고르기');
+    // 새 일정은 종일로 시작한다 — 무엇을 기준으로 비었다고 하는지가 요약에도 있다.
+    expect(open.textContent).toContain('종일');
+
+    await user.click(open);
+    const page = await waitFor(() => must('[data-gf-room-page]'));
+    expect(must('[data-gf-room-when]').textContent).toContain('종일');
+    const stateOf = (email: string) => page.querySelector(`[data-gf-room-hit="${email}"] [data-gf-room-state]`)?.getAttribute('data-gf-room-state') ?? null;
+    await waitFor(() => expect(stateOf(busyRoom)).toBe('busy'), { timeout: 3000 });
+    expect(stateOf(freeRoom)).toBe('free');
+    // 사용 가능이 먼저 — 묶음 순서.
+    expect([...page.querySelectorAll('[data-gf-room-group]')].map((g) => g.getAttribute('data-gf-room-group'))).toEqual(['free', 'busy']);
+
+    // 사용 중인 방 — 바로 고르지 않고 **그 줄 바로 아래**에서 묻는다.
+    await user.click(must(`[data-gf-room-hit="${busyRoom}"]`));
+    const ask = await waitFor(() => must(`[data-gf-room-confirm="${busyRoom}"]`));
+    expect(ask.textContent).toContain('이호율');
+    expect(must(`[data-gf-room-hit="${busyRoom}"]`).nextElementSibling?.contains(ask)).toBe(true);
+    fireEvent.mouseDown(ask.querySelector('[data-gf-room-confirm-yes]')!);
+    await waitFor(() => expect(stateOf(busyRoom)).toBe('booked-busy'));
+
+    // 빈 곳만 — 비어 있는 방과 **잡아 둔 방**만 남는다.
+    await user.click(within(page).getByRole('switch', { name: '빈 회의실만 보기' }));
+    await waitFor(() => expect(page.querySelectorAll('[data-gf-room-hit]').length).toBe(2));
+    await user.click(must(`[data-gf-room-hit="${freeRoom}"]`));
+    await waitFor(() => expect(must('[data-gf-room-picked]').textContent).toBe('회의실-35-01 · 회의실-42-07'));
+
+    await user.click(must('[data-gf-room-done]'));
+    await waitFor(() => expect(document.querySelector('[data-gf-room-page]')).toBeNull());
+    expect(must('[data-gf-room-open]').textContent).toContain('회의실-35-01 · 회의실-42-07');
+  });
+});
