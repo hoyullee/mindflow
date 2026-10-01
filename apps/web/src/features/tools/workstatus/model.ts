@@ -423,8 +423,27 @@ export const releasesOn = (tickets: Ticket[], d: string) => tickets.filter((t) =
 
 // ── 달력 줄(lane) — 이어지는 같은 묶음은 그 주 내내 같은 줄 ─────────────────
 
-/** 한 칸이 담는 줄 수 — 넘으면 둘 + `+N개`(스펙 §5.2의 셋/둘 규칙을 주 단위로). */
-export const CAL_LANES = 3;
+/**
+ * 한 칸이 담는 줄 수 — `rows`까지는 다 보이고, 넘치면 `withMore`줄 + `+N개`. 화면은 칸 높이를
+ * **재서** 정한다(`calCapacity` — 제보 2026-10-01: 칸에 자리가 남는데도 셋째부터 접혔다). 재기 전 기본은 스펙 §5.2의 셋/둘.
+ */
+export interface CalCapacity {
+  rows: number;
+  withMore: number;
+}
+export const CAL_LANES: CalCapacity = { rows: 3, withMore: 2 };
+
+/** 칸 치수(WsCalendar와 같은 값) — 위아래 여백 10 · 날짜 줄 19 · 줄마다 간격 3 + 칩 18 · `+N개` 줄 13. */
+const CELL_PAD = 10;
+const CELL_HEAD = 19;
+const LANE = 21;
+const MORE = 16;
+
+/** 잰 칸 높이 → 담을 수 있는 줄 수. 너무 낮아도 한 줄은 둔다(접힌 개수라도 보이게). */
+export function calCapacity(cellH: number): CalCapacity {
+  const room = cellH - CELL_PAD - CELL_HEAD;
+  return { rows: Math.max(1, Math.floor(room / LANE)), withMore: Math.max(1, Math.floor((room - MORE) / LANE)) };
+}
 
 export interface WeekPiece {
   chip: DayChip;
@@ -445,10 +464,10 @@ export interface WeekPlan {
  * 한 주(7칸)의 묶음 칩에 **줄을 배정한다** — 일정 페이지의 `weekLanes`와 같은 규칙(제보 2026-10-01:
  * "연속된 같은 일정이 날짜 칸마다 위아래 제각각"). 일찍 나타난 묶음이 위, 같이 나타나면 오래 걸친 것이 위,
  * 그래도 같으면 키. 각 묶음은 그 주에서 자기 칸들이 비어 있는 **가장 위 줄**을 차지한다.
- * 줄이 `CAL_LANES`를 넘는 주는 **그 주 전체가** 둘만 보이고 나머지는 칸마다 `+N개`(띠가 중간에서 끊기지 않게).
+ * 줄이 칸에 담기는 수(`cap.rows`)를 넘는 주는 **그 주 전체가** `cap.withMore`줄만 보이고 나머지는 칸마다 `+N개`(띠가 중간에서 끊기지 않게).
  * `inMonth`가 거짓인 칸은 비운다(다른 달 칸에는 칩을 그리지 않는다).
  */
-export function planWeek(tickets: Ticket[], week: string[], inMonth: boolean[], data: Dataset): WeekPlan {
+export function planWeek(tickets: Ticket[], week: string[], inMonth: boolean[], data: Dataset, cap: CalCapacity = CAL_LANES): WeekPlan {
   const perDay = week.map((d, i) => (inMonth[i] ? dayChips(tickets, d, data) : []));
   const cols = new Map<string, number[]>();
   perDay.forEach((chips, i) => chips.forEach((c) => cols.set(c.epic.key, [...(cols.get(c.epic.key) ?? []), i])));
@@ -469,7 +488,7 @@ export function planWeek(tickets: Ticket[], week: string[], inMonth: boolean[], 
     lane.set(k, l);
   }
   const lanes = taken.length;
-  const shown = lanes > CAL_LANES ? CAL_LANES - 1 : lanes;
+  const shown = lanes > cap.rows ? Math.min(cap.withMore, lanes) : lanes;
   const rows = perDay.map((chips, i) => {
     const row: (WeekPiece | null)[] = Array.from({ length: shown }, () => null);
     for (const chip of chips) {
