@@ -26,6 +26,7 @@ import {
   isDate,
   isEndField,
   isProjectKey,
+  isReleaseField,
   issueTypesOf,
   isStartField,
   normalizeEpic,
@@ -169,7 +170,7 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
   if (!t.access_token || !t.expires_in) throw new Fail('exchange-failed', t.error_description || t.error || '');
   if (!t.refresh_token) throw new Fail('no-offline');
   const list = await fetchSites(t.access_token);
-  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name,end_field,end_field_name,fill_dates,issue_types').eq('user_id', ctx.uid).maybeSingle();
+  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name,end_field,end_field_name,fill_dates,issue_types,release_field,release_field_name').eq('user_id', ctx.uid).maybeSingle();
   // 사이트가 하나면 곧바로 고른다(v1은 사이트 하나 — 스펙 §7). 다시 연결했는데 예전 사이트가
   // 여전히 목록에 있으면 **고른 프로젝트를 그대로 둔다**(해제 후 재연결 때 되살아나게).
   const keep = prev?.cloud_id ? list.find((s) => s.id === prev.cloud_id) : undefined;
@@ -191,6 +192,8 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
     end_field_name: keep ? (prev?.end_field_name ?? null) : null,
     fill_dates: keep ? prev?.fill_dates !== false : true,
     issue_types: keep ? (prev?.issue_types ?? []) : [],
+    release_field: keep ? (prev?.release_field ?? null) : null,
+    release_field_name: keep ? (prev?.release_field_name ?? null) : null,
     updated_at: new Date().toISOString(),
   };
   const { error } = await ctx.admin.from('jira_credentials').upsert(row);
@@ -219,6 +222,7 @@ function statusOf(row: Row) {
     endField: row.end_field ? { id: row.end_field, name: row.end_field_name ?? row.end_field } : null,
     fillDates: row.fill_dates !== false,
     issueTypes: coerceIssueTypes(row.issue_types),
+    releaseField: row.release_field ? { id: row.release_field, name: row.release_field_name ?? row.release_field } : null,
   };
 }
 
@@ -246,7 +250,7 @@ async function selectSite(ctx: Ctx, p: Record<string, unknown>) {
     cloud_id: site.id,
     site_url: site.url,
     site_name: site.name,
-    ...(same ? {} : { projects: [], start_field: null, start_field_name: null, end_field: null, end_field_name: null, fill_dates: true, issue_types: [] }),
+    ...(same ? {} : { projects: [], start_field: null, start_field_name: null, end_field: null, end_field_name: null, fill_dates: true, issue_types: [], release_field: null, release_field_name: null }),
     updated_at: new Date().toISOString(),
   };
   await ctx.admin.from('jira_credentials').update(patch).eq('user_id', ctx.uid);
@@ -324,6 +328,9 @@ async function saveProjects(ctx: Ctx, p: Record<string, unknown>) {
       end_field_name: end ? fieldName(rule.endName, end) : null,
       fill_dates: rule.fill !== false,
     };
+    const release = isReleaseField(rule.release) ? rule.release : null;
+    patch.release_field = release;
+    patch.release_field_name = release ? fieldName(rule.releaseName, release) : null;
     // 이슈 유형도 같은 화면에서 온다 — 빈 목록은 "전부".
     if (Array.isArray(p.issueTypes)) patch.issue_types = coerceIssueTypes(p.issueTypes);
   } else {
@@ -353,7 +360,7 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
   if (!row.cloud_id) throw new Fail('no-site');
   const proj = coerceProjects(row.projects).map((x) => x.key);
   if (!proj.length) return { ok: true, epics: [], tickets: [], truncated: false };
-  const rule = coerceRule(row.start_field, row.end_field, row.fill_dates);
+  const rule = coerceRule(row.start_field, row.end_field, row.fill_dates, row.release_field);
   const from = typeof p.from === 'string' ? p.from : '';
   const to = typeof p.to === 'string' ? p.to : '';
   // 사용자의 오늘(시간대가 다르다) — 아직 안 끝난 티켓을 어디까지 그릴지.
@@ -379,7 +386,7 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
       tickets.push(t);
       if (!epicNames.has(t.epic)) {
         const e = epicFromParent(it);
-        if (e) epicNames.set(t.epic, e);
+        if (e) epicNames.set(t.epic, e.solo ? { ...e, start: t.start, end: t.end } : e);
       }
     }
     next = body.nextPageToken;
@@ -388,7 +395,8 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
   }
 
   // 에픽의 날짜(타임라인의 에픽 막대) — 50개씩. 실패해도 부모 필드에서 얻은 이름으로 그린다.
-  const keys = [...epicNames.keys()];
+  // 티켓 자신인 묶음(solo)은 에픽이 아니다 — 다시 부르지 않는다.
+  const keys = [...epicNames.values()].filter((e) => !e.solo).map((e) => e.key);
   for (let i = 0; i < keys.length; i += 50) {
     const q = epicsJql(keys.slice(i, i + 50));
     if (!q) continue;

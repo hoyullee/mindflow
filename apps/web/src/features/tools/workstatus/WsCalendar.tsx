@@ -1,4 +1,4 @@
-import { dayChips, DOW, dowOf, gridDays, holidayOf, visibleChips, type Dataset, type HolidayRules, type Ticket } from './model';
+import { dayChips, DOW, dowOf, gridDays, holidayOf, releasesOn, visibleChips, type Dataset, type HolidayRules, type Ticket } from './model';
 import { AvatarStack, MONO } from './wsUi';
 
 /**
@@ -28,6 +28,7 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
           const inAvail = !!avail && inMonth && d >= avail.from && d <= avail.to && !h && (rules.weekend || (w !== 0 && w !== 6));
           const bg = !inMonth ? 'var(--mf-cal-out)' : inAvail ? 'var(--mf-ws-avail)' : off ? 'var(--mf-ws-sun)' : w === 6 ? 'var(--mf-ws-sat)' : 'var(--mf-ws-card)';
           const chips = inMonth ? dayChips(tickets, d, data) : [];
+          const rel = inMonth ? releasesOn(tickets, d) : [];
           const { shown, more } = visibleChips(chips);
           const busy = inMonth ? new Set(tickets.filter((t) => t.start <= d && d <= t.end).map((t) => t.person.id)).size : 0;
           const ring = isSel ? `inset 0 0 0 1.5px #E8A25F${isToday ? ', inset 0 0 0 4px var(--mf-ws-card)' : ''}` : inAvail ? 'inset 0 -2px 0 0 #8FB88F' : 'none';
@@ -63,6 +64,15 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                 )}
                 {busy > 0 && <span style={{ marginLeft: 'auto', flexShrink: 0, fontFamily: MONO, fontSize: 9.5, color: 'var(--mf-ws-faint)' }}>{busy}명</span>}
               </div>
+              {rel.length > 0 && (
+                // 배포 예정일 — 막대와 따로, 그날 칸에 한 줄(여럿이면 건수 · 툴팁에 목록).
+                <div data-ws-release={d} title={rel.map((t) => `배포 예정 · ${t.key} ${t.summary}`).join('\n')} style={{ height: 16, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3, padding: '0 5px', borderRadius: 5, background: '#EAF1FB', color: '#3F67A8', fontSize: 9.5, fontWeight: 800, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                    <path d="M12 2 4 7v10l8 5 8-5V7z" />
+                  </svg>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>배포 {rel.length > 1 ? `${rel.length}건` : rel[0]!.key}</span>
+                </div>
+              )}
               {shown.map((c) => (
                 <div
                   key={c.epic.key}
@@ -70,11 +80,15 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                   title={c.tickets.map((t) => `${t.key} ${t.summary} · ${t.person.name}`).join('\n')}
                   style={{ height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '0 3px 0 5px', borderRadius: 5, background: c.epic.bg, borderLeft: `3px solid ${c.epic.c}`, minWidth: 0, boxSizing: 'border-box' }}
                 >
-                  <span style={{ fontSize: 10, fontWeight: 700, color: '#3A352F', minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.epic.name}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#3A352F', minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {/* 에픽 없는 티켓은 칩이 곧 티켓 — 키를 앞에 붙여 어느 티켓인지 알게 한다. */}
+                    {c.epic.solo && <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: c.epic.c, marginRight: 4 }}>{c.epic.key}</span>}
+                    {c.epic.name}
+                  </span>
                   <AvatarStack people={c.people} size={13} max={3} overlap={4} ring={c.epic.bg} />
                 </div>
               ))}
-              {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--mf-ws-mut)', paddingLeft: 2 }}>+{more}개 프로젝트</span>}
+              {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--mf-ws-mut)', paddingLeft: 2 }}>+{more}개</span>}
             </div>
           );
         })}

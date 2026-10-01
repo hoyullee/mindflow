@@ -169,6 +169,8 @@ export interface Epic {
   end: string | null;
   c: string;
   bg: string;
+  /** 묶음이 티켓 자신(에픽이 없는 티켓) — 달력 칩에 키를 붙이고, 타임라인은 머리 줄 없이 한 줄. */
+  solo?: boolean;
 }
 
 export type Ticket = JiraTicket;
@@ -200,7 +202,7 @@ export function buildDataset(epics: JiraEpic[], tickets: JiraTicket[], extra: Ji
   const es: Epic[] = epics
     .map((e) => {
       const pal = EPIC_PALETTE[eColor.get(e.key) ?? 0]!;
-      return { key: e.key, name: e.name, start: e.start, end: e.end, c: pal.c, bg: pal.bg };
+      return { key: e.key, name: e.name, start: e.start, end: e.end, c: pal.c, bg: pal.bg, ...(e.solo ? { solo: true } : {}) };
     })
     .sort((a, b) => (a.start ?? '9999').localeCompare(b.start ?? '9999') || a.key.localeCompare(b.key));
   return { people: ps, epics: es, tickets, pById: new Map(ps.map((p) => [p.id, p])), eByKey: new Map(es.map((e) => [e.key, e])) };
@@ -398,3 +400,23 @@ export function suggest(q: string, data: Dataset, people: Person[]): Suggestions
     tickets: data.tickets.filter((t) => t.key.toLowerCase().includes(s) || t.summary.toLowerCase().includes(s)).slice(0, 6),
   };
 }
+
+// ── 에픽 없는 티켓 · 배포 예정일 ──────────────────────────────────────
+
+/** 집계 표의 "에픽 없는 티켓" 열 — 티켓 하나하나가 열이 되면 표가 티켓 수만큼 넓어진다. */
+export const SOLO_KEY = '__solo';
+
+/**
+ * 집계용으로 묶음을 접는다: 에픽은 그대로, 티켓 자신인 묶음(solo)은 **한 열**로.
+ * 달력·타임라인은 티켓 하나씩 보이지만, 사람 × 묶음 진행 일수는 이렇게 봐야 읽힌다.
+ */
+export function foldSolo(epics: Epic[], tickets: Ticket[]): { epics: Epic[]; tickets: Ticket[] } {
+  const solo = new Set(epics.filter((e) => e.solo).map((e) => e.key));
+  if (!solo.size) return { epics, tickets };
+  const rest = epics.filter((e) => !e.solo);
+  const col: Epic = { key: SOLO_KEY, name: '에픽 없는 티켓', start: null, end: null, c: '#9C9186', bg: '#F1ECE6' };
+  return { epics: [...rest, col], tickets: tickets.map((t) => (solo.has(t.epic) ? { ...t, epic: SOLO_KEY } : t)) };
+}
+
+/** 그날이 배포 예정일인 티켓 — 달력 칸·패널이 쓴다. */
+export const releasesOn = (tickets: Ticket[], d: string) => tickets.filter((t) => t.release === d);

@@ -26,6 +26,9 @@ export interface Row {
   end_field_name?: string | null;
   fill_dates?: boolean | null;
   issue_types?: unknown;
+  /** 0046 — 배포 예정일 필드(표시만). */
+  release_field?: string | null;
+  release_field_name?: string | null;
 }
 
 export interface Site {

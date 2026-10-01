@@ -142,12 +142,13 @@ describe('연결에서 돌아오기', () => {
     await wait(() => within(modal).queryAllByRole('option', { name: 'Target end' })[0]);
     expect((q('[data-jira-rule-start]') as HTMLSelectElement).value).toBe('customfield_10015');
     await user.selectOptions(q('[data-jira-rule-end]')!, 'resolutiondate');
+    await user.selectOptions(q('[data-jira-rule-release]')!, 'customfield_10020');
     // 이슈 유형 — 같은 이름(프로젝트마다 다른 id)은 한 칩, 고르면 그 이름의 id가 다 실린다.
     await user.click(await wait(() => q('[data-jira-issue-type="작업"]')));
     expect(modal.querySelectorAll('[data-jira-issue-type]').length).toBe(2);
     const save = vi.spyOn(demoJira, 'saveProjects');
     await user.click(q('[data-jira-setup-save]')!);
-    expect(save.mock.calls[0]?.[1]).toMatchObject({ start: 'customfield_10015', end: 'resolutiondate', endName: '해결된 날짜 (아직이면 오늘)', fill: true });
+    expect(save.mock.calls[0]?.[1]).toMatchObject({ start: 'customfield_10015', end: 'resolutiondate', endName: '해결된 날짜 (아직이면 오늘)', fill: true, release: 'customfield_10020', releaseName: 'Target end' });
     expect(save.mock.calls[0]?.[2]).toEqual([{ id: '10001', name: '작업' }, { id: '10101', name: '작업' }]);
     save.mockRestore();
     await waitFor(() => expect(q('[data-jira-setup]')).toBeNull());
@@ -166,6 +167,18 @@ describe('작업 현황', () => {
     await wait(() => q('[data-ws-chip]'));
     return user;
   }
+
+  it('상단 `날짜 기준` 단추 — 프로젝트 고르기를 날짜 칸으로 연다', async () => {
+    const user = await open();
+    const btn = q('[data-ws-date-rule-btn]')!;
+    expect(btn.title).toContain('시작 Start date');
+    await user.click(btn);
+    const sec = await wait(() => q('[data-jira-date-rule][data-focus]'));
+    expect(document.activeElement).toBe(sec.querySelector('select'));
+    // 팝업의 열림은 모듈 상태다 — 닫고 끝내야 다음 테스트가 가려지지 않는다.
+    await user.click(within(q('[data-jira-setup]')!).getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(q('[data-jira-setup]')).toBeNull());
+  });
 
   it('세 보기가 같은 데이터를 본다 — 달력 칩 · 타임라인 막대 · 집계 행', async () => {
     const user = await open();

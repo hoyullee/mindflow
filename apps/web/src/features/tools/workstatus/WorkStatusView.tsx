@@ -11,6 +11,7 @@ import {
   bizDaysIn,
   buildDataset,
   computeStats,
+  foldSolo,
   monthBiz,
   monthDays,
   overlaps,
@@ -103,8 +104,10 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const from = days[0] as string;
   const to = days[days.length - 1] as string;
   // 프로젝트와 **날짜 규칙**이 질문이다 — 어느 쪽이 바뀌어도 새로 묻는다.
-  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}`;
+  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}|${conn.releaseField?.id ?? ''}`;
   const ready = conn.connected && !!conn.site && conn.projects.length > 0;
+  // `날짜 기준` 단추의 툴팁 — 지금 무엇으로 그리고 있는지 열지 않고도 보이게.
+  const dateRuleTitle = `시작 ${conn.startField?.name ?? '없음'} · 끝 ${conn.endField?.name ?? '기한'} · 배포 ${conn.releaseField?.name ?? '표시 안 함'}`;
   const month = useWorkStatusData(from, to, projKey, ready);
   const availData = useWorkStatusData(range.from, range.to, projKey, ready && availOpen);
 
@@ -140,7 +143,9 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const visiblePeople = filters.length ? peopleOn.filter((p) => inMonth.some((t) => t.person.id === p.id)) : peopleOn;
   const visibleEpics = data.epics.filter((e) => inMonth.some((t) => t.epic === e.key));
   const biz = useMemo(() => monthBiz(y, m, rules), [y, m, rules]);
-  const stats = computeStats(visiblePeople, visibleEpics, tickets, biz.biz);
+  // 집계는 에픽 없는 티켓을 한 열로 접는다(티켓마다 열이면 표가 티켓 수만큼 넓어진다).
+  const folded = foldSolo(visibleEpics, tickets);
+  const stats = computeStats(visiblePeople, folded.epics, folded.tickets, biz.biz);
   const worked = new Map(visiblePeople.map((p) => [p.id, workedDays(tickets, biz.biz, p.id)]));
   const monthCount = new Map<string, number>();
   data.tickets.filter((t) => overlaps(t, from, to)).forEach((t) => monthCount.set(t.person.id, (monthCount.get(t.person.id) ?? 0) + 1));
@@ -224,7 +229,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const empty = !conn.connected ? (
     <Empty title="Jira 연결이 끊겼어요" body="다시 연결하면 에픽과 티켓 일정을 이 화면에 모아요." action="Jira 연결" onAction={() => void beginJiraConnect().then((err) => err && toolToast(err))} />
   ) : !conn.site || !conn.projects.length ? (
-    <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트의 티켓을 에픽(없으면 프로젝트)별로 달력·타임라인·집계에 보여 줘요." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
+    <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트에서 담당자가 있는 티켓을 달력·타임라인·집계에 보여 줘요(에픽이 있으면 에픽별로)." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
   ) : null;
 
   const pad = isMobile ? '12px 14px 12px' : '16px 20px 14px 32px';
@@ -261,7 +266,8 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
           <div data-ws-summary style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 7px', paddingLeft: 32, marginTop: 4, fontSize: 12.5, fontWeight: 600, color: 'var(--mf-ws-mut)' }}>
             <span>{siteHost}</span>
             {[
-              ['프로젝트', visibleEpics.length],
+              // 에픽 없는 티켓은 자기 자신이 묶음이라 세지 않는다(세면 티켓 수와 같아진다).
+              ...(visibleEpics.some((e) => !e.solo) ? [['에픽', visibleEpics.filter((e) => !e.solo).length]] : []),
               ['티켓', inMonth.length],
               ['담당자', visiblePeople.length],
               ['영업일', biz.biz.length],
@@ -361,6 +367,16 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
               </div>
             )}
           </div>
+          {ready && (
+            // 날짜 기준(시작·끝·배포 필드) — 프로젝트 고르기 안에 묻혀 있어 찾기 어려웠다(요청 2026-10-01). 팝업을 날짜 칸으로 연다.
+            <button type="button" className="btn" data-ws-date-rule-btn title={dateRuleTitle} onClick={() => openJiraSetup(undefined, { focus: 'dates' })} style={{ height: 32, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px 0 10px', borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2.5" />
+                <path d="M3 10h18M8 3v4M16 3v4M8 15h4" />
+              </svg>
+              날짜 기준
+            </button>
+          )}
           <RoundButton on={panelShow} label="오른쪽 패널" onClick={() => setVp((v) => ({ ...v, panelOpen: !panelShow }))} attrs={{ 'data-ws-panel-btn': '' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="3" y="4" width="18" height="16" rx="2.5" />
@@ -390,7 +406,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
                 // 텅 빈 달 — 대개 날짜가 비어 있거나 다른 필드에 적혀 있다(제보 2026-10-01). 고칠 자리로 바로 보낸다.
                 <div data-ws-nodata style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 20px 0', padding: '10px 14px', borderRadius: 12, background: 'var(--mf-ws-sunk)', color: 'var(--mf-ws-mut)', fontSize: 12.5, fontWeight: 600 }}>
                   이 달에 그릴 티켓이 없어요 · 담당자가 있고 날짜가 이 달에 걸린 티켓만 보여요
-                  <button type="button" className="btn" onClick={() => openJiraSetup()} style={{ marginLeft: 'auto', flexShrink: 0, border: 0, background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
+                  <button type="button" className="btn" onClick={() => openJiraSetup(undefined, { focus: 'dates' })} style={{ marginLeft: 'auto', flexShrink: 0, border: 0, background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
                     날짜 기준 바꾸기
                   </button>
                 </div>
@@ -421,7 +437,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
                   onOpenIssue={openIssue}
                 />
               ) : (
-                <WsStats stats={stats} epics={visibleEpics} biz={biz} month={m} filteredIds={filters.filter((f) => f.type === 'person').map((f) => f.id)} onPickPerson={(id) => addFilter('person', id)} onOpenHoliday={() => setHolidayOpen(true)} />
+                <WsStats stats={stats} epics={folded.epics} biz={biz} month={m} filteredIds={filters.filter((f) => f.type === 'person').map((f) => f.id)} onPickPerson={(id) => addFilter('person', id)} onOpenHoliday={() => setHolidayOpen(true)} />
               )}
             </>
           )}
