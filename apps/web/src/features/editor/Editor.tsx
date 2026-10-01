@@ -18,6 +18,7 @@ import { KanbanBoard } from './components/KanbanBoard';
 import { NoteEditor, NoteTopBar, noteTokens } from './components/NoteEditor';
 import { NoteMobileDock } from './components/NoteMobileChrome';
 import { NoteAgendaPanel } from './components/NoteAgendaPanel';
+import { NoteHistoryBand, NoteHistoryMarks, NoteHistoryPanel } from './components/NoteHistoryPanel';
 import { NoteEventPopups, type NoteEventOpen } from './components/NoteEventPopups';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
@@ -220,11 +221,21 @@ export function Editor() {
               onTogglePages={() => setNotePagesOpen((v) => !v)}
               agenda={{ on: noteAgendaOpen, toggle: () => setNoteAgendaOpen((v) => !v) }}
             />
+            {/* 기록 미리보기 띠 — 본문이 그때 모습(읽기 전용)일 때만(기록 패널 스펙 §6.1). */}
+            <NoteHistoryBand controller={controller} />
             <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
             {/* `key` — 서버 판을 채택하면 본문을 **다시 마운트**한다. 공책의 편집
                 박스는 비제어라(innerHTML을 마운트할 때 한 번만 심는다) 모델만 갈아
-                끼우면 화면의 글자가 옛것 그대로 남는다(`docEpoch` 참고). */}
-            <NoteEditor key={controller.docEpoch} controller={controller} pagesOpen={notePagesOpen} onClosePages={() => setNotePagesOpen(false)} />
+                끼우면 화면의 글자가 옛것 그대로 남는다(`docEpoch` 참고).
+                **기록 미리보기**는 같은 본문 부품에 그때 페이지를 읽기 전용으로 넘긴다 — 얕은
+                덮어쓰기라 본문 쪽은 손대지 않고, 열쇠가 바뀌어 새로 그린다. */}
+            <NoteEditor
+              key={controller.notePreview ? `hist:${controller.notePreview.entry.id}` : controller.docEpoch}
+              controller={controller.notePreview ? { ...controller, readOnly: true, notePage: controller.notePreview.page } : controller}
+              pagesOpen={notePagesOpen}
+              onClosePages={() => setNotePagesOpen(false)}
+            />
+            <NoteHistoryMarks controller={controller} />
             <PresenceBar controller={controller} />
             {/* 댓글 — **공책 한 권에 대한 논의**다(디자인: "이 공책에 댓글 남기기").
                 캔버스가 없어 핀을 꽂을 자리가 없으므로 대상은 문서 자신 하나뿐이고,
@@ -236,6 +247,8 @@ export function Editor() {
                 모달로 남긴다). 둘 다 켜면 일정이 안쪽(본문 쪽)이다 — 글을 쓰다 날짜를
                 보는 일이 댓글을 읽는 일보다 잦다. */}
             {noteAgendaOpen && <NoteAgendaPanel controller={controller} onClose={() => setNoteAgendaOpen(false)} onOpenEvent={setNoteEvent} />}
+            {/* 기록 — 스펙: 탭이 활성이면 패널 폭 400px(일정·댓글은 296px). 한 번에 하나만 연다(`NoteTopBar`). */}
+            {controller.historyOpen && <NoteHistoryPanel controller={controller} />}
             {noteEvent && <NoteEventPopups open={noteEvent} isMobile={isMobile} theme={th} onClose={() => setNoteEvent(null)} />}
             {/* 폰 — 바닥 독(일정 · 댓글 · 기록). 데스크톱은 상단 바의 탭이 같은 일을 한다. */}
             {isMobile && <NoteMobileDock controller={controller} agenda={{ on: noteAgendaOpen, toggle: () => setNoteAgendaOpen((v) => !v) }} />}

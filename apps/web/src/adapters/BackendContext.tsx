@@ -10,8 +10,9 @@
 // the `backend` prop if a future test needs a mock Supabase-mode backend).
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import type { Backend } from './ports';
+import type { Backend, NoteHistoryStore } from './ports';
 import { createBackend } from './factory';
+import { LocalNoteHistoryStore } from './local/localNoteHistoryStore';
 
 const defaultBackend = createBackend();
 
@@ -64,4 +65,14 @@ export function useNotificationStore() {
 
 export function useEventStore() {
   return useBackend().eventStore;
+}
+
+// 공책 기록(0048)은 `Backend`의 **선택 필드**다 — 테스트가 손으로 짓는 Backend 리터럴과
+// 옛 조립처럼 비어 있으면 이 기기의 로컬 판으로 물러난다(기록 패널이 죽지 않게).
+// 매 렌더마다 새로 짓지 않도록 모듈 하나를 공유한다.
+let fallbackNoteHistory: NoteHistoryStore | null = null;
+
+export function useNoteHistoryStore(): NoteHistoryStore {
+  const backend = useBackend();
+  return backend.noteHistory ?? (fallbackNoteHistory ??= new LocalNoteHistoryStore());
 }

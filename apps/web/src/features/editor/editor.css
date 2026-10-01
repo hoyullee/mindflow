@@ -1361,3 +1361,15 @@ input[type='search']::-webkit-search-results-decoration {
 @media (prefers-reduced-motion: reduce) {
   .mf-note-tcopy { animation: none; }
 }
+
+/* 공책 기록 패널(기록 패널 스펙 §3) — 등장 `ghFade .16s` · 스크롤바 6px `#E4D9CD`. */
+@keyframes mf-hist-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.mf-hist-fade { animation: mf-hist-fade .16s ease-out; }
+.mf-hist-scroll { scrollbar-width: thin; scrollbar-color: #E4D9CD transparent; }
+.mf-hist-scroll::-webkit-scrollbar { width: 6px; }
+.mf-hist-scroll::-webkit-scrollbar-thumb { background: #E4D9CD; border-radius: 99px; }
+.mf-hist-scroll::-webkit-scrollbar-track { background: transparent; }
+@media (prefers-reduced-motion: reduce) { .mf-hist-fade { animation: none; } }

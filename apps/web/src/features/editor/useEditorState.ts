@@ -9,9 +9,11 @@ import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
-import type { CommentMention, DocComment, LoadedDoc, SaveResult, ShareParticipant, ShareRole, ShareStore } from '../../adapters/ports';
+import type { CommentMention, DocComment, LoadedDoc, NoteHistoryActor, NoteHistoryEntry, NoteHistoryStore, SaveResult, ShareParticipant, ShareRole, ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
-import { useBackend, useCommentStore, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
+import { useBackend, useCommentStore, useDocStore, useNoteHistoryStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
+import { NoteHistoryRecorder } from './noteHistoryRecorder';
+import { describePageChange, momentLabel, snapshotPage } from './noteHistory';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useProfileName } from '../../adapters/useProfileName';
 import { useMyAvatar } from '../../adapters/myAvatar';
@@ -503,6 +505,17 @@ export interface EditorController {
   /** 버전 기록 모달 열림 상태 — 편집/☰ 메뉴가 조작한다. */
   historyOpen: boolean;
   setHistoryOpen: (open: boolean) => void;
+  /** 공책 기록(0048) — 저장소와, 저장마다 항목을 남기는 기록기. */
+  noteHistoryStore: NoteHistoryStore;
+  noteRecorder: NoteHistoryRecorder;
+  /** 기록 미리보기 — 본문 자리에 그때 페이지(읽기 전용). `marks`는 그 항목에서 바뀐 블록. */
+  notePreview: { entry: NoteHistoryEntry; page: NotePage; marks: ReadonlySet<string>; latest: boolean } | null;
+  /** `latest` — 그 항목이 `지금 버전`이다(띠에 되돌리기를 내지 않는다). */
+  openNotePreview: (entry: NoteHistoryEntry, older?: NoteHistoryEntry | null, latest?: boolean) => void;
+  closeNotePreview: () => void;
+  /** 그 항목의 페이지로 되돌린다 — 되돌리기 전의 페이지를 돌려준다(취소용). */
+  restoreNotePage: (entry: NoteHistoryEntry) => NotePage | null;
+  undoNoteRestore: (pageId: string, prev: NotePage | null) => void;
   /** 이 문서의 로컬 스냅샷 키(= 저장 대상 id) — 모달이 목록/본문 조회에 쓴다. */
   historyDocId: string;
   /** 스냅샷을 현재 문서로 복원 — undo 가능한 커밋이며, 복원 **직전 상태**도
@@ -1445,6 +1458,8 @@ export function useEditorState(): EditorController {
         const pristine = docSignature(docRef.current) === mountDocSigRef.current;
         if (res) {
           docVersionRef.current = res.version;
+          // 공책 기록의 기준 = 서버가 아는 판(못 올린 로컬 편집이 있으면 그것이 첫 항목이 된다).
+          if (res.doc.kind === 'note') noteRecorderRef.current.seed(res.doc);
           // 저장된 메타 제목 채택 — 화이트보드는 이게 제목의 정본이고(루트가 없다),
           // 맵에서는 어차피 루트 텍스트가 우선이라 무해하다(URL 파라미터보다 최신).
           if (res.title) setMetaTitle(res.title);
@@ -1495,6 +1510,8 @@ export function useEditorState(): EditorController {
           }
         } else {
           docVersionRef.current = undefined; // confirmed brand-new map (no row yet)
+          // 새 공책 — 기준을 **빈 공책**으로 두어 첫 저장이 페이지마다 「페이지 만듦」을 남기게 한다.
+          if (docRef.current.kind === 'note') noteRecorderRef.current.seed({ ...docRef.current, pages: [] });
         }
         // 남의 문서를 **링크로** 열었는가(0017). 링크로 들어온 사람은 초대 목록에
         // 자기 행이 없어서 소유자와 구별되지 않는다 — 그러면 아래 권한 판별이
@@ -1672,6 +1689,17 @@ export function useEditorState(): EditorController {
   // 로그인할 때마다 구글 사진으로 덮여, 홈에서 바꾼 사진이 여기서만 옛 얼굴로 보였다.
   const myAvatar = useMyAvatar(authUser?.email, authUser?.avatarUrl);
   const presence = usePresence(awareness, authUser?.email, profileName, myAvatar);
+  /**
+   * **공책 기록을 쓰는 쪽**(기록 패널 스펙 §2·§6.3) — 저장이 성공할 때마다 페이지별 항목을 남긴다.
+   * 기준 판은 문서를 받았을 때·서버 판을 채택했을 때 다시 맞춘다(`seed`) — 그래야 남이 저장한
+   * 변화가 내 이름으로 실리지 않는다. 쓰는 사람은 지금의 접속자 정체(이름·색·사진)다.
+   */
+  const noteHistoryStore = useNoteHistoryStore();
+  const noteActorRef = useRef<NoteHistoryActor | null>(null);
+  noteActorRef.current = { id: authUser?.id || authUser?.email || 'local', name: presence.localUser.name, color: presence.localUser.color, avatar: presence.localUser.avatar ?? null };
+  const noteRecorder = useMemo(() => new NoteHistoryRecorder(noteHistoryStore, docStoreId, () => noteActorRef.current), [noteHistoryStore, docStoreId]);
+  const noteRecorderRef = useRef(noteRecorder);
+  noteRecorderRef.current = noteRecorder;
   const peerCount = presence.peers.length;
   if (peerCount > 0) collabSessionRef.current = true;
 
@@ -3070,6 +3098,8 @@ export function useEditorState(): EditorController {
           /* awareness가 없거나 끊겼다 — 상대는 창을 옮길 때 새로 읽는다(포커스 계기) */
         }
       }
+      // 공책 기록 — 저장이 **성공한** 판만 기록한다(실패한 판은 서버에 없다).
+      if (docRef.current.kind === 'note') void noteRecorderRef.current.record(docRef.current);
       setSaveStateState('saved');
       setSaveConflict(null);
       return true;
@@ -3214,6 +3244,8 @@ export function useEditorState(): EditorController {
     if (res.title) setMetaTitle(res.title);
     const sig = docSignature(res.doc);
     if (sig === docSignature(docRef.current)) return; // 내용이 같다 — 그릴 것이 없다
+    // 남이 저장한 판 — 기록의 기준도 옮긴다(그 변화는 그 사람의 항목이다).
+    noteRecorderRef.current.seed(res.doc);
     setDoc(res.doc);
     setEdgeStyleState((res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
     lastSavedSigRef.current = sig;
@@ -6827,6 +6859,65 @@ export function useEditorState(): EditorController {
   /** 없는 페이지를 가리키고 있으면(삭제·첫 진입) 첫 장으로 떨어진다. */
   const notePage = notePages.find((pg) => pg.id === notePageId) ?? notePages[0] ?? null;
 
+  /**
+   * **기록 미리보기**(기록 패널 스펙 §6.1) — 고른 항목의 페이지를 본문 자리에 **읽기 전용**으로 띄운다.
+   * 본문은 같은 `NoteEditor`가 그린다(`Editor.tsx`가 이 판을 `notePage`로 갈아 끼운 얕은 컨트롤러를
+   * 넘긴다) — 그래야 그때 모습이 지금 화면과 똑같이 보인다. 그 항목에서 바뀐 블록은 `marks`로 테두리
+   * (`Editor.tsx`의 `NoteHistoryMarks`).
+   */
+  const [notePreview, setNotePreviewState] = useState<{ entry: NoteHistoryEntry; page: NotePage; marks: ReadonlySet<string>; latest: boolean } | null>(null);
+  const openNotePreview = useCallback((entry: NoteHistoryEntry, older?: NoteHistoryEntry | null, latest = false) => {
+    const page = snapshotPage(entry.snapshot);
+    if (!page) return;
+    const before = older ? snapshotPage(older.snapshot) : null;
+    const touched = before ? (describePageChange(before, page)?.touched ?? []) : entry.anchor ? [entry.anchor] : [];
+    setNotePreviewState({ entry, page, marks: new Set(touched), latest });
+  }, []);
+  const closeNotePreview = useCallback(() => setNotePreviewState(null), []);
+  // 다른 장으로 넘어가거나 기록 탭을 닫으면 미리보기도 끝난다(스펙: 탭 전환으로 해제).
+  useEffect(() => {
+    setNotePreviewState((cur) => (cur && (!historyOpen || cur.page.id !== notePage?.id) ? null : cur));
+  }, [historyOpen, notePage?.id]);
+
+  /**
+   * **이 시점으로 되돌리기**(스펙 §6.2) — 확인 없이 곧바로(취소할 수 있으므로). 그 페이지만 그때 판으로
+   * 바꾸고, 다음 기록을 `restore` 항목으로 못박는다 — 사이의 항목은 그대로 남는다(선형 기록).
+   * 되돌리기 **전의** 페이지를 돌려준다 — 토스트의 「취소」가 그것으로 되돌린다(`undoNoteRestore`).
+   */
+  const restoreNotePage = useCallback(
+    (entry: NoteHistoryEntry): NotePage | null => {
+      if (readOnlyRef.current) return null;
+      const snap = snapshotPage(entry.snapshot);
+      if (!snap) return null;
+      const before = (docRef.current.pages ?? []).find((pg) => pg.id === snap.id) ?? null;
+      noteRecorderRef.current.expectRestore(snap.id, `${momentLabel(entry.at, Date.now())} 시점으로 되돌림`);
+      commitDoc((d) => {
+        const pages = d.pages ?? [];
+        const has = pages.some((pg) => pg.id === snap.id);
+        return { ...d, pages: has ? pages.map((pg) => (pg.id === snap.id ? { ...snap, updatedAt: new Date().toISOString() } : pg)) : [...pages, snap] };
+      });
+      // 비제어 편집 박스를 다시 그린다(되돌리기·서버 채택과 같은 이유 — `docEpoch`).
+      setDocEpoch((n) => n + 1);
+      setNotePreviewState(null);
+      setNotePageId(snap.id);
+      return before ? (JSON.parse(JSON.stringify(before)) as NotePage) : null;
+    },
+    [commitDoc],
+  );
+  /** 되돌리기 취소 — 되돌리기 전의 페이지로(없던 장이었으면 다시 뺀다). 이것도 기록에 남는다. */
+  const undoNoteRestore = useCallback(
+    (pageId: string, prev: NotePage | null) => {
+      if (readOnlyRef.current) return;
+      noteRecorderRef.current.expectRestore(pageId, '되돌리기를 취소함');
+      commitDoc((d) => {
+        const pages = d.pages ?? [];
+        return { ...d, pages: prev ? pages.map((pg) => (pg.id === pageId ? prev : pg)) : pages.filter((pg) => pg.id !== pageId) };
+      });
+      setDocEpoch((n) => n + 1);
+    },
+    [commitDoc],
+  );
+
   /** 페이지 본문을 고친다 — `updatedAt`을 함께 찍어 목록의 "몇 분 전"이 맞게 한다. */
   const commitPage = useCallback(
     (pageId: string, updater: (pg: NotePage) => NotePage, continuous = false, scope?: string) => {
@@ -9067,6 +9158,13 @@ export function useEditorState(): EditorController {
     canComment,
     historyOpen,
     setHistoryOpen,
+    noteHistoryStore,
+    noteRecorder,
+    notePreview,
+    openNotePreview,
+    closeNotePreview,
+    restoreNotePage,
+    undoNoteRestore,
     historyDocId: docStoreId,
     restoreVersion,
     searchMarks,
