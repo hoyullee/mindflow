@@ -16,6 +16,7 @@ import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { KanbanBoard } from './components/KanbanBoard';
 import { NoteEditor, NoteTopBar, noteTokens } from './components/NoteEditor';
+import { NoteMobileDock } from './components/NoteMobileChrome';
 import { NoteAgendaPanel } from './components/NoteAgendaPanel';
 import { NoteEventPopups, type NoteEventOpen } from './components/NoteEventPopups';
 import { VersionHistory } from './components/VersionHistory';
@@ -236,6 +237,8 @@ export function Editor() {
                 보는 일이 댓글을 읽는 일보다 잦다. */}
             {noteAgendaOpen && <NoteAgendaPanel controller={controller} onClose={() => setNoteAgendaOpen(false)} onOpenEvent={setNoteEvent} />}
             {noteEvent && <NoteEventPopups open={noteEvent} isMobile={isMobile} theme={th} onClose={() => setNoteEvent(null)} />}
+            {/* 폰 — 바닥 독(일정 · 댓글 · 기록). 데스크톱은 상단 바의 탭이 같은 일을 한다. */}
+            {isMobile && <NoteMobileDock controller={controller} agenda={{ on: noteAgendaOpen, toggle: () => setNoteAgendaOpen((v) => !v) }} />}
             </div>
           </div>
         ) : controller.isKanban ? (
