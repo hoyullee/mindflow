@@ -178,6 +178,9 @@ export function DocChip({ controller, inline = false }: DocChipProps) {
 
 function TitleEdit({ controller }: { controller: EditorController }) {
   const ref = useRef<HTMLInputElement | null>(null);
+  /** 조합 중에 눌린 Enter — 공책 이름 칸과 같은 이유로 조합이 끝난 뒤에 확정한다
+   * (조합 도중 칸을 내리면 맥의 IME가 마지막 글자를 한 번 더 넣는다). */
+  const enterRef = useRef(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -195,13 +198,30 @@ function TitleEdit({ controller }: { controller: EditorController }) {
         e.stopPropagation();
         if (e.key === 'Enter') {
           e.preventDefault();
+          if (e.nativeEvent.isComposing || e.keyCode === 229) {
+            enterRef.current = true;
+            return;
+          }
+          enterRef.current = false;
           controller.commitTitle(e.currentTarget.value);
         } else if (e.key === 'Escape') {
           e.preventDefault();
           controller.cancelTitleEdit();
         }
       }}
-      onBlur={(e) => controller.commitTitle(e.currentTarget.value)}
+      onCompositionEnd={(e) => {
+        if (!enterRef.current) return;
+        const el = e.currentTarget;
+        window.setTimeout(() => {
+          if (!enterRef.current) return;
+          enterRef.current = false;
+          controller.commitTitle(el.value);
+        }, 0);
+      }}
+      onBlur={(e) => {
+        enterRef.current = false;
+        controller.commitTitle(e.currentTarget.value);
+      }}
       style={{
         fontSize: 13.5,
         fontWeight: 700,

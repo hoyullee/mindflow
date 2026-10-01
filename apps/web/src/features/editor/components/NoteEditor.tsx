@@ -4515,6 +4515,7 @@ export function NoteTopBar({
   /** 우측 「일정」 탭(스펙 5절) — 상태는 에디터 레이아웃이 든다(패널도 거기 선다). */
   agenda?: { on: boolean; toggle: () => void };
 }) {
+  const titleEnterRef = useRef(false); // 조합 중에 눌린 Enter — 조합이 끝나면 놓는다
   const mobile = useIsMobile();
   const page = controller.notePage;
   const space = controller.noteSpaceName;
@@ -4614,12 +4615,32 @@ export function NoteTopBar({
             title="눌러서 공책 이름 수정"
             onKeyDown={(e) => {
               e.stopPropagation();
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                e.currentTarget.blur();
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              /* **조합 중의 Enter로는 놓지 않는다**(제보: `공책 이름`이 `공책 이름름`으로
+                 저장됐다). 한글을 조합하는 도중 Enter의 keydown에서 칸을 놓으면 맥의 IME가
+                 조합을 끝내며 마지막 글자를 **한 번 더** 넣는다. 조합이 끝난 뒤에 놓는다 —
+                 뒤따르는 보통 Enter가 오면 그것이, 안 오면 `compositionend`가 놓는다. */
+              if (e.nativeEvent.isComposing || e.keyCode === 229) {
+                titleEnterRef.current = true;
+                return;
               }
+              titleEnterRef.current = false;
+              e.currentTarget.blur();
             }}
-            onBlur={(e) => controller.commitTitle(e.currentTarget.value)}
+            onCompositionEnd={(e) => {
+              if (!titleEnterRef.current) return;
+              const el = e.currentTarget;
+              window.setTimeout(() => {
+                if (!titleEnterRef.current) return;
+                titleEnterRef.current = false;
+                el.blur();
+              }, 0);
+            }}
+            onBlur={(e) => {
+              titleEnterRef.current = false;
+              controller.commitTitle(e.currentTarget.value);
+            }}
             style={{
               width: '100%',
               boxSizing: 'border-box',
