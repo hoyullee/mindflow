@@ -52,7 +52,9 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
           const more = plan.more[i % 7] ?? 0;
           const rel = inMonth ? releasesOn(tickets, d) : [];
           const busy = inMonth ? new Set(tickets.filter((t) => t.start <= d && d <= t.end).map((t) => t.person.id)).size : 0;
-          const ring = isSel ? `inset 0 0 0 1.5px #E8A25F${isToday ? ', inset 0 0 0 4px var(--mf-ws-card)' : ''}` : inAvail ? 'inset 0 -2px 0 0 #8FB88F' : 'none';
+          // 고른 날의 테두리는 칸 **위에 얹는 층**으로 그린다 — 칸의 box-shadow로 두면 칸 여백까지 내민 띠 조각이
+          // 그 위를 덮어 테두리가 띠 뒤로 숨었다(제보 2026-10-01).
+          const ring = isSel ? 'inset 0 0 0 2px #E8A25F' : inAvail ? 'inset 0 -2px 0 0 #8FB88F' : 'none';
           return (
             <div
               key={d}
@@ -67,7 +69,7 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                   onPick(d);
                 }
               }}
-              style={{ minWidth: 0, background: bg, boxShadow: ring, borderRight: i % 7 < 6 ? '1px solid var(--mf-ws-line)' : 0, borderBottom: '1px solid var(--mf-ws-line)', padding: '6px 6px 4px', display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden', cursor: inMonth ? 'pointer' : 'default', boxSizing: 'border-box' }}
+              style={{ position: 'relative', minWidth: 0, background: bg, borderRight: i % 7 < 6 ? '1px solid var(--mf-ws-line)' : 0, borderBottom: '1px solid var(--mf-ws-line)', padding: '6px 6px 4px', display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden', cursor: inMonth ? 'pointer' : 'default', boxSizing: 'border-box' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
                 <span style={{ width: 19, height: 19, borderRadius: 6, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: MONO, fontSize: 10.5, fontWeight: isToday ? 800 : 600, background: isToday ? '#E85E33' : 'transparent', color: isToday ? '#FFFFFF' : !inMonth ? 'var(--mf-cal-num-out)' : off ? 'var(--mf-cal-num-sun)' : w === 6 ? 'var(--mf-cal-num-sat)' : 'var(--mf-ws-mut)' }}>
@@ -120,6 +122,7 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                 );
               })}
               {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--mf-ws-mut)', paddingLeft: 2 }}>+{more}개</span>}
+              {ring !== 'none' && <span aria-hidden="true" data-ws-day-ring style={{ position: 'absolute', inset: 0, boxShadow: ring, pointerEvents: 'none', zIndex: 2 }} />}
             </div>
           );
         })}
