@@ -50,3 +50,27 @@ describe('데스크톱 앱의 "/" 라우트', () => {
     expect(window.location.pathname).toBe('/');
   });
 });
+
+describe('/auth/jira — 설치형 앱에서 시작한 Jira 연결', () => {
+  it('state가 `d.`면 브라우저에서 교환하지 않고 딥링크로 앱에 넘긴다(제보: 크롬의 웹 홈이 열렸다)', async () => {
+    mockMatchMedia(false);
+    window.history.replaceState({}, '', '/auth/jira?code=c%2F1&state=d.1700.sig');
+    render(<App />);
+    const page = await waitFor(() => {
+      const el = document.querySelector('[data-desktop-handoff="jira"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(page.textContent).toContain('Jira 연결이 이어졌어요');
+    const back = page.querySelector('a[href^="geurio://"]');
+    expect(back?.getAttribute('href')).toBe('geurio://jira?code=c%2F1&state=d.1700.sig');
+  });
+
+  it('웹에서 시작한 연결(표시 없음)은 예전처럼 이 브라우저에서 교환한다', async () => {
+    mockMatchMedia(false);
+    window.history.replaceState({}, '', '/auth/jira?code=c&state=1700.sig');
+    render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe('/home'));
+    expect(document.querySelector('[data-desktop-handoff]')).toBe(null);
+  });
+});

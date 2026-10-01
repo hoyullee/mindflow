@@ -4,6 +4,7 @@ import { AUTH } from './tokens';
 import { BrandMark } from '../../components/BrandMark';
 import { buildAuthDeepLink, desktopAuthToken } from './desktopGoogle';
 import { buildGcalDeepLink } from '../home/calendar/desktopGoogleCalendar';
+import { buildJiraDeepLink } from '../tools/jira/desktopJira';
 import './login.css';
 
 /**
@@ -30,7 +31,7 @@ import './login.css';
  *  - `login`(`/auth/desktop`): Supabase 콜백의 **해시**에서 갱신 토큰
  *  - `gcal`(`/auth/gcal`): 구글이 되돌려 준 **쿼리**의 인가 코드(캘린더 연동)
  */
-export type HandoffKind = 'login' | 'gcal';
+export type HandoffKind = 'login' | 'gcal' | 'jira';
 
 const TEXT: Record<HandoffKind, { title: string; body: ReactNode; missTitle: string; missBody: ReactNode }> = {
   login: {
@@ -45,6 +46,21 @@ const TEXT: Record<HandoffKind, { title: string; body: ReactNode; missTitle: str
     missBody: (
       <>
         데스크톱 앱에서 <strong style={{ fontWeight: 700 }}>Google 계정으로 계속하기</strong>를 다시 눌러 주세요.
+      </>
+    ),
+  },
+  jira: {
+    title: 'Geurio 앱으로 돌아가세요',
+    body: (
+      <>
+        앱에서 Jira 연결이 이어졌어요.
+        <br />이 창은 닫아도 됩니다.
+      </>
+    ),
+    missTitle: '연결 정보를 받지 못했어요',
+    missBody: (
+      <>
+        데스크톱 앱의 왼쪽 <strong style={{ fontWeight: 700 }}>도구 연결</strong>에서 Jira를 다시 연결해 주세요.
       </>
     ),
   },
@@ -74,6 +90,11 @@ export function DesktopHandoff({ kind = 'login' }: { kind?: HandoffKind } = {}) 
       const q = new URLSearchParams(window.location.search);
       const code = q.get('code');
       return code ? buildGcalDeepLink(code, q.get('state') ?? '') : null;
+    }
+    if (kind === 'jira') {
+      const q = new URLSearchParams(window.location.search);
+      const code = q.get('code');
+      return code ? buildJiraDeepLink(code, q.get('state') ?? '') : null;
     }
     const token = desktopAuthToken();
     return token ? buildAuthDeepLink(token) : null;

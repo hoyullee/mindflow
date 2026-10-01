@@ -38,7 +38,8 @@ export interface JiraSource {
   /** 샘플 데이터로 도는가(로컬·데모). */
   demo: boolean;
   status(): Promise<JiraResult<JiraStatus>>;
-  authorize(redirectUri: string): Promise<JiraResult<{ url: string }>>;
+  /** `desktop`: 설치형 앱에서 시작 — 동의 뒤 브라우저가 딥링크로 앱을 깨운다(`desktopJira.ts`). */
+  authorize(redirectUri: string, desktop?: boolean): Promise<JiraResult<{ url: string }>>;
   exchange(code: string, state: string, redirectUri: string): Promise<JiraResult<JiraStatus & { sites: JiraSite[] }>>;
   sites(): Promise<JiraResult<{ sites: JiraSite[] }>>;
   selectSite(cloudId: string): Promise<JiraResult<JiraStatus>>;
@@ -65,7 +66,7 @@ async function invoke<T>(body: Record<string, unknown>): Promise<JiraResult<T>> 
 const serverJira: JiraSource = {
   demo: false,
   status: () => invoke({ action: 'status' }),
-  authorize: (redirectUri) => invoke({ action: 'authorize', redirectUri }),
+  authorize: (redirectUri, desktop) => invoke({ action: 'authorize', redirectUri, ...(desktop ? { desktop: true } : {}) }),
   exchange: (code, state, redirectUri) => invoke({ action: 'exchange', code, state, redirectUri }),
   sites: () => invoke({ action: 'sites' }),
   selectSite: (cloudId) => invoke({ action: 'select-site', cloudId }),

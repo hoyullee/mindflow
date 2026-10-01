@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { isDisconnectReason, jiraReasonText, jiraSource, type JiraStatus } from './jiraApi';
+import { desktopBridge, openExternalUrl } from '../../../platform/desktopBridge';
+import { readJiraDeepLink, stateOfAuthUrl } from './desktopJira';
 
 /**
  * Jira **연결 상태**의 한 벌뿐인 사본 — LNB 행·도구 관리 팝오버·설정·작업 현황이 같은
@@ -93,24 +95,66 @@ export async function refreshJiraStatus(): Promise<void> {
   emit({ known: true });
 }
 
-/** 연결을 시작한다 — 동의 화면으로 **이 창이 떠난다**(돌아오는 자리는 `/auth/jira`). */
+/**
+ * 연결이 끝났다는 알림 — 홈이 듣고 작업 현황을 연다(`needsSetup`이면 프로젝트 고르기까지).
+ * 웹은 콜백 페이지가 `/home?jira=…`로 돌아와 같은 일을 하고, 설치형 앱은 딥링크 교환 뒤 여기로 온다.
+ */
+type ConnectedEvent = { ok: true; needsSetup: boolean } | { ok: false; reason: string };
+const connectedListeners = new Set<(e: ConnectedEvent) => void>();
+export function onJiraConnected(fn: (e: ConnectedEvent) => void): () => void {
+  connectedListeners.add(fn);
+  return () => connectedListeners.delete(fn);
+}
+
+/** 설치형 앱이 시작한 연결의 `state` — 돌아온 딥링크가 이것과 같아야 받는다. */
+let desktopPendingState: string | null = null;
+let desktopLinkOff: (() => void) | null = null;
+
+async function onDesktopDeepLink(url: string): Promise<void> {
+  const got = readJiraDeepLink(url);
+  if (!got) return; // 로그인·구글 캘린더 딥링크 — 우리 것이 아니다
+  if (!desktopPendingState || got.state !== desktopPendingState) return; // 우리가 시작한 연결이 아니다
+  desktopPendingState = null;
+  const r = await jiraSource().exchange(got.code, got.state, `${window.location.origin}/auth/jira`);
+  emit({ busy: false });
+  if (!r.ok) {
+    connectedListeners.forEach((l) => l({ ok: false, reason: r.reason }));
+    return;
+  }
+  applyJiraStatus(r);
+  connectedListeners.forEach((l) => l({ ok: true, needsSetup: !r.site || !r.projects.length }));
+}
+
+/**
+ * 연결을 시작한다.
+ * - 웹: 동의 화면으로 **이 창이 떠난다**(돌아오는 자리는 `/auth/jira` → `/home?jira=…`).
+ * - 설치형 앱: 동의 화면을 **시스템 브라우저**로 열고, 브라우저가 `geurio://jira`로 코드를 돌려주면 앱이 교환한다
+ *   (예전에는 브라우저가 교환까지 하고 웹 홈으로 가 버려 앱으로 돌아오지 못했다 — 제보).
+ */
 export async function beginJiraConnect(): Promise<string | null> {
   emit({ busy: true });
   const redirectUri = `${window.location.origin}/auth/jira`;
-  const r = await jiraSource().authorize(redirectUri);
+  const bridge = desktopBridge();
+  const r = await jiraSource().authorize(redirectUri, !!bridge);
   if (!r.ok) {
     emit({ busy: false });
     return jiraReasonText(r.reason);
   }
+  if (bridge) {
+    desktopPendingState = stateOfAuthUrl(r.url);
+    if (!desktopLinkOff) desktopLinkOff = bridge.onDeepLink((url) => void onDesktopDeepLink(url));
+    await openExternalUrl(r.url);
+    // 브라우저에서 그만두고 돌아온 경우 — 창에 돌아오면 잠시 뒤 기다림을 푼다(딥링크가 먼저 오면 그쪽이 푼다).
+    const back = () => {
+      window.removeEventListener('focus', back);
+      setTimeout(() => {
+        if (snap.busy && desktopPendingState) emit({ busy: false });
+      }, 4000);
+    };
+    window.addEventListener('focus', back);
+    return null;
+  }
   window.location.assign(r.url);
-  // 설치형 앱은 바깥 주소를 **시스템 브라우저**로 넘긴다(셸의 `will-navigate`) — 이 창은 남고,
-  // 동의·교환은 브라우저에서 끝난다(자격 증명은 서버에 남는다). 창에 돌아오면 상태를 다시 묻는다.
-  const back = () => {
-    window.removeEventListener('focus', back);
-    emit({ busy: false });
-    void refreshJiraStatus();
-  };
-  window.addEventListener('focus', back);
   return null;
 }
 
@@ -144,6 +188,9 @@ export function useJiraConn(): JiraConn {
 }
 
 export function resetJiraStore(): void {
+  desktopLinkOff?.();
+  desktopLinkOff = null;
+  desktopPendingState = null;
   userKey = null;
   seq++;
   snap = EMPTY;
