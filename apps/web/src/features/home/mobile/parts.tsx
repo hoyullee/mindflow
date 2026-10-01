@@ -227,6 +227,7 @@ export function MobileSheet({
   attrs,
   children,
   maxHeight = 'calc(100% - 72px)',
+  zIndex = 130,
 }: {
   open: boolean;
   onClose: () => void;
@@ -234,6 +235,8 @@ export function MobileSheet({
   attrs?: Record<string, string>;
   children: ReactNode;
   maxHeight?: string;
+  /** 전체 화면(설정 150 · Jira 설정 · 휴일) **위에** 여는 시트는 그보다 높게. */
+  zIndex?: number;
 }) {
   return (
     <Modal
@@ -241,7 +244,7 @@ export function MobileSheet({
       onClose={onClose}
       label={label}
       dimAttrs={{ 'data-m-sheet-scrim': '' }}
-      dim={{ alignItems: 'flex-end', zIndex: 130, background: 'var(--mf-m-scrim)' }}
+      dim={{ alignItems: 'flex-end', zIndex, background: 'var(--mf-m-scrim)' }}
       cardClass="mf-m-sheet"
       cardAttrs={attrs}
       card={{

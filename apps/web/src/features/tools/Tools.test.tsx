@@ -302,6 +302,65 @@ describe('작업 현황 — 폰(모바일 디자인 W1~W5)', () => {
     expect(within(q('[data-ws-timeline]')!).queryByRole('radio')).toBeNull();
   });
 
+  it('휴일·영업일은 밀어 들어가는 화면 — 휴일 추가는 바닥 시트(W6)', async () => {
+    const user = await openPhone();
+    await user.click(q('[data-ws-holiday-btn]')!);
+    const page = await wait(() => q('[data-ws-holiday-mobile]'));
+    expect(page.querySelectorAll('[data-ws-public]').length).toBeGreaterThan(0);
+    // 추가 칸(날짜 · 이름 · 반복)은 화면에 없고 시트에서 연다.
+    expect(page.querySelector('[data-ws-company-name]')).toBeNull();
+    await user.click(page.querySelector('[data-ws-company-open]')!);
+    const sheet = await wait(() => q('[data-ws-company-sheet]'));
+    await user.click(sheet.querySelector('[data-ws-company-date]')!);
+    const day = await wait(() => document.querySelector<HTMLElement>('[data-datepop-day]'));
+    const iso = day.getAttribute('data-datepop-day')!;
+    await user.click(day);
+    await user.type(sheet.querySelector('[data-ws-company-name]')!, '창립기념일');
+    await user.click(sheet.querySelector('[data-ws-company-add]')!);
+    await waitFor(() => expect(q('[data-ws-company-sheet]')).toBeNull());
+    await wait(() => q(`[data-ws-company="${iso}"]`));
+    // ‹ 작업 현황으로 돌아간다
+    await user.click(q('[data-ws-holiday-back]')!);
+    await waitFor(() => expect(q('[data-ws-holiday]')).toBeNull());
+  });
+
+  it('프로젝트 고르기는 전체 화면 두 단계 — 다음은 엄지 자리, 날짜 필드는 시트(W7·W8)', async () => {
+    mockMatchMedia(true);
+    connectDemo([]);
+    window.history.replaceState(null, '', '/home?jira=setup');
+    const user = userEvent.setup();
+    renderHome('/home?jira=setup');
+    await wait(() => q('[data-jira-setup-mobile]'));
+    // 폰에는 LNB(도구 구획)가 없다 — 연결 상태는 홈이 직접 불러온다(예전에는 전체 탭을 열기 전까지 「먼저 연결」 판이었다).
+    expect((await wait(() => q('[data-jira-step="1"]'))).getAttribute('aria-current')).toBe('step');
+    const next = q('[data-jira-setup-next]') as HTMLButtonElement;
+    expect(next.disabled).toBe(true);
+    await user.click(await wait(() => q('[data-jira-project="PAY"]')));
+    await user.click(q('[data-jira-project="ONB"]')!);
+    expect(q('[data-jira-project="PAY"]')!.getAttribute('aria-checked')).toBe('true');
+    await user.click(next);
+    await wait(() => q('[data-jira-step="2"][aria-current="step"]'));
+    // 끝 날짜 — 행을 누르면 바닥 시트, 고르면 닫히고 행이 바뀐다.
+    await user.click(q('[data-jira-rule-row="end"]')!);
+    const sheet = await wait(() => q('[data-jira-field-sheet="end"]'));
+    await user.click(sheet.querySelector('[data-jira-rule-option="resolutiondate"]')!);
+    await waitFor(() => expect(q('[data-jira-field-sheet]')).toBeNull());
+    expect(q('[data-jira-rule-row="end"]')!.textContent).toContain('해결된 날짜');
+    await user.click(await wait(() => q('[data-jira-issue-type="작업"]')));
+    // 지난 단계는 눌러 돌아갈 수 있고, 고른 것은 그대로다.
+    await user.click(q('[data-jira-setup-back]')!);
+    await wait(() => q('[data-jira-step="1"][aria-current="step"]'));
+    expect(q('[data-jira-project="ONB"]')!.getAttribute('aria-checked')).toBe('true');
+    await user.click(q('[data-jira-setup-next]')!);
+    const save = vi.spyOn(demoJira, 'saveProjects');
+    await user.click(await wait(() => q('[data-jira-setup-save]')));
+    expect(save.mock.calls[0]?.[0].map((p) => p.key)).toEqual(['PAY', 'ONB']);
+    expect(save.mock.calls[0]?.[1]).toMatchObject({ end: 'resolutiondate' });
+    expect(save.mock.calls[0]?.[2]?.map((t) => t.name)).toEqual(['작업', '작업']);
+    save.mockRestore();
+    await waitFor(() => expect(q('[data-jira-setup]')).toBeNull());
+  });
+
   it('담당자 · 일정 맞춰보기는 바닥 시트로 연다(W4·W5)', async () => {
     const user = await openPhone();
     await user.click(q('[data-ws-members-btn]')!);

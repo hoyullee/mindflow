@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Modal } from '../../../components/Modal';
 import { jiraReasonText, jiraSource, type JiraDateChoice, type JiraField, type JiraIssueTypeRef, type JiraProjectRef, type JiraSite } from './jiraApi';
 import { applyJiraStatus, useJiraConn } from './jiraStore';
 import { toolToast } from '../ui';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { MobileSheet } from '../../home/mobile/parts';
 
 /**
  * Jira **프로젝트 고르기**(결정 2026-09-30: "프로젝트는 연결 시 선택").
@@ -41,22 +43,32 @@ export function JiraSetupHost() {
     () => open,
     () => false,
   );
+  // 폰은 **전체 화면 두 단계**(모바일 디자인 W7·W8) — 460px 판에 네 칸을 쌓으면 폰에서는 목록 칸이 손가락 두 줄만 남았다.
+  const mobile = useIsMobile();
   return (
     <Modal
       open={isOpen}
       onClose={closeJiraSetup}
       label="Jira 설정"
-      dim={{ zIndex: 90, background: 'rgba(58,52,46,.32)', backdropFilter: 'blur(5px)', padding: 16 }}
-      card={{ width: 460, maxWidth: '100%', maxHeight: 'calc(var(--mf-app-h) - 32px)', display: 'flex', flexDirection: 'column', background: 'var(--mf-card)', border: '1px solid var(--mf-border)', borderRadius: 24, boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', overflow: 'hidden', animation: 'mf-fade .2s ease' }}
-      cardAttrs={{ 'data-jira-setup': '' }}
+      dim={mobile ? { zIndex: 150, alignItems: 'stretch', background: 'var(--mf-m-bg)' } : { zIndex: 90, background: 'rgba(58,52,46,.32)', backdropFilter: 'blur(5px)', padding: 16 }}
+      card={
+        mobile
+          ? { position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--mf-m-bg)', color: 'var(--mf-m-ink)', overflow: 'hidden', outline: 'none' }
+          : { width: 460, maxWidth: '100%', maxHeight: 'calc(var(--mf-app-h) - 32px)', display: 'flex', flexDirection: 'column', background: 'var(--mf-card)', border: '1px solid var(--mf-border)', borderRadius: 24, boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', overflow: 'hidden', animation: 'mf-fade .2s ease' }
+      }
+      {...(mobile ? { cardClass: 'mf-m-page' } : {})}
+      cardAttrs={mobile ? { 'data-jira-setup': '', 'data-jira-setup-mobile': '' } : { 'data-jira-setup': '' }}
     >
-      {isOpen && <SetupBody />}
+      {isOpen && <SetupBody mobile={mobile} />}
     </Modal>
   );
 }
 
-function SetupBody() {
+function SetupBody({ mobile }: { mobile: boolean }) {
   const conn = useJiraConn();
+  // 폰의 두 단계 — `날짜 기준 바꾸기`에서 열었으면(이미 프로젝트가 있다) 둘째 단계부터.
+  const [step, setStep] = useState<1 | 2>(() => (focusDates && conn.projects.length ? 2 : 1));
+  const [fieldSheet, setFieldSheet] = useState<'start' | 'end' | 'release' | null>(null);
   const needSite = conn.connected && !conn.site;
   const [sites, setSites] = useState<JiraSite[] | null>(null);
   const [query, setQuery] = useState('');
@@ -250,6 +262,172 @@ function SetupBody() {
   const shown = list ?? [];
   // 검색에 걸리지 않아도 **고른 것은 늘 위에** 남긴다 — 무엇을 골랐는지가 사라지지 않게.
   const rows = [...picked.filter((p) => !shown.some((x) => x.key === p.key)), ...shown];
+
+  if (mobile) {
+    const siteName = conn.site?.name || conn.site?.url.replace(/^https?:\/\//, '') || 'Jira';
+    const opts = ruleOptions(fields, rule);
+    const fieldRows = [
+      { id: 'start' as const, label: '시작', value: opts.nameOf(opts.startOpts, rule.start ?? '') ?? '없음' },
+      { id: 'end' as const, label: '끝', value: opts.nameOf(opts.endOpts, rule.end) ?? '기한' },
+      { id: 'release' as const, label: '배포', value: opts.nameOf(opts.releaseOpts, rule.release ?? '') ?? '표시 안 함' },
+    ];
+    const sheetOpts = fieldSheet === 'start' ? opts.startOpts : fieldSheet === 'end' ? opts.endOpts : opts.releaseOpts;
+    const sheetCur = fieldSheet === 'start' ? (rule.start ?? '') : fieldSheet === 'end' ? rule.end : (rule.release ?? '');
+    const pickField = (id: string) => {
+      const nm = opts.nameOf(sheetOpts, id);
+      if (fieldSheet === 'start') setRule({ ...rule, start: id || null, startName: nm });
+      else if (fieldSheet === 'end') setRule({ ...rule, end: id, endName: nm });
+      else setRule({ ...rule, release: id || null, releaseName: nm });
+      setFieldSheet(null);
+    };
+    const summary = picked.length ? `${picked.length}개 고름` : '하나 이상 골라 주세요';
+    return (
+      <>
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', height: 52, padding: '0 8px', paddingTop: 'env(safe-area-inset-top)' }}>
+          <button type="button" className="btn" data-jira-setup-back aria-label={step === 1 ? '닫기' : '프로젝트로 돌아가기'} onClick={step === 1 ? closeJiraSetup : () => setStep(1)} style={M_BACK}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            {step === 1 ? '닫기' : '프로젝트'}
+          </button>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-m-ink)', whiteSpace: 'nowrap' }}>{step === 1 ? '프로젝트 고르기' : '유형 · 날짜 기준'}</span>
+          <span style={{ width: 84 }} />
+        </div>
+        {/* 단계 줄 — 1을 마치면 초록 ✓, 지금 단계는 짙은 알약. 지난 단계는 눌러 돌아간다. */}
+        <div data-jira-steps style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '4px 20px 12px' }}>
+          {step === 1 ? (
+            <StepPill n={1} name="프로젝트" on />
+          ) : (
+            <button type="button" className="btn" onClick={() => setStep(1)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 10px 0 8px', borderRadius: 99, border: '1px solid color-mix(in srgb, var(--mf-success-ink) 24%, transparent)', background: 'var(--mf-success-soft)', color: 'var(--mf-success-ink)', fontFamily: 'inherit', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m5 12 5 5L20 7" />
+              </svg>
+              프로젝트 {picked.length}
+            </button>
+          )}
+          <span style={{ flex: 1, height: 1.5, borderRadius: 99, background: step === 2 ? 'var(--mf-m-ink)' : 'var(--mf-m-btn-line)' }} />
+          <StepPill n={2} name="유형 · 날짜" on={step === 2} />
+        </div>
+
+        {step === 1 ? (
+          <>
+            <label style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, margin: '0 16px', height: 42, padding: '0 14px', borderRadius: 14, border: '1px solid var(--mf-m-btn-line)', background: 'var(--mf-m-card)', boxSizing: 'border-box' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-m-faint)" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input data-jira-project-search value={query} onChange={(e) => setQuery(e.target.value)} placeholder="프로젝트 이름이나 키로 찾기" aria-label="프로젝트 찾기" enterKeyHint="search" style={{ flex: 1, minWidth: 0, border: 0, outline: 'none', background: 'transparent', color: 'var(--mf-m-ink)', fontFamily: 'inherit', fontSize: 16 }} />
+            </label>
+            <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '14px 20px 6px' }}>
+              <span style={{ minWidth: 0, fontSize: 11, fontWeight: 800, letterSpacing: '.06em', color: 'var(--mf-m-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {siteName}의 프로젝트 <span style={{ fontFamily: M_MONO, fontWeight: 600 }}>{rows.length}</span>
+              </span>
+              {picked.length > 0 && (
+                <button type="button" className="btn" data-jira-clear onClick={() => setPicked([])} style={{ flexShrink: 0, border: 0, background: 'transparent', padding: 0, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: 'var(--mf-m-faint)', cursor: 'pointer' }}>
+                  선택 모두 해제
+                </button>
+              )}
+            </div>
+            <div className="mf-m-scroll" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '0 16px 110px' }}>
+              {list === null && !error && <div style={{ padding: 14, fontSize: 13, color: 'var(--mf-m-mut)' }}>프로젝트를 불러오는 중…</div>}
+              {rows.map((p) => {
+                const on = picked.some((x) => x.key === p.key);
+                const [bg, fg] = tileOf(p.key);
+                return (
+                  <button key={p.key} type="button" role="checkbox" aria-checked={on} className="btn" data-jira-project={p.key} onClick={() => toggle(p)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 60, padding: '0 4px', border: 0, borderBottom: '1px solid var(--mf-m-line)', background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+                    <CheckBox on={on} />
+                    <span aria-hidden="true" style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 10, background: bg, color: fg, fontSize: 13, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{p.key.slice(0, 1)}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, color: 'var(--mf-m-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                    <span style={{ flexShrink: 0, fontFamily: M_MONO, fontSize: 12, fontWeight: 600, color: 'var(--mf-m-faint)' }}>{p.key}</span>
+                  </button>
+                );
+              })}
+              {list !== null && !rows.length && <div style={{ padding: 14, fontSize: 13, color: 'var(--mf-m-mut)' }}>일치하는 프로젝트가 없어요</div>}
+              {error && <div style={{ padding: 14, fontSize: 13, color: 'var(--mf-danger)' }}>{error}</div>}
+            </div>
+            <MobileFoot>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                {picked.length > 0 && (
+                  <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+                    {picked.slice(0, 4).map((p, i) => {
+                      const [bg, fg] = tileOf(p.key);
+                      return <span key={p.key} aria-hidden="true" style={{ width: 24, height: 24, marginLeft: i ? -6 : 0, borderRadius: 7, border: '2px solid var(--mf-m-bg)', background: bg, color: fg, fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{p.key.slice(0, 1)}</span>;
+                    })}
+                  </span>
+                )}
+                <span style={{ fontSize: 13, color: 'var(--mf-m-mut)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>
+              </span>
+              <button type="button" className="btn" data-jira-setup-next disabled={!picked.length} onClick={() => setStep(2)} style={{ ...M_PRIMARY, ...(picked.length ? {} : M_PRIMARY_OFF) }}>
+                다음
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m9 6 6 6-6 6" />
+                </svg>
+              </button>
+            </MobileFoot>
+          </>
+        ) : (
+          <>
+            <div className="mf-m-scroll" data-jira-setup-body style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22, padding: '4px 16px 120px' }}>
+              <MChips title="이슈 유형" attr="data-jira-issue-type" items={types} names={typeNames} onToggle={(n) => setTypeNames((cur) => toggleName(cur, n))} empty="고른 유형의 티켓만 가져와요 · 고르지 않으면 전부" />
+              <MChips title="상태" attr="data-jira-status" items={statuses} names={statusNames} onToggle={(n) => setStatusNames((cur) => toggleName(cur, n))} empty="고른 상태의 티켓만 · 고르지 않으면 전부" />
+              <div data-jira-date-rule style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <MSectionHead title="날짜 기준" sub={`시작~끝이 티켓 막대, 배포는 그 날짜에 표시${fields === null ? ' · 필드를 불러오는 중…' : ''}`} />
+                <div style={{ display: 'flex', flexDirection: 'column', borderRadius: 16, background: 'var(--mf-m-card)', border: '1px solid var(--mf-m-card-line)', overflow: 'hidden' }}>
+                  {fieldRows.map((f, i) => (
+                    <button key={f.id} type="button" className="btn" data-jira-rule-row={f.id} onClick={() => setFieldSheet(f.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, height: 58, padding: '0 14px 0 16px', border: 0, borderTop: i ? '1px solid var(--mf-m-line)' : 0, background: fieldSheet === f.id ? 'var(--mf-m-bg)' : 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+                      <span style={{ width: 34, flexShrink: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-m-mut)' }}>{f.label}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, color: 'var(--mf-m-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.value}</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-m-faint)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                        <path d="m9 6 6 6-6 6" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="btn" data-jira-rule-fill aria-pressed={rule.fill} onClick={() => setRule({ ...rule, fill: !rule.fill })} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px', border: 0, borderRadius: 14, background: rule.fill ? 'var(--mf-m-card)' : 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+                  <CheckBox on={rule.fill} />
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--mf-m-ink)', wordBreak: 'keep-all' }}>날짜가 비면 만든 날 ~ 해결된 날로 그리기</span>
+                    <span style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--mf-m-mut2)', wordBreak: 'keep-all' }}>아직 해결 안 된 티켓은 오늘까지. 끄면 날짜 없는 티켓은 달력에 안 보여요.</span>
+                  </span>
+                </button>
+              </div>
+              {error && <div style={{ fontSize: 13, color: 'var(--mf-danger)' }}>{error}</div>}
+            </div>
+            <MobileFoot>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--mf-m-mut)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                프로젝트 {picked.length}{typeNames.length ? ` · 유형 ${typeNames.length}` : ''}{statusNames.length ? ` · 상태 ${statusNames.length}` : ''}
+              </span>
+              <button type="button" className="btn" data-jira-setup-save disabled={saving || !picked.length} onClick={() => void save()} style={{ ...M_PRIMARY, ...(saving || !picked.length ? M_PRIMARY_OFF : {}) }}>
+                {saving ? '저장 중…' : '저장'}
+              </button>
+            </MobileFoot>
+            <MobileSheet open={fieldSheet !== null} onClose={() => setFieldSheet(null)} label="날짜 필드" zIndex={170} attrs={{ 'data-jira-field-sheet': fieldSheet ?? '' }}>
+              <div style={{ padding: '14px 20px 4px' }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--mf-m-ink)' }}>{fieldSheet === 'start' ? '시작' : fieldSheet === 'end' ? '끝' : '배포'} 날짜 필드</div>
+                <div style={{ marginTop: 3, fontSize: 12, color: 'var(--mf-m-mut2)' }}>{fieldSheet === 'release' ? '그 날짜에 배포 표시를 찍어요' : '고른 필드의 날짜로 티켓 막대를 그려요'}</div>
+              </div>
+              <div className="mf-m-scroll" style={{ overflowY: 'auto', minHeight: 0, padding: '6px 12px 4px' }}>
+                {sheetOpts.map((o) => {
+                  const on = o.id === sheetCur;
+                  return (
+                    <button key={o.id || 'none'} type="button" role="radio" aria-checked={on} className="btn mf-m-press" data-jira-rule-option={o.id} onClick={() => pickField(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 50, padding: '0 10px', border: 0, borderRadius: 12, background: on ? 'var(--mf-m-bg)' : 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: on ? 800 : 600, color: 'var(--mf-m-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.name}</span>
+                      {on && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                          <path d="m5 12 5 5L20 7" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </MobileSheet>
+          </>
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       {head('Jira 설정', `${conn.site?.name || conn.site?.url || 'Jira'} · 어떤 티켓을 어떤 날짜로 보여 줄지 정해요`)}
@@ -315,13 +493,7 @@ function DateRuleSection({ fields, rule, onChange, focus }: { fields: JiraField[
     ref.current?.scrollIntoView?.({ block: 'nearest' });
     ref.current?.querySelector<HTMLSelectElement>('select')?.focus({ preventScroll: true });
   }, [focus]);
-  const custom = fields ?? [];
-  // 지금 값이 목록에 없으면(필드를 못 받았거나 지워졌다) 그 값도 칸에 남긴다 — 고른 것이 사라지지 않게.
-  const withCurrent = (id: string | null, name: string | undefined) => (id && id.startsWith('customfield_') && !custom.some((f) => f.id === id) ? [{ id, name: name ?? id }, ...custom] : custom);
-  const startOpts = [{ id: '', name: '없음 · 끝 날짜 하루로' }, { id: 'created', name: '만든 날짜' }, ...withCurrent(rule.start, rule.startName)];
-  const endOpts = [{ id: 'duedate', name: '기한' }, { id: 'resolutiondate', name: '해결된 날짜 (아직이면 오늘)' }, ...withCurrent(rule.end, rule.endName)];
-  const releaseOpts = [{ id: '', name: '표시 안 함' }, { id: 'duedate', name: '기한' }, ...withCurrent(rule.release ?? null, rule.releaseName)];
-  const nameOf = (opts: { id: string; name: string }[], id: string) => opts.find((o) => o.id === id)?.name;
+  const { startOpts, endOpts, releaseOpts, nameOf } = ruleOptions(fields, rule);
   return (
     <div ref={ref} data-jira-date-rule data-focus={focus ? '' : undefined} style={{ ...(focus ? { background: 'var(--mf-panel2)' } : {}),  padding: '10px 22px 12px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <SectionTitle n={4} title="날짜 기준" hint={`시작~끝이 티켓 막대, 배포는 그 날짜에 표시${fields === null ? ' · 필드를 불러오는 중…' : ''}`} />
@@ -357,7 +529,104 @@ function DateRuleSection({ fields, rule, onChange, focus }: { fields: JiraField[
   );
 }
 
+/** 날짜 칸 셋의 고를 거리 — 기본 칸 + 사이트의 커스텀 날짜 필드(데스크톱 `<select>`와 폰 시트가 같은 목록을 본다). */
+function ruleOptions(fields: JiraField[] | null, rule: JiraDateChoice) {
+  const custom = fields ?? [];
+  // 지금 값이 목록에 없으면(필드를 못 받았거나 지워졌다) 그 값도 칸에 남긴다 — 고른 것이 사라지지 않게.
+  const withCurrent = (id: string | null, name: string | undefined) => (id && id.startsWith('customfield_') && !custom.some((f) => f.id === id) ? [{ id, name: name ?? id }, ...custom] : custom);
+  const startOpts = [{ id: '', name: '없음 · 끝 날짜 하루로' }, { id: 'created', name: '만든 날짜' }, ...withCurrent(rule.start, rule.startName)];
+  const endOpts = [{ id: 'duedate', name: '기한' }, { id: 'resolutiondate', name: '해결된 날짜 (아직이면 오늘)' }, ...withCurrent(rule.end, rule.endName)];
+  const releaseOpts = [{ id: '', name: '표시 안 함' }, { id: 'duedate', name: '기한' }, ...withCurrent(rule.release ?? null, rule.releaseName)];
+  const nameOf = (opts: { id: string; name: string }[], id: string) => opts.find((o) => o.id === id)?.name;
+  return { startOpts, endOpts, releaseOpts, nameOf };
+}
+
 const toggleName = (cur: string[], n: string) => (cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]);
+
+/* ── 폰 판(W7·W8)의 조각 ─────────────────────────────────────────────── */
+
+const M_MONO = "'JetBrains Mono', ui-monospace, monospace";
+const M_BACK = { display: 'inline-flex', alignItems: 'center', gap: 2, height: 40, padding: '0 8px', border: 0, borderRadius: 12, background: 'transparent', color: 'var(--mf-m-mut)', fontFamily: 'inherit', fontSize: 15, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', width: 84 } as const;
+const M_PRIMARY = { flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, height: 48, padding: '0 22px', border: 0, borderRadius: 14, background: 'var(--mf-m-ink)', color: 'var(--mf-m-card)', fontFamily: 'inherit', fontSize: 15, fontWeight: 800, cursor: 'pointer' } as const;
+const M_PRIMARY_OFF = { background: 'var(--mf-m-soft)', color: 'var(--mf-m-faint)', cursor: 'default' } as const;
+/** 프로젝트 타일 색 — 키로 고른다(목록 순서가 검색마다 바뀌어도 같은 프로젝트는 같은 색). */
+const TILES: readonly (readonly [string, string])[] = [
+  ['#FBEDE6', '#C0563A'],
+  ['#E9F0FC', '#3E66B8'],
+  ['#EBF5EE', '#2F7D57'],
+  ['#F1ECFA', '#7650B8'],
+  ['#FBF3E4', '#B0781E'],
+  ['#E7F3F6', '#2A7C91'],
+];
+function tileOf(key: string): readonly [string, string] {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return TILES[h % TILES.length]!;
+}
+
+function StepPill({ n, name, on }: { n: number; name: string; on: boolean }) {
+  return (
+    <span data-jira-step={n} aria-current={on ? 'step' : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 10px 0 6px', borderRadius: 99, border: on ? 0 : '1px solid var(--mf-m-btn-line)', background: on ? 'var(--mf-m-ink)' : 'var(--mf-m-card)', color: on ? 'var(--mf-m-card)' : 'var(--mf-m-mut)', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+      <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: 99, background: on ? 'var(--mf-m-card)' : 'var(--mf-m-soft)', color: on ? 'var(--mf-m-ink)' : 'var(--mf-m-mut)', fontFamily: M_MONO, fontSize: 9.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span>
+      {name}
+    </span>
+  );
+}
+
+function CheckBox({ on }: { on: boolean }) {
+  return (
+    <span aria-hidden="true" style={{ width: 22, height: 22, flexShrink: 0, borderRadius: 7, border: `1.5px solid ${on ? 'var(--mf-accent)' : 'var(--mf-m-faint2)'}`, background: on ? 'var(--mf-accent)' : 'var(--mf-m-card)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', transition: 'all .12s ease' }}>
+      {on && (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m5 12 5 5L20 7" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+/** 바닥에 붙는 다음/저장 줄 — 엄지가 닿는 자리(디자인 W7 "다음은 엄지 위치에 고정"). */
+function MobileFoot({ children }: { children: ReactNode }) {
+  return <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px max(18px, env(safe-area-inset-bottom))', background: 'linear-gradient(180deg, transparent, var(--mf-m-bg) 30%)' }}>{children}</div>;
+}
+
+function MSectionHead({ title, sub }: { title: string; sub: string }) {
+  return (
+    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 4px' }}>
+      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--mf-m-ink)' }}>{title}</span>
+      <span style={{ fontSize: 12, color: 'var(--mf-m-mut2)', wordBreak: 'keep-all' }}>{sub}</span>
+    </span>
+  );
+}
+
+/** 폰의 이름 칩 칸(이슈 유형 · 상태) — 데스크톱 `NameChipSection`과 같은 규칙(이름 하나가 칩 하나 · 비우면 전부). */
+function MChips({ title, attr, items, names, onToggle, empty }: { title: string; attr: string; items: JiraIssueTypeRef[] | null; names: string[]; onToggle: (name: string) => void; empty: string }) {
+  const all = items ? [...new Set(items.map((t) => t.name))] : [];
+  const shown = [...all, ...names.filter((x) => !all.includes(x))];
+  const sub = items === null ? '불러오지 못했어요 · 지금 설정을 그대로 둬요' : names.length ? `${names.length}개만 보여요` : empty;
+  return (
+    <div data-jira-chips={title} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <MSectionHead title={title} sub={sub} />
+      {!!shown.length && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {shown.map((x) => {
+            const on = names.includes(x);
+            return (
+              <button key={x} type="button" className="btn" {...{ [attr]: x }} aria-pressed={on} onClick={() => onToggle(x)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px', borderRadius: 99, border: `1px solid ${on ? 'var(--mf-m-ink)' : 'var(--mf-m-btn-line)'}`, background: on ? 'var(--mf-m-ink)' : 'var(--mf-m-card)', color: on ? 'var(--mf-m-card)' : 'var(--mf-m-ink2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {on && (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="m5 12 5 5L20 7" />
+                  </svg>
+                )}
+                {x}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** 칸 제목 — 번호를 붙여 이 팝업이 무엇을 정하는지(프로젝트·유형·상태·날짜) 한눈에 보이게(요청 2026-10-01). */
 function SectionTitle({ n, title, hint }: { n: number; title: string; hint: string }) {

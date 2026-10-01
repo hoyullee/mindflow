@@ -56,9 +56,9 @@ export function StatusBadge({ status, height }: { status: TicketStatus; height: 
 }
 
 /** 가라앉은 트랙 위의 세그먼트(보기 전환·묶음·국가·반복). */
-export function Seg<T extends string>({ items, value, onChange, height, font, pad, label }: { items: [T, string][]; value: T; onChange: (v: T) => void; height: number; font: number; pad: number; label: string }) {
+export function Seg<T extends string>({ items, value, onChange, height, font, pad, label, stretch }: { items: [T, string][]; value: T; onChange: (v: T) => void; height: number; font: number; pad: number; label: string; /** 폭을 채우고 칸을 똑같이 나눈다(폰의 국가 · 반복). */ stretch?: boolean }) {
   return (
-    <div role="radiogroup" aria-label={label} style={{ display: 'inline-flex', background: 'var(--mf-ws-soft)', padding: 2, borderRadius: 999, flexShrink: 0 }}>
+    <div role="radiogroup" aria-label={label} style={{ display: stretch ? 'flex' : 'inline-flex', background: 'var(--mf-ws-soft)', padding: 2, borderRadius: 999, flexShrink: 0 }}>
       {items.map(([id, name]) => {
         const on = id === value;
         return (
@@ -70,7 +70,7 @@ export function Seg<T extends string>({ items, value, onChange, height, font, pa
             className="btn"
             data-seg={id}
             onClick={() => onChange(id)}
-            style={{ height, padding: `0 ${pad}px`, border: 0, borderRadius: 999, background: on ? 'var(--mf-ws-card)' : 'transparent', boxShadow: on ? '0 1px 3px rgba(46,42,38,.12)' : 'none', color: on ? 'var(--mf-ws-ink)' : 'var(--mf-ws-mut)', fontFamily: 'inherit', fontSize: font, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            style={{ ...(stretch ? { flex: '1 1 0', minWidth: 0 } : {}), height, padding: `0 ${pad}px`, border: 0, borderRadius: 999, background: on ? 'var(--mf-ws-card)' : 'transparent', boxShadow: on ? '0 1px 3px rgba(46,42,38,.12)' : 'none', color: on ? 'var(--mf-ws-ink)' : 'var(--mf-ws-mut)', fontFamily: 'inherit', fontSize: font, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             {name}
           </button>
