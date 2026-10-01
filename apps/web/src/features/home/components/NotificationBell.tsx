@@ -41,11 +41,11 @@ import { focusCalendar } from '../calendarFocus';
  * (일정 알림·회의실 거절). 셋 자리(첫 줄·얼굴 자리·눌러 갈 수 있는가)가 같은 값을
  * 봐야 하므로 한 함수로 둔다 — 한 곳만 고치면 "눌러도 아무 일 없는 항목"이 된다.
  */
-function isCalendarNotice(n: AppNotification): boolean {
+export function isCalendarNotice(n: AppNotification): boolean {
   return n.kind === 'reminder' || n.kind === 'room_conflict';
 }
 
-function lineOf(n: AppNotification): string {
+export function lineOf(n: AppNotification): string {
   // 일정 알림에는 "누가"가 없다 — 그 자리에서 궁금한 것은 **언제 시작하는가**다
   // (토스트·OS 알림과 같은 문장). 어느 일정인지는 아래 칩이 말한다.
   if (n.kind === 'reminder') return n.calendar?.body || '곧 시작하는 일정이에요';
@@ -84,14 +84,14 @@ function summaryOf(n: AppNotification): { head: string; time: string } {
 /** 이름을 정해진 팔레트의 한 색으로 — 같은 사람은 늘 같은 색(접속자 아바타와 같은 생각).
  * 디자인 원본은 목업이라 색을 손으로 골랐지만, 우리는 이름에서 결정적으로 뽑는다. */
 const SEED_PALETTE = ['#E45DA0', '#5B8DEF', '#63A8E8', '#E8833A', '#7CA84A', '#8a63d2'];
-function seedColor(text: string): string {
+export function seedColor(text: string): string {
   let h = 0;
   for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) >>> 0;
   return SEED_PALETTE[h % SEED_PALETTE.length]!;
 }
 
 /** 종류 미니 배지(아바타 오른쪽 아래) — [면, 잉크, 아이콘 패스]. 디자인 원본의 KIND. */
-function kindBadge(kind: AppNotification['kind']): [string, string, ReactNode] {
+export function kindBadge(kind: AppNotification['kind']): [string, string, ReactNode] {
   // 일정 알림 — 시계(강조색). 사람이 아니라 시각이 부른 알림이다.
   if (kind === 'reminder')
     return [
@@ -129,14 +129,14 @@ function kindBadge(kind: AppNotification['kind']): [string, string, ReactNode] {
 
 /** 오늘 / 이번 주 / 이전 — 목록의 묶음 머리(첨부 디자인). 일주일이 넘으면
  * 상대 시간이 무의미해지므로 `이전` 하나로 접는다(카드 시각 표기와 같은 생각). */
-function groupOf(iso: string, now: Date = new Date()): '오늘' | '이번 주' | '이전' {
+export function groupOf(iso: string, now: Date = new Date()): '오늘' | '이번 주' | '이전' {
   const d = new Date(iso);
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   if (sameDay) return '오늘';
   return now.getTime() - d.getTime() < 7 * 24 * 3600_000 ? '이번 주' : '이전';
 }
 
-function hrefOf(n: AppNotification): string | null {
+export function hrefOf(n: AppNotification): string | null {
   if (!n.documentId) return null;
   const base = `/editor?map=${encodeURIComponent(n.documentId)}`;
   // 댓글류는 대상 주제의 댓글 패널을 바로 연다 — 알림을 눌렀는데 맵만 열리면

@@ -21,11 +21,11 @@ interface Props {
  * 학습 정리)만 남긴다. **데이터는 지우지 않는다**: 회의록 등 나머지 템플릿의
  * `tpl=<id>` 주소는 계속 동작한다(에디터가 시드하는 경로는 갤러리와 무관하다).
  */
-const GALLERY_MAP_IDS = ['brainstorm', 'weekly', 'study'];
+export const GALLERY_MAP_IDS = ['brainstorm', 'weekly', 'study'];
 
 /** 템플릿의 직렬화 본문 — 내용이 고정이라 한 번만 만들면 된다(캐시 키이기도 하다). */
 const rawCache = new Map<string, string>();
-function templateRaw(id: string): string {
+export function templateRaw(id: string): string {
   const hit = rawCache.get(id);
   if (hit !== undefined) return hit;
   const raw = JSON.stringify(buildTemplateDoc(id));
@@ -344,7 +344,7 @@ export function TemplateGallery({ state, controller }: Props) {
  * 그래서 **그 템플릿이 실제로 까는 블록을 막대로 그린다** — 회의록에는 표가, 회고에는
  * 목록 두 덩이가 보인다. 넷이 서로 다르게 보이고, 그 차이가 실제 차이와 같다.
  */
-function NotePreview({ tpl }: { tpl: NoteTemplate }) {
+export function NotePreview({ tpl }: { tpl: NoteTemplate }) {
   const bars: JSX.Element[] = [];
   let y = 0;
   tpl.lines.forEach((line, i) => {

@@ -676,15 +676,17 @@ describe('일정 화면', () => {
     expect(localStorage.getItem('mf_home_landing')).toBe('cal');
   });
 
-  it('폰에서는 사이드를 접고, 화면이 바뀌면 서랍이 닫힌다', async () => {
+  it('폰에서는 하단 탭의 「일정」으로 들어가고, 사이드를 접는다', async () => {
     mockMatchMedia(true);
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
-    // 서랍을 열고 일정으로
-    await waitFor(() => expect(screen.getByLabelText('메뉴 열기')).toBeTruthy());
-    fireEvent.click(screen.getByLabelText('메뉴 열기'));
-    await openCalendar();
-    // 고른 화면을 서랍이 가리지 않는다
-    await waitFor(() => expect(document.querySelector('aside.mf-drawer')).toBeNull());
+    // LNB(서랍)가 없다 — 일정은 하단 탭이다(모바일 홈 디자인).
+    await waitFor(() => expect(document.querySelector('[data-m-tab="cal"]')).toBeTruthy());
+    expect(document.querySelector('aside')).toBeNull();
+    fireEvent.click(document.querySelector('[data-m-tab="cal"]')!);
+    await waitFor(() => expect(document.querySelector('[data-calendar-view]')).toBeTruthy());
+    expect(document.querySelector('[data-m-tab="cal"]')!.getAttribute('aria-current')).toBe('page');
+    // ☰은 없다(넘겨받지 않았다).
+    expect(screen.queryByLabelText(/메뉴 열기/)).toBeNull();
     // 좁은 화면에는 사이드가 없다(달력만)
     expect(document.querySelector('[data-cal-side]')).toBeNull();
     expect(document.querySelectorAll('[data-day-cell]').length).toBe(42);

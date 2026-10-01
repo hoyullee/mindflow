@@ -84,7 +84,7 @@ function BreadcrumbTitle({ parent, leaf, full }: { parent: string | null; leaf: 
  * 쓰고 있어 셋이 겹친다. 지금 무엇을 고르고 있는지는 화면 맨 위가 말하는 편이
  * 자연스럽고(파일 앱 관례), 검색·만들기는 그 시간대에 할 일이 아니다.
  */
-function SelectionBar({ state, controller }: { state: HomeState; controller: HomeController }) {
+export function SelectionBar({ state, controller }: { state: HomeState; controller: HomeController }) {
   const n = state.selectedCards.length;
   const anchor = state.selectedCard ?? state.selectedCards[n - 1] ?? null;
   const btn = {
