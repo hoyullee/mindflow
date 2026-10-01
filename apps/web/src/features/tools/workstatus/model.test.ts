@@ -9,6 +9,7 @@ import {
   computeStats,
   dayChips,
   foldSolo,
+  planWeek,
   releasesOn,
   SOLO_KEY,
   gridDays,
@@ -241,5 +242,33 @@ describe('에픽 없는 티켓 · 배포 예정일', () => {
   });
   it('배포 예정일인 티켓', () => {
     expect(releasesOn([{ ...tickets[0]!, release: '2026-09-07' }, tickets[1]!], '2026-09-07').map((t) => t.key)).toEqual(['SQA-1']);
+  });
+});
+
+describe('달력 줄 — 이어지는 같은 묶음은 같은 줄', () => {
+  const week = ['2026-09-06', '2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'];
+  const all = week.map(() => true);
+  const mk = (ts: JiraTicket[]) => buildDataset([...new Set(ts.map((t) => t.epic))].map((k) => ({ key: k, name: k, start: null, end: null, status: 'doing' as const, solo: true })), ts, []);
+  it('늦게 끝나는 것이 먼저 빠져도 남은 띠는 제 줄에 머문다(계단 없음)', () => {
+    const ts = [T('A', 'A', 'p', '2026-09-07', '2026-09-08'), T('B', 'B', 'p', '2026-09-07', '2026-09-10'), T('C', 'C', 'p', '2026-09-09', '2026-09-10')];
+    const plan = planWeek(ts, week, all, mk(ts));
+    const keyAt = (i: number) => plan.rows[i]!.map((r) => r?.chip.epic.key ?? null);
+    expect(keyAt(1)).toEqual(['B', 'A']); // 오래 걸친 B가 위
+    expect(keyAt(3)).toEqual(['B', 'C']); // A가 빠진 자리를 C가 채운다 — B는 그대로 0번 줄
+    expect(plan.rows[1]![0]).toMatchObject({ head: true, tail: false });
+    expect(plan.rows[4]![0]).toMatchObject({ head: false, tail: true });
+  });
+  it('위 줄이 비어도 자리를 남긴다', () => {
+    const ts = [T('A', 'A', 'p', '2026-09-07', '2026-09-07'), T('B', 'B', 'p', '2026-09-07', '2026-09-08')];
+    const plan = planWeek(ts, week, all, mk(ts));
+    expect(plan.rows[2]!.map((r) => r?.chip.epic.key ?? null)).toEqual(['B']);
+    const ts2 = [T('A', 'A', 'p', '2026-09-07', '2026-09-08'), T('B', 'B', 'p', '2026-09-07', '2026-09-07')];
+    expect(planWeek(ts2, week, all, mk(ts2)).rows[2]!.map((r) => r?.chip.epic.key ?? null)).toEqual(['A']);
+  });
+  it('줄이 넘치는 주는 둘만 + 칸마다 +N', () => {
+    const ts = ['A', 'B', 'C', 'D'].map((k) => T(k, k, 'p', '2026-09-08', '2026-09-08'));
+    const plan = planWeek(ts, week, all, mk(ts));
+    expect(plan.rows[2]!.length).toBe(2);
+    expect(plan.more[2]).toBe(2);
   });
 });

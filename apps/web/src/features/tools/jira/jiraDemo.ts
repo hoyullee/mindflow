@@ -118,6 +118,7 @@ export const demoJira: JiraSource = {
   selectSite: () => need((s) => ok(status(s))),
   projects: (query) => need(() => ok({ projects: PROJECTS.filter((p) => !query || `${p.key} ${p.name}`.toLowerCase().includes(query.toLowerCase())) })),
   issueTypes: (projects) => need(() => ok({ types: projects.length ? [{ id: '10001', name: '작업' }, { id: '10002', name: '버그' }, { id: '10101', name: '작업' }] : [] })),
+  statuses: (projects) => need(() => ok({ statuses: projects.length ? [{ id: '1', name: '해야 할 일', cat: 'todo' as const }, { id: '3', name: '진행 중', cat: 'doing' as const }, { id: '31', name: '진행 중', cat: 'doing' as const }, { id: '10001', name: '완료', cat: 'done' as const }] : [] })),
   fields: () => need(() => ok({ fields: [{ id: 'customfield_10015', name: 'Start date' }, { id: 'customfield_10020', name: 'Target end' }], suggested: { id: 'customfield_10015', name: 'Start date' } })),
   saveProjects: (projects) =>
     need(() => {

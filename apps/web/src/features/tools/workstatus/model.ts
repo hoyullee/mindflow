@@ -420,3 +420,68 @@ export function foldSolo(epics: Epic[], tickets: Ticket[]): { epics: Epic[]; tic
 
 /** 그날이 배포 예정일인 티켓 — 달력 칸·패널이 쓴다. */
 export const releasesOn = (tickets: Ticket[], d: string) => tickets.filter((t) => t.release === d);
+
+// ── 달력 줄(lane) — 이어지는 같은 묶음은 그 주 내내 같은 줄 ─────────────────
+
+/** 한 칸이 담는 줄 수 — 넘으면 둘 + `+N개`(스펙 §5.2의 셋/둘 규칙을 주 단위로). */
+export const CAL_LANES = 3;
+
+export interface WeekPiece {
+  chip: DayChip;
+  /** 이 칸이 그 묶음 띠의 시작(왼쪽 모서리 둥글게 · 이름을 쓴다) — 전날에 없거나 주의 첫 칸. */
+  head: boolean;
+  /** 띠의 끝(오른쪽 모서리 둥글게) — 다음 날에 없거나 주의 끝 칸. */
+  tail: boolean;
+}
+
+export interface WeekPlan {
+  /** 칸마다 줄 순서대로 — 그 줄이 비면 null(자리를 비워 아래 줄이 올라오지 않게). */
+  rows: (WeekPiece | null)[][];
+  /** 칸마다 줄에 못 담은 묶음 수. */
+  more: number[];
+}
+
+/**
+ * 한 주(7칸)의 묶음 칩에 **줄을 배정한다** — 일정 페이지의 `weekLanes`와 같은 규칙(제보 2026-10-01:
+ * "연속된 같은 일정이 날짜 칸마다 위아래 제각각"). 일찍 나타난 묶음이 위, 같이 나타나면 오래 걸친 것이 위,
+ * 그래도 같으면 키. 각 묶음은 그 주에서 자기 칸들이 비어 있는 **가장 위 줄**을 차지한다.
+ * 줄이 `CAL_LANES`를 넘는 주는 **그 주 전체가** 둘만 보이고 나머지는 칸마다 `+N개`(띠가 중간에서 끊기지 않게).
+ * `inMonth`가 거짓인 칸은 비운다(다른 달 칸에는 칩을 그리지 않는다).
+ */
+export function planWeek(tickets: Ticket[], week: string[], inMonth: boolean[], data: Dataset): WeekPlan {
+  const perDay = week.map((d, i) => (inMonth[i] ? dayChips(tickets, d, data) : []));
+  const cols = new Map<string, number[]>();
+  perDay.forEach((chips, i) => chips.forEach((c) => cols.set(c.epic.key, [...(cols.get(c.epic.key) ?? []), i])));
+  const order = [...cols.keys()].sort((a, b) => {
+    const ca = cols.get(a)!;
+    const cb = cols.get(b)!;
+    return ca[0]! - cb[0]! || cb.length - ca.length || a.localeCompare(b);
+  });
+  const taken: Set<number>[] = [];
+  const lane = new Map<string, number>();
+  for (const k of order) {
+    const cs = cols.get(k)!;
+    let l = 0;
+    while (taken[l] && cs.some((c) => taken[l]!.has(c))) l += 1;
+    const set = taken[l] ?? new Set<number>();
+    cs.forEach((c) => set.add(c));
+    taken[l] = set;
+    lane.set(k, l);
+  }
+  const lanes = taken.length;
+  const shown = lanes > CAL_LANES ? CAL_LANES - 1 : lanes;
+  const rows = perDay.map((chips, i) => {
+    const row: (WeekPiece | null)[] = Array.from({ length: shown }, () => null);
+    for (const chip of chips) {
+      const l = lane.get(chip.epic.key)!;
+      if (l >= shown) continue;
+      const cs = cols.get(chip.epic.key)!;
+      row[l] = { chip, head: i === 0 || !cs.includes(i - 1), tail: i === week.length - 1 || !cs.includes(i + 1) };
+    }
+    // 아래쪽 빈 줄은 잘라 둔다(그 칸 안에서만 — 위쪽의 빈 줄은 띠를 맞추려고 남긴다).
+    while (row.length && row[row.length - 1] === null) row.pop();
+    return row;
+  });
+  const more = perDay.map((chips) => chips.filter((c) => lane.get(c.epic.key)! >= shown).length);
+  return { rows, more };
+}

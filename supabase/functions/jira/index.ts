@@ -27,6 +27,7 @@ import {
   isEndField,
   isProjectKey,
   isReleaseField,
+  statusesOf,
   issueTypesOf,
   isStartField,
   normalizeEpic,
@@ -107,6 +108,8 @@ Deno.serve(async (req: Request) => {
         return json(await projects(ctx, payload));
       case 'issue-types':
         return json(await issueTypes(ctx, payload));
+      case 'statuses':
+        return json(await statuses(ctx, payload));
       case 'fields':
         return json(await fields(ctx));
       case 'save-projects':
@@ -170,7 +173,7 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
   if (!t.access_token || !t.expires_in) throw new Fail('exchange-failed', t.error_description || t.error || '');
   if (!t.refresh_token) throw new Fail('no-offline');
   const list = await fetchSites(t.access_token);
-  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name,end_field,end_field_name,fill_dates,issue_types,release_field,release_field_name').eq('user_id', ctx.uid).maybeSingle();
+  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name,end_field,end_field_name,fill_dates,issue_types,release_field,release_field_name,issue_statuses').eq('user_id', ctx.uid).maybeSingle();
   // 사이트가 하나면 곧바로 고른다(v1은 사이트 하나 — 스펙 §7). 다시 연결했는데 예전 사이트가
   // 여전히 목록에 있으면 **고른 프로젝트를 그대로 둔다**(해제 후 재연결 때 되살아나게).
   const keep = prev?.cloud_id ? list.find((s) => s.id === prev.cloud_id) : undefined;
@@ -194,6 +197,7 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
     issue_types: keep ? (prev?.issue_types ?? []) : [],
     release_field: keep ? (prev?.release_field ?? null) : null,
     release_field_name: keep ? (prev?.release_field_name ?? null) : null,
+    issue_statuses: keep ? (prev?.issue_statuses ?? []) : [],
     updated_at: new Date().toISOString(),
   };
   const { error } = await ctx.admin.from('jira_credentials').upsert(row);
@@ -222,6 +226,7 @@ function statusOf(row: Row) {
     endField: row.end_field ? { id: row.end_field, name: row.end_field_name ?? row.end_field } : null,
     fillDates: row.fill_dates !== false,
     issueTypes: coerceIssueTypes(row.issue_types),
+    issueStatuses: coerceIssueTypes(row.issue_statuses),
     releaseField: row.release_field ? { id: row.release_field, name: row.release_field_name ?? row.release_field } : null,
   };
 }
@@ -250,7 +255,7 @@ async function selectSite(ctx: Ctx, p: Record<string, unknown>) {
     cloud_id: site.id,
     site_url: site.url,
     site_name: site.name,
-    ...(same ? {} : { projects: [], start_field: null, start_field_name: null, end_field: null, end_field_name: null, fill_dates: true, issue_types: [], release_field: null, release_field_name: null }),
+    ...(same ? {} : { projects: [], start_field: null, start_field_name: null, end_field: null, end_field_name: null, fill_dates: true, issue_types: [], release_field: null, release_field_name: null, issue_statuses: [] }),
     updated_at: new Date().toISOString(),
   };
   await ctx.admin.from('jira_credentials').update(patch).eq('user_id', ctx.uid);
@@ -299,6 +304,35 @@ async function issueTypes(ctx: Ctx, p: Record<string, unknown>) {
   return { ok: true, types };
 }
 
+/**
+ * 고른 프로젝트들의 티켓이 가질 수 있는 **상태** — 프로젝트 고르기의 `상태` 칸. 이슈 유형을 골랐으면
+ * 그 유형의 상태만. 팀 관리 프로젝트는 같은 이름이 다른 id라 그대로 다 돌려주고 화면이 이름으로 묶는다.
+ */
+async function statuses(ctx: Ctx, p: Record<string, unknown>) {
+  const row = await mustRow(ctx);
+  if (!row.cloud_id) throw new Fail('no-site');
+  const keys = (Array.isArray(p.projects) ? p.projects : []).filter(isProjectKey).slice(0, 30);
+  const types = (Array.isArray(p.types) ? p.types : []).filter((t): t is string => typeof t === 'string').slice(0, 100);
+  if (!keys.length) return { ok: true, statuses: [] };
+  const token = await accessTokenFor(ctx, row);
+  const seen = new Set<string>();
+  const out: { id: string; name: string; cat?: string }[] = [];
+  await Promise.all(
+    keys.map(async (k) => {
+      try {
+        for (const s of statusesOf(await jiraGet(token, row.cloud_id!, `/rest/api/3/project/${encodeURIComponent(k)}/statuses`), types)) {
+          if (seen.has(s.id)) continue;
+          seen.add(s.id);
+          out.push(s);
+        }
+      } catch (e) {
+        if (e instanceof Fail && e.reason === 'revoked') throw e;
+      }
+    }),
+  );
+  return { ok: true, statuses: out };
+}
+
 /** 이 사이트의 커스텀 날짜 필드 + 자동으로 고른 시작일 — 프로젝트 고르기의 날짜 칸. */
 async function fields(ctx: Ctx) {
   const row = await mustRow(ctx);
@@ -333,6 +367,7 @@ async function saveProjects(ctx: Ctx, p: Record<string, unknown>) {
     patch.release_field_name = release ? fieldName(rule.releaseName, release) : null;
     // 이슈 유형도 같은 화면에서 온다 — 빈 목록은 "전부".
     if (Array.isArray(p.issueTypes)) patch.issue_types = coerceIssueTypes(p.issueTypes);
+    if (Array.isArray(p.issueStatuses)) patch.issue_statuses = coerceIssueTypes(p.issueStatuses);
   } else {
     // 날짜 칸 없이 저장(예전 화면) — 시작일 필드는 **고를 때마다** 다시 찾는다(연결 뒤에 관리자가
     // 필드를 만들었을 수 있다). 실패해도 저장은 한다(그때 티켓은 기한 하루로 그린다).
@@ -365,7 +400,14 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
   const to = typeof p.to === 'string' ? p.to : '';
   // 사용자의 오늘(시간대가 다르다) — 아직 안 끝난 티켓을 어디까지 그릴지.
   const today = isDate(p.today) ? p.today : undefined;
-  const jql = ticketsJql(proj, from, to, rule, coerceIssueTypes(row.issue_types).map((t) => t.id));
+  const jql = ticketsJql(
+    proj,
+    from,
+    to,
+    rule,
+    coerceIssueTypes(row.issue_types).map((t) => t.id),
+    coerceIssueTypes(row.issue_statuses).map((t) => t.id),
+  );
   if (!jql) throw new Fail('bad-range');
   const token = await accessTokenFor(ctx, row);
 

@@ -104,10 +104,16 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const from = days[0] as string;
   const to = days[days.length - 1] as string;
   // 프로젝트와 **날짜 규칙**이 질문이다 — 어느 쪽이 바뀌어도 새로 묻는다.
-  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}|${conn.releaseField?.id ?? ''}`;
+  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}|${conn.releaseField?.id ?? ''}|${(conn.issueStatuses ?? []).map((t) => t.id).join(',')}`;
   const ready = conn.connected && !!conn.site && conn.projects.length > 0;
   // `날짜 기준` 단추의 툴팁 — 지금 무엇으로 그리고 있는지 열지 않고도 보이게.
-  const dateRuleTitle = `시작 ${conn.startField?.name ?? '없음'} · 끝 ${conn.endField?.name ?? '기한'} · 배포 ${conn.releaseField?.name ?? '표시 안 함'}`;
+  const names = (xs: { name: string }[] | undefined) => [...new Set((xs ?? []).map((x) => x.name))].join(', ') || '전부';
+  const dateRuleTitle = [
+    `프로젝트 ${conn.projects.map((p) => p.name).join(', ') || '없음'}`,
+    `이슈 유형 ${names(conn.issueTypes)}`,
+    `상태 ${names(conn.issueStatuses)}`,
+    `날짜 시작 ${conn.startField?.name ?? '없음'} · 끝 ${conn.endField?.name ?? '기한'} · 배포 ${conn.releaseField?.name ?? '표시 안 함'}`,
+  ].join('\n');
   const month = useWorkStatusData(from, to, projKey, ready);
   const availData = useWorkStatusData(range.from, range.to, projKey, ready && availOpen);
 
@@ -368,13 +374,16 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
             )}
           </div>
           {ready && (
-            // 날짜 기준(시작·끝·배포 필드) — 프로젝트 고르기 안에 묻혀 있어 찾기 어려웠다(요청 2026-10-01). 팝업을 날짜 칸으로 연다.
-            <button type="button" className="btn" data-ws-date-rule-btn title={dateRuleTitle} onClick={() => openJiraSetup(undefined, { focus: 'dates' })} style={{ height: 32, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px 0 10px', borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+            // `Jira 설정` — 프로젝트·이슈 유형·상태·날짜 기준을 한 팝업에서 정한다. 처음 이름(`날짜 기준`)은 팝업에
+            // 무엇이 있는지 말하지 못했다(요청 2026-10-01). 지금 설정은 툴팁으로.
+            <button type="button" className="btn" data-ws-date-rule-btn aria-label="Jira 설정 — 프로젝트 · 이슈 유형 · 상태 · 날짜 기준" title={dateRuleTitle} onClick={() => openJiraSetup()} style={{ height: 32, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px 0 10px', borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="16" rx="2.5" />
-                <path d="M3 10h18M8 3v4M16 3v4M8 15h4" />
+                <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+                <circle cx="16" cy="6" r="2" />
+                <circle cx="10" cy="12" r="2" />
+                <circle cx="18" cy="18" r="2" />
               </svg>
-              날짜 기준
+              Jira 설정
             </button>
           )}
           <RoundButton on={panelShow} label="오른쪽 패널" onClick={() => setVp((v) => ({ ...v, panelOpen: !panelShow }))} attrs={{ 'data-ws-panel-btn': '' }}>

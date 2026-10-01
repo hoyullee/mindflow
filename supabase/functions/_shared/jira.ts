@@ -129,7 +129,7 @@ export function nextDay(d: string): string {
  *   끝이 `해결된 날`이면 아직 안 끝난 것은 오늘까지 이어지므로 **시작이 기간 끝 전**이면 부른다.
  *   `fill`이면 두 날짜가 다 빈 것도 만든 날로 부른다. 겹침의 마지막 판정은 정리한 뒤에 한다(`overlaps`).
  */
-export function ticketsJql(projects: string[], from: string, to: string, rule: DateRule = DEFAULT_RULE, types: string[] = []): string | null {
+export function ticketsJql(projects: string[], from: string, to: string, rule: DateRule = DEFAULT_RULE, types: string[] = [], statuses: string[] = []): string | null {
   const keys = projects.filter(isProjectKey);
   const typeIds = [...new Set(types.filter(isTypeId))];
   if (!keys.length || !isDate(from) || !isDate(to) || from > to) return null;
@@ -151,7 +151,8 @@ export function ticketsJql(projects: string[], from: string, to: string, rule: D
     // `created`가 시작이면 시작이 비는 일이 없다 — 위의 열린 끝 조건이 이미 다 부른다.
     if (s !== 'created') parts.push(`(${empty} AND created < "${to1}" AND (resolved is EMPTY OR resolved >= "${from}"))`);
   }
-  const typeQ = typeIds.length ? ` AND issuetype in (${typeIds.join(', ')})` : '';
+  const statusIds = [...new Set(statuses.filter(isTypeId))];
+  const typeQ = `${typeIds.length ? ` AND issuetype in (${typeIds.join(', ')})` : ''}${statusIds.length ? ` AND status in (${statusIds.join(', ')})` : ''}`;
   return `project in (${keys.join(', ')}) AND issuetype in standardIssueTypes()${typeQ} AND assignee is not EMPTY AND (${parts.join(' OR ')}) ORDER BY key ASC`;
 }
 
@@ -402,6 +403,39 @@ export function issueTypesOf(project: unknown): JiraIssueTypeRef[] {
     if (!t || !isTypeId(id) || !name || t.subtask === true) continue;
     if (typeof t.hierarchyLevel === 'number' && t.hierarchyLevel !== 0) continue;
     out.push({ id, name: name.slice(0, 80) });
+  }
+  return out;
+}
+
+/** 고를 수 있는 상태 하나 — `cat`은 Jira의 상태 분류(칩 색을 세 칸으로 맞춘다). */
+export interface JiraStatusRef {
+  id: string;
+  name: string;
+  cat?: TicketStatus;
+}
+
+/**
+ * 프로젝트의 상태 응답(`GET /rest/api/3/project/{key}/statuses` — 이슈 유형마다 상태 목록) → 상태들.
+ * `types`가 있으면 그 이슈 유형의 상태만(고른 유형에 없는 상태를 내밀지 않는다). 하위 작업 유형은 뺀다.
+ */
+export function statusesOf(body: unknown, types: string[] = []): JiraStatusRef[] {
+  if (!Array.isArray(body)) return [];
+  const want = new Set(types.filter(isTypeId));
+  const seen = new Set<string>();
+  const out: JiraStatusRef[] = [];
+  for (const raw of body) {
+    const it = obj(raw);
+    if (!it || it.subtask === true) continue;
+    const tid = str(it.id);
+    if (want.size && (!tid || !want.has(tid))) continue;
+    for (const st of Array.isArray(it.statuses) ? it.statuses : []) {
+      const o = obj(st);
+      const id = str(o?.id);
+      const name = str(o?.name);
+      if (!o || !isTypeId(id) || !name || seen.has(id)) continue;
+      seen.add(id);
+      out.push({ id, name: name.slice(0, 80), cat: statusOf(obj(o.statusCategory)?.key) });
+    }
   }
   return out;
 }
