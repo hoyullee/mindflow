@@ -5747,3 +5747,6 @@ SQA에는 `작업`·`팀 프로젝트`·`품질점검`(+하위 작업)이 섞여
 **검증**: `jiraDetail.test.ts`(ADF 중첩 목록·표·멘션·첨부 · 필드 모양 · 이메일 버림 · 빈 필드 셈 · 스프린트 · 에픽 칩 · 댓글 순서 · 하위 티켓 · 기간 알약 · 댓글 시각), `Tools.test.tsx`(막대 → 팝업 · 모든 필드 펼침 · 에픽 칩 → 하위 6건 · ‹ · 닫기). tools 89건 · lint · typecheck.
 
 **배포**: Edge Function `jira` 재배포 필요(새 동작 `issue`). 옛 함수면 팝업이 "Jira 연결 서버에 닿지 못했어요"(400)로 — `Jira에서 열기`는 그대로 된다.
+
+### 덧붙임 — #820이 Production으로 승격되지 않았다 (2026-10-01)
+main fast-forward(`c11feab`) 13초 전에 다른 세션의 main 푸시(`ee0c3f9`)가 Production 빌드를 잡았고, `c11feab`는 base 푸시 때 만든 Preview와 같은 sha라 Vercel이 Production으로 다시 빌드하지 않았다(운영 요약의 그 함정). 문서 한 줄 커밋으로 한 바퀴 더 돌려 승격 — 두 세션이 몇 초 사이로 main을 밀면 늦은 쪽이 이렇게 된다.
