@@ -6449,6 +6449,24 @@ describe('공책 — 코드 블록 · 인용 · 캐럿 서식 · 클립보드 �
     await waitFor(() => expect(runsOf(saved('cb1b').pages[0].blocks[0])).toBe('const a = 1;\nXYZ'));
   });
 
+  it('코드 블록에 **여러 줄을 붙여넣으면 전부 그 블록 안에** 들어간다 — 아래로 새지 않는다(제보)', async () => {
+    const c = await open('cb1c');
+    const line = c.querySelector('[data-note-line="cd"]') as HTMLElement;
+    caretEnd(line);
+    // 목록 표식처럼 보이는 줄·주소까지 섞는다 — 바깥에서는 블록으로 쪼개고 링크를 거는 글이다.
+    const clip = '\nfunction f() {\n  - return 1;\n}\n// https://example.com';
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(ev, 'clipboardData', { value: { getData: (t: string) => (t === 'text/plain' ? clip : '') }, configurable: true });
+    line.dispatchEvent(ev);
+
+    // 블록이 늘지 않는다 — 예전에는 첫 줄만 코드 블록에 남고 나머지가 그 아래 블록이 됐다.
+    expect(kinds(c)).toEqual(['code', 'q', 'p']);
+    saveNow();
+    await waitFor(() => expect(runsOf(saved('cb1c').pages[0].blocks[0])).toBe(`const a = 1;${clip}`));
+    // 코드는 평문이다 — 주소에 링크를 걸지 않는다.
+    expect(JSON.stringify(saved('cb1c').pages[0].blocks[0])).not.toContain('href');
+  });
+
   it('인용의 Enter는 **인용을 끝내고 본문 줄**로 간다(제보 8)', async () => {
     const c = await open('cb2');
     const line = c.querySelector('[data-note-line="qt"]') as HTMLElement;
