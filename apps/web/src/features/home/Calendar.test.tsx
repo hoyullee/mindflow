@@ -1802,9 +1802,9 @@ describe('일정 화면', () => {
       const note = document.querySelector('[data-event-note]') as HTMLElement;
       expect(note.innerHTML).toBe('<b>준비물</b><br>노트북');
 
-      // 도구 모음의 일곱 — 구글 캘린더의 그 목록.
+      // 도구 모음 — 구글 캘린더의 그 일곱 + 형광펜·체크리스트(폰의 막대 N8과 같은 명령 — 폰에서 칠한 것을 여기서도 걷는다).
       const cmds = [...document.querySelectorAll('[data-memo-cmd]')].map((b) => b.getAttribute('data-memo-cmd'));
-      expect(cmds).toEqual(['bold', 'italic', 'underline', 'ol', 'ul', 'link', 'clear']);
+      expect(cmds).toEqual(['bold', 'italic', 'underline', 'mark', 'ol', 'ul', 'check', 'link', 'clear']);
       fireEvent.click(document.querySelector('[data-memo-cmd="ol"]')!);
       expect(exec).toHaveBeenCalledWith('insertOrderedList', false, undefined);
 

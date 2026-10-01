@@ -226,6 +226,12 @@ export function GoogleEventFields({
   const makerEmail = maker?.email ?? '';
   const showMaker = !!maker;
   const makerIsMe = !!maker?.self;
+  /**
+   * 폰의 **초대받은 일정**(N5) — 내가 참석자이고 만든 사람이 아니다. 이 화면의 용건은 응답과 회의 참여라
+   * 디자인은 Meet 켜고 끄기·공개 설정·참여 가능 여부를 두지 않는다(데스크톱 팝업은 그대로 둔다).
+   * Meet은 켜고 끄는 카드 대신 **링크 카드**(복사 · 참여)만 선다 — 회의를 붙이고 떼는 것은 주최자의 일이다.
+   */
+  const guestView = mobile && mode === 'edit' && value.rsvp !== undefined && !makerIsMe;
   const orgKnown = maker?.name ?? value.names?.[makerEmail] ?? knownName(makerEmail) ?? '';
   const askOrg = directory?.canSearchPeople ? directory.searchPeople : undefined;
   useEffect(() => {
@@ -357,7 +363,9 @@ export function GoogleEventFields({
           **이미 등록된 일정에서도 켜고 끈다**(요청) — 예전에는 만들 때만 토글이고
           수정할 때는 링크만 보여 줘서, 회의 링크를 뒤늦게 붙이거나 뗄 길이 없었다.
           링크는 구글이 만들어 주므로 토글 아래에 **있을 때만** 따라 붙는다. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* 초대받은 일정에 회의가 없으면 이 칸은 비어 있다 — 빈 칸이 묶음의 간격(19px)을 한 번 더 먹지 않게 감춘다. */}
+      <div style={{ display: guestView && !meetLink ? 'none' : 'flex', flexDirection: 'column', gap: 8 }}>
+        {!guestView && (
         <button
           type="button"
           data-gf-meet
@@ -394,11 +402,21 @@ export function GoogleEventFields({
             <span style={{ width: 18, height: 18, borderRadius: 999, background: '#FFFFFF', boxShadow: '0 1px 3px rgba(46,42,38,.3)', display: 'block' }} />
           </span>
         </button>
-        {meetLink && value.addMeet && mobile ? (
-          /* 폰(N5) — 링크 줄에 「참여」가 붙는다: 폰에서 이 일정을 여는 가장 흔한 까닭이 회의에 들어가는 것이다. */
-          <span data-gf-meet-card style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 10px 14px', borderRadius: 14, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
+        )}
+        {meetLink && (value.addMeet || guestView) && mobile ? (
+          /* 폰(N5) — 링크 줄에 「참여」가 붙는다: 폰에서 이 일정을 여는 가장 흔한 까닭이 회의에 들어가는 것이다.
+             초대받은 일정에서는 토글이 없으니 이 카드가 Meet의 전부다 — 무엇의 링크인지 아이콘과 이름으로 말한다. */
+          <span data-gf-meet-card style={{ display: 'flex', alignItems: 'center', gap: guestView ? 12 : 10, padding: guestView ? '12px 14px 12px 16px' : '10px 12px 10px 14px', borderRadius: 14, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
+            {guestView && (
+              <span aria-hidden style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 10, background: 'color-mix(in srgb, #2F7D57 10%, var(--mf-card))', color: '#2F7D57', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="6" width="13" height="12" rx="2" />
+                  <path d="m16 10 5-3v10l-5-3" />
+                </svg>
+              </span>
+            )}
             <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--mf-text)' }}>회의 링크</span>
+              <span style={{ fontSize: guestView ? 15 : 14, fontWeight: 800, color: 'var(--mf-text)' }}>{guestView ? 'Google Meet' : '회의 링크'}</span>
               <span data-gf-meet-link style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meetLink.replace(/^https?:\/\//, '')}</span>
             </span>
             <button type="button" className="btn mf-m-press" data-gf-meet-copy aria-label="링크 복사" title="링크 복사" onClick={() => void navigator.clipboard?.writeText(meetLink).catch(() => undefined)} style={{ width: 38, height: 38, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 10, background: 'var(--mf-card)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
@@ -547,11 +565,14 @@ export function GoogleEventFields({
         )}
       </Field>
 
+      {!guestView && (
       <Field label="공개 설정">
         <Segments aria="공개 설정" items={VIS_OPTS.map((o) => ({ value: o.v, label: o.label }))} value={value.visibility} onChange={(v) => onChange({ visibility: v as GoogleVisibility })} attr="data-gf-vis" wide />
         <SubText>{visNote}</SubText>
       </Field>
+      )}
 
+      {!guestView && (
       <Field label="참여 가능 여부">
         <Segments
           aria="참여 가능 여부"
@@ -565,6 +586,7 @@ export function GoogleEventFields({
           wide
         />
       </Field>
+      )}
     </div>
   );
 }
