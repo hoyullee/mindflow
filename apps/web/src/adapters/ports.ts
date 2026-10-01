@@ -908,6 +908,53 @@ export interface EventStore {
   remove(id: string): Promise<{ error?: string }>;
 }
 
+// ── 공책 기록(0048) ─────────────────────────────────────────────────────────
+//
+// 공책 **페이지마다** 누가·언제·무엇을 바꿨는지 남기는 타임라인(기록 패널 스펙). 예전의
+// `versionHistory.ts`는 이 기기의 로컬 스냅샷이라 **누가**가 없었다 — 그래서 서버에 둔다.
+// 항목 하나 = 그 시점 **페이지 스냅샷** + 한 줄 요약(+ 문구 수정이면 전·후 글).
+// 기록은 지우지 않는다(되돌리기도 새 항목). 보관: 최근 30일 전부 + 그 이전은 하루 1개(서버가 정리).
+
+export type NoteHistoryKind = 'create' | 'edit' | 'insert' | 'delete' | 'move' | 'restore' | 'checklist' | 'table' | 'tag' | 'rename';
+
+export interface NoteHistoryActor {
+  /** 계정 id(서버) — 로컬 모드는 이메일. */
+  id: string;
+  name: string;
+  /** 아바타 색(그 사람의 접속자 색과 같은 시드). */
+  color: string;
+  avatar?: string | null;
+}
+
+export interface NoteHistoryEntry {
+  id: string;
+  docId: string;
+  pageId: string;
+  /** ms */
+  at: number;
+  actor: NoteHistoryActor;
+  kind: NoteHistoryKind;
+  summary: string;
+  /** 문구 수정(`edit`)일 때만 — 그 블록의 전·후 글(평문). 화면이 글자 단위로 비교해 칠한다. */
+  diff?: { before: string; after: string } | null;
+  /** 눌렀을 때 본문에서 강조할 블록. */
+  anchor?: string | null;
+  /** 이 항목 **직후의** 페이지(JSON 직렬화 가능한 `NotePage`). */
+  snapshot: unknown;
+}
+
+/** 새로 쓰는 항목 — id·시각은 저장소가 정한다(시각은 줄 수도 있다). */
+export type NoteHistoryDraft = Omit<NoteHistoryEntry, 'id' | 'at'> & { at?: number };
+
+export interface NoteHistoryStore {
+  /** 그 페이지의 기록 — **최신 먼저**. `before`(ms)를 주면 그보다 옛것부터(더 불러오기). */
+  list(docId: string, pageId: string, opts?: { before?: number; limit?: number }): Promise<{ entries: NoteHistoryEntry[]; hasMore: boolean }>;
+  /** 새 항목 — 저장된 항목을 돌려준다. */
+  append(draft: NoteHistoryDraft): Promise<NoteHistoryEntry>;
+  /** 묶음 창 안의 연속 편집 — **내 항목만** 고친다(요약·전후 글·스냅샷·시각). */
+  update(id: string, patch: Partial<Pick<NoteHistoryEntry, 'at' | 'kind' | 'summary' | 'diff' | 'anchor' | 'snapshot'>>): Promise<void>;
+}
+
 export interface Backend {
   auth: AuthProvider;
   docStore: DocStore;
@@ -927,6 +974,8 @@ export interface Backend {
   notificationStore: NotificationStore;
   /** 캘린더 전용 일정(0033) — 칸반 카드가 아닌 일정. */
   eventStore: EventStore;
+  /** 공책 기록(0048). **선택 필드** — 테스트·옛 조립처럼 비어 있으면 이 기기의 로컬 판을 쓴다(`useNoteHistoryStore`). */
+  noteHistory?: NoteHistoryStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

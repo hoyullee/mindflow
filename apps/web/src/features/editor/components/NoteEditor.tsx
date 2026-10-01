@@ -4548,10 +4548,43 @@ export function NoteTopBar({
   const saveLabel = readOnly ? '보기 전용' : saving === 'saved' ? '저장됨' : saving === 'saving' ? '저장 중…' : saving === 'unsaved' ? '저장 전' : '변경됨';
   const cover = noteCoverColor(controller.doc.cover);
   // 순서는 스펙 5절이 정했다 — `일정 · 댓글 · 기록`. 같은 탭을 다시 누르면 닫힌다.
+  // **기록은 혼자 연다**(기록 패널 스펙 §3 — 기록 탭이면 400px, 일정·댓글로 돌아가면 296px). 기록을 열면
+  // 일정·댓글을 닫고, 일정·댓글을 열면 기록을 닫는다 — 넓은 기록 판이 다른 판과 나란히 서면 본문이 짜부라진다.
   const tabs: { name: string; on: boolean; onPick: () => void }[] = [
-    ...(agenda ? [{ name: '일정', on: agenda.on, onPick: agenda.toggle }] : []),
-    { name: '댓글', on: controller.commentsOpen, onPick: () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) },
-    { name: '기록', on: controller.historyOpen, onPick: () => controller.setHistoryOpen(!controller.historyOpen) },
+    ...(agenda
+      ? [
+          {
+            name: '일정',
+            on: agenda.on,
+            onPick: () => {
+              if (!agenda.on) controller.setHistoryOpen(false);
+              agenda.toggle();
+            },
+          },
+        ]
+      : []),
+    {
+      name: '댓글',
+      on: controller.commentsOpen,
+      onPick: () => {
+        if (controller.commentsOpen) controller.closeComments();
+        else {
+          controller.setHistoryOpen(false);
+          controller.openComments();
+        }
+      },
+    },
+    {
+      name: '기록',
+      on: controller.historyOpen,
+      onPick: () => {
+        if (!controller.historyOpen) {
+          if (agenda?.on) agenda.toggle();
+          if (controller.commentsOpen) controller.closeComments();
+        }
+        controller.setHistoryOpen(!controller.historyOpen);
+      },
+    },
   ];
   // 폰은 머리 한 줄이 따로다(모바일 공책 디자인 E0) — 일정·댓글·기록은 바닥 독이, 공유·저장은 ⋯ 시트가 맡는다.
   if (mobile) return <NoteMobileTopBar controller={controller} pagesOpen={pagesOpen} onTogglePages={onTogglePages} />;

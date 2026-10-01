@@ -19,7 +19,8 @@ import type { ImageUrlMap } from '../useImageUrls';
 export function VersionHistory({ controller }: { controller: EditorController }) {
   const isMobile = useIsMobile();
   const th = controller.uiTheme;
-  const open = controller.historyOpen;
+  // 공책의 「기록」은 이 모달이 아니라 오른쪽 패널이다(`NoteHistoryPanel` — 누가·언제·무엇을).
+  const open = controller.historyOpen && !controller.isNote;
   const [selectedAt, setSelectedAt] = useState<number | null>(null);
 
   const versions = useMemo(() => (open ? listVersions(controller.historyDocId) : []), [open, controller.historyDocId]);
