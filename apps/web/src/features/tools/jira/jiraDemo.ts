@@ -1,4 +1,4 @@
-import type { JiraIssues, JiraResult, JiraSite, JiraSource, JiraStatus } from './jiraApi';
+import type { JiraIssueDetail, JiraIssues, JiraResult, JiraSite, JiraSource, JiraStatus } from './jiraApi';
 import type { JiraEpic, JiraPerson, JiraProjectRef, JiraTicket, TicketStatus } from '../../../../../../supabase/functions/_shared/jira';
 
 /**
@@ -140,8 +140,79 @@ export const demoJira: JiraSource = {
       return ok(res);
     }),
   users: (query) => need(() => ok({ users: USERS.filter((u) => u.name.includes(query.trim())) })),
+  issue: (key) =>
+    need(() => {
+      const d = demoIssue(key);
+      return d ? ok({ issue: d }) : { ok: false, reason: 'not-found' };
+    }),
   disconnect: () => {
     write({ connected: false, projects: read().projects });
     return Promise.resolve(ok({}));
   },
 };
+
+/** 데모 상세 — 디자인 원본(`Geurio Jira 티켓 상세 팝업`)의 샘플 결을 따른다. */
+function demoIssue(key: string): JiraIssueDetail | null {
+  const n = monthOffset();
+  const epic = EPICS.find((e) => e.key === key);
+  const t = TICKETS.find((x) => x.key === key);
+  if (!epic && !t) return null;
+  const parent = t ? EPICS.find((e) => e.key === t.epic) : undefined;
+  const comments = [
+    { author: PEOPLE.p2, created: '2026-09-27 10:12', text: '어댑터 쪽 에러 코드 매핑표 공유드렸어요. 확인 부탁드립니다.' },
+    { author: PEOPLE.p1, created: '2026-09-28 16:40', text: '확인했어요. 3번 케이스만 예외 처리 추가해서 내일 PR 올릴게요.' },
+    { author: PEOPLE.p3, created: '2026-09-29 14:05', text: 'QA 환경에 반영됐습니다. 기존 회귀 케이스 통과.' },
+  ];
+  const fields = [
+    { label: '스토리 포인트', kind: 'mono' as const, value: '5' },
+    { label: '레이블', kind: 'tags' as const, value: '', tags: ['backend', 'payment'] },
+    { label: '컴포넌트', kind: 'tags' as const, value: '', tags: ['결제', 'PG 연동'] },
+    { label: '팀', kind: 'text' as const, value: 'Payments Squad' },
+    { label: 'QA 담당', kind: 'person' as const, value: PEOPLE.p3.name, personId: PEOPLE.p3.id },
+    { label: '디자인 링크', kind: 'link' as const, value: 'figma.com · payment-v3', href: 'https://www.figma.com/' },
+    { label: '만든 날', kind: 'mono' as const, value: '2026-08-28 14:02' },
+    { label: '업데이트', kind: 'mono' as const, value: '2026-09-29 18:40' },
+  ];
+  const base = {
+    reporter: PEOPLE.p2,
+    priority: { id: '3', name: '보통' },
+    project: PROJECTS.find((p) => key.startsWith(`${p.key}-`)) ?? { key: key.split('-')[0]!, name: key.split('-')[0]! },
+    sprint: '2026-S19',
+    commentTotal: 3,
+    comments,
+    fields,
+    hiddenEmpty: 3,
+  };
+  if (epic) {
+    const kids = TICKETS.filter((x) => x.epic === key);
+    return {
+      ...base,
+      key,
+      summary: epic.name,
+      type: { name: '에픽', epic: true },
+      status: { name: '진행 중', cat: epic.status },
+      epic: null,
+      assignee: PEOPLE.p2,
+      start: epic.start && shiftMonths(epic.start, n),
+      end: epic.end && shiftMonths(epic.end, n),
+      sprint: '여러 스프린트',
+      description: `${epic.name} 범위 전반을 다시 설계합니다.\n\n범위\n- 흐름을 3단계로 축소\n- 실패 사유를 사용자 언어로 표시\n\n범위 밖\n- 정기 결제(별도 에픽)`,
+      commentTotal: 2,
+      comments: comments.slice(0, 2),
+      children: kids.map((x) => ({ key: x.key, summary: x.summary, status: x.status, person: x.person, start: shiftMonths(x.start, n), end: shiftMonths(x.end, n) })),
+    };
+  }
+  return {
+    ...base,
+    key,
+    summary: t!.summary,
+    type: { name: '작업', epic: false },
+    status: { name: t!.status === 'done' ? '완료' : t!.status === 'doing' ? '진행 중' : '해야 할 일', cat: t!.status },
+    epic: parent ? { key: parent.key, name: parent.name } : null,
+    assignee: t!.person,
+    start: shiftMonths(t!.start, n),
+    end: shiftMonths(t!.end, n),
+    description: '현재 화면 구조를 유지하면서 데이터 소스만 교체합니다. QA 범위는 기존 회귀 케이스 + 신규 케이스 12건.\n\n참고\n- 디자인: Figma "결제 개편 v3" 페이지\n- API 명세: Confluence /pay/v2',
+    children: null,
+  };
+}

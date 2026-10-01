@@ -3,6 +3,8 @@ import { isSupabaseConfigured, readViteEnv } from '../../../adapters/env';
 import type { JiraEpic, JiraIssueTypeRef, JiraPerson, JiraProjectRef, JiraTicket, TicketStatus } from '../../../../../../supabase/functions/_shared/jira';
 import { demoJira } from './jiraDemo';
 
+export type { JiraIssueDetail, DetailField, DetailComment, DetailChild } from '../../../../../../supabase/functions/_shared/jiraDetail';
+import type { JiraIssueDetail } from '../../../../../../supabase/functions/_shared/jiraDetail';
 export type { JiraEpic, JiraIssueTypeRef, JiraPerson, JiraProjectRef, JiraTicket, TicketStatus } from '../../../../../../supabase/functions/_shared/jira';
 
 /**
@@ -80,6 +82,8 @@ export interface JiraSource {
   /** `today`: 사용자의 오늘 — 아직 안 끝난 티켓을 어디까지 그릴지(서버는 시간대를 모른다). */
   issues(from: string, to: string, today?: string): Promise<JiraResult<JiraIssues>>;
   users(query: string): Promise<JiraResult<{ users: JiraPerson[] }>>;
+  /** 티켓 하나의 상세(상세 팝업) — 저장하지 않고 열 때마다 묻는다. */
+  issue(key: string): Promise<JiraResult<{ issue: JiraIssueDetail }>>;
   disconnect(): Promise<JiraResult<object>>;
 }
 
@@ -110,6 +114,7 @@ const serverJira: JiraSource = {
   saveProjects: (projects, rule, issueTypes, issueStatuses) => invoke({ action: 'save-projects', projects, ...(rule ? { rule } : {}), ...(issueTypes ? { issueTypes } : {}), ...(issueStatuses ? { issueStatuses } : {}) }),
   issues: (from, to, today) => invoke({ action: 'issues', from, to, ...(today ? { today } : {}) }),
   users: (query) => invoke({ action: 'users', query }),
+  issue: (key) => invoke({ action: 'issue', key }),
   disconnect: () => invoke({ action: 'disconnect' }),
 };
 
@@ -143,6 +148,8 @@ export function jiraReasonText(reason: string): string {
       return '이 Jira 사이트에서 읽을 권한이 없어요';
     case 'rate-limited':
       return 'Jira 요청이 많아요 · 잠시 뒤 다시 시도해 주세요';
+    case 'not-found':
+      return '이 티켓을 찾지 못했어요 · 지워졌거나 볼 권한이 없어요';
     case 'no-site':
       return 'Jira 사이트를 먼저 골라 주세요';
     default:

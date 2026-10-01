@@ -187,6 +187,28 @@ describe('작업 현황', () => {
     await waitFor(() => expect(q('[data-jira-setup]')).toBeNull());
   });
 
+  it('티켓을 누르면 상세 팝업 — 에픽 칩으로 에픽(하위 티켓)으로 가고 ‹로 돌아온다', async () => {
+    const user = await open();
+    await user.click(screen.getByRole('radio', { name: '타임라인' }));
+    await user.click(await wait(() => q('[data-ws-bar="PAY-101"]')));
+    const modal = await wait(() => q('[data-ws-issue="PAY-101"]'));
+    await wait(() => q('[data-ws-issue-title]'));
+    expect(modal.textContent).toContain('결제 수단 선택 화면');
+    expect(modal.textContent).toContain('보기 전용이에요');
+    // 모든 필드는 접혀 있다가 펼친다
+    expect(q('[data-ws-issue-fields]')).toBeNull();
+    await user.click(q('[data-ws-issue-all]')!);
+    expect(q('[data-ws-issue-field="QA 담당"]')).toBeTruthy();
+    // 상위 에픽으로
+    await user.click(q('[data-ws-issue-epic="PAY-100"]')!);
+    await wait(() => q('[data-ws-issue="PAY-100"] [data-ws-issue-children]'));
+    expect(document.querySelectorAll('[data-ws-issue-child]').length).toBe(6);
+    await user.click(screen.getByRole('button', { name: '뒤로' }));
+    await wait(() => q('[data-ws-issue="PAY-101"]'));
+    await user.click(within(q('[data-ws-issue]')!).getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(q('[data-ws-issue]')).toBeNull());
+  });
+
   it('세 보기가 같은 데이터를 본다 — 달력 칩 · 타임라인 막대 · 집계 행', async () => {
     const user = await open();
     await user.click(screen.getByRole('radio', { name: '타임라인' }));

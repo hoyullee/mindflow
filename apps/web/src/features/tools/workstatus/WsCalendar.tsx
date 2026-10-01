@@ -6,7 +6,7 @@ import { AvatarStack, MONO } from './wsUi';
  * 달력 보기(스펙 §5) — 7×6 격자. 칸마다 그날 걸친 티켓을 **에픽별 칩**으로 묶고, 셋을 넘으면
  * 둘 + `+N개 프로젝트`. 칸을 누르면 오른쪽 패널의 날짜가 바뀐다.
  */
-export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, avail }: { y: number; m: number; today: string; sel: string; onPick: (d: string) => void; tickets: Ticket[]; data: Dataset; rules: HolidayRules; avail: { from: string; to: string } | null }) {
+export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, avail, onOpenIssue }: { y: number; m: number; today: string; sel: string; onPick: (d: string) => void; tickets: Ticket[]; data: Dataset; rules: HolidayRules; avail: { from: string; to: string } | null; onOpenIssue?: (key: string) => void }) {
   const month = `${y}-${String(m).padStart(2, '0')}`;
   const cells = gridDays(y, m);
   // 칸 하나가 담는 줄 수는 **칸 높이를 재서** 정한다(일정 페이지와 같은 방식) — 창 크기·패널 접기에 따라 달라진다.
@@ -106,7 +106,18 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                     data-ws-chip={c.epic.key}
                     data-ws-lane={li}
                     title={c.tickets.map((t) => `${t.key} ${t.summary} · ${t.person.name} · ${t.start} ~ ${t.end}`).join('\n')}
-                    style={{ height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: pc.head ? '0 3px 0 5px' : '0 3px', marginLeft: pc.head ? 0 : -6, marginRight: pc.tail ? 0 : -6, borderRadius: `${pc.head ? 5 : 0}px ${pc.tail ? 5 : 0}px ${pc.tail ? 5 : 0}px ${pc.head ? 5 : 0}px`, background: c.epic.bg, borderLeft: pc.head ? `3px solid ${c.epic.c}` : 0, minWidth: 0, boxSizing: 'border-box' }}
+                    role={onOpenIssue ? 'button' : undefined}
+                    // 칩을 누르면 상세 팝업 — 에픽 없는 티켓은 그 티켓, 에픽 묶음은 그 에픽(하위 티켓 목록이 거기 있다).
+                    onClick={
+                      onOpenIssue
+                        ? (e) => {
+                            e.stopPropagation();
+                            onPick(d);
+                            onOpenIssue(c.epic.key);
+                          }
+                        : undefined
+                    }
+                    style={{ height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: pc.head ? '0 3px 0 5px' : '0 3px', marginLeft: pc.head ? 0 : -6, marginRight: pc.tail ? 0 : -6, borderRadius: `${pc.head ? 5 : 0}px ${pc.tail ? 5 : 0}px ${pc.tail ? 5 : 0}px ${pc.head ? 5 : 0}px`, background: c.epic.bg, borderLeft: pc.head ? `3px solid ${c.epic.c}` : 0, minWidth: 0, boxSizing: 'border-box', cursor: onOpenIssue ? 'pointer' : undefined }}
                   >
                     {pc.head && (
                       <>

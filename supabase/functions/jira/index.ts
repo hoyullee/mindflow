@@ -24,6 +24,7 @@ import {
   epicFromParent,
   epicsJql,
   isDate,
+  isIssueKey,
   isEndField,
   isProjectKey,
   isReleaseField,
@@ -41,6 +42,7 @@ import {
   type JiraProjectRef,
   type JiraTicket,
 } from '../_shared/jira.ts';
+import { normalizeChildren, normalizeComments, normalizeDetail } from '../_shared/jiraDetail.ts';
 import { accessTokenFor, Fail, fetchSites, jiraGet, jiraPost, readCredential, tokenCall, type AppCtx, type Row } from '../_shared/jiraAuth.ts';
 
 const CORS = {
@@ -108,6 +110,8 @@ Deno.serve(async (req: Request) => {
         return json(await projects(ctx, payload));
       case 'issue-types':
         return json(await issueTypes(ctx, payload));
+      case 'issue':
+        return json(await issueDetail(ctx, payload));
       case 'statuses':
         return json(await statuses(ctx, payload));
       case 'fields':
@@ -453,6 +457,50 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
     }
   }
   return { ok: true, epics: [...epicNames.values()], tickets, truncated };
+}
+
+/**
+ * 티켓 하나의 **상세**(작업 현황의 상세 팝업) — 이슈 + 최근 댓글 셋 + (에픽이면) 하위 티켓.
+ * 저장하지 않는다(열 때마다 묻는다). 키는 모양만 확인한다 — 읽는 권한은 그 사람의 토큰이 정한다
+ * (상위 에픽이 다른 프로젝트에 있을 수 있어 고른 프로젝트로 묶지 않는다).
+ */
+async function issueDetail(ctx: Ctx, p: Record<string, unknown>) {
+  const row = await mustRow(ctx);
+  if (!row.cloud_id) throw new Fail('no-site');
+  const key = typeof p.key === 'string' ? p.key.trim().toUpperCase() : '';
+  if (!isIssueKey(key)) throw new Fail('bad-request');
+  const rule = coerceRule(row.start_field, row.end_field, row.fill_dates, row.release_field);
+  const token = await accessTokenFor(ctx, row);
+  const raw = await jiraGet(token, row.cloud_id, `/rest/api/3/issue/${encodeURIComponent(key)}?expand=names,schema&fields=*all`);
+  const detail = normalizeDetail(raw, rule);
+  if (!detail) throw new Fail('jira-error', 'bad issue');
+  const tasks: Promise<void>[] = [];
+  tasks.push(
+    jiraGet(token, row.cloud_id, `/rest/api/3/issue/${encodeURIComponent(key)}/comment?orderBy=-created&maxResults=3`)
+      .then((b) => {
+        const c = normalizeComments(b);
+        detail.commentTotal = c.total;
+        detail.comments = c.comments;
+      })
+      .catch((e) => {
+        if (e instanceof Fail && e.reason === 'revoked') throw e;
+      }),
+  );
+  if (detail.type.epic) {
+    const fields = ['summary', 'status', 'assignee', rule.end, ...(rule.start ? [rule.start] : [])];
+    tasks.push(
+      jiraPost(token, row.cloud_id, '/rest/api/3/search/jql', { jql: `parent = ${key} ORDER BY created ASC`, fields, maxResults: 100 })
+        .then((b) => {
+          detail.children = normalizeChildren((b as { issues?: unknown[] }).issues, rule);
+        })
+        .catch((e) => {
+          if (e instanceof Fail && e.reason === 'revoked') throw e;
+          detail.children = [];
+        }),
+    );
+  }
+  await Promise.all(tasks);
+  return { ok: true, issue: detail };
 }
 
 async function users(ctx: Ctx, p: Record<string, unknown>) {

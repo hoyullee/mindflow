@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import type { JiraPerson } from '../jira/jiraApi';
 import { beginJiraConnect, useJiraConn } from '../jira/jiraStore';
 import { openJiraSetup } from '../jira/JiraSetupModal';
+import { WsIssueModal } from './WsIssueModal';
 import { updateToolPrefs, useToolPrefs } from '../toolPrefsStore';
 import type { WorkStatusPrefs } from '../toolPrefs';
 import { TOOL_DEFS } from '../toolDefs';
@@ -174,14 +175,14 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
   };
   const removeFilter = (key: string) => setVp((v) => ({ ...v, filters: v.filters.filter((f) => `${f.type}:${f.id}` !== key) }));
 
-  const openIssue = (key: string) => {
-    if (conn.demo || !conn.site?.url) {
-      toolToast(`${key} · Jira에서 열기`);
-      return;
-    }
-    window.open(`${conn.site.url.replace(/\/$/, '')}/browse/${encodeURIComponent(key)}`, '_blank', 'noopener');
-  };
+  // 티켓 상세 팝업 — 새 창으로 Jira를 열던 것을 앱 안의 보기 전용 팝업으로(디자인 `Geurio Jira 티켓 상세 팝업`).
+  // 에픽 칩·하위 티켓을 누르면 쌓이고 `‹`로 돌아온다. Jira 원문은 팝업의 `Jira에서 열기`.
+  const [issueStack, setIssueStack] = useState<string[]>([]);
+  const openIssue = (key: string) => setIssueStack((st) => (st[st.length - 1] === key ? st : [...st, key]));
 
+  const issueModal = (
+    <WsIssueModal stack={issueStack} onClose={() => setIssueStack([])} onBack={() => setIssueStack((st) => st.slice(0, -1))} onOpen={openIssue} data={data} siteUrl={conn.site?.url ?? ''} demo={conn.demo} today={today} isMobile={isMobile} />
+  );
   const docked = rowW >= DOCK_MIN && !isMobile;
   const panelShow = vp.panelOpen === undefined ? docked : vp.panelOpen;
 
@@ -468,6 +469,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
           {availPanel}
         </MobileSheet>
         <WsHolidayModal open={holidayOpen} onClose={() => setHolidayOpen(false)} prefs={work} onChange={setWork} y={y} m={m} onToast={toolToast} />
+      {issueModal}
       </div>
     );
   }
@@ -611,7 +613,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
                   Jira에서 불러오는 중…
                 </div>
               ) : vp.view === 'cal' ? (
-                <WsCalendar y={y} m={m} today={today} sel={sel} onPick={(d) => { setSel(d); if (!docked && vp.panelOpen !== true) setVp((v) => ({ ...v, panelOpen: true })); }} tickets={tickets} data={data} rules={rules} avail={availOpen ? range : null} />
+                <WsCalendar y={y} m={m} today={today} sel={sel} onPick={(d) => { setSel(d); if (!docked && vp.panelOpen !== true) setVp((v) => ({ ...v, panelOpen: true })); }} tickets={tickets} data={data} rules={rules} avail={availOpen ? range : null} onOpenIssue={openIssue} />
               ) : vp.view === 'tl' ? (
                 <WsTimeline
                   days={days}
@@ -651,6 +653,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
       </div>
 
       <WsHolidayModal open={holidayOpen} onClose={() => setHolidayOpen(false)} prefs={work} onChange={setWork} y={y} m={m} onToast={toolToast} />
+      {issueModal}
     </div>
   );
 }
