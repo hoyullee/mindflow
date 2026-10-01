@@ -283,7 +283,20 @@ export function GoogleEventFields({
           초대 자체에 대한 것이라 묶음 맨 위에 서고 아래와 선으로 갈린다. */}
       {showMaker || value.rsvp !== undefined ? (
         <div data-gf-invite style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 17, borderBottom: '1px solid var(--mf-border-soft)' }}>
-          {showMaker ? (
+          {showMaker && mobile ? (
+            // 폰(N5) — 이름표 한 장: 큰 얼굴 · 「일정을 만든 사람」 · 이름 · 주소.
+            <span data-gf-organizer style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 14, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
+              <span aria-hidden style={{ width: 38, height: 38, flex: '0 0 auto', borderRadius: 999, background: AV[0], color: '#FFFDFB', fontSize: 14, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{orgLabel.charAt(0).toUpperCase()}</span>
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--mf-faint)' }}>일정을 만든 사람</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{orgLabel}</span>
+                  {makerIsMe ? <span data-gf-organizer-me style={{ flex: '0 0 auto', height: 18, padding: '0 7px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center' }}>나</span> : null}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{makerEmail}</span>
+              </span>
+            </span>
+          ) : showMaker ? (
             <Field label="일정을 만든 사람">
               <span data-gf-organizer style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
                 <Avatar label={orgLabel} i={0} />
@@ -308,6 +321,23 @@ export function GoogleEventFields({
                 <span data-gf-rsvp-locked style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
                   {RSVP_OPTS.find((o) => o.v === value.rsvp)?.label ?? '아직 응답하지 않았어요'} · 참석자 명단이 숨겨진 일정이라 응답도 Google 캘린더에서 바꿔 주세요.
                 </span>
+              ) : mobile ? (
+                // 폰(N5) — 트랙 위의 세 칸(40px), 고른 칸에 체크. 손가락으로 답하는 자리라 알약보다 크다.
+                <div role="radiogroup" aria-label="참석 여부" style={{ display: 'flex', padding: 3, borderRadius: 12, background: 'var(--mf-panel2)' }}>
+                  {RSVP_OPTS.map((o) => {
+                    const on = value.rsvp === o.v;
+                    return (
+                      <button key={o.v} type="button" role="radio" aria-checked={on} data-gf-rsvp={o.v} className="btn" onClick={() => onChange({ rsvp: o.v })} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 40, border: 0, borderRadius: 9, background: on ? 'var(--mf-card)' : 'transparent', boxShadow: on ? '0 1px 3px rgba(46,42,38,.12)' : 'none', color: on ? 'var(--mf-text)' : 'var(--mf-muted)', fontFamily: 'inherit', fontSize: 14.5, fontWeight: 800, cursor: 'pointer' }}>
+                        {on && (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="m5 12 5 5L20 7" />
+                          </svg>
+                        )}
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
               ) : (
               <Segments
                 aria="참석 여부"
@@ -364,7 +394,24 @@ export function GoogleEventFields({
             <span style={{ width: 18, height: 18, borderRadius: 999, background: '#FFFFFF', boxShadow: '0 1px 3px rgba(46,42,38,.3)', display: 'block' }} />
           </span>
         </button>
-        {meetLink && value.addMeet ? (
+        {meetLink && value.addMeet && mobile ? (
+          /* 폰(N5) — 링크 줄에 「참여」가 붙는다: 폰에서 이 일정을 여는 가장 흔한 까닭이 회의에 들어가는 것이다. */
+          <span data-gf-meet-card style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 10px 14px', borderRadius: 14, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--mf-text)' }}>회의 링크</span>
+              <span data-gf-meet-link style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meetLink.replace(/^https?:\/\//, '')}</span>
+            </span>
+            <button type="button" className="btn mf-m-press" data-gf-meet-copy aria-label="링크 복사" title="링크 복사" onClick={() => void navigator.clipboard?.writeText(meetLink).catch(() => undefined)} style={{ width: 38, height: 38, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 10, background: 'var(--mf-card)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="11" height="11" rx="2" />
+                <path d="M5 15V6a1 1 0 0 1 1-1h9" />
+              </svg>
+            </button>
+            <a data-gf-meet-join href={meetLink} target="_blank" rel="noopener noreferrer" style={{ flex: '0 0 auto', height: 38, padding: '0 16px', borderRadius: 10, background: 'var(--mf-text)', color: 'var(--mf-card)', fontSize: 14, fontWeight: 800, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+              참여
+            </a>
+          </span>
+        ) : meetLink && value.addMeet ? (
           /* 원본 `nHasMeetLink` 행 — 링크는 등폭으로, 복사 버튼과 함께. */
           <span style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
             <span data-gf-meet-link style={{ flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--mf-accent-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meetLink}</span>
@@ -379,7 +426,19 @@ export function GoogleEventFields({
           싣지만, 초대한 사람과 초대받은 사람은 다른 자리다. 배열 자체에서는 지우지
           않는다(PATCH가 배열을 통째로 바꾸므로 빼고 보내면 주최자가 참석자에서
           떨어진다) — 화면에서만 가르고, 고칠 때 제자리에 되돌려 넣는다. */}
-      <Field label="참석자" sub={attendeesLock ? undefined : guestSub(guests.length, showMaker)}>
+      <Field
+        label="참석자"
+        sub={attendeesLock ? undefined : guestSub(guests.length, showMaker)}
+        {...(mobile && !attendeesLock && value.rsvps && guests.length > 0
+          ? {
+              trailing: (
+                <button type="button" className="btn" data-gf-guest-invite onClick={() => setGuestPage(true)} style={{ flex: '0 0 auto', border: 0, background: 'transparent', padding: 0, color: 'var(--mf-accent-strong)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+                  초대
+                </button>
+              ),
+            }
+          : {})}
+      >
         {/* 회의실이 사용 중일 때의 알림 카드와 **같은 면**이다 — 한 팝업 안에서
             "이건 문제다"가 두 모양이면 읽는 사람이 둘을 따로 배워야 한다. */}
         {allDeclined ? (
@@ -396,6 +455,14 @@ export function GoogleEventFields({
               ? '참석자 수가 너무 많아서 전체 참석자 명단이 숨겨졌습니다. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'
               : '이 일정은 참석자끼리 명단을 볼 수 없어요. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'}
           </span>
+        ) : mobile && value.rsvps && guests.length > 0 ? (
+          <>
+            {/* 폰(N5) — 이미 있는 일정은 **누가 답했나**가 궁금하다: 셋까지 줄로(응답 글자), 나머지는 `외 N명 · 참석 n · 미정 n`. */}
+            <GuestStatusList guests={guests} names={{ ...knownNamesFor(guests), ...(value.names ?? {}) }} rsvps={value.rsvps} {...(value.selfEmail ? { selfEmail: value.selfEmail } : {})} onOpen={() => setGuestPage(true)} />
+            <MobilePickPage open={guestPage} title="참석자" back={backLabel} onClose={() => setGuestPage(false)} done attrs={{ 'data-gf-guest-page': '' }}>
+              <Attendees page list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, hiddenGuests, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} rsvps={value.rsvps} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+            </MobilePickPage>
+          </>
         ) : mobile ? (
           <>
             <MobilePickRow
@@ -1973,4 +2040,55 @@ export function windowLabel(fromIso: string, toIso: string): string {
     return a.toDateString() === last.toDateString() ? `${day(a)} 종일` : `${day(a)} – ${day(last)}`;
   }
   return a.toDateString() === b.toDateString() ? `${day(a)} ${hm(a)}–${hm(b)}` : `${day(a)} ${hm(a)} – ${day(b)} ${hm(b)}`;
+}
+
+/** 응답 글자와 색 — 참석(초록) · 미정 · 불참(붉은) · 대기. */
+const RSVP_TEXT: Record<GoogleRsvp, { label: string; color: string }> = {
+  accepted: { label: '참석', color: 'var(--mf-success-ink)' },
+  tentative: { label: '미정', color: 'var(--mf-muted)' },
+  declined: { label: '불참', color: 'var(--mf-danger)' },
+  needsAction: { label: '대기', color: 'var(--mf-faint2)' },
+};
+
+/**
+ * 폰의 참석자 목록(N5) — 셋까지 줄(얼굴 · 이름 · 주소 · 응답), 넘치면 마지막 줄이 `외 N명 · 참석 n · 미정 n`(누르면 고르기 화면).
+ * 응답은 남의 것이라 여기서 고치지 않는다 — 초대·빼기는 고르기 화면(N3)이 맡는다.
+ */
+function GuestStatusList({ guests, names, rsvps, selfEmail, onOpen }: { guests: readonly string[]; names: Record<string, string>; rsvps: Record<string, GoogleRsvp>; /** 내 주소 — 그 줄은 이름 대신 `나`(로컬파트 `me`로 읽히던 자리). */ selfEmail?: string; onOpen: () => void }) {
+  const self = (selfEmail ?? '').toLowerCase();
+  const head = guests.length > 4 ? guests.slice(0, 3) : guests;
+  const rest = guests.slice(head.length);
+  const count = (r: GoogleRsvp): number => rest.filter((e) => (rsvps[e] ?? 'needsAction') === r).length;
+  const restLine = [`외 ${rest.length}명`, count('accepted') ? `참석 ${count('accepted')}` : '', count('tentative') ? `미정 ${count('tentative')}` : '', count('declined') ? `불참 ${count('declined')}` : ''].filter(Boolean).join(' · ');
+  return (
+    <div data-gf-guest-status style={{ display: 'flex', flexDirection: 'column', borderRadius: 14, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', overflow: 'hidden' }}>
+      {head.map((email, i) => {
+        const st = RSVP_TEXT[rsvps[email] ?? 'needsAction'];
+        const name = self && email.toLowerCase() === self ? '나' : guestLabel(email, names);
+        return (
+          <span key={email} data-gf-guest-line={email} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '0 14px 0 16px', borderTop: i ? '1px solid var(--mf-border-soft)' : 0 }}>
+            <span aria-hidden style={{ width: 30, height: 30, flex: '0 0 auto', borderRadius: 999, background: AV[i % AV.length], color: '#FFFDFB', fontSize: 11.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{name.charAt(0).toUpperCase()}</span>
+            <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedText(rsvps[email]) }}>{name}</span>
+              <span style={{ fontSize: 12, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
+            </span>
+            <span data-gf-guest-rsvp={rsvps[email] ?? 'needsAction'} style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 700, color: st.color, whiteSpace: 'nowrap' }}>{st.label}</span>
+          </span>
+        );
+      })}
+      {rest.length > 0 && (
+        <button type="button" className="btn mf-m-press" data-gf-guest-open onClick={onOpen} style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 50, padding: '0 14px 0 16px', border: 0, borderTop: '1px solid var(--mf-border-soft)', background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+          <span aria-hidden style={{ display: 'inline-flex', flex: '0 0 auto' }}>
+            {rest.slice(0, 3).map((email, i) => (
+              <span key={email} style={{ width: 24, height: 24, marginLeft: i ? -7 : 0, borderRadius: 999, boxShadow: '0 0 0 2px var(--mf-card)', background: AV[(head.length + i) % AV.length], color: '#FFFDFB', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{guestLabel(email, names).charAt(0).toUpperCase()}</span>
+            ))}
+          </span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{restLine}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
 }

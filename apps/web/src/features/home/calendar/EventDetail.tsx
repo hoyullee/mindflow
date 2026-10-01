@@ -120,6 +120,7 @@ export function EventDetail({
   color,
   cardAttrs,
   onWhen,
+  sideFirst = false,
 }: {
   event: CalendarEvent;
   isMobile: boolean;
@@ -167,6 +168,11 @@ export function EventDetail({
   color?: { value: string | null; options: readonly EventColorOption[] };
   /** 원천을 가리키는 표식 — 두 팝업이 한 코드라도 화면에서는 구별돼야 한다. */
   cardAttrs?: Record<string, string>;
+  /**
+   * 폰에서 원천의 열(`side`)을 **제목 바로 아래**에 — 초대받은 구글 일정(모바일 홈 디자인 N5)은 누가 불렀는지와
+   * 내 응답이 이 화면의 용건이라, 날짜·메모 아래 맨 끝에 두면 스크롤을 다 내려야 응답할 수 있었다.
+   */
+  sideFirst?: boolean;
 }) {
   const colorInit = color?.value ?? null;
   const [draft, setDraft] = useState(() => draftOf(event, colorInit));
@@ -326,6 +332,16 @@ export function EventDetail({
 
   const footMsg = error ?? (saving ? '저장 중…' : invalidTime ? '종료 시각이 시작보다 앞서요' : footerHint);
   const footTone = error || invalidTime ? 'var(--mf-danger)' : 'var(--mf-faint2)';
+  /** 폰 제목 아래 한 줄(N5) — `10월 2일 (금) · 10:30 – 11:50 · 1시간 20분` / 종일은 `종일`·`3일간`. */
+  const whenLine = (() => {
+    const [y, mo, d] = draft.startDate.split('-').map(Number);
+    const day = new Date(y ?? 1970, (mo ?? 1) - 1, d ?? 1);
+    const head = `${day.getMonth() + 1}월 ${day.getDate()}일 (${'일월화수목금토'[day.getDay()]})`;
+    if (draft.allDay) return { head, time: spanDays > 1 ? `${spanDays}일간` : '종일', dur: '' };
+    const dur = durMin !== null && durMin > 0 ? (durMin >= 60 ? `${Math.floor(durMin / 60)}시간${durMin % 60 ? ` ${durMin % 60}분` : ''}` : `${durMin}분`) : '';
+    return { head, time: `${draft.startTime || '--:--'} – ${draft.endTime || '--:--'}`, dur };
+  })();
+  const askDelete = (): void => (canScope ? setScopeOpen(true) : setConfirmOpen(true));
 
   return (
     <Modal
@@ -372,7 +388,27 @@ export function EventDetail({
       cardAttrs={{ 'data-event-detail': '1', ...cardAttrs }}
     >
       <>
-        {/* 머리 — 새 일정 팝업과 같은 문법(점 + 이름 · 시각 알약 · 동작 · ✕). */}
+        {/* 폰 머리(N5) — [✕ · ● 원천 · 완료]. 시각 알약·삭제는 자리가 없어 제목 아래 줄·본문 끝으로 옮긴다. */}
+        {isMobile ? (
+          <div data-event-head-mobile style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', height: 52, padding: '0 8px', paddingTop: 'env(safe-area-inset-top)' }}>
+            <button type="button" aria-label="닫기" title="닫기" onClick={onClose} className="btn mf-m-press" style={{ width: 64, height: 40, flex: '0 0 auto', border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-text)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: 10 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+            <span style={{ flex: 1, minWidth: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 999, background: event.color ?? 'var(--mf-accent)', display: 'block', flex: '0 0 auto' }} />
+              <span data-event-badge style={{ fontSize: 14, fontWeight: 800, color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{badge}</span>
+            </span>
+            {readOnly ? (
+              <span style={{ width: 64, flex: '0 0 auto' }} />
+            ) : (
+              <button type="button" data-event-done disabled={saving} onClick={submit} className="btn mf-m-press" style={{ width: 64, height: 40, flex: '0 0 auto', padding: '0 10px', border: 0, borderRadius: 10, background: 'transparent', color: saving ? 'var(--mf-faint2)' : 'var(--mf-accent)', fontFamily: 'inherit', fontSize: 15, fontWeight: 800, cursor: saving ? 'default' : 'pointer', textAlign: 'right' }}>
+                {saving ? '저장 중' : '완료'}
+              </button>
+            )}
+          </div>
+        ) : (
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--mf-border-soft)' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flex: '0 0 auto', minWidth: 0 }}>
             <span style={{ width: 8, height: 8, borderRadius: 999, background: event.color ?? 'var(--mf-accent)', display: 'block', flex: '0 0 auto' }} />
@@ -399,13 +435,14 @@ export function EventDetail({
             </svg>
           </button>
         </div>
+        )}
 
         {/* 본문 — 새 일정 팝업과 같은 구조다(제보 #16): 원천이 오른쪽 열을 주면 두 열로
             갈라지고, 각 열이 자기 스크롤을 갖는다. `overflow-anchor`를 끄는 이유:
             내용이 자라는 순간 브라우저 스크롤 앵커링이 scrollTop을 보정해 보이는
             내용이 위로 튄다(제보 — "컨텐츠가 잘려서 올라간 뒤 늘어난다"). */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
-        <div className="lnb-scroll" data-event-main style={{ flex: '1 1 340px', minWidth: 0, boxSizing: 'border-box', overflowY: 'auto', overflowAnchor: 'none', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
+        <div className="lnb-scroll" data-event-main style={{ flex: '1 1 340px', minWidth: 0, boxSizing: 'border-box', overflowY: 'auto', overflowAnchor: 'none', padding: isMobile ? '4px 16px 30px' : '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
           <input
             aria-label="일정 제목"
             data-event-title
@@ -417,8 +454,23 @@ export function EventDetail({
             }}
             placeholder="일정 제목"
             maxLength={200}
-            style={{ width: '100%', boxSizing: 'border-box', height: 52, padding: '0 15px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 18, fontWeight: 800, letterSpacing: '-.03em', color: 'var(--mf-text)', outline: 'none' }}
+            {...(isMobile ? { className: 'mf-m-big' } : {})}
+            style={
+              isMobile
+                ? // 폰은 새 일정(N1)과 같은 **테두리 없는 큰 제목**이다.
+                  { display: 'block', width: '100%', boxSizing: 'border-box', margin: '6px 0 -10px', padding: '6px 4px', border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 24, fontWeight: 800, letterSpacing: '-.03em', color: 'var(--mf-text)', caretColor: 'var(--mf-accent)', outline: 'none' }
+                : { width: '100%', boxSizing: 'border-box', height: 52, padding: '0 15px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 18, fontWeight: 800, letterSpacing: '-.03em', color: 'var(--mf-text)', outline: 'none' }
+            }
           />
+          {isMobile && (
+            <span data-event-when-line style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '0 4px', fontSize: 13.5, color: 'var(--mf-subtext)' }}>
+              <span style={{ fontWeight: 700 }}>{whenLine.head}</span>
+              <span aria-hidden style={{ width: 3, height: 3, borderRadius: 99, background: 'var(--mf-faint2)', display: 'block' }} />
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{whenLine.time}</span>
+              {whenLine.dur && <span style={{ color: 'var(--mf-faint)' }}>{whenLine.dur}</span>}
+            </span>
+          )}
+          {isMobile && sideFirst && side}
 
           {/* 저장할 캘린더(#11) — 이 일정이 어디 것인지. 소속만 켜지고 나머지는 비활성
               (일정을 캘린더 사이로 옮기는 기능은 없다 — 눌리는 척하는 칩이 더 나쁘다). */}
@@ -556,7 +608,13 @@ export function EventDetail({
           )}
 
           {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}
-          {side && isMobile && side}
+          {side && isMobile && !sideFirst && side}
+          {/* 폰의 삭제 — 머리에 자리가 없어 본문 끝으로(되묻는 것은 그대로). */}
+          {isMobile && !readOnly && (
+            <button type="button" data-event-delete onClick={askDelete} className="btn mf-m-press" style={{ alignSelf: 'stretch', height: 48, marginTop: 6, border: 0, borderRadius: 14, background: 'var(--mf-danger-bg)', color: 'var(--mf-danger)', fontFamily: 'inherit', fontSize: 14.5, fontWeight: 800, cursor: 'pointer' }}>
+              일정 삭제
+            </button>
+          )}
         </div>
 
         {twoCol && (
@@ -569,20 +627,24 @@ export function EventDetail({
 
         {/* 발치 — 새 일정 팝업과 같은 [상황 문구][취소][완료] 배치. 오류도 **여기 한
             곳**에서만 말한다(제보: 본문 끝과 발치에 같은 문장이 두 번 떴다). */}
-        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
+        {(!isMobile || footMsg || footerLeft) && (
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: isMobile ? '10px 16px max(12px, env(safe-area-inset-bottom))' : '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
           <span data-event-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
           {/* 원천 전용 버튼 — 취소 **왼쪽**(요청). 본문 끝에 두면 스크롤을 내려야
               보인다: 이 일정을 어디서 여는지는 늘 같은 자리에 있어야 한다. */}
           {footerLeft}
-          {!readOnly && (
-            <button type="button" data-event-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          {!readOnly && !isMobile && (
+            <button type="button" data-event-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
               취소
             </button>
           )}
-          <button type="button" data-event-done disabled={saving} onClick={submit} className="mf-ctl-primary" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
-            완료
-          </button>
+          {!isMobile && (
+            <button type="button" data-event-done disabled={saving} onClick={submit} className="mf-ctl-primary" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: 40, padding: '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
+              완료
+            </button>
+          )}
         </div>
+        )}
 
         {/* 반복 일정 삭제 — 어디까지 지울지 먼저 묻는다(요청). 초점은 취소에 —
             파괴적 버튼이 기본 초점이면 Enter 한 번에 지워진다(열 삭제 확인창의 규칙). */}
