@@ -43,7 +43,7 @@ export function WsSidePanel({ sel, today, month, rules, tickets, data, stats, bi
                       <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.summary}</span>
                       <span style={{ display: 'block', fontFamily: MONO, fontSize: 10.5, color: 'var(--mf-ws-mut2)' }}>
                         {t.key} · {shortDate(t.start)}–{shortDate(t.end)}
-                        {t.startMissing ? ' · 시작일 없음' : t.endMissing ? ' · 기한 없음' : ''}
+                        {t.filled ? ' · 날짜 없음' : t.startMissing ? ' · 시작일 없음' : t.endMissing ? ' · 기한 없음' : ''}
                       </span>
                     </span>
                     <StatusBadge status={t.status} height={18} />

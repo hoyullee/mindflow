@@ -10,6 +10,12 @@ import { reportJiraSync } from '../jira/jiraStore';
  */
 
 const TTL_MS = 5 * 60 * 1000;
+
+/** 이 기기의 오늘 — 아직 안 끝난 티켓(해결된 날을 끝으로 고른 경우·날짜 채우기)을 여기까지 그린다. */
+const localToday = () => {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+};
 const cache = new Map<string, { at: number; data: JiraIssues }>();
 
 /** 프로젝트를 다시 고르면 옛 캐시는 다른 질문의 답이다 — 비운다. */
@@ -44,7 +50,7 @@ export function useWorkStatusData(from: string, to: string, key: string, enabled
     let alive = true;
     setState((s) => ({ ck, data: s.ck === ck ? s.data : (cached?.data ?? null), error: null, loading: true }));
     void jiraSource()
-      .issues(from, to)
+      .issues(from, to, localToday())
       .then((r) => {
         if (!alive) return;
         if (r.ok) {
