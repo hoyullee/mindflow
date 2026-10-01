@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coerceProjects, coerceRule, dateFields, epicFromParent, epicsJql, jqlField, nextDay, normalizeTicket, normalizeUsers, overlaps, pickStartField, statusOf, ticketsJql } from '../../../../../../supabase/functions/_shared/jira';
+import { coerceIssueTypes, coerceProjects, coerceRule, issueTypesOf, dateFields, epicFromParent, epicsJql, jqlField, nextDay, normalizeTicket, normalizeUsers, overlaps, pickStartField, statusOf, ticketsJql } from '../../../../../../supabase/functions/_shared/jira';
 
 // Edge Function(`supabase/functions/jira`)이 쓰는 순수한 부분 — JQL·정리·필드 고르기.
 
@@ -29,6 +29,13 @@ describe('JQL', () => {
   it('날짜 채우기: 두 날짜가 다 빈 것은 만든 날로', () => {
     const q = ticketsJql(['SQA'], '2026-09-01', '2026-09-30', R('customfield_10014', 'duedate', true))!;
     expect(q).toContain('(cf[10014] is EMPTY AND duedate is EMPTY AND created < "2026-10-01" AND (resolved is EMPTY OR resolved >= "2026-09-01"))');
+  });
+  it('이슈 유형은 id로만 — 모양이 틀린 것은 빠진다', () => {
+    const q = ticketsJql(['SQA'], '2026-09-01', '2026-09-30', R(null), ['10146', '10143', '10146', 'x) OR (1=1'])!;
+    expect(q).toContain('AND issuetype in standardIssueTypes() AND issuetype in (10146, 10143) AND assignee');
+    expect(ticketsJql(['SQA'], '2026-09-01', '2026-09-30', R(null), [])).not.toContain('issuetype in (');
+    expect(coerceIssueTypes([{ id: '10146', name: '품질점검' }, { id: '10146' }, { id: 'bad' }])).toEqual([{ id: '10146', name: '품질점검' }]);
+    expect(issueTypesOf({ issueTypes: [{ id: '10143', name: '작업', hierarchyLevel: 0 }, { id: '10144', name: '하위 작업', subtask: true, hierarchyLevel: -1 }, { id: '10000', name: '에픽', hierarchyLevel: 1 }] })).toEqual([{ id: '10143', name: '작업' }]);
   });
   it('달의 마지막 날 다음 날', () => {
     expect([nextDay('2026-12-31'), nextDay('2028-02-28')]).toEqual(['2027-01-01', '2028-02-29']);

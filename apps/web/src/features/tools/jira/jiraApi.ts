@@ -1,9 +1,9 @@
 import { getSupabaseClient } from '../../../adapters/supabase/supabaseClient';
 import { isSupabaseConfigured, readViteEnv } from '../../../adapters/env';
-import type { JiraEpic, JiraPerson, JiraProjectRef, JiraTicket } from '../../../../../../supabase/functions/_shared/jira';
+import type { JiraEpic, JiraIssueTypeRef, JiraPerson, JiraProjectRef, JiraTicket } from '../../../../../../supabase/functions/_shared/jira';
 import { demoJira } from './jiraDemo';
 
-export type { JiraEpic, JiraPerson, JiraProjectRef, JiraTicket, TicketStatus } from '../../../../../../supabase/functions/_shared/jira';
+export type { JiraEpic, JiraIssueTypeRef, JiraPerson, JiraProjectRef, JiraTicket, TicketStatus } from '../../../../../../supabase/functions/_shared/jira';
 
 /**
  * Jira에 묻는 창구 — Edge Function `jira`를 부른다(토큰은 서버에만 있다, 0044).
@@ -27,6 +27,8 @@ export interface JiraStatus {
   endField?: { id: string; name: string } | null;
   /** 두 날짜가 다 비면 만든 날 ~ 해결된 날로 그린다(기본 켬). */
   fillDates?: boolean;
+  /** 고른 이슈 유형 — 비어 있으면 전부(하위 작업·에픽 제외). */
+  issueTypes?: JiraIssueTypeRef[];
 }
 
 /** 프로젝트 고르기에서 정하는 **날짜 규칙**(`_shared/jira.ts`의 `DateRule` + 표시 이름). */
@@ -64,7 +66,9 @@ export interface JiraSource {
   projects(query: string): Promise<JiraResult<{ projects: JiraProjectRef[] }>>;
   /** 이 사이트의 커스텀 날짜 필드 + 자동으로 찾은 시작일 필드. */
   fields(): Promise<JiraResult<{ fields: JiraField[]; suggested: JiraField | null }>>;
-  saveProjects(projects: JiraProjectRef[], rule?: JiraDateChoice): Promise<JiraResult<JiraStatus>>;
+  /** 고른 프로젝트들의 이슈 유형(프로젝트마다 id가 다를 수 있다 — 화면이 이름으로 묶는다). */
+  issueTypes(projects: string[]): Promise<JiraResult<{ types: JiraIssueTypeRef[] }>>;
+  saveProjects(projects: JiraProjectRef[], rule?: JiraDateChoice, issueTypes?: JiraIssueTypeRef[]): Promise<JiraResult<JiraStatus>>;
   /** `today`: 사용자의 오늘 — 아직 안 끝난 티켓을 어디까지 그릴지(서버는 시간대를 모른다). */
   issues(from: string, to: string, today?: string): Promise<JiraResult<JiraIssues>>;
   users(query: string): Promise<JiraResult<{ users: JiraPerson[] }>>;
@@ -93,7 +97,8 @@ const serverJira: JiraSource = {
   selectSite: (cloudId) => invoke({ action: 'select-site', cloudId }),
   projects: (query) => invoke({ action: 'projects', query }),
   fields: () => invoke({ action: 'fields' }),
-  saveProjects: (projects, rule) => invoke({ action: 'save-projects', projects, ...(rule ? { rule } : {}) }),
+  issueTypes: (projects) => invoke({ action: 'issue-types', projects }),
+  saveProjects: (projects, rule, issueTypes) => invoke({ action: 'save-projects', projects, ...(rule ? { rule } : {}), ...(issueTypes ? { issueTypes } : {}) }),
   issues: (from, to, today) => invoke({ action: 'issues', from, to, ...(today ? { today } : {}) }),
   users: (query) => invoke({ action: 'users', query }),
   disconnect: () => invoke({ action: 'disconnect' }),

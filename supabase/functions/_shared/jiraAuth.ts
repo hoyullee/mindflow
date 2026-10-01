@@ -25,6 +25,7 @@ export interface Row {
   end_field?: string | null;
   end_field_name?: string | null;
   fill_dates?: boolean | null;
+  issue_types?: unknown;
 }
 
 export interface Site {

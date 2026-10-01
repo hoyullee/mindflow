@@ -16,6 +16,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
+  coerceIssueTypes,
   coerceProjects,
   coerceRule,
   dateFields,
@@ -24,6 +25,8 @@ import {
   epicsJql,
   isDate,
   isEndField,
+  isProjectKey,
+  issueTypesOf,
   isStartField,
   normalizeEpic,
   normalizeTicket,
@@ -101,6 +104,8 @@ Deno.serve(async (req: Request) => {
         return json(await selectSite(ctx, payload));
       case 'projects':
         return json(await projects(ctx, payload));
+      case 'issue-types':
+        return json(await issueTypes(ctx, payload));
       case 'fields':
         return json(await fields(ctx));
       case 'save-projects':
@@ -164,7 +169,7 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
   if (!t.access_token || !t.expires_in) throw new Fail('exchange-failed', t.error_description || t.error || '');
   if (!t.refresh_token) throw new Fail('no-offline');
   const list = await fetchSites(t.access_token);
-  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name,end_field,end_field_name,fill_dates').eq('user_id', ctx.uid).maybeSingle();
+  const { data: prev } = await ctx.admin.from('jira_credentials').select('cloud_id,projects,start_field,start_field_name,end_field,end_field_name,fill_dates,issue_types').eq('user_id', ctx.uid).maybeSingle();
   // 사이트가 하나면 곧바로 고른다(v1은 사이트 하나 — 스펙 §7). 다시 연결했는데 예전 사이트가
   // 여전히 목록에 있으면 **고른 프로젝트를 그대로 둔다**(해제 후 재연결 때 되살아나게).
   const keep = prev?.cloud_id ? list.find((s) => s.id === prev.cloud_id) : undefined;
@@ -185,6 +190,7 @@ async function exchange(ctx: Ctx, p: Record<string, unknown>) {
     end_field: keep ? (prev?.end_field ?? null) : null,
     end_field_name: keep ? (prev?.end_field_name ?? null) : null,
     fill_dates: keep ? prev?.fill_dates !== false : true,
+    issue_types: keep ? (prev?.issue_types ?? []) : [],
     updated_at: new Date().toISOString(),
   };
   const { error } = await ctx.admin.from('jira_credentials').upsert(row);
@@ -212,6 +218,7 @@ function statusOf(row: Row) {
     startField: row.start_field ? { id: row.start_field, name: row.start_field_name ?? row.start_field } : null,
     endField: row.end_field ? { id: row.end_field, name: row.end_field_name ?? row.end_field } : null,
     fillDates: row.fill_dates !== false,
+    issueTypes: coerceIssueTypes(row.issue_types),
   };
 }
 
@@ -239,7 +246,7 @@ async function selectSite(ctx: Ctx, p: Record<string, unknown>) {
     cloud_id: site.id,
     site_url: site.url,
     site_name: site.name,
-    ...(same ? {} : { projects: [], start_field: null, start_field_name: null, end_field: null, end_field_name: null, fill_dates: true }),
+    ...(same ? {} : { projects: [], start_field: null, start_field_name: null, end_field: null, end_field_name: null, fill_dates: true, issue_types: [] }),
     updated_at: new Date().toISOString(),
   };
   await ctx.admin.from('jira_credentials').update(patch).eq('user_id', ctx.uid);
@@ -258,6 +265,34 @@ async function projects(ctx: Ctx, p: Record<string, unknown>) {
     return { key: typeof o.key === 'string' ? o.key : '', name: typeof o.name === 'string' ? o.name : '' };
   });
   return { ok: true, projects: coerceProjects(list) };
+}
+
+/**
+ * 고른 프로젝트들의 이슈 유형 — 프로젝트 고르기의 `이슈 유형` 칸. 팀 관리 프로젝트는 유형이
+ * 프로젝트마다 다른 id라 **그대로 다 돌려주고** 화면이 이름으로 묶는다. 한 프로젝트가 실패해도 나머지는 준다.
+ */
+async function issueTypes(ctx: Ctx, p: Record<string, unknown>) {
+  const row = await mustRow(ctx);
+  if (!row.cloud_id) throw new Fail('no-site');
+  const keys = (Array.isArray(p.projects) ? p.projects : []).filter(isProjectKey).slice(0, 30);
+  if (!keys.length) return { ok: true, types: [] };
+  const token = await accessTokenFor(ctx, row);
+  const seen = new Set<string>();
+  const types: { id: string; name: string }[] = [];
+  await Promise.all(
+    keys.map(async (k) => {
+      try {
+        for (const t of issueTypesOf(await jiraGet(token, row.cloud_id!, `/rest/api/3/project/${encodeURIComponent(k)}`))) {
+          if (seen.has(t.id)) continue;
+          seen.add(t.id);
+          types.push(t);
+        }
+      } catch (e) {
+        if (e instanceof Fail && e.reason === 'revoked') throw e;
+      }
+    }),
+  );
+  return { ok: true, types };
 }
 
 /** 이 사이트의 커스텀 날짜 필드 + 자동으로 고른 시작일 — 프로젝트 고르기의 날짜 칸. */
@@ -289,6 +324,8 @@ async function saveProjects(ctx: Ctx, p: Record<string, unknown>) {
       end_field_name: end ? fieldName(rule.endName, end) : null,
       fill_dates: rule.fill !== false,
     };
+    // 이슈 유형도 같은 화면에서 온다 — 빈 목록은 "전부".
+    if (Array.isArray(p.issueTypes)) patch.issue_types = coerceIssueTypes(p.issueTypes);
   } else {
     // 날짜 칸 없이 저장(예전 화면) — 시작일 필드는 **고를 때마다** 다시 찾는다(연결 뒤에 관리자가
     // 필드를 만들었을 수 있다). 실패해도 저장은 한다(그때 티켓은 기한 하루로 그린다).
@@ -321,7 +358,7 @@ async function issues(ctx: Ctx, p: Record<string, unknown>) {
   const to = typeof p.to === 'string' ? p.to : '';
   // 사용자의 오늘(시간대가 다르다) — 아직 안 끝난 티켓을 어디까지 그릴지.
   const today = isDate(p.today) ? p.today : undefined;
-  const jql = ticketsJql(proj, from, to, rule);
+  const jql = ticketsJql(proj, from, to, rule, coerceIssueTypes(row.issue_types).map((t) => t.id));
   if (!jql) throw new Fail('bad-range');
   const token = await accessTokenFor(ctx, row);
 

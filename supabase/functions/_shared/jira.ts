@@ -55,6 +55,12 @@ export interface DateRule {
 
 export const DEFAULT_RULE: DateRule = { start: null, end: 'duedate', fill: true };
 
+/** 고른 이슈 유형 하나(id는 프로젝트마다 다를 수 있다 — 팀 관리 프로젝트). */
+export interface JiraIssueTypeRef {
+  id: string;
+  name: string;
+}
+
 export interface JiraProjectRef {
   key: string;
   name: string;
@@ -69,6 +75,8 @@ export const isDate = (v: unknown): v is string => typeof v === 'string' && DATE
 export const isProjectKey = (v: unknown): v is string => typeof v === 'string' && PROJECT_KEY_RE.test(v);
 export const isIssueKey = (v: unknown): v is string => typeof v === 'string' && ISSUE_KEY_RE.test(v);
 export const isCustomField = (v: unknown): v is string => typeof v === 'string' && FIELD_RE.test(v);
+const TYPE_ID_RE = /^\d{1,12}$/;
+export const isTypeId = (v: unknown): v is string => typeof v === 'string' && TYPE_ID_RE.test(v);
 export const isStartField = (v: unknown): v is string => v === 'created' || isCustomField(v);
 export const isEndField = (v: unknown): v is string => v === 'duedate' || v === 'resolutiondate' || isCustomField(v);
 
@@ -114,8 +122,9 @@ export function nextDay(d: string): string {
  *   끝이 `해결된 날`이면 아직 안 끝난 것은 오늘까지 이어지므로 **시작이 기간 끝 전**이면 부른다.
  *   `fill`이면 두 날짜가 다 빈 것도 만든 날로 부른다. 겹침의 마지막 판정은 정리한 뒤에 한다(`overlaps`).
  */
-export function ticketsJql(projects: string[], from: string, to: string, rule: DateRule = DEFAULT_RULE): string | null {
+export function ticketsJql(projects: string[], from: string, to: string, rule: DateRule = DEFAULT_RULE, types: string[] = []): string | null {
   const keys = projects.filter(isProjectKey);
+  const typeIds = [...new Set(types.filter(isTypeId))];
   if (!keys.length || !isDate(from) || !isDate(to) || from > to) return null;
   const e = jqlName(rule.end) ?? 'duedate';
   const s = rule.start ? jqlName(rule.start) : null;
@@ -135,7 +144,8 @@ export function ticketsJql(projects: string[], from: string, to: string, rule: D
     // `created`가 시작이면 시작이 비는 일이 없다 — 위의 열린 끝 조건이 이미 다 부른다.
     if (s !== 'created') parts.push(`(${empty} AND created < "${to1}" AND (resolved is EMPTY OR resolved >= "${from}"))`);
   }
-  return `project in (${keys.join(', ')}) AND issuetype in standardIssueTypes() AND assignee is not EMPTY AND (${parts.join(' OR ')}) ORDER BY key ASC`;
+  const typeQ = typeIds.length ? ` AND issuetype in (${typeIds.join(', ')})` : '';
+  return `project in (${keys.join(', ')}) AND issuetype in standardIssueTypes()${typeQ} AND assignee is not EMPTY AND (${parts.join(' OR ')}) ORDER BY key ASC`;
 }
 
 /** 정리한 티켓이 기간과 겹치는가 — JQL이 넉넉히 부른 것(열린 끝·날짜 채우기)의 마지막 판정. */
@@ -355,4 +365,36 @@ export function dateFields(fields: unknown): FieldMeta[] {
     out.push({ id, name: name.slice(0, 120) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 60);
+}
+
+/** 저장해 둘 이슈 유형 — 모양을 확인하고 중복을 빼고 100개로 자른다. 비어 있으면 "전부". */
+export function coerceIssueTypes(v: unknown): JiraIssueTypeRef[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  const out: JiraIssueTypeRef[] = [];
+  for (const raw of v) {
+    const t = obj(raw);
+    const id = str(t?.id);
+    if (!t || !isTypeId(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name: (str(t.name) ?? id).slice(0, 80) });
+    if (out.length >= 100) break;
+  }
+  return out;
+}
+
+/** 프로젝트 응답(`GET /rest/api/3/project/{key}`)의 이슈 유형 → 고를 수 있는 것(하위 작업·에픽 이상은 뺀다). */
+export function issueTypesOf(project: unknown): JiraIssueTypeRef[] {
+  const list = obj(project)?.issueTypes;
+  if (!Array.isArray(list)) return [];
+  const out: JiraIssueTypeRef[] = [];
+  for (const raw of list) {
+    const t = obj(raw);
+    const id = str(t?.id);
+    const name = str(t?.name);
+    if (!t || !isTypeId(id) || !name || t.subtask === true) continue;
+    if (typeof t.hierarchyLevel === 'number' && t.hierarchyLevel !== 0) continue;
+    out.push({ id, name: name.slice(0, 80) });
+  }
+  return out;
 }

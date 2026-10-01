@@ -14,3 +14,9 @@ alter table public.jira_credentials
   add column if not exists end_field text,
   add column if not exists end_field_name text,
   add column if not exists fill_dates boolean not null default true;
+
+-- 이슈 유형(같은 라운드 — 사용자 요청): 고른 유형만 부른다. `[{ "id": "10146", "name": "품질점검" }]`,
+-- 비어 있으면 전부(하위 작업·에픽은 늘 빠진다). 팀 관리 프로젝트는 유형이 **프로젝트마다 다른 id**라
+-- 화면은 이름으로 묶어 보이고 저장은 id로 한다(JQL에 이름을 넣지 않는다 — 따옴표·번역 문제).
+alter table public.jira_credentials
+  add column if not exists issue_types jsonb not null default '[]'::jsonb;

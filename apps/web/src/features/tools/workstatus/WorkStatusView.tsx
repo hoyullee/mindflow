@@ -103,7 +103,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   const from = days[0] as string;
   const to = days[days.length - 1] as string;
   // 프로젝트와 **날짜 규칙**이 질문이다 — 어느 쪽이 바뀌어도 새로 묻는다.
-  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}`;
+  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}`;
   const ready = conn.connected && !!conn.site && conn.projects.length > 0;
   const month = useWorkStatusData(from, to, projKey, ready);
   const availData = useWorkStatusData(range.from, range.to, projKey, ready && availOpen);
