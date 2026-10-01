@@ -10,6 +10,7 @@
 
 import type { EditorController } from '../useEditorState';
 import { mixHex } from '../theme';
+import { peopleOf } from '../../../collab/presence';
 
 /** 한 줄에 세우는 최대 얼굴 수 — 그보다 많으면 마지막 칸이 `+N`이 된다. */
 const MAX_FACES = 3;
@@ -23,7 +24,10 @@ export function PresenceAvatars({ controller, isMobile = false, withSelf = false
   // 있고, 여기서 묻는 것은 "또 누가 있나"다). 공책 상단의 `공유` 옆에서는 **맞다**
   // (요청) — 그 자리는 "지금 이 문서를 누가 보나"의 답이고, 혼자일 때 아무것도
   // 없으면 빈자리가 "아무도 없다"로 읽히며 남이 들어온 순간에만 자리가 출렁인다.
-  const all = withSelf ? [{ key: 'me', user: localUser }, ...peers.map((p) => ({ key: String(p.clientId), user: p.user }))] : peers.map((p) => ({ key: String(p.clientId), user: p.user }));
+  // **연결이 아니라 사람을 센다**(제보: 혼자 쓰는데 내 얼굴이 하나 더 떴다) — 같은 계정의
+  // 다른 탭·기기·재연결 전의 낡은 연결은 내 얼굴과 겹치므로 뺀다(`peopleOf`).
+  const people = peopleOf(peers, localUser).map((p) => ({ key: String(p.clientId), user: p.user }));
+  const all = withSelf ? [{ key: 'me', user: localUser }, ...people] : people;
   if (!all.length) return null;
 
   const size = isMobile ? 22 : 26;

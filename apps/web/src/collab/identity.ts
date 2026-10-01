@@ -35,3 +35,20 @@ export function nameForSeed(seed: string): string {
   const animal = ANIMALS[Math.floor(h / ADJECTIVES.length) % ANIMALS.length]!;
   return `${adjective} ${animal}`;
 }
+
+/**
+ * 계정 하나에 하나인 짧은 열쇠 — 접속자 얼굴 줄이 같은 사람을 하나로 접는 데 쓴다
+ * (`presence.ts`의 `PresenceUser.uid`). 이메일을 그대로 awareness에 싣지 않으려고 해시한다
+ * (FNV-1a 두 갈래 — 겹칠 확률은 한 문서의 접속자 수에서 무시할 만하다).
+ */
+export function accountKey(email: string): string {
+  const s = email.trim().toLowerCase();
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ s.length;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x5bd1e995);
+  }
+  return (a >>> 0).toString(36) + (b >>> 0).toString(36);
+}

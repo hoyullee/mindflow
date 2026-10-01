@@ -15,6 +15,15 @@ export interface PresenceUser {
    * 이름 첫 글자. **awareness로 실어 보낸다**: 상대의 사진을 서버에 다시 물으면
    * 접속자 수만큼 왕복이 늘고, 어차피 지금 붙어 있는 사람의 정보다. */
   avatar?: string | null;
+  /**
+   * **계정 하나에 하나인 열쇠** — 로그인한 이메일의 짧은 해시(이메일 자체는 싣지 않는다).
+   *
+   * 왜(제보): 공책에서 혼자 쓰는데 `공유` 옆에 내 얼굴이 하나 더 떴다. awareness는 **연결**
+   * 마다 한 칸이라, 같은 계정의 다른 탭·설치형 앱·폰은 물론 재연결 전의 낡은 연결(30초
+   * 동안 남는다)도 "또 한 사람"으로 셌다. 얼굴 줄은 연결이 아니라 **사람**을 세야 하므로
+   * 이 열쇠로 나를 빼고 겹친 사람을 하나로 접는다(`peopleOf`).
+   */
+  uid?: string;
 }
 
 export interface PresenceCursor {
@@ -52,4 +61,28 @@ export interface RemotePeer extends PresenceState {
    * connection, unique among currently-connected peers (never this client's
    * own, `usePresence` filters that out). */
   clientId: number;
+}
+
+/**
+ * 얼굴 줄에 세울 **사람** 목록 — 연결이 아니라 사람을 센다(`PresenceUser.uid` 머리말).
+ *
+ * - 나와 같은 계정(`uid`가 같다)은 뺀다 — 다른 탭·기기·낡은 연결의 나다.
+ * - 같은 계정이 여러 연결로 붙어 있으면 하나로 접는다(처음 것).
+ * - `uid`가 없는 옛 클라이언트는 로그인한 이름+색(색은 이메일에서 나온다)으로, 손님은
+ *   연결마다 따로 센다(손님은 연결마다 정체가 다르다 — `identity.ts`).
+ *
+ * 커서·원격 선택·저장 신호는 **연결** 단위가 맞으므로 이 목록이 아니라 `peers`를 그대로 쓴다.
+ */
+export function peopleOf<P extends { clientId: number; user: PresenceUser }>(peers: P[], me?: PresenceUser | null): P[] {
+  const keyOf = (u: PresenceUser, clientId: number): string => (u.uid ? `u:${u.uid}` : u.authed ? `n:${u.name}|${u.color}` : `c:${clientId}`);
+  const mine = me ? keyOf(me, -1) : null;
+  const seen = new Set<string>();
+  const out: P[] = [];
+  for (const p of peers) {
+    const k = keyOf(p.user, p.clientId);
+    if (k === mine || seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
 }

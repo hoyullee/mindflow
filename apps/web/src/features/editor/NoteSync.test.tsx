@@ -19,6 +19,7 @@ import * as Y from 'yjs';
 import type { Doc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
 import { BroadcastChannelProvider } from '../../collab/BroadcastChannelProvider';
+import { accountKey } from '../../collab/identity';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
@@ -454,5 +455,33 @@ describe('공책 — 이름 바꾸기와 저장의 겹침', () => {
     await waitFor(() => expect(document.activeElement).not.toBe(input));
 
     await waitFor(() => expect(titles).toEqual(['공책 이름']), { timeout: 6000 });
+  });
+});
+
+describe('공책 — 공유 옆 얼굴은 사람을 센다', () => {
+  /** 제보: 혼자 쓰는데 내 얼굴이 하나 더 떴다 — 같은 계정의 다른 연결(다른 탭·설치형 앱·
+   *  재연결 전의 낡은 연결)이 "또 한 사람"으로 세어졌다. */
+  it('같은 계정의 다른 연결은 얼굴을 늘리지 않고, 다른 사람은 늘린다', async () => {
+    const docId = `note-faces-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(noteDoc('처음')));
+    const { backend } = makeBackend(noteDoc('처음'));
+    renderEditor(backend, docId);
+    await waitFor(() => expect(screen.getByLabelText('1명 접속 중')).toBeTruthy());
+
+    // 같은 계정(me@example.com)의 두 번째 연결 — 예전에는 여기서 「2명 접속 중」이 됐다.
+    const twin = joinPeer(docId);
+    twin.provider.getAwareness()?.setLocalStateField('user', { name: 'me@example.com', color: '#3f8fd0', authed: true, uid: accountKey('me@example.com') });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByLabelText('1명 접속 중')).toBeTruthy();
+
+    // 다른 사람은 그대로 센다.
+    const other = joinPeer(docId);
+    other.provider.getAwareness()?.setLocalStateField('user', { name: '김서연', color: '#3fae9e', authed: true, uid: accountKey('kim@example.com') });
+    await waitFor(() => expect(screen.getByLabelText('2명 접속 중')).toBeTruthy());
+
+    for (const p of [twin, other]) {
+      p.provider.disconnect();
+      p.ydoc.destroy();
+    }
   });
 });
