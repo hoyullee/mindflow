@@ -225,3 +225,91 @@ describe('작업 현황', () => {
     expect(after).toBeGreaterThan(before);
   });
 });
+
+describe('작업 현황 — 폰(모바일 디자인 W1~W5)', () => {
+  async function openPhone() {
+    mockMatchMedia(true);
+    connectDemo();
+    const user = userEvent.setup();
+    renderHome();
+    // 폰에는 LNB가 없다 — 작업 현황은 전체 탭의 `도구` 묶음에서 연다.
+    await user.click(await wait(() => q('[data-m-tab="more"]')));
+    await user.click(await wait(() => q('[data-m-more-row="tool-jira"]')));
+    await wait(() => q('[data-ws-mobile]'));
+    await wait(() => q('[data-ws-lane-epic]'));
+    return user;
+  }
+
+  it('머리는 [‹ 전체 · 휴일] / [월 · 보기] / [검색 · 담당자 · 맞춰보기] — 오른쪽 패널·Jira 설정 단추는 없다', async () => {
+    await openPhone();
+    expect(q('[data-ws-back]')!.textContent).toContain('전체');
+    expect(q('[data-ws-holiday-btn]')).toBeTruthy();
+    expect(q('[data-ws-members-btn]')).toBeTruthy();
+    expect(q('[data-ws-avail-btn]')).toBeTruthy();
+    expect(q('[data-ws-panel-btn]')).toBeNull();
+    expect(q('[data-ws-date-rule-btn]')).toBeNull();
+    // 데스크톱의 칩 격자 대신 폰 달력
+    expect(q('[data-ws-calendar]')).toBeNull();
+    expect(q('[data-ws-mcal]')).toBeTruthy();
+  });
+
+  it('달력 칸은 날짜 + 묶음 선(최대 셋), 칸을 누르면 아래 목록이 그날의 티켓이다(W1)', async () => {
+    const user = await openPhone();
+    for (const cell of document.querySelectorAll('[data-ws-day]')) expect(cell.querySelectorAll('[data-ws-lane]').length).toBeLessThanOrEqual(3);
+    const day = q('[data-ws-lane-epic]')!.closest('[data-ws-day]') as HTMLElement;
+    const d = day.getAttribute('data-ws-day')!;
+    await user.click(day);
+    await waitFor(() => expect(q('[data-ws-mday]')!.getAttribute('data-ws-mday')).toBe(d));
+    expect(day.getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelectorAll('[data-ws-mday-ticket]').length).toBeGreaterThan(0);
+  });
+
+  it('`‹ 전체`는 전체 탭으로 — 거기서 작업 현황을 다시 누르면 같은 화면이 다시 열린다', async () => {
+    const user = await openPhone();
+    await user.click(q('[data-ws-back]')!);
+    await wait(() => q('[data-m-more]'));
+    expect(q('[data-ws-mobile]')).toBeNull();
+    expect(q('[data-m-tab="more"]')!.getAttribute('aria-current')).toBe('page');
+    await user.click(q('[data-m-more-row="tool-jira"]')!);
+    await wait(() => q('[data-ws-mobile]'));
+    // 작업 현황에서 전체 탭을 눌러도 같다(예전에는 탭만 바뀌고 도구가 남아 같은 줄이 아무것도 열지 못했다).
+    await user.click(q('[data-m-tab="more"]')!);
+    await wait(() => q('[data-m-more]'));
+    await user.click(q('[data-m-more-row="tool-jira"]')!);
+    await wait(() => q('[data-ws-mobile]'));
+  });
+
+  it('집계는 표 대신 담당자 카드 — 누르면 프로젝트별 일수가 펼쳐진다(W3)', async () => {
+    const user = await openPhone();
+    await user.click(screen.getByRole('radio', { name: '집계' }));
+    await wait(() => q('[data-ws-mstat]'));
+    expect(q('[data-ws-stat-row]')).toBeNull();
+    expect(document.querySelectorAll('[data-ws-mstat]').length).toBe(6);
+    const first = q('[data-ws-mstat]')!;
+    expect(first.getAttribute('aria-expanded')).toBe('false');
+    await user.click(first);
+    await waitFor(() => expect(first.getAttribute('aria-expanded')).toBe('true'));
+    expect(first.querySelector('[data-ws-mstat-epics]')).toBeTruthy();
+  });
+
+  it('타임라인은 묶음 고르기가 표 위로 · 같은 막대(W2)', async () => {
+    const user = await openPhone();
+    await user.click(screen.getByRole('radio', { name: '타임라인' }));
+    await wait(() => q('[data-ws-bar="PAY-101"]'));
+    await user.click(screen.getByRole('radio', { name: '프로젝트' }));
+    await wait(() => q('[data-ws-bar="PAY-100"]'));
+    // 이름 열 머리에는 세그먼트가 아니라 무엇의 줄인지만
+    expect(within(q('[data-ws-timeline]')!).queryByRole('radio')).toBeNull();
+  });
+
+  it('담당자 · 일정 맞춰보기는 바닥 시트로 연다(W4·W5)', async () => {
+    const user = await openPhone();
+    await user.click(q('[data-ws-members-btn]')!);
+    await wait(() => q('[data-ws-members-sheet]'));
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(q('[data-ws-members-sheet]')).toBeNull());
+    await user.click(q('[data-ws-avail-btn]')!);
+    const sheet = await wait(() => q('[data-ws-avail-sheet]'));
+    expect(sheet.querySelector('[data-ws-avail]')).toBeTruthy();
+  });
+});
