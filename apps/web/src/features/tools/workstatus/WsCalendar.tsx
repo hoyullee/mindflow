@@ -1,4 +1,5 @@
-import { DOW, dowOf, gridDays, holidayOf, planWeek, releasesOn, type Dataset, type HolidayRules, type Ticket } from './model';
+import { useEffect, useRef, useState } from 'react';
+import { calCapacity, CAL_LANES, DOW, dowOf, gridDays, holidayOf, planWeek, releasesOn, type Dataset, type HolidayRules, type Ticket } from './model';
 import { AvatarStack, MONO } from './wsUi';
 
 /**
@@ -8,10 +9,24 @@ import { AvatarStack, MONO } from './wsUi';
 export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, avail }: { y: number; m: number; today: string; sel: string; onPick: (d: string) => void; tickets: Ticket[]; data: Dataset; rules: HolidayRules; avail: { from: string; to: string } | null }) {
   const month = `${y}-${String(m).padStart(2, '0')}`;
   const cells = gridDays(y, m);
+  // 칸 하나가 담는 줄 수는 **칸 높이를 재서** 정한다(일정 페이지와 같은 방식) — 창 크기·패널 접기에 따라 달라진다.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [cellH, setCellH] = useState(0);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const read = () => setCellH(el.clientHeight / 6);
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // 아직 못 쟀으면(첫 프레임·레이아웃 없는 환경) 스펙의 기본(셋/둘).
+  const cap = cellH > 0 ? calCapacity(cellH) : CAL_LANES;
   // 주마다 줄을 배정한다 — 이어지는 같은 묶음이 칸마다 위아래로 흔들리지 않게(일정 페이지와 같은 규칙).
   const plans = Array.from({ length: cells.length / 7 }, (_, w) => {
     const week = cells.slice(w * 7, w * 7 + 7);
-    return planWeek(tickets, week, week.map((d) => d.startsWith(month)), data);
+    return planWeek(tickets, week, week.map((d) => d.startsWith(month)), data, cap);
   });
   return (
     <div data-ws-calendar style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', boxSizing: 'border-box', background: 'var(--mf-cal-frame)', borderTop: '1px solid var(--mf-ws-line)', maxWidth: '100%', overflow: 'hidden' }}>
@@ -22,7 +37,7 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
           </div>
         ))}
       </div>
-      <div style={{ flex: '1 1 auto', display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gridTemplateRows: 'repeat(6, minmax(96px, 1fr))', borderTop: '1px solid var(--mf-ws-line)' }}>
+      <div ref={gridRef} style={{ flex: '1 1 auto', display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gridTemplateRows: 'repeat(6, minmax(96px, 1fr))', borderTop: '1px solid var(--mf-ws-line)' }}>
         {cells.map((d, i) => {
           const w = dowOf(d);
           const inMonth = d.startsWith(month);
@@ -68,17 +83,17 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                     {h.name}
                   </span>
                 )}
+                {rel.length > 0 && (
+                  // 배포 예정일 — 날짜 줄 안에(칩 줄 사이에 끼면 이어지는 띠의 줄이 그날만 한 칸 밀렸다 — 제보 2026-10-01).
+                  <span data-ws-release={d} title={rel.map((t) => `배포 예정 · ${t.key} ${t.summary}`).join('\n')} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 15, padding: '0 5px', borderRadius: 999, background: '#EAF1FB', color: '#3F67A8', fontSize: 9, fontWeight: 800, minWidth: 0, flexShrink: 1, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                      <path d="M12 2 4 7v10l8 5 8-5V7z" />
+                    </svg>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>배포{rel.length > 1 ? ` ${rel.length}` : ` ${rel[0]!.key}`}</span>
+                  </span>
+                )}
                 {busy > 0 && <span style={{ marginLeft: 'auto', flexShrink: 0, fontFamily: MONO, fontSize: 9.5, color: 'var(--mf-ws-faint)' }}>{busy}명</span>}
               </div>
-              {rel.length > 0 && (
-                // 배포 예정일 — 막대와 따로, 그날 칸에 한 줄(여럿이면 건수 · 툴팁에 목록).
-                <div data-ws-release={d} title={rel.map((t) => `배포 예정 · ${t.key} ${t.summary}`).join('\n')} style={{ height: 16, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3, padding: '0 5px', borderRadius: 5, background: '#EAF1FB', color: '#3F67A8', fontSize: 9.5, fontWeight: 800, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-                    <path d="M12 2 4 7v10l8 5 8-5V7z" />
-                  </svg>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>배포 {rel.length > 1 ? `${rel.length}건` : rel[0]!.key}</span>
-                </div>
-              )}
               {pieces.map((pc, li) => {
                 if (!pc) return <div key={`gap${li}`} aria-hidden="true" style={{ height: 18, flexShrink: 0 }} />;
                 const c = pc.chip;

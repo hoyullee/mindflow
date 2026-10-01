@@ -10,6 +10,7 @@ import {
   dayChips,
   foldSolo,
   planWeek,
+  calCapacity,
   releasesOn,
   SOLO_KEY,
   gridDays,
@@ -264,6 +265,15 @@ describe('달력 줄 — 이어지는 같은 묶음은 같은 줄', () => {
     expect(plan.rows[2]!.map((r) => r?.chip.epic.key ?? null)).toEqual(['B']);
     const ts2 = [T('A', 'A', 'p', '2026-09-07', '2026-09-08'), T('B', 'B', 'p', '2026-09-07', '2026-09-07')];
     expect(planWeek(ts2, week, all, mk(ts2)).rows[2]!.map((r) => r?.chip.epic.key ?? null)).toEqual(['A']);
+  });
+  it('칸 높이로 줄 수를 정한다 — 자리가 있으면 넷째도 그대로', () => {
+    const ts = ['A', 'B', 'C', 'D'].map((k) => T(k, k, 'p', '2026-09-08', '2026-09-08'));
+    const big = calCapacity(140);
+    expect(big.rows).toBeGreaterThanOrEqual(4);
+    const plan = planWeek(ts, week, all, mk(ts), big);
+    expect([plan.rows[2]!.length, plan.more[2]]).toEqual([4, 0]);
+    expect(calCapacity(96)).toEqual({ rows: 3, withMore: 2 });
+    expect(calCapacity(20).rows).toBe(1);
   });
   it('줄이 넘치는 주는 둘만 + 칸마다 +N', () => {
     const ts = ['A', 'B', 'C', 'D'].map((k) => T(k, k, 'p', '2026-09-08', '2026-09-08'));
