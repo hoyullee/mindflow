@@ -7179,6 +7179,179 @@ describe('공책 54판 — 좁은 화면 배치(제보: 모바일에서 틀어�
     expect(panel.style.flex).toBe('');
   });
 
+  it('쓰는 동안(키보드가 떠 있을 때) 서식 도구는 **키보드 바로 위**에 붙고 바닥 독은 비킨다(E1)', async () => {
+    // 키보드 — 시각 뷰포트가 레이아웃보다 그만큼 짧다(`useKeyboardInset`의 신호).
+    const vv = { height: window.innerHeight - 300, offsetTop: 0, scale: 1, addEventListener: () => {}, removeEventListener: () => {} };
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+    try {
+      const c = await open('mb8');
+      const dock = (await waitFor(() => c.querySelector('[data-note-toolbar-dock]'))) as HTMLElement;
+      // 읽는 동안 — 도구는 화면 밖, 독이 선다.
+      expect(dock.getAttribute('data-note-toolbar-dock')).toBe('off');
+      expect(dock.contains(c.querySelector('[data-note-toolbar]'))).toBe(true);
+      // 본문에 초점이 들어오면 — 도구가 키보드 높이(300)에 붙고, 독은 비킨다.
+      act(() => (c.querySelector('[data-note-title]') as HTMLElement).focus());
+      await waitFor(() => expect(dock.getAttribute('data-note-toolbar-dock')).toBe('on'));
+      expect(dock.style.position).toBe('fixed');
+      expect(dock.style.bottom).toBe('300px');
+      expect(c.querySelector('[data-note-dock]')).toBeNull();
+    } finally {
+      delete (window as { visualViewport?: unknown }).visualViewport;
+    }
+  });
+
+  it('`/` 블록 넣기는 폰에서 **키보드 위 패널**이다 — 캐럿 곁이 아니라 화면 폭으로(E5)', async () => {
+    const empty = { ...NOTE, pages: [{ id: 'p1', title: '빈 장', blocks: [{ id: 'b1', kind: 'p', runs: [{ t: '', b: false, c: null }] }] }] };
+    localStorage.setItem('mindflow_doc_mb9', JSON.stringify(empty));
+    const { container: c } = renderEditor('/editor?map=mb9&title=x');
+    const line = (await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement;
+    fireEvent.keyDown(line, { key: '/' });
+    type(line, '/');
+    const wrap = (await waitFor(() => c.querySelector('[data-note-slash-anchor]'))) as HTMLElement;
+    expect(wrap.getAttribute('data-note-slash-docked')).toBe('1');
+    expect(wrap.style.left).toBe('8px');
+    expect(wrap.style.right).toBe('8px');
+    // 키보드가 없으면(0) 서식 도구 한 줄 위.
+    expect(wrap.style.bottom).toBe('60px');
+    expect((wrap.querySelector('[data-note-slash-panel]') as HTMLElement).style.width).toBe('auto');
+  });
+
+  /** 본문의 블록 순서 — 위에서부터. */
+  const blockIds = (c: HTMLElement) => [...c.querySelectorAll('[data-note-col] > * [data-note-block], [data-note-col] > [data-note-block]')].map((el) => el.getAttribute('data-note-block'));
+
+  it('본문을 길게 누르면 **바닥 시트**다 — 네 칸 · 카드 · 블록 삭제, 단축키 표기는 없다(E3)', async () => {
+    const c = await open('mb10');
+    fireEvent.contextMenu((await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement);
+    const sheet = (await waitFor(() => c.querySelector('[data-note-block-menu]'))) as HTMLElement;
+
+    expect(sheet.hasAttribute('data-note-sheet')).toBe(true);
+    expect(sheet.style.position).toBe('fixed');
+    expect(sheet.style.left).toBe('0px');
+    expect(sheet.style.right).toBe('0px');
+    expect(sheet.style.bottom).toBe('0px');
+    expect(sheet.querySelector('[data-note-sheet-name]')!.textContent).toBe('본문');
+    expect([...sheet.querySelectorAll('.mf-note-sheet-tile')].map((b) => b.getAttribute('data-note-ctx'))).toEqual(['cut', 'copy', 'paste', 'paste-plain']);
+    expect([...sheet.querySelectorAll('.mf-note-sheet-row')].map((b) => b.getAttribute('data-note-ctx'))).toEqual(['font', 'link', 'comment', 'dup', 'move', 'hr']);
+    expect(sheet.querySelector('[data-note-ctx="del"]')!.textContent).toContain('블록 삭제');
+    // 손가락에는 키보드 조합이 없다 — 데스크톱 메뉴의 ⌘X · ⌘⇧V는 적지 않는다.
+    expect(sheet.textContent).not.toMatch(/⌘|Ctrl/);
+
+    // 시트 안을 굴려도 닫히지 않는다(데스크톱 메뉴는 스크롤에 닫힌다).
+    fireEvent.scroll(sheet);
+    expect(c.querySelector('[data-note-block-menu]')).toBeTruthy();
+    // 덮개는 **뗄 때** 닫는다 — 누르는 순간 닫으면 그 click이 아래 글에 떨어진다.
+    const scrim = c.querySelector('[data-note-sheet-scrim]') as HTMLElement;
+    fireEvent.pointerDown(scrim);
+    expect(c.querySelector('[data-note-block-menu]')).toBeTruthy();
+    fireEvent.click(scrim);
+    await waitFor(() => expect(c.querySelector('[data-note-block-menu]')).toBeNull());
+  });
+
+  it('키보드가 떠 있으면 시트는 **키보드 위**에 선다', async () => {
+    const vv = { height: window.innerHeight - 300, offsetTop: 0, scale: 1, addEventListener: () => {}, removeEventListener: () => {} };
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+    try {
+      const c = await open('mb11');
+      fireEvent.contextMenu((await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement);
+      const sheet = (await waitFor(() => c.querySelector('[data-note-block-menu]'))) as HTMLElement;
+      expect(sheet.style.bottom).toBe('300px');
+    } finally {
+      delete (window as { visualViewport?: unknown }).visualViewport;
+    }
+  });
+
+  it('시트의 「위·아래로 옮기기」는 열어 둔 채 한 칸씩, 「블록 복제」는 바로 아래에(E3)', async () => {
+    const c = await open('mb12');
+    fireEvent.contextMenu((await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement);
+    const sheet = (await waitFor(() => c.querySelector('[data-note-block-menu]'))) as HTMLElement;
+    const before = blockIds(c);
+    expect(before.slice(0, 2)).toEqual(['b1', 'b2']);
+
+    fireEvent.click(sheet.querySelector('[data-note-ctx="move"]')!);
+    const up = (await waitFor(() => c.querySelector('[data-note-ctx="move-up"]'))) as HTMLButtonElement;
+    // 맨 위 블록은 더 올라갈 데가 없다.
+    expect(up.disabled).toBe(true);
+    fireEvent.click(c.querySelector('[data-note-ctx="move-down"]')!);
+    await waitFor(() => expect(blockIds(c).slice(0, 2)).toEqual(['b2', 'b1']));
+    // 시트는 그대로 — 이제는 위로도 갈 수 있다.
+    expect(c.querySelector('[data-note-block-menu]')).toBeTruthy();
+    expect((c.querySelector('[data-note-ctx="move-up"]') as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(c.querySelector('[data-note-sheet-back]')!);
+    fireEvent.click((await waitFor(() => c.querySelector('[data-note-ctx="dup"]'))) as HTMLElement);
+    await waitFor(() => expect(c.querySelector('[data-note-block-menu]')).toBeNull());
+    const after = blockIds(c);
+    expect(after.length).toBe(before.length + 1);
+    // 복제본은 원본 **바로 아래**에 새 id로.
+    expect(after[1]).toBe('b1');
+    expect(after[2]).not.toBe('b1');
+    expect(c.querySelector(`[data-note-line="${after[2]}"]`)!.textContent).toBe('릴리즈 범위를 좁혔습니다.');
+  });
+
+  it('「글꼴 ›」은 시트 안의 하위 판이다 — 옆에 붙는 날개 없이(E3)', async () => {
+    const c = await open('mb13');
+    fireEvent.contextMenu((await waitFor(() => c.querySelector('[data-note-line="b1"]'))) as HTMLElement);
+    const sheet = (await waitFor(() => c.querySelector('[data-note-block-menu]'))) as HTMLElement;
+    fireEvent.click(sheet.querySelector('[data-note-ctx="font"]')!);
+    await waitFor(() => expect(sheet.querySelector('[data-note-ctx="font-b"]')).toBeTruthy());
+    expect(c.querySelector('[data-note-ctx-wing]')).toBeNull();
+    expect([...sheet.querySelectorAll('.mf-note-sheet-row')].map((b) => b.textContent)).toEqual(['굵게', '기울임', '밑줄', '취소선', '형광펜', '글자색', '서식 지우기']);
+    // ‹ 로 첫 판에 돌아온다.
+    fireEvent.click(sheet.querySelector('[data-note-sheet-back]')!);
+    await waitFor(() => expect(sheet.querySelector('[data-note-ctx="cut"]')).toBeTruthy());
+  });
+
+  it('표 칸을 길게 누르면 **표 시트** — 범위를 `칸 · 행 · 열 · 표`로 시트 위에서 넓힌다(E4)', async () => {
+    const T = [{ id: 'tb', kind: 'table', rows: [[[{ t: 'a', b: false, c: null }], [{ t: 'b', b: false, c: null }]], [[{ t: 'c', b: false, c: null }], [{ t: 'd', b: false, c: null }]]] }];
+    localStorage.setItem('mindflow_doc_mb14', JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: T }] }));
+    const { container: c } = renderEditor('/editor?map=mb14&title=x');
+    const cell = (await waitFor(() => c.querySelector('[data-note-line="tb:r1c0"]'))) as HTMLElement;
+    fireEvent.contextMenu(cell);
+    const sheet = (await waitFor(() => c.querySelector('[data-note-table-menu]'))) as HTMLElement;
+    expect(sheet.hasAttribute('data-note-sheet')).toBe(true);
+    const scope = () => sheet.querySelector('[data-note-table-scope][aria-checked="true"]')?.getAttribute('data-note-table-scope');
+    const marks = () => [...sheet.querySelectorAll('[data-note-ctx]')].map((b) => b.getAttribute('data-note-ctx'));
+
+    // 칸 — 행·열을 둘 다 넣고 뺄 수 있다.
+    expect(scope()).toBe('칸');
+    expect([...sheet.querySelectorAll('.mf-note-sheet-tile')].map((b) => b.textContent)).toEqual(['복사', '붙여넣기', '잘라내기', '내용 지우기']);
+    expect(marks()).toEqual(expect.arrayContaining(['t-row-add', 't-col-add', 'row-del', 'col-del']));
+
+    // 행 — 열의 일은 빠지고 「행 옮기기」가 선다. 기준 칸(2행)이 그대로다.
+    fireEvent.click(sheet.querySelector('[data-note-table-scope="행"]')!);
+    await waitFor(() => expect(scope()).toBe('행'));
+    expect(marks()).toEqual(expect.arrayContaining(['t-row-add', 't-row-move', 'row-del']));
+    expect(marks()).not.toContain('t-col-add');
+    expect(marks()).not.toContain('col-del');
+    expect((sheet.querySelector('[data-note-ctx="row-down"]') as HTMLButtonElement).disabled).toBe(true);
+
+    // 표 — 지우기는 「표 삭제」 하나.
+    fireEvent.click(sheet.querySelector('[data-note-table-scope="표"]')!);
+    await waitFor(() => expect(scope()).toBe('표'));
+    expect(sheet.querySelector('[data-note-ctx="t-del"]')!.textContent).toContain('표 삭제');
+    expect(marks()).not.toContain('row-del');
+
+    // 칸으로 돌아와 「행 추가 · 아래에」 — 행이 하나 늘고 시트가 닫힌다.
+    fireEvent.click(sheet.querySelector('[data-note-table-scope="칸"]')!);
+    await waitFor(() => expect(scope()).toBe('칸'));
+    expect(c.querySelectorAll('[data-note-block="tb"] tbody tr').length).toBe(2);
+    fireEvent.click(sheet.querySelector('[data-note-ctx="row-below"]')!);
+    await waitFor(() => expect(c.querySelector('[data-note-table-menu]')).toBeNull());
+    expect(c.querySelectorAll('[data-note-block="tb"] tbody tr').length).toBe(3);
+  });
+
+  it('표 시트의 「내용 지우기」는 글만 비운다 — 칸은 남는다(⌫와 같은 규칙)', async () => {
+    const T = [{ id: 'tb', kind: 'table', rows: [[[{ t: 'a', b: false, c: null }], [{ t: 'b', b: false, c: null }]]] }];
+    localStorage.setItem('mindflow_doc_mb15', JSON.stringify({ ...NOTE, pages: [{ id: 'p1', title: '장', blocks: T }] }));
+    const { container: c } = renderEditor('/editor?map=mb15&title=x');
+    fireEvent.contextMenu((await waitFor(() => c.querySelector('[data-note-line="tb:r0c1"]'))) as HTMLElement);
+    const sheet = (await waitFor(() => c.querySelector('[data-note-table-menu]'))) as HTMLElement;
+    fireEvent.click(sheet.querySelector('[data-note-ctx="t-clear"]')!);
+    await waitFor(() => expect(c.querySelector('[data-note-table-menu]')).toBeNull());
+    expect(c.querySelector('[data-note-line="tb:r0c1"]')!.textContent).toBe('');
+    expect(c.querySelector('[data-note-line="tb:r0c0"]')!.textContent).toBe('a');
+  });
+
   it('⋯ 시트의 「공유」는 공유 창을 연다', async () => {
     const c = await open('mb6');
     fireEvent.click((await waitFor(() => c.querySelector('[data-note-more]'))) as HTMLElement);

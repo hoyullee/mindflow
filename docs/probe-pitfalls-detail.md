@@ -918,3 +918,16 @@ jsdom에는 레이아웃이 없어 두 값을 `HTMLElement.prototype`에 **심�
 그대로 나가는 필드(색·날짜 문자열·이름)는 "받은 값"과 "보일 값"이 같다고 가정하지 않는다. 스크린샷이 오면
 **픽셀을 뽑아** 역산한다 — 이번에는 칩 면 `#ebf7f6`을 흐림(0.6)과 섞기 비율(0.34)로 풀어 `#9fe1e7`을 얻었고,
 그 한 값이 클래식 팔레트 14번이라는 것이 원인을 가리켰다.
+
+<a id="f42"></a>
+### F42. 직접 쏜 `contextmenu`는 **마지막 누름이 손가락이면** 버려진다
+
+모바일 4b단계 프로브에서 블록 시트는 열렸는데, 그 시트의 덮개를 `page.tap()`으로 닫은 **뒤** 표 칸에
+쏜 `contextmenu`(F20의 방식)는 아무것도 열지 않았다. 앱은 결백했다: `noteTouchMenu`는 미디어 질의가
+아니라 **실제로 온 마지막 `pointerType`**으로 손가락인지를 가르고, 손가락이면 길게 누르기(380ms)가 연
+창 안의 `contextmenu`만 통과시킨다(두 번 터치로 오는 메뉴를 버리는 장치). `tap`이 그 값을 `touch`로
+바꿔 놓은 것이다. 처음 쏜 것이 통과한 이유는 그때까지 누름이 없어 기본값 `mouse`였기 때문.
+
+프로브는 `contextmenu` 바로 앞에 `pointerType: 'mouse'`인 `pointerdown`·`pointerup`을 한 번 흘려
+판정을 되돌린다(`document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true,
+pointerType: 'mouse' }))`). 손가락 경로 자체를 보려면 F20처럼 `defaultPrevented`를 확인한다.

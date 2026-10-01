@@ -1034,6 +1034,38 @@ input[type='search']::-webkit-search-results-decoration {
   border-color: var(--mf-accent-mute);
   color: var(--mf-accent-deep);
 }
+/* 폰의 메뉴 시트(모바일 공책 디자인 E3·E4) — 바닥에서 올라오고, 누르는 동안 면이 한 단계 진해진다.
+   목록 카드의 줄 사이 선은 `+` 형제 선택자로 긋는다(첫 줄에만 선이 없다 — 인라인으로는 못 가린다). */
+@keyframes mf-note-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes mf-note-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+[data-note-sheet] {
+  animation: mf-note-sheet-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+[data-note-sheet-scrim] {
+  animation: mf-note-scrim-in 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-note-sheet],
+  [data-note-sheet-scrim] { animation: none; }
+}
+.mf-note-sheet-tile,
+.mf-note-sheet-row,
+.mf-note-sheet-danger {
+  -webkit-tap-highlight-color: transparent;
+}
+.mf-note-sheet-tile { background: var(--mf-m-info); }
+.mf-note-sheet-row { background: transparent; }
+.mf-note-sheet-row + .mf-note-sheet-row { border-top: 1px solid var(--mf-m-line) !important; }
+.mf-note-sheet-tile:active:not(:disabled),
+.mf-note-sheet-row:active:not(:disabled) { background: var(--mf-m-press); }
+.mf-note-sheet-danger { background: color-mix(in srgb, var(--mf-m-danger) 9%, var(--mf-m-card)); }
+.mf-note-sheet-danger:active:not(:disabled) { background: color-mix(in srgb, var(--mf-m-danger) 16%, var(--mf-m-card)); }
 /* 메뉴 한 줄 — 기본 면과 hover를 **여기서** 정한다(인라인으로 박으면 hover를 덮는다). */
 .mf-note-item {
   background: transparent;

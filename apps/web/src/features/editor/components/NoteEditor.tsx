@@ -73,7 +73,8 @@ import { agoLabel, boardDocIdFromUrl, embedKindName, embedKindOf, embedSize, typ
 import { NoteTips } from './NoteTips';
 import { PresenceAvatars } from './PresenceAvatars';
 import { NoteBookTitle } from './NoteBookTitle';
-import { NoteMobileTopBar } from './NoteMobileChrome';
+import { NoteMenuSheet, NoteMobileToolbarDock, NoteMobileTopBar, NoteSheetBack, NoteSheetDanger, NoteSheetDangerRow, NoteSheetHead, NoteSheetList, NoteSheetPill, NoteSheetRow, NoteSheetTile, NoteSheetTiles } from './NoteMobileChrome';
+import { useKeyboardInset } from '../../../hooks/useKeyboardInset';
 import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
 import { comboLabel, keyLabel } from '../shortcutLabels';
@@ -3442,21 +3443,27 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
         <PageList controller={controller} collapsed={!mobile && focus} onQuery={setFindQ} narrow={mobile} onPick={mobile ? onClosePages : undefined} />
       </div>
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {!readOnly && (
-          <FormatToolbar
-            controller={controller}
-            boxRef={boxRef}
-            openLinkRef={openLinkRef}
-            rememberBox={rememberBox}
-            onInserted={setFreshId}
-            pickLinkDoc={setLinkPick}
-            formatSelection={formatSelection}
-            painted={textSel}
-            focus={focus}
-            setFocus={setFocus}
-            wide={wide}
-          />
-        )}
+        {!readOnly &&
+          (() => {
+            const toolbar = (
+              <FormatToolbar
+                controller={controller}
+                boxRef={boxRef}
+                openLinkRef={openLinkRef}
+                rememberBox={rememberBox}
+                onInserted={setFreshId}
+                pickLinkDoc={setLinkPick}
+                formatSelection={formatSelection}
+                painted={textSel}
+                focus={focus}
+                setFocus={setFocus}
+                wide={wide}
+              />
+            );
+            // 폰은 **키보드 바로 위**(모바일 공책 디자인 E1) — 본문 위에 한 줄을 늘 세워 두면 읽는 동안에도
+            // 화면 높이를 먹고, 쓰는 동안에는 손가락에서 멀다.
+            return mobile ? <NoteMobileToolbarDock>{toolbar}</NoteMobileToolbarDock> : toolbar;
+          })()}
         <div
           ref={pageRef}
           className="lnb-scroll"
@@ -4143,7 +4150,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
  * 스크롤 · 창 크기 변경**이 모두 닫는다. 스크롤과 크기 변경까지 닫는 이유는 기준점이
  * 움직였는데 팝업만 제자리에 남으면 엉뚱한 것에 붙어 보이기 때문이다.
  */
-function useAnchored(open: boolean, close: () => void, opts: { closeOnScroll?: boolean } = {}): { ref: RefObject<HTMLElement | null>; rect: DOMRect | null } {
+function useAnchored(open: boolean, close: () => void, opts: { closeOnScroll?: boolean; closeOnResize?: boolean } = {}): { ref: RefObject<HTMLElement | null>; rect: DOMRect | null } {
   const ref = useRef<HTMLElement | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   useLayoutEffect(() => {
@@ -4160,17 +4167,20 @@ function useAnchored(open: boolean, close: () => void, opts: { closeOnScroll?: b
     // 제자리에 남으면 엉뚱한 것에 붙어 보인다). `/` 목록은 **본문을 스크롤하며 고르는**
     // 자리라 닫지 않고 따라간다(제보: 스크롤하면 닫힌다).
     const scrollCloses = opts.closeOnScroll !== false;
+    // 폰의 바닥 시트는 크기 변경에도 남는다 — 화면 폭 전체에 붙어 있어 기준점이 없고, 키보드가
+    // 오르내리는 것만으로 창 크기가 바뀌는 브라우저가 있다(그때마다 닫히면 열 수가 없다).
+    const resizeCloses = opts.closeOnResize !== false;
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onDown);
+    if (resizeCloses) window.addEventListener('resize', onDown);
     if (scrollCloses) document.addEventListener('scroll', onDown, true);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onDown);
+      if (resizeCloses) window.removeEventListener('resize', onDown);
       if (scrollCloses) document.removeEventListener('scroll', onDown, true);
     };
-  }, [open, close, opts.closeOnScroll]);
+  }, [open, close, opts.closeOnScroll, opts.closeOnResize]);
   return { ref, rect };
 }
 
@@ -8275,7 +8285,9 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
   }, [pick]);
 
   const closeMenu = useCallback(() => setMenu(null), []);
-  useAnchored(!!menu, closeMenu);
+  /** 폰의 표 메뉴는 바닥 시트다(`TableMenu`) — 시트 안을 굴리거나 키보드가 오르내려도 남는다. */
+  const sheetMenu = useIsMobile();
+  useAnchored(!!menu, closeMenu, sheetMenu ? { closeOnScroll: false, closeOnResize: false } : {});
 
   /**
    * **표 안의 아무 데나 눌러도 메뉴가 닫힌다**(제보).
@@ -8293,7 +8305,9 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
     if (!menu) return;
     const onDown = (e: Event) => {
       const el = e.target as HTMLElement | null;
-      if (el?.closest?.('[data-note-table-menu], [data-note-ctx-wing]')) return;
+      // 시트의 덮개는 **뗄 때** 스스로 닫는다(`NoteMenuSheet`) — 여기서 누르는 순간 닫으면 그 click이
+      // 덮개가 사라진 자리의 칸에 떨어져 다른 칸이 골라진다.
+      if (el?.closest?.('[data-note-table-menu], [data-note-ctx-wing], [data-note-sheet-scrim]')) return;
       setMenu(null);
     };
     document.addEventListener('pointerdown', onDown, true);
@@ -9592,6 +9606,11 @@ function TableBlock({ controller, block, focusBox }: { controller: EditorControl
           }}
           onCopy={() => copySel(menu.sel)}
           onPaste={(grid) => pasteGrid(menu.sel, grid)}
+          onScope={(next) => {
+            pick(next);
+            setMenu((m) => (m ? { ...m, sel: next } : m));
+          }}
+          onClose={closeMenu}
           onDone={() => {
             setMenu(null);
             setSel(null);
@@ -9646,6 +9665,8 @@ function TableMenu({
   onFill,
   onCopy,
   onPaste,
+  onScope,
+  onClose,
   onDone,
 }: {
   controller: EditorController;
@@ -9657,9 +9678,14 @@ function TableMenu({
   onFill: (color: string | null) => void;
   onCopy: () => void;
   onPaste: (grid: RichRun[][][]) => void;
+  /** 시트의 `칸 · 행 · 열 · 표` — 고른 범위를 그 자리에서 바꾼다(폰 · 디자인 E4). */
+  onScope?: (next: TableSel) => void;
+  /** 덮개를 눌러 닫기 — 고른 것은 그대로 둔다(`onDone`은 선택까지 놓는다). */
+  onClose?: () => void;
   onDone: () => void;
 }) {
   const [wing, setWing] = useState<'align' | 'fill' | null>(null);
+  const mobile = useIsMobile();
   const spot = selAnchor(sel);
   /** 고른 행·열의 범위 — 레일을 끌어 여럿을 골랐으면 그 전부가 삭제 대상이다. */
   const rowSpan = sel.mode === 'row' ? axisSpan(sel.r, sel.r1) : ([spot.r, spot.r] as [number, number]);
@@ -9717,6 +9743,178 @@ function TableMenu({
   /** 색 날개의 머리 — 무엇에 칠하는지 그 자리에서 말한다(스펙 §4-7). */
   const fillTitle =
     sel.mode === 'all' ? '표 전체 색' : sel.mode === 'row' ? '이 행 색' : sel.mode === 'col' ? '이 열 색' : sel.mode === 'range' ? `선택 ${label.count} 색` : '선택한 칸 색';
+
+  if (mobile) {
+    /**
+     * **폰의 표 메뉴**(모바일 공책 디자인 E4) — 범위를 시트 위에서 고른다(`칸 · 행 · 열 · 표`).
+     *
+     * 데스크톱은 레일(행·열 손잡이)을 눌러 범위를 고른 뒤 우클릭한다. 손가락에는 그 손잡이가 너무
+     * 작고, 칸을 길게 누르면 언제나 **칸**부터 시작한다 — 그래서 시트 머리에서 넓힌다. 기준 칸은
+     * 그대로다(`selAnchor`): 칸 A2에서 `행`을 누르면 2행, `열`을 누르면 A열.
+     */
+    const scope = sel.mode === 'cell' || sel.mode === 'range' ? 0 : sel.mode === 'row' ? 1 : sel.mode === 'col' ? 2 : 3;
+    const scopes: { name: string; next: TableSel }[] = [
+      { name: '칸', next: { mode: 'cell', r: spot.r, c: spot.c } },
+      { name: '행', next: { mode: 'row', r: spot.r } },
+      { name: '열', next: { mode: 'col', c: spot.c } },
+      { name: '표', next: { mode: 'all' } },
+    ];
+    /**
+     * 넣고 지우는 자리는 **고른 네모**로 센다(`selRect`) — 구역을 골랐으면 그 행들·열들, 표 전체면
+     * 끝에(기준 칸 0,0의 아래는 표 한가운데다). 칸 하나면 그 칸의 행·열이다.
+     */
+    const rect = selRect(sel, rows, cols);
+    const clear = () => controller.clearNoteTableCells(block.id, rect);
+    const rowAt = (below: boolean) => (below ? rect.r1 + 1 : rect.r0);
+    const colAt = (right: boolean) => (right ? rect.c1 + 1 : rect.c0);
+    const rowCount = rect.r1 - rect.r0 + 1;
+    const colCount = rect.c1 - rect.c0 + 1;
+    return (
+      <NoteMenuSheet rootRef={menuRef} attrs={{ 'data-note-table-menu': '' }} onClose={onClose ?? onDone}>
+        {wing === 'align' ? (
+          <>
+            <NoteSheetBack title={isRow ? '이 행 정렬' : isAll ? '표 전체 정렬' : '이 열 정렬'} onBack={() => setWing(null)} />
+            <NoteSheetList>
+              {(['left', 'center', 'right'] as const).map((a) => (
+                <NoteSheetRow
+                  key={a}
+                  mark={`align-${a}`}
+                  name={a === 'left' ? '왼쪽' : a === 'center' ? '가운데' : '오른쪽'}
+                  on={(isAll ? alignAll : alignNow) === a}
+                  hint={(isAll ? alignAll : alignNow) === a ? '현재' : undefined}
+                  icon={a === 'left' ? <><path d="M4 6h16M4 12h10M4 18h13" /></> : a === 'center' ? <><path d="M4 6h16M7 12h10M6 18h12" /></> : <><path d="M4 6h16M10 12h10M7 18h13" /></>}
+                  onClick={run(() => (isRow ? controller.setNoteTableRowAlign(block.id, spot.r, a) : controller.setNoteTableAlign(block.id, isAll ? 'all' : spot.c, a)))}
+                />
+              ))}
+            </NoteSheetList>
+          </>
+        ) : (
+          <>
+            <NoteSheetHead kind="표">
+              <span role="radiogroup" aria-label="고를 범위" style={{ display: 'inline-flex', padding: 2, borderRadius: 99, background: 'var(--mf-m-thumb)' }}>
+                {scopes.map((sc, i) => (
+                  <button
+                    key={sc.name}
+                    type="button"
+                    role="radio"
+                    aria-checked={i === scope}
+                    data-note-table-scope={sc.name}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onScope?.(sc.next)}
+                    style={{ height: 28, padding: '0 12px', border: 0, borderRadius: 99, background: i === scope ? 'var(--mf-m-card)' : 'transparent', boxShadow: i === scope ? '0 1px 3px rgba(46,42,38,.12)' : 'none', color: i === scope ? 'var(--mf-m-ink)' : 'var(--mf-m-mut)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    {sc.name}
+                  </button>
+                ))}
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--mf-m-faint)', whiteSpace: 'nowrap' }}>{label.count}</span>
+            </NoteSheetHead>
+            <NoteSheetTiles>
+              <NoteSheetTile mark="t-copy" name="복사" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={run(onCopy)} />
+              <NoteSheetTile
+                mark="t-paste"
+                name="붙여넣기"
+                icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>}
+                onClick={run(() => {
+                  void readTableClip()
+                    .then((grid) => {
+                      if (grid) onPaste(grid);
+                    })
+                    .catch(() => undefined);
+                })}
+              />
+              {/* 잘라내기 = 복사 + 내용 지우기 — 칸은 남고 글만 빠진다(⌫와 같은 규칙: 줄을 빼는 것은 아래 붉은 단추). */}
+              <NoteSheetTile
+                mark="t-cut"
+                name="잘라내기"
+                icon={CUT_ICON}
+                onClick={run(() => {
+                  onCopy();
+                  clear();
+                })}
+              />
+              <NoteSheetTile mark="t-clear" name="내용 지우기" icon={<><path d="M20 20H9L4 15a2 2 0 0 1 0-3l8-8a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-7 7" /><path d="m8 9 7 7" /></>} onClick={run(clear)} />
+            </NoteSheetTiles>
+            <NoteSheetList>
+              <NoteSheetRow mark="t-fill" name="색 채우기" icon={<><path d="M19 11a7 7 0 1 1-7-7" /><path d="M12 4v7l5 4" /></>}>
+                <span style={{ display: 'flex', gap: 6 }}>
+                  {CELL_FILLS.map(([hex, name]) => (
+                    <button key={hex} type="button" data-note-ctx={`fill-${hex}`} aria-label={name} onMouseDown={(e) => e.preventDefault()} onClick={() => onFill(hex)} style={{ width: 24, height: 24, padding: 0, border: 0, borderRadius: 8, background: hex, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.08)', cursor: 'pointer' }} />
+                  ))}
+                  <button type="button" data-note-ctx="fill-clear" aria-label="색 지우기" onMouseDown={(e) => e.preventDefault()} onClick={() => onFill(null)} style={{ width: 24, height: 24, padding: 0, border: 0, borderRadius: 8, background: 'linear-gradient(135deg, transparent 46%, var(--mf-m-faint) 46%, var(--mf-m-faint) 54%, transparent 54%), var(--mf-m-card)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.1)', cursor: 'pointer' }} />
+                </span>
+              </NoteSheetRow>
+              <NoteSheetRow mark="t-align" name="정렬" hint={({ left: '왼쪽', center: '가운데', right: '오른쪽' } as Record<string, string>)[(isAll ? alignAll : alignNow) ?? ''] ?? ''} more icon={<><path d="M4 6h16M4 12h10M4 18h16" /></>} onClick={() => setWing('align')} />
+              {!isCol && (
+                <NoteSheetRow mark="t-row-add" name="행 추가" icon={ROW_ICON}>
+                  <NoteSheetPill mark="row-above" name="위에" onClick={run(() => controller.addNoteTableRow(block.id, rowAt(false)))} />
+                  <NoteSheetPill mark="row-below" name="아래에" onClick={run(() => controller.addNoteTableRow(block.id, rowAt(true)))} />
+                </NoteSheetRow>
+              )}
+              {!isRow && (
+                <NoteSheetRow mark="t-col-add" name="열 추가" icon={COL_ICON}>
+                  <NoteSheetPill mark="col-left" name="왼쪽에" onClick={run(() => controller.addNoteTableCol(block.id, colAt(false)))} />
+                  <NoteSheetPill mark="col-right" name="오른쪽에" onClick={run(() => controller.addNoteTableCol(block.id, colAt(true)))} />
+                </NoteSheetRow>
+              )}
+              {/* 옮기기는 **한 줄을 골랐을 때만**(데스크톱과 같은 규칙) — 옮긴 뒤에도 시트를 열어 둔다:
+                  몇 칸을 옮길지는 눌러 보며 정한다. 고른 줄이 따라가도록 선택도 함께 옮긴다. */}
+              {isRow && (
+                <NoteSheetRow mark="t-row-move" name="행 옮기기" icon={<><path d="M12 3v18" /><path d="m8 7 4-4 4 4M8 17l4 4 4-4" /></>}>
+                  <NoteSheetPill mark="row-up" name="위로" disabled={spot.r === 0 || rowSpan[1] > rowSpan[0]} onClick={() => {
+                    controller.moveNoteTableRow(block.id, spot.r, -1);
+                    onScope?.({ mode: 'row', r: spot.r - 1 });
+                  }} />
+                  <NoteSheetPill mark="row-down" name="아래로" disabled={spot.r >= rows - 1 || rowSpan[1] > rowSpan[0]} onClick={() => {
+                    controller.moveNoteTableRow(block.id, spot.r, 1);
+                    onScope?.({ mode: 'row', r: spot.r + 1 });
+                  }} />
+                </NoteSheetRow>
+              )}
+              {isCol && (
+                <NoteSheetRow mark="t-col-move" name="열 옮기기" icon={<><path d="M3 12h18" /><path d="m7 8-4 4 4 4M17 8l4 4-4 4" /></>}>
+                  <NoteSheetPill mark="col-left-move" name="왼쪽으로" disabled={spot.c === 0 || colSpan[1] > colSpan[0]} onClick={() => {
+                    controller.moveNoteTableCol(block.id, spot.c, -1);
+                    onScope?.({ mode: 'col', c: spot.c - 1 });
+                  }} />
+                  <NoteSheetPill mark="col-right-move" name="오른쪽으로" disabled={spot.c >= cols - 1 || colSpan[1] > colSpan[0]} onClick={() => {
+                    controller.moveNoteTableCol(block.id, spot.c, 1);
+                    onScope?.({ mode: 'col', c: spot.c + 1 });
+                  }} />
+                </NoteSheetRow>
+              )}
+            </NoteSheetList>
+            <NoteSheetDangerRow>
+              {isAll || allRows || allCols ? (
+                <NoteSheetDanger mark="t-del" name="표 삭제" onClick={run(() => controller.removeNoteBlock(block.id))} />
+              ) : (
+                <>
+                  {/* 모든 행(열)을 빼는 일은 표 삭제다 — 그 이름으로만 한다(위 갈래). 여기서는 막는다. */}
+                  {!isCol && (
+                    <NoteSheetDanger
+                      mark="row-del"
+                      name={rowCount > 1 ? `행 ${rowCount}개 삭제` : '행 삭제'}
+                      disabled={rowCount >= rows}
+                      onClick={run(() => controller.removeNoteTableRow(block.id, rect.r0, rect.r1))}
+                    />
+                  )}
+                  {!isRow && (
+                    <NoteSheetDanger
+                      mark="col-del"
+                      name={colCount > 1 ? `열 ${colCount}개 삭제` : '열 삭제'}
+                      disabled={colCount >= cols}
+                      onClick={run(() => controller.removeNoteTableCol(block.id, rect.c0, rect.c1))}
+                    />
+                  )}
+                </>
+              )}
+            </NoteSheetDangerRow>
+          </>
+        )}
+      </NoteMenuSheet>
+    );
+  }
+
   return (
     <>
       <div
@@ -9885,8 +10083,14 @@ function BlockMenu({
   onComment: () => void;
   onClose: () => void;
 }) {
-  const [wing, setWing] = useState<'font' | null>(null);
-  useAnchored(true, onClose);
+  const [wing, setWing] = useState<'font' | 'move' | null>(null);
+  /**
+   * 폰에서는 **바닥 시트**다(모바일 공책 디자인 E3) — 손가락 자리에 268px 판을 띄우면 화면 반을
+   * 가리고, 날개(글꼴 ›)는 옆에 붙을 자리가 없다. 같은 일을 같은 함수로 하고 그리는 판만 바꾼다.
+   * 시트 안을 굴리거나 키보드가 오르내려도 닫히지 않는다(`useAnchored`의 두 선택).
+   */
+  const mobile = useIsMobile();
+  useAnchored(true, onClose, mobile ? { closeOnScroll: false, closeOnResize: false } : {});
   const blocks = controller.notePage?.blocks ?? [];
   const block = blocks.find((b) => b.id === at.blockId) ?? null;
   const text = block ? blockText(block) : '';
@@ -9987,6 +10191,108 @@ function BlockMenu({
       after = id;
     }
   };
+
+  if (mobile) {
+    const index = blocks.findIndex((b) => b.id === at.blockId);
+    const cut = () => {
+      if (isEmbed) {
+        if (copyEmbed()) controller.removeNoteBlock(at.blockId);
+        return;
+      }
+      if (isImage) {
+        copyImage(true);
+        return;
+      }
+      if (copy()) controller.removeNoteBlock(at.blockId);
+    };
+    const copyIt = () => {
+      if (isEmbed) void copyEmbed();
+      else if (isImage) copyImage(false);
+      else void copy();
+    };
+    return (
+      <NoteMenuSheet rootRef={menuRef} attrs={{ 'data-note-block-menu': '' }} onClose={onClose}>
+        {wing === 'font' ? (
+          <>
+            <NoteSheetBack title="글꼴" onBack={() => setWing(null)} />
+            <NoteSheetList>
+              {CTX_FONTS.map((f) => (
+                <NoteSheetRow key={f.kind} mark={`font-${f.kind}`} name={f.name} dot={f.dot} onClick={done(() => format(f.kind))} />
+              ))}
+            </NoteSheetList>
+          </>
+        ) : wing === 'move' ? (
+          <>
+            {/* 옮기는 동안 시트는 **열어 둔다** — 한 칸씩 여러 번 누르며 덮개 너머로 자리를 본다. */}
+            <NoteSheetBack title="위·아래로 옮기기" onBack={() => setWing(null)} />
+            <NoteSheetList>
+              <NoteSheetRow mark="move-up" name="위로 옮기기" icon={<><path d="M12 19V6" /><path d="m6 12 6-6 6 6" /></>} disabled={index <= 0} onClick={() => controller.moveNoteBlock(at.blockId, index - 1)} />
+              <NoteSheetRow mark="move-down" name="아래로 옮기기" icon={<><path d="M12 5v13" /><path d="m6 12 6 6 6-6" /></>} disabled={index < 0 || index >= blocks.length - 1} onClick={() => controller.moveNoteBlock(at.blockId, index + 1)} />
+            </NoteSheetList>
+          </>
+        ) : (
+          <>
+            <NoteSheetHead kind={isEmbed ? '삽입한 문서' : '블록'} name={isEmbed ? undefined : (BLOCK_TYPES.find((t) => t.kind === block?.kind)?.name ?? undefined)} />
+            <NoteSheetTiles>
+              <NoteSheetTile mark="cut" name="잘라내기" icon={CUT_ICON} onClick={done(cut)} />
+              <NoteSheetTile mark="copy" name="복사" icon={<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></>} onClick={done(copyIt)} />
+              <NoteSheetTile mark="paste" name="붙여넣기" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /></>} onClick={done(() => void paste(false))} />
+              <NoteSheetTile mark="paste-plain" name="서식 없이 붙이기" icon={<><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /><path d="M9 13h6" /></>} onClick={done(() => void paste(true))} />
+            </NoteSheetTiles>
+            <NoteSheetList>
+              {isEmbed ? (
+                <>
+                  <NoteSheetRow
+                    mark="open"
+                    name="열기"
+                    icon={<><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></>}
+                    onClick={done(() => {
+                      if (embedHref && typeof window !== 'undefined') window.location.assign(embedHref);
+                    })}
+                  />
+                  <NoteSheetRow
+                    mark="embed-size"
+                    name={embedSize(block!) === 'sm' ? '펼치기' : '접기'}
+                    icon={embedSize(block!) === 'sm' ? <><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" /></> : <><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" /></>}
+                    onClick={done(() => controller.setNoteEmbedView(at.blockId, { size: embedSize(block!) === 'sm' ? 'lg' : 'sm' }))}
+                  />
+                </>
+              ) : (
+                <>
+                  <NoteSheetRow mark="font" name="글꼴" hint="굵게 · 기울임 · 색" more icon={<><path d="M5 20 12 4l7 16M8 14h8" /></>} onClick={() => setWing('font')} />
+                  <NoteSheetRow
+                    mark="link"
+                    name="링크 삽입"
+                    icon={<><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></>}
+                    onClick={done(() => {
+                      const el = at.box;
+                      const raw = typeof window === 'undefined' ? null : window.prompt('링크 주소');
+                      const url = raw ? normalizeUrl(raw) : null;
+                      if (!url) return;
+                      if (formatSelection('link', url, el)) return;
+                      if (!el) return;
+                      const runs = applyNoteFormat(el, 'link', url);
+                      if (runs) commitLine(controller, el.getAttribute('data-note-line') || '', runs);
+                    })}
+                  />
+                  <NoteSheetRow mark="comment" name="댓글 달기" icon={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>} onClick={done(onComment)} />
+                  {/* 복제·옮기기는 데스크톱 메뉴에 없는 두 줄이다(컨트롤러에는 있다 — `duplicateNoteBlock`·
+                      `moveNoteBlock`). 폰은 블록을 잘라 붙이는 것 말고 자리를 바꿀 손이 없어 시트로 들인다(디자인 E3). */}
+                  <NoteSheetRow mark="dup" name="블록 복제" icon={<><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>} onClick={done(() => controller.duplicateNoteBlock(at.blockId))} />
+                  <NoteSheetRow mark="move" name="위·아래로 옮기기" more icon={<><path d="M12 3v18" /><path d="m8 7 4-4 4 4M8 17l4 4 4-4" /></>} onClick={() => setWing('move')} />
+                </>
+              )}
+              <NoteSheetRow mark="hr" name="아래에 구분선" icon={<path d="M4 12h16" />} onClick={done(() => controller.addNoteBlock('hr', at.blockId))} />
+            </NoteSheetList>
+            <NoteSheetDangerRow>
+              <NoteSheetDanger mark="del" name={isEmbed ? '문서 삭제' : '블록 삭제'} onClick={done(() => controller.removeNoteBlock(at.blockId))} />
+            </NoteSheetDangerRow>
+            {isEmbed && <span style={{ padding: '8px 20px 0', fontSize: 12, lineHeight: 1.45, color: 'var(--mf-m-faint)', textAlign: 'center' }}>본문에서만 빠져요 · 원본 문서는 그대로예요</span>}
+          </>
+        )}
+      </NoteMenuSheet>
+    );
+  }
 
   return (
     <>
@@ -11369,6 +11675,10 @@ function SlashMenu({
   // 바깥을 누르면 닫힌다(제보) — 목록 안의 누름은 뿌리에서 막는다. **스크롤로는 닫지
   // 않는다**(제보: 본문을 굴리며 고르는 자리다 — 자리는 호출부가 다시 재 준다).
   useAnchored(true, onClose, { closeOnScroll: false });
+  // 폰은 **키보드 위 패널**이다(모바일 공책 디자인 E5) — 캐럿 곁에 매달면 좁은 화면에서 반쯤 잘리거나
+  // 키보드 뒤로 숨는다. 서식 도구(키보드 바로 위 한 줄) 위에 화면 폭으로 붙는다.
+  const docked = useIsMobile();
+  const kbInset = useKeyboardInset();
   const q = query.trim().toLowerCase();
   const hits = SLASH_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
@@ -11442,10 +11752,13 @@ function SlashMenu({
           계산이 **따로 돌아** 칩과 패널이 서로 떨어진 자리에 뜬다. */}
       <div
         data-note-slash-anchor
+        data-note-slash-docked={docked ? '1' : undefined}
         style={{
           position: 'fixed',
-          left: anchor ? anchor.gx : -9999,
-          top: anchor ? anchor.gy : -9999,
+          ...(docked
+            ? // 서식 도구 한 줄(≈52px) 위 — 키보드 높이만큼 더 올라간다.
+              { left: 8, right: 8, bottom: kbInset + 60, top: 'auto' }
+            : { left: anchor ? anchor.gx : -9999, top: anchor ? anchor.gy : -9999 }),
           zIndex: 40,
           // 블록 아랫선에서 20px 내려온 자리에 패널이 매달린다. 예전에는 그 20px에
           // **검색어 칩**이 있었는데, 친 글자가 본문에 그대로 있는데 바로 그 아래에
@@ -11460,8 +11773,8 @@ function SlashMenu({
           style={{
             position: 'absolute',
             left: 0,
-            ...(up ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
-            width: SLASH_W,
+            ...(docked ? { bottom: 0, right: 0 } : up ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
+            width: docked ? 'auto' : SLASH_W,
             boxSizing: 'border-box',
             borderRadius: 14,
             background: 'var(--mf-card)',
@@ -11483,7 +11796,7 @@ function SlashMenu({
                 두 줄처럼 보였다. 같은 안내는 단축키 도움말에 그대로 있다. */}
             <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>블록 넣기</span>
           </div>
-          <div ref={listRef} className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: anchor ? anchor.listH : SLASH_LIST_H, overflowY: 'auto' }}>
+          <div ref={listRef} className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 7, maxHeight: docked ? 'min(300px, 36dvh)' : anchor ? anchor.listH : SLASH_LIST_H, overflowY: 'auto' }}>
             {groups.map((g) =>
               g.items.length === 0 ? null : (
                 <div key={g.name || 'hits'} style={{ display: 'contents' }}>
