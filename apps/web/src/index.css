@@ -91,11 +91,14 @@ body {
    주변 텍스트와 **같은 크기**여야 하는 자리라, 키우면 편집하는 동안에만 글자가
    커졌다 작아진다. 대신 이쪽은 확대가 일어나도 잃을 게 적다(짧은 한 줄).
    `.mf-richedit`(도형·메모 본문)도 같은 이유로 손대지 않는다 — 그 글씨 크기는
-   문서의 값이고 박스 측정에도 쓰인다. */
+   문서의 값이고 박스 측정에도 쓰인다.
+   `.mf-m-big` — 폰의 **큰 제목 칸**(새 일정·일정 상세의 24px 제목). 이 규칙은 "16px 아래로 두지 않는다"인데
+   `!important`라 16px보다 **큰** 글씨까지 16px로 끌어내렸다(실측: 24px 제목이 16px). 확대는 16px 미만에서만
+   일어나므로 이미 큰 칸은 빼도 잃을 게 없다. */
 @media (max-width: 767px) {
-  input:not(.mf-edit),
-  textarea:not(.mf-edit),
-  select:not(.mf-edit) {
+  input:not(.mf-edit):not(.mf-m-big),
+  textarea:not(.mf-edit):not(.mf-m-big),
+  select:not(.mf-edit):not(.mf-m-big) {
     font-size: 16px !important;
   }
 

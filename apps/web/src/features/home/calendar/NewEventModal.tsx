@@ -256,6 +256,7 @@ export function NewEventModal({
             autoFocus
             aria-label="일정 제목"
             data-new-title
+            className="mf-m-big"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="일정 제목"

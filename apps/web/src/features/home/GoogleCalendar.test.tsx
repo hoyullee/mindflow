@@ -5149,3 +5149,106 @@ describe('폰 — 참석자·회의실은 밀어 들어가는 화면에서 고�
     expect(must('[data-gf-room-open]').textContent).toContain('회의실-35-01 · 회의실-42-07');
   });
 });
+
+describe('폰 — 초대받은 구글 일정 상세(모바일 홈 디자인 N5)', () => {
+  beforeEach(() => mockMatchMedia(true));
+  afterEach(() => mockMatchMedia(false));
+
+  const must = <T extends Element = HTMLElement>(sel: string): T => {
+    const el = document.querySelector<T>(sel);
+    if (!el) throw new Error(`없음: ${sel}`);
+    return el;
+  };
+
+  it('머리 [✕ · ● Google · 완료] · 큰 제목 + 날짜 줄 · 초대 묶음이 먼저 · 참석 여부 · 회의 참여 · 응답 목록', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    const meet = 'https://meet.google.com/xxg-xkqe-pzm';
+    const sent: { method: string; body: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (init?.method && init.method !== 'GET') sent.push({ method: init.method, body: String(init.body ?? '') });
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if (init?.method === 'PATCH') return ok({ id: 'inv1' });
+        return ok({
+          items: [
+            {
+              id: 'inv1',
+              summary: '주간 제품 브리핑',
+              start: { dateTime: `${day}T10:30:00+09:00` },
+              end: { dateTime: `${day}T11:50:00+09:00` },
+              htmlLink: 'https://calendar.google.com/x',
+              hangoutLink: meet,
+              organizer: { email: 'rgh@example.com', displayName: '황리건' },
+              creator: { email: 'rgh@example.com', displayName: '황리건' },
+              attendees: [
+                { email: 'rgh@example.com', displayName: '황리건', organizer: true, responseStatus: 'accepted' },
+                { email: 'me@example.com', self: true, responseStatus: 'needsAction' },
+                { email: 'yoonhee@example.com', displayName: '최윤희', responseStatus: 'accepted' },
+                { email: 'mh@example.com', displayName: '윤명훈', responseStatus: 'tentative' },
+                { email: 'jy@example.com', displayName: '박지연', responseStatus: 'declined' },
+                { email: 'sm@example.com', displayName: '김수민', responseStatus: 'accepted' },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await waitFor(() => must('[data-m-tab="cal"]'));
+    fireEvent.click(must('[data-m-tab="cal"]'));
+    await waitFor(() => must(`[data-m-cal-day="${day}"]`));
+    fireEvent.click(must(`[data-m-cal-day="${day}"]`));
+    await user.click(await waitFor(() => must('[data-m-cal-item]')));
+    const detail = await waitFor(() => must('[data-event-detail]'));
+
+    // 머리 — 완료는 머리에, 발치에는 취소·완료가 없다.
+    const head = must('[data-event-head-mobile]');
+    expect(head.querySelector('[data-event-done]')).toBeTruthy();
+    expect(detail.querySelector('[data-event-cancel]')).toBeNull();
+    expect(detail.querySelectorAll('[data-event-done]').length).toBe(1);
+    // 큰 제목은 폰의 16px 입력 규칙에서 빠진다(`mf-m-big`).
+    expect(must('[data-event-title]').classList.contains('mf-m-big')).toBe(true);
+    const line = must('[data-event-when-line]').textContent ?? '';
+    // 시각은 **이 기기의 시간대**로 읽힌다(테스트 러너는 UTC일 수 있다) — 같은 순간을 지역 시각으로 적어 비교한다.
+    const hm = (iso: string) => {
+      const d = new Date(iso);
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    expect(line).toContain(`${hm(`${day}T10:30:00+09:00`)} – ${hm(`${day}T11:50:00+09:00`)}`);
+    expect(line).toContain('1시간 20분');
+
+    // 초대받은 일정은 **누가 불렀나 · 내 답**이 날짜 칸보다 먼저다.
+    const organizer = await waitFor(() => must('[data-gf-organizer]'));
+    expect(organizer.textContent).toContain('황리건');
+    expect(organizer.compareDocumentPosition(must('[data-event-date]')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 참석 여부 — 큰 세 칸, 고르면 체크.
+    const yes = within(detail).getByRole('radio', { name: '참석' });
+    expect(yes.getAttribute('aria-checked')).toBe('false');
+    await user.click(yes);
+    await waitFor(() => expect(within(detail).getByRole('radio', { name: '참석' }).getAttribute('aria-checked')).toBe('true'));
+    // 회의 링크에 「참여」.
+    expect(must('[data-gf-meet-join]').getAttribute('href')).toBe(meet);
+
+    // 응답 목록 — 셋까지 줄, 나머지는 한 줄로 센다. 내 줄은 `나`.
+    const lines = [...document.querySelectorAll('[data-gf-guest-line]')];
+    expect(lines.length).toBe(3);
+    expect(lines.map((l) => l.querySelector('[data-gf-guest-rsvp]')!.textContent)).toEqual(['대기', '참석', '미정']);
+    expect(lines[0]!.textContent).toContain('나');
+    expect(must('[data-gf-guest-status] [data-gf-guest-open]').textContent).toContain('외 2명');
+    expect(must('[data-gf-guest-status] [data-gf-guest-open]').textContent).toContain('불참 1');
+
+    // 완료 — 내 응답이 PATCH로 간다.
+    await user.click(head.querySelector<HTMLElement>('[data-event-done]')!);
+    await waitFor(() => expect(sent.some((r) => r.method === 'PATCH' && r.body.includes('accepted') && r.body.includes('me@example.com'))).toBe(true));
+  });
+});
