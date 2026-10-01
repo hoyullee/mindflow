@@ -3028,15 +3028,15 @@ export function useEditorState(): EditorController {
   const moveToFreshIdRef = useRef(moveToFreshId);
   moveToFreshIdRef.current = moveToFreshId;
 
-  const persistDoc = useCallback(async (): Promise<void> => {
+  const persistOnce = useCallback(async (): Promise<boolean> => {
     // DATA-LOSS GUARD: refuse to write until the initial load resolved (see
     // `canPersistDocRef`). Prevents the empty mount seed from overwriting a real
     // backend doc while its `load()` is still in flight or has failed.
-    if (!canPersistDocRef.current) return;
+    if (!canPersistDocRef.current) return false;
     // 보기 전용(#22): 변이 자체가 차단돼 저장할 것도 없지만, 판별 전의 짧은 창에서
     // 생긴 변경이 남의 문서에 쓰기를 시도하지 않도록 여기서도 막는다(RLS가 어차피
     // 거부하지만 42501 소음을 만들 이유가 없다).
-    if (readOnlyRef.current) return;
+    if (readOnlyRef.current) return false;
     const title = safeDocTitle(docRef.current, metaTitleRef.current);
     // 협업 중 충돌은 한 번 조용히 다시 쓴다(아래 conflict 분기 참고) — 그래서 루프다.
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -3072,7 +3072,7 @@ export function useEditorState(): EditorController {
       }
       setSaveStateState('saved');
       setSaveConflict(null);
-      return;
+      return true;
     } else if (result.reason === 'conflict') {
       docVersionRef.current = result.currentVersion;
       // **협업 중이면 경고가 아니다.** 같이 붙어 있는 사람이 있다는 건 내 문서가
@@ -3116,13 +3116,13 @@ export function useEditorState(): EditorController {
       }
       setSaveConflict({ currentVersion: result.currentVersion });
       setSaveStateState('saved');
-      return;
+      return false;
     } else if (result.reason === 'idTaken') {
       // 그 id는 **다른 계정의 문서**다(RLS가 가려서 `load()`는 빈 결과였다).
       // 계속 그 id로 쓰면 남의 행을 건드리는 요청이 자동저장마다 반복된다 —
       // 새 id로 옮겨 우리 내용을 살린다(아래 `moveToFreshId`).
       await moveToFreshIdRef.current(title);
-      return;
+      return false;
     } else {
       // 저장 실패(오프라인·일시 오류) — 이 기기에는 남긴다. 다음에 열 때 서버의 옛
       // 판에 덮이지 않도록 '아직 못 올림' 표시를 함께 남긴다(로드 분기의 `localPending`).
@@ -3133,10 +3133,47 @@ export function useEditorState(): EditorController {
         /* storage unavailable — non-fatal */
       }
       setSaveStateState('dirty'); // keep dirty so the next autosave/Ctrl+S tick retries
-      return;
+      return false;
     }
     }
+    return false;
   }, [docStore, docStoreId, mapId]);
+
+  /**
+   * **저장은 한 번에 하나만 날린다**(제보: 새 공책의 이름을 한글로 바꾸면 「다른 기기에서
+   * 먼저 저장됨」이 떴다). `persistDoc`을 부르는 자리는 여럿이고(자동저장·이름 확정·
+   * 첫 저장·숨김·온라인 복귀) 서로를 모른다 — 둘이 겹치면 **같은 `prevVersion`**으로
+   * 두 요청이 나가 뒤의 것이 제 앞 것과 충돌한다. 남의 기기가 아니라 **나 자신**과의
+   * 충돌이다. 그래서 날아가는 저장이 있으면 끝난 뒤 **최신 본문으로 한 번 더** 쓴다
+   * (몇 번 겹쳐 불려도 뒤풀이는 한 번). 돌려주는 약속은 그 뒤풀이까지 기다린다 —
+   * `flushSave`처럼 기다리는 쪽이 마지막 편집까지 올라갔음을 믿을 수 있게.
+   *
+   * 앞 저장이 성공하지 못했으면(진짜 충돌·실패) 뒤풀이를 하지 않는다 — 충돌 직후
+   * 곧바로 덮어쓰면 `기록`에 넣으려고 읽어 오는 서버 판과 엇갈린다. 다음 계기(자동저장)가
+   * 예전처럼 이어 간다.
+   */
+  const saveRunRef = useRef<Promise<void> | null>(null);
+  const saveAgainRef = useRef(false);
+  const persistDoc = useCallback((): Promise<void> => {
+    if (saveRunRef.current) {
+      saveAgainRef.current = true;
+      return saveRunRef.current;
+    }
+    const run = (async () => {
+      try {
+        let ok = true;
+        do {
+          saveAgainRef.current = false;
+          ok = await persistOnce();
+        } while (ok && saveAgainRef.current);
+      } finally {
+        saveRunRef.current = null;
+        saveAgainRef.current = false;
+      }
+    })();
+    saveRunRef.current = run;
+    return run;
+  }, [persistOnce]);
 
   /**
    * 서버 판을 **다시 읽어 채택한다** — 본문이 CRDT를 타지 않는 문서(공책)의 유일한

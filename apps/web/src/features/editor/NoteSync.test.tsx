@@ -370,3 +370,89 @@ describe('공책 — 서버 판을 채택해도 **커서는 남는다**', () => 
     expect(now?.focusOffset).toBe(3);
   });
 });
+
+/**
+ * 제보 — 새 공책의 이름을 한글로 바꾸면 「다른 기기에서 먼저 저장됨」이 떴고, 마지막 글자가
+ * 한 번 더 들어간 이름(`공책 이름름`)으로 저장됐다.
+ *
+ * ① 저장을 부르는 자리(이름 확정·자동저장·첫 저장)가 서로를 몰라 **같은 `prevVersion`**으로
+ *    두 요청이 겹쳐 나갔다 — 뒤의 것이 **제 앞의 것과** 충돌했다. 남의 기기가 아니다.
+ * ② 조합 중의 Enter에서 칸을 놓으면 맥의 IME가 마지막 글자를 한 번 더 넣는다.
+ */
+describe('공책 — 이름 바꾸기와 저장의 겹침', () => {
+  /**
+   * 낙관적 잠금을 흉내 내는 느린 서버 — `prevVersion`이 없으면 **삽입**(행이 이미 있으면
+   * 중복 키 → `conflict`, Supabase 어댑터와 같다), 있으면 기준 판이 다를 때 `conflict`.
+   * 동시에 몇 개가 날아가는지 센다.
+   */
+  function lockingBackend(initial: Doc | null, delay = 120) {
+    const base = makeBackend(initial ?? noteDoc('처음'));
+    const server = { version: initial ? 1 : 0 };
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const titles: string[] = [];
+    base.load.mockImplementation((async () => (server.version ? { doc: initial ?? noteDoc('처음'), version: server.version, title: '회의록' } : null)) as never);
+    base.save.mockImplementation((async (_id: string, _doc: Doc, opts: { prevVersion?: number | null; title?: string }) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      const rowExists = server.version > 0;
+      await new Promise((r) => setTimeout(r, delay));
+      inFlight -= 1;
+      if (opts.prevVersion === undefined ? rowExists || server.version > 0 : opts.prevVersion !== server.version) return { ok: false, reason: 'conflict', currentVersion: server.version };
+      server.version += 1;
+      titles.push(opts.title ?? '');
+      return { ok: true, version: server.version };
+    }) as never);
+    return { ...base, titles, maxInFlight: () => maxInFlight };
+  }
+
+  function renderNew(backend: Backend, docId: string) {
+    return render(
+      <MemoryRouter initialEntries={[`/editor?map=${docId}&title=x&new=1`]}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/editor" element={<Editor />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it('새 공책의 첫 저장이 날아가는 중에 이름을 바꿔도 **나 자신과 충돌하지 않는다** (제보)', async () => {
+    const docId = `note-overlap-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(noteDoc('처음')));
+    // 첫 저장(삽입)이 느리다 — 이름의 자동저장(약 1.15초 뒤)이 그것을 따라잡는다.
+    const { backend, titles, maxInFlight } = lockingBackend(null, 1800);
+    const { container } = renderNew(backend, docId);
+    await settled(container);
+
+    const input = container.querySelector('[data-note-book-title]') as HTMLInputElement;
+    input.value = '공책 이름';
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(titles.at(-1)).toBe('공책 이름'), { timeout: 8000 });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(container.querySelector('[data-note-save-conflict]')).toBeNull();
+    expect(maxInFlight()).toBe(1);
+  });
+
+  it('조합 중의 Enter로는 칸을 놓지 않는다 — 조합이 끝난 뒤에 놓고, 이름은 한 번만 확정된다', async () => {
+    const docId = `note-ime-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(noteDoc('처음')));
+    const { backend, save, titles } = lockingBackend(noteDoc('처음'));
+    const { container } = renderEditor(backend, docId);
+    await settled(container);
+    save.mockClear();
+    titles.length = 0;
+
+    const input = container.querySelector('[data-note-book-title]') as HTMLInputElement;
+    input.focus();
+    input.value = '공책 이름';
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229, isComposing: true });
+    expect(document.activeElement).toBe(input); // 조합 도중에는 놓지 않는다
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(document.activeElement).not.toBe(input));
+
+    await waitFor(() => expect(titles).toEqual(['공책 이름']), { timeout: 6000 });
+  });
+});
