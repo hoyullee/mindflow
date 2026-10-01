@@ -14,6 +14,7 @@ import { VersionSection, buildLabel } from './VersionSection';
 import { useMergedUpdate } from '../../../../pwa/updateControl';
 import { updateNoticeOf } from '../../../../platform/shellUpdate';
 import { Switch } from '../../../../components/Switch';
+import { useIsMobile } from '../../../../hooks/useMediaQuery';
 import {
   askNotifyPermission,
   googleRemindersEnabled,
@@ -206,6 +207,9 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 손보는 일은 한 겹 안이다: '프로필 설정'(사진·이름) / '계정 설정'(로그인 수단·
   // 기기 로그아웃·탈퇴). 뒤로 가기는 하나뿐이라 두 화면 모두 첫 화면으로 돌아온다.
   const view = state.settingsView;
+  // 폰은 **한 겹씩 밀어 들어가는 전체 화면**이다(모바일 설정 디자인 S1~S4) — 데스크톱의 팝업 안
+  // 팝업을 폰에서 띄우면 카드가 화면을 거의 다 덮으면서도 모서리·막이 남아 "어디에 있나"가 흐렸다.
+  const isMobile = useIsMobile();
   const detail = view !== 'main'; // 뒤로 가기·전환 애니메이션은 "첫 화면인가"만 본다
   // 화면 전환 — 좌우로 밀지 않고 **제자리에서 드러난다**(제보: 글자가 가로로
   // 지나가는데 상자는 세로로 줄어 두 움직임이 어긋나 보였다). 그래서 방향을
@@ -277,15 +281,40 @@ export function AccountSettingsModal({ state, controller }: Props) {
       restoreFocusSelector="[data-account-trigger]"
       // 막은 **옅은 먹빛 + 흐림**(스펙 6.1) — 뒤의 LNB·카드가 흐려진 채 비쳐 "지금 설정을
       // 보고 있다"는 맥락이 남는다.
-      dim={{ ...MODAL_DIM, background: 'rgba(58,52,46,.32)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)', zIndex: 150 }}
+      dim={isMobile ? { zIndex: 150, alignItems: 'stretch', background: 'var(--mf-m-bg)' } : { ...MODAL_DIM, background: 'rgba(58,52,46,.32)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)', zIndex: 150 }}
       // 카드가 곧 스크롤러다(내용이 화면보다 길 때) — 공용 얇은 스크롤바를 입혀
       // 썸이 22px 라운드 안쪽에 머문다(제보: 스크롤이 팝업을 벗어나 보였다).
       cardClass="lnb-scroll"
-      card={{ width: 512, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(var(--mf-app-h) - 32px)', overflowY: 'auto', background: 'var(--mf-card)', border: '1px solid var(--mf-border)', borderRadius: 24, boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', animation: 'mf-fade .2s ease', boxSizing: 'border-box' }}
+      card={
+        isMobile
+          ? { width: '100%', height: '100%', overflowY: 'auto', background: 'var(--mf-m-bg)', boxSizing: 'border-box', outline: 'none', animation: 'mf-fade .2s ease' }
+          : { width: 512, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(var(--mf-app-h) - 32px)', overflowY: 'auto', background: 'var(--mf-card)', border: '1px solid var(--mf-border)', borderRadius: 24, boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', animation: 'mf-fade .2s ease', boxSizing: 'border-box' }
+      }
     >
       <>
         {/* header — 제목은 언제나 '설정'이고(요청), 상세 화면에서는 뒤로 가기가 붙는다.
             지금 어느 화면인지는 본문 첫 줄의 부 제목('계정 설정')이 말한다. */}
+        {isMobile ? (
+          // 폰 머리 — `‹ 돌아갈 곳 · 제목`(디자인 S1~S4). 닫기 ✕는 없다: 첫 화면의 ‹가 「전체」로 닫는다.
+          <div data-settings-mobile-head style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', height: 52, padding: '0 8px', background: 'var(--mf-m-bg)' }}>
+            <button
+              type="button"
+              className="btn mf-m-press"
+              aria-label={detail ? '설정으로 돌아가기' : '전체로 돌아가기'}
+              onClick={detail ? controller.closeSettingsDetail : controller.closeAccountSettings}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 2, width: 76, height: 40, padding: '0 8px', border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-m-mut)', fontFamily: 'inherit', fontSize: 15, fontWeight: 700, cursor: 'pointer', flex: '0 0 auto' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m15 5-7 7 7 7" />
+              </svg>
+              {detail ? '설정' : '전체'}
+            </button>
+            <h2 data-settings-title style={{ flex: 1, minWidth: 0, margin: 0, textAlign: 'center', fontSize: 16, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-m-ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {view === 'account' ? '계정' : view === 'profile' ? '프로필' : view === 'notify' ? '알림' : view === 'calendar' ? 'Google 캘린더 연동' : view === 'version' ? '버전 확인' : '설정'}
+            </h2>
+            <span style={{ width: 76, flex: '0 0 auto' }} />
+          </div>
+        ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--mf-hairline)' }}>
           {detail && (
             <button
@@ -324,13 +353,14 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </svg>
           </button>
         </div>
+        )}
 
         {/* 본문 — 두 화면의 높이가 크게 달라서(첫 화면엔 테마 격자까지) 전환 때
             카드가 툭 줄었다 늘었다 한다. 그 높이도 부드럽게 잇는다(요청):
             바뀌기 전 높이로 고정 → 새 높이로 트랜지션 → 끝나면 auto로 되돌린다
             (`auto`는 전이되지 않으므로 실제 값을 재서 잇는 수밖에 없고, 끝나고
             풀어 줘야 안쪽에서 오류 문구가 늘어나는 것 같은 변화가 다시 살아난다). */}
-        <div ref={bodyRef} data-settings-body style={{ padding: detail ? 24 : '6px 22px 18px' }}>
+        <div ref={bodyRef} data-settings-body style={{ padding: isMobile ? '4px 16px 32px' : detail ? 24 : '6px 22px 18px' }}>
           {view === 'account' ? (
             <div key="detail" className={viewClass}>
           {/* 화면 이름은 헤더가 말한다(첨부 이미지) — 여기서는 구획 라벨만 쓴다.
