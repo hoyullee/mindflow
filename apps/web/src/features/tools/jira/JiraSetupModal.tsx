@@ -45,7 +45,7 @@ export function JiraSetupHost() {
     <Modal
       open={isOpen}
       onClose={closeJiraSetup}
-      label="Jira 프로젝트 고르기"
+      label="Jira 설정"
       dim={{ zIndex: 90, background: 'rgba(58,52,46,.32)', backdropFilter: 'blur(5px)', padding: 16 }}
       card={{ width: 460, maxWidth: '100%', maxHeight: 'calc(var(--mf-app-h) - 32px)', display: 'flex', flexDirection: 'column', background: 'var(--mf-card)', border: '1px solid var(--mf-border)', borderRadius: 24, boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', overflow: 'hidden', animation: 'mf-fade .2s ease' }}
       cardAttrs={{ 'data-jira-setup': '' }}
@@ -80,6 +80,29 @@ function SetupBody() {
   const [types, setTypes] = useState<JiraIssueTypeRef[] | null>(null);
   const [typeNames, setTypeNames] = useState<string[]>(() => [...new Set((conn.issueTypes ?? []).map((t) => t.name))]);
   const pickedKeys = picked.map((p) => p.key).join(',');
+  // 상태 — 고른 프로젝트(이슈 유형을 골랐으면 그 유형)의 티켓이 가질 수 있는 상태. 고른 유형이 바뀌면 다시 묻는다.
+  const [statuses, setStatuses] = useState<JiraIssueTypeRef[] | null>(null);
+  const [statusNames, setStatusNames] = useState<string[]>(() => [...new Set((conn.issueStatuses ?? []).map((t) => t.name))]);
+  const typeIdsKey = (types ?? []).filter((t) => typeNames.includes(t.name)).map((t) => t.id).join(',');
+  useEffect(() => {
+    if (needSite || !conn.connected) return;
+    if (!pickedKeys) {
+      setStatuses([]);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      void jiraSource()
+        .statuses(pickedKeys.split(','), typeIdsKey ? typeIdsKey.split(',') : [])
+        .then((r) => {
+          if (alive) setStatuses(r.ok ? r.statuses : null);
+        });
+    }, 200);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [pickedKeys, typeIdsKey, needSite, conn.connected]);
   useEffect(() => {
     if (needSite || !conn.connected) return;
     if (!pickedKeys) {
@@ -168,7 +191,8 @@ function SetupBody() {
     setSaving(true);
     // 못 받았으면(옛 함수·실패) 지금 저장된 유형을 그대로 둔다 — 고른 이름이 사라지지 않게.
     const chosen = types ? types.filter((t) => typeNames.includes(t.name)) : (conn.issueTypes ?? []);
-    const r = await jiraSource().saveProjects(picked, rule, typeNames.length ? chosen : []);
+    const chosenStatus = statuses ? statuses.filter((t) => statusNames.includes(t.name)) : (conn.issueStatuses ?? []);
+    const r = await jiraSource().saveProjects(picked, rule, typeNames.length ? chosen : [], statusNames.length ? chosenStatus.map(({ id, name }) => ({ id, name })) : []);
     setSaving(false);
     if (!r.ok) {
       setError(jiraReasonText(r.reason));
@@ -228,18 +252,21 @@ function SetupBody() {
   const rows = [...picked.filter((p) => !shown.some((x) => x.key === p.key)), ...shown];
   return (
     <>
-      {head('Jira 프로젝트 고르기', `${conn.site?.name || conn.site?.url || 'Jira'} · 담당자가 있는 티켓을 고른 날짜 필드로 그려요`)}
+      {head('Jira 설정', `${conn.site?.name || conn.site?.url || 'Jira'} · 어떤 티켓을 어떤 날짜로 보여 줄지 정해요`)}
+      {/* 네 칸(프로젝트·이슈 유형·상태·날짜 기준)이 한 화면에 다 안 들어가 가운데를 통째로 굴린다. */}
+      <div className="lnb-scroll" data-jira-setup-body style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
       <div style={{ padding: '12px 22px 6px' }}>
+        <SectionTitle n={1} title="프로젝트" hint={picked.length ? `${picked.length}개 고름` : '하나 이상 골라 주세요'} />
         <input
           data-jira-project-search
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="프로젝트 이름이나 키로 찾기"
           aria-label="프로젝트 찾기"
-          style={{ width: '100%', boxSizing: 'border-box', height: 34, padding: '0 14px', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
+          style={{ marginTop: 8, width: '100%', boxSizing: 'border-box', height: 34, padding: '0 14px', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
         />
       </div>
-      <div className="lnb-scroll" style={{ flex: '1 1 auto', minHeight: 120, maxHeight: 280, overflowY: 'auto', padding: '4px 12px' }}>
+      <div className="lnb-scroll" style={{ minHeight: 80, maxHeight: 200, overflowY: 'auto', padding: '4px 12px' }}>
         {list === null && !error && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-muted)' }}>프로젝트를 불러오는 중…</div>}
         {rows.map((p) => {
           const on = picked.some((x) => x.key === p.key);
@@ -254,10 +281,12 @@ function SetupBody() {
         {list !== null && !rows.length && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-muted)' }}>일치하는 프로젝트가 없어요</div>}
         {error && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-danger)' }}>{error}</div>}
       </div>
-      <IssueTypeSection types={types} names={typeNames} onToggle={(n) => setTypeNames((cur) => (cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]))} hasProjects={!!picked.length} />
+      <NameChipSection n={2} title="이슈 유형" attr="data-jira-issue-type" items={types} names={typeNames} onToggle={(n) => setTypeNames((cur) => toggleName(cur, n))} hasProjects={!!picked.length} />
+      <NameChipSection n={3} title="상태" attr="data-jira-status" items={statuses} names={statusNames} onToggle={(n) => setStatusNames((cur) => toggleName(cur, n))} hasProjects={!!picked.length} />
       <DateRuleSection fields={fields} rule={rule} onChange={setRule} focus={focusDates} />
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px 16px', borderTop: '1px solid var(--mf-hairline)' }}>
-        <span style={{ fontSize: 12, color: 'var(--mf-muted)' }}>{picked.length ? `${picked.length}개 고름` : '하나 이상 골라 주세요'}</span>
+        <span style={{ fontSize: 12, color: 'var(--mf-muted)' }}>{picked.length ? `프로젝트 ${picked.length}개${typeNames.length ? ` · 유형 ${typeNames.length}` : ''}${statusNames.length ? ` · 상태 ${statusNames.length}` : ''}` : '프로젝트를 하나 이상 골라 주세요'}</span>
         <button
           type="button"
           className="btn"
@@ -295,9 +324,7 @@ function DateRuleSection({ fields, rule, onChange, focus }: { fields: JiraField[
   const nameOf = (opts: { id: string; name: string }[], id: string) => opts.find((o) => o.id === id)?.name;
   return (
     <div ref={ref} data-jira-date-rule data-focus={focus ? '' : undefined} style={{ ...(focus ? { background: 'var(--mf-panel2)' } : {}),  padding: '10px 22px 12px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--mf-text)' }}>
-        날짜 기준 <span style={{ fontWeight: 500, color: 'var(--mf-faint)' }}>· 시작~끝이 티켓 막대, 배포는 그 날짜에 표시{fields === null ? ' · 필드를 불러오는 중…' : ''}</span>
-      </div>
+      <SectionTitle n={4} title="날짜 기준" hint={`시작~끝이 티켓 막대, 배포는 그 날짜에 표시${fields === null ? ' · 필드를 불러오는 중…' : ''}`} />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <label style={{ fontSize: 11.5, color: 'var(--mf-muted)', width: 28, flexShrink: 0 }} htmlFor="jira-rule-start">시작</label>
         <select id="jira-rule-start" data-jira-rule-start value={rule.start ?? ''} onChange={(e) => onChange({ ...rule, start: e.target.value || null, startName: nameOf(startOpts, e.target.value) })} style={SELECT_STYLE}>
@@ -330,32 +357,46 @@ function DateRuleSection({ fields, rule, onChange, focus }: { fields: JiraField[
   );
 }
 
-/** **이슈 유형** — 고른 것만 부른다(비우면 전부 · 하위 작업·에픽은 늘 빠진다). 같은 이름은 한 칩. */
-function IssueTypeSection({ types, names, onToggle, hasProjects }: { types: JiraIssueTypeRef[] | null; names: string[]; onToggle: (name: string) => void; hasProjects: boolean }) {
-  const all = types ? [...new Set(types.map((t) => t.name))] : [];
-  // 저장돼 있던 이름이 지금 목록에 없어도(프로젝트를 뺐다) 칩은 남겨 두어 끌 수 있게 한다.
-  const shown = [...all, ...names.filter((n) => !all.includes(n))];
-  const hint = !hasProjects ? '프로젝트를 고르면 나와요' : types === null ? '불러오지 못했어요 · 지금 설정을 그대로 둬요' : names.length ? `${names.length}개만` : '고르지 않으면 전부';
+const toggleName = (cur: string[], n: string) => (cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]);
+
+/** 칸 제목 — 번호를 붙여 이 팝업이 무엇을 정하는지(프로젝트·유형·상태·날짜) 한눈에 보이게(요청 2026-10-01). */
+function SectionTitle({ n, title, hint }: { n: number; title: string; hint: string }) {
   return (
-    <div data-jira-issue-types style={{ padding: '10px 22px 4px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--mf-text)' }}>
-        이슈 유형 <span style={{ fontWeight: 500, color: 'var(--mf-faint)' }}>· {hint}</span>
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 800, color: 'var(--mf-text)' }}>
+      <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: '50%', background: '#3A352F', color: '#FFFDFB', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n}</span>
+      {title}
+      <span style={{ fontWeight: 500, color: 'var(--mf-faint)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {hint}</span>
+    </div>
+  );
+}
+
+/**
+ * 이름 칩으로 고르는 칸 — **이슈 유형**·**상태**. 고른 것만 부른다(비우면 전부 · 하위 작업·에픽은 늘 빠진다).
+ * 팀 관리 프로젝트는 같은 이름이 프로젝트마다 다른 id라 이름 하나가 칩 하나다.
+ */
+function NameChipSection({ n, title, attr, items, names, onToggle, hasProjects }: { n: number; title: string; attr: string; items: JiraIssueTypeRef[] | null; names: string[]; onToggle: (name: string) => void; hasProjects: boolean }) {
+  const all = items ? [...new Set(items.map((t) => t.name))] : [];
+  // 저장돼 있던 이름이 지금 목록에 없어도(프로젝트를 뺐다) 칩은 남겨 두어 끌 수 있게 한다.
+  const shown = [...all, ...names.filter((x) => !all.includes(x))];
+  const hint = !hasProjects ? '프로젝트를 고르면 나와요' : items === null ? '불러오지 못했어요 · 지금 설정을 그대로 둬요' : names.length ? `${names.length}개만 보여요` : '고르지 않으면 전부 보여요';
+  return (
+    <div data-jira-chips={title} style={{ padding: '10px 22px 4px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <SectionTitle n={n} title={title} hint={hint} />
       {!!shown.length && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 76, overflowY: 'auto' }}>
-          {shown.map((n) => {
-            const on = names.includes(n);
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {shown.map((x) => {
+            const on = names.includes(x);
             return (
               <button
-                key={n}
+                key={x}
                 type="button"
                 className="btn"
-                data-jira-issue-type={n}
+                {...{ [attr]: x }}
                 aria-pressed={on}
-                onClick={() => onToggle(n)}
+                onClick={() => onToggle(x)}
                 style={{ height: 28, padding: '0 12px', borderRadius: 999, border: `1px solid ${on ? '#3A352F' : 'var(--mf-border)'}`, background: on ? '#3A352F' : 'var(--mf-card)', color: on ? '#FFFDFB' : 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
               >
-                {n}
+                {x}
               </button>
             );
           })}

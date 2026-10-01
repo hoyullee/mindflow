@@ -1,4 +1,4 @@
-import { dayChips, DOW, dowOf, gridDays, holidayOf, releasesOn, visibleChips, type Dataset, type HolidayRules, type Ticket } from './model';
+import { DOW, dowOf, gridDays, holidayOf, planWeek, releasesOn, type Dataset, type HolidayRules, type Ticket } from './model';
 import { AvatarStack, MONO } from './wsUi';
 
 /**
@@ -8,6 +8,11 @@ import { AvatarStack, MONO } from './wsUi';
 export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, avail }: { y: number; m: number; today: string; sel: string; onPick: (d: string) => void; tickets: Ticket[]; data: Dataset; rules: HolidayRules; avail: { from: string; to: string } | null }) {
   const month = `${y}-${String(m).padStart(2, '0')}`;
   const cells = gridDays(y, m);
+  // 주마다 줄을 배정한다 — 이어지는 같은 묶음이 칸마다 위아래로 흔들리지 않게(일정 페이지와 같은 규칙).
+  const plans = Array.from({ length: cells.length / 7 }, (_, w) => {
+    const week = cells.slice(w * 7, w * 7 + 7);
+    return planWeek(tickets, week, week.map((d) => d.startsWith(month)), data);
+  });
   return (
     <div data-ws-calendar style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', boxSizing: 'border-box', background: 'var(--mf-cal-frame)', borderTop: '1px solid var(--mf-ws-line)', maxWidth: '100%', overflow: 'hidden' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', background: 'var(--mf-ws-card)' }}>
@@ -27,9 +32,10 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
           const off = !!h || w === 0;
           const inAvail = !!avail && inMonth && d >= avail.from && d <= avail.to && !h && (rules.weekend || (w !== 0 && w !== 6));
           const bg = !inMonth ? 'var(--mf-cal-out)' : inAvail ? 'var(--mf-ws-avail)' : off ? 'var(--mf-ws-sun)' : w === 6 ? 'var(--mf-ws-sat)' : 'var(--mf-ws-card)';
-          const chips = inMonth ? dayChips(tickets, d, data) : [];
+          const plan = plans[Math.floor(i / 7)]!;
+          const pieces = plan.rows[i % 7] ?? [];
+          const more = plan.more[i % 7] ?? 0;
           const rel = inMonth ? releasesOn(tickets, d) : [];
-          const { shown, more } = visibleChips(chips);
           const busy = inMonth ? new Set(tickets.filter((t) => t.start <= d && d <= t.end).map((t) => t.person.id)).size : 0;
           const ring = isSel ? `inset 0 0 0 1.5px #E8A25F${isToday ? ', inset 0 0 0 4px var(--mf-ws-card)' : ''}` : inAvail ? 'inset 0 -2px 0 0 #8FB88F' : 'none';
           return (
@@ -73,21 +79,31 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>배포 {rel.length > 1 ? `${rel.length}건` : rel[0]!.key}</span>
                 </div>
               )}
-              {shown.map((c) => (
-                <div
-                  key={c.epic.key}
-                  data-ws-chip={c.epic.key}
-                  title={c.tickets.map((t) => `${t.key} ${t.summary} · ${t.person.name}`).join('\n')}
-                  style={{ height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '0 3px 0 5px', borderRadius: 5, background: c.epic.bg, borderLeft: `3px solid ${c.epic.c}`, minWidth: 0, boxSizing: 'border-box' }}
-                >
-                  <span style={{ fontSize: 10, fontWeight: 700, color: '#3A352F', minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {/* 에픽 없는 티켓은 칩이 곧 티켓 — 키를 앞에 붙여 어느 티켓인지 알게 한다. */}
-                    {c.epic.solo && <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: c.epic.c, marginRight: 4 }}>{c.epic.key}</span>}
-                    {c.epic.name}
-                  </span>
-                  <AvatarStack people={c.people} size={13} max={3} overlap={4} ring={c.epic.bg} />
-                </div>
-              ))}
+              {pieces.map((pc, li) => {
+                if (!pc) return <div key={`gap${li}`} aria-hidden="true" style={{ height: 18, flexShrink: 0 }} />;
+                const c = pc.chip;
+                // 띠 한 조각 — 이어지는 칸 쪽은 칸 안쪽 여백만큼 내밀어 옆 칸과 붙인다. 이름은 시작 칸(또는 주의 첫 칸)에만.
+                return (
+                  <div
+                    key={c.epic.key}
+                    data-ws-chip={c.epic.key}
+                    data-ws-lane={li}
+                    title={c.tickets.map((t) => `${t.key} ${t.summary} · ${t.person.name} · ${t.start} ~ ${t.end}`).join('\n')}
+                    style={{ height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: pc.head ? '0 3px 0 5px' : '0 3px', marginLeft: pc.head ? 0 : -6, marginRight: pc.tail ? 0 : -6, borderRadius: `${pc.head ? 5 : 0}px ${pc.tail ? 5 : 0}px ${pc.tail ? 5 : 0}px ${pc.head ? 5 : 0}px`, background: c.epic.bg, borderLeft: pc.head ? `3px solid ${c.epic.c}` : 0, minWidth: 0, boxSizing: 'border-box' }}
+                  >
+                    {pc.head && (
+                      <>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#3A352F', minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {/* 에픽 없는 티켓은 칩이 곧 티켓 — 키를 앞에 붙여 어느 티켓인지 알게 한다. */}
+                          {c.epic.solo && <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: c.epic.c, marginRight: 4 }}>{c.epic.key}</span>}
+                          {c.epic.name}
+                        </span>
+                        <AvatarStack people={c.people} size={13} max={3} overlap={4} ring={c.epic.bg} />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
               {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--mf-ws-mut)', paddingLeft: 2 }}>+{more}개</span>}
             </div>
           );

@@ -1,6 +1,6 @@
 import { getSupabaseClient } from '../../../adapters/supabase/supabaseClient';
 import { isSupabaseConfigured, readViteEnv } from '../../../adapters/env';
-import type { JiraEpic, JiraIssueTypeRef, JiraPerson, JiraProjectRef, JiraTicket } from '../../../../../../supabase/functions/_shared/jira';
+import type { JiraEpic, JiraIssueTypeRef, JiraPerson, JiraProjectRef, JiraTicket, TicketStatus } from '../../../../../../supabase/functions/_shared/jira';
 import { demoJira } from './jiraDemo';
 
 export type { JiraEpic, JiraIssueTypeRef, JiraPerson, JiraProjectRef, JiraTicket, TicketStatus } from '../../../../../../supabase/functions/_shared/jira';
@@ -29,6 +29,8 @@ export interface JiraStatus {
   fillDates?: boolean;
   /** 고른 이슈 유형 — 비어 있으면 전부(하위 작업·에픽 제외). */
   issueTypes?: JiraIssueTypeRef[];
+  /** 고른 상태 — 비어 있으면 전부(0047). */
+  issueStatuses?: JiraIssueTypeRef[];
   /** 배포 예정일로 보일 필드(0046) — null이면 표시 안 함. */
   releaseField?: { id: string; name: string } | null;
 }
@@ -72,7 +74,9 @@ export interface JiraSource {
   fields(): Promise<JiraResult<{ fields: JiraField[]; suggested: JiraField | null }>>;
   /** 고른 프로젝트들의 이슈 유형(프로젝트마다 id가 다를 수 있다 — 화면이 이름으로 묶는다). */
   issueTypes(projects: string[]): Promise<JiraResult<{ types: JiraIssueTypeRef[] }>>;
-  saveProjects(projects: JiraProjectRef[], rule?: JiraDateChoice, issueTypes?: JiraIssueTypeRef[]): Promise<JiraResult<JiraStatus>>;
+  /** 고른 프로젝트(와 이슈 유형)의 티켓이 가질 수 있는 상태. */
+  statuses(projects: string[], types: string[]): Promise<JiraResult<{ statuses: (JiraIssueTypeRef & { cat?: TicketStatus })[] }>>;
+  saveProjects(projects: JiraProjectRef[], rule?: JiraDateChoice, issueTypes?: JiraIssueTypeRef[], issueStatuses?: JiraIssueTypeRef[]): Promise<JiraResult<JiraStatus>>;
   /** `today`: 사용자의 오늘 — 아직 안 끝난 티켓을 어디까지 그릴지(서버는 시간대를 모른다). */
   issues(from: string, to: string, today?: string): Promise<JiraResult<JiraIssues>>;
   users(query: string): Promise<JiraResult<{ users: JiraPerson[] }>>;
@@ -102,7 +106,8 @@ const serverJira: JiraSource = {
   projects: (query) => invoke({ action: 'projects', query }),
   fields: () => invoke({ action: 'fields' }),
   issueTypes: (projects) => invoke({ action: 'issue-types', projects }),
-  saveProjects: (projects, rule, issueTypes) => invoke({ action: 'save-projects', projects, ...(rule ? { rule } : {}), ...(issueTypes ? { issueTypes } : {}) }),
+  statuses: (projects, types) => invoke({ action: 'statuses', projects, types }),
+  saveProjects: (projects, rule, issueTypes, issueStatuses) => invoke({ action: 'save-projects', projects, ...(rule ? { rule } : {}), ...(issueTypes ? { issueTypes } : {}), ...(issueStatuses ? { issueStatuses } : {}) }),
   issues: (from, to, today) => invoke({ action: 'issues', from, to, ...(today ? { today } : {}) }),
   users: (query) => invoke({ action: 'users', query }),
   disconnect: () => invoke({ action: 'disconnect' }),

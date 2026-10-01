@@ -29,6 +29,8 @@ export interface Row {
   /** 0046 — 배포 예정일 필드(표시만). */
   release_field?: string | null;
   release_field_name?: string | null;
+  /** 0047 — 고른 상태(비면 전부). */
+  issue_statuses?: unknown;
 }
 
 export interface Site {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coerceIssueTypes, coerceProjects, coerceRule, issueTypesOf, dateFields, epicFromParent, epicsJql, jqlField, nextDay, normalizeTicket, normalizeUsers, overlaps, pickStartField, statusOf, ticketsJql } from '../../../../../../supabase/functions/_shared/jira';
+import { coerceIssueTypes, statusesOf, coerceProjects, coerceRule, issueTypesOf, dateFields, epicFromParent, epicsJql, jqlField, nextDay, normalizeTicket, normalizeUsers, overlaps, pickStartField, statusOf, ticketsJql } from '../../../../../../supabase/functions/_shared/jira';
 
 // Edge Function(`supabase/functions/jira`)이 쓰는 순수한 부분 — JQL·정리·필드 고르기.
 
@@ -36,6 +36,16 @@ describe('JQL', () => {
     expect(ticketsJql(['SQA'], '2026-09-01', '2026-09-30', R(null), [])).not.toContain('issuetype in (');
     expect(coerceIssueTypes([{ id: '10146', name: '품질점검' }, { id: '10146' }, { id: 'bad' }])).toEqual([{ id: '10146', name: '품질점검' }]);
     expect(issueTypesOf({ issueTypes: [{ id: '10143', name: '작업', hierarchyLevel: 0 }, { id: '10144', name: '하위 작업', subtask: true, hierarchyLevel: -1 }, { id: '10000', name: '에픽', hierarchyLevel: 1 }] })).toEqual([{ id: '10143', name: '작업' }]);
+  });
+  it('상태도 id로만 · 프로젝트 상태 응답에서 고른 유형의 것만', () => {
+    expect(ticketsJql(['SQA'], '2026-09-01', '2026-09-30', R(null), [], ['10214', 'x'])).toContain('AND status in (10214) AND assignee');
+    const body = [
+      { id: '10146', name: '품질점검', subtask: false, statuses: [{ id: '10214', name: '진행 중', statusCategory: { key: 'indeterminate' } }, { id: '10300', name: '품질점검 완료', statusCategory: { key: 'done' } }] },
+      { id: '10143', name: '작업', subtask: false, statuses: [{ id: '10214', name: '진행 중', statusCategory: { key: 'indeterminate' } }, { id: '10213', name: '해야 할 일', statusCategory: { key: 'new' } }] },
+      { id: '10144', name: '하위 작업', subtask: true, statuses: [{ id: '10999', name: '서브', statusCategory: { key: 'new' } }] },
+    ];
+    expect(statusesOf(body).map((x) => x.id)).toEqual(['10214', '10300', '10213']);
+    expect(statusesOf(body, ['10146'])).toEqual([{ id: '10214', name: '진행 중', cat: 'doing' }, { id: '10300', name: '품질점검 완료', cat: 'done' }]);
   });
   it('달의 마지막 날 다음 날', () => {
     expect([nextDay('2026-12-31'), nextDay('2028-02-28')]).toEqual(['2027-01-01', '2028-02-29']);
