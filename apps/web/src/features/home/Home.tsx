@@ -40,7 +40,8 @@ import { WorkStatusView } from '../tools/workstatus/WorkStatusView';
 import { JiraSetupHost, openJiraSetup } from '../tools/jira/JiraSetupModal';
 import { ToolToastHost, toolToast } from '../tools/ui';
 import { jiraReasonText } from '../tools/jira/jiraApi';
-import { onJiraConnected } from '../tools/jira/jiraStore';
+import { ensureJiraStatus, onJiraConnected } from '../tools/jira/jiraStore';
+import { ensureToolPrefs } from '../tools/toolPrefsStore';
 import { MobileTabBar, type MobileTab } from './mobile/MobileTabBar';
 import { MobileSpaceView } from './mobile/MobileSpaceView';
 import { MobileNotificationsPage } from './mobile/MobileNotificationsPage';
@@ -141,6 +142,14 @@ export function Home() {
   // 화면을 닫으면서 **전체 탭으로** 돌아가는 길(작업 현황의 `‹ 전체`)은 걷지 않고 그 탭을 세운다 —
   // 도구를 닫지 않고 탭만 바꾸면 전체 탭의 작업 현황 줄이 같은 화면을 다시 열지 못한다(`activeTool`이 그대로라
   // 위의 규칙이 돌지 않는다).
+  // 도구의 **계정 상태**(도구 설정 · Jira 연결)는 LNB의 도구 구획(`useTools`)이 불러왔다. 폰에는 LNB가 없어서
+  // 작업 현황으로 곧장 들어오면(연결에서 `?jira=setup`으로 돌아오기 · 마지막 화면 되살리기) 전체 탭을 한 번 열기
+  // 전까지 「Jira 연결이 끊겼어요」였고, 휴일·담당자 설정도 기본값으로 보였다. 둘 다 같은 사용자면 한 번만 부른다.
+  const toolsWho = state.userEmail || 'local';
+  useEffect(() => {
+    ensureToolPrefs(toolsWho);
+    ensureJiraStatus(toolsWho);
+  }, [toolsWho]);
   const nextPanel = useRef<'noti' | 'more' | null>(null);
   useEffect(() => {
     setMPanel(nextPanel.current);
