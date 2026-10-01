@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Modal } from '../../../components/Modal';
 import { jiraReasonText, jiraSource, type JiraDateChoice, type JiraField, type JiraIssueTypeRef, type JiraProjectRef, type JiraSite } from './jiraApi';
 import { applyJiraStatus, useJiraConn } from './jiraStore';
@@ -14,12 +14,15 @@ import { toolToast } from '../ui';
 
 let open = false;
 let after: (() => void) | null = null;
+/** 열 때 어디를 보여 줄지 — 작업 현황의 `날짜 기준` 단추는 날짜 칸으로 곧장 내려 준다. */
+let focusDates = false;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
-export function openJiraSetup(onDone?: () => void): void {
+export function openJiraSetup(onDone?: () => void, opts?: { focus?: 'dates' }): void {
   open = true;
   after = onDone ?? null;
+  focusDates = opts?.focus === 'dates';
   emit();
 }
 
@@ -252,7 +255,7 @@ function SetupBody() {
         {error && <div style={{ padding: 12, fontSize: 12.5, color: 'var(--mf-danger)' }}>{error}</div>}
       </div>
       <IssueTypeSection types={types} names={typeNames} onToggle={(n) => setTypeNames((cur) => (cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]))} hasProjects={!!picked.length} />
-      <DateRuleSection fields={fields} rule={rule} onChange={setRule} />
+      <DateRuleSection fields={fields} rule={rule} onChange={setRule} focus={focusDates} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px 16px', borderTop: '1px solid var(--mf-hairline)' }}>
         <span style={{ fontSize: 12, color: 'var(--mf-muted)' }}>{picked.length ? `${picked.length}개 고름` : '하나 이상 골라 주세요'}</span>
         <button
@@ -276,7 +279,13 @@ const SELECT_STYLE = { flex: '1 1 0', minWidth: 0, height: 32, padding: '0 10px'
  * **날짜 기준** — 막대의 시작·끝을 어느 필드에서 읽을지(제보 2026-10-01: 시작 날짜·기한을 안 쓰는
  * 프로젝트라 화면이 텅 비었다). 기본 칸 셋(기한·만든 날·해결된 날) + 사이트의 커스텀 날짜 필드.
  */
-function DateRuleSection({ fields, rule, onChange }: { fields: JiraField[] | null; rule: JiraDateChoice; onChange: (r: JiraDateChoice) => void }) {
+function DateRuleSection({ fields, rule, onChange, focus }: { fields: JiraField[] | null; rule: JiraDateChoice; onChange: (r: JiraDateChoice) => void; focus?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focus) return;
+    ref.current?.scrollIntoView?.({ block: 'nearest' });
+    ref.current?.querySelector<HTMLSelectElement>('select')?.focus({ preventScroll: true });
+  }, [focus]);
   const custom = fields ?? [];
   // 지금 값이 목록에 없으면(필드를 못 받았거나 지워졌다) 그 값도 칸에 남긴다 — 고른 것이 사라지지 않게.
   const withCurrent = (id: string | null, name: string | undefined) => (id && id.startsWith('customfield_') && !custom.some((f) => f.id === id) ? [{ id, name: name ?? id }, ...custom] : custom);
@@ -285,7 +294,7 @@ function DateRuleSection({ fields, rule, onChange }: { fields: JiraField[] | nul
   const releaseOpts = [{ id: '', name: '표시 안 함' }, { id: 'duedate', name: '기한' }, ...withCurrent(rule.release ?? null, rule.releaseName)];
   const nameOf = (opts: { id: string; name: string }[], id: string) => opts.find((o) => o.id === id)?.name;
   return (
-    <div data-jira-date-rule style={{ padding: '10px 22px 12px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div ref={ref} data-jira-date-rule data-focus={focus ? '' : undefined} style={{ ...(focus ? { background: 'var(--mf-panel2)' } : {}),  padding: '10px 22px 12px', borderTop: '1px solid var(--mf-hairline)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--mf-text)' }}>
         날짜 기준 <span style={{ fontWeight: 500, color: 'var(--mf-faint)' }}>· 시작~끝이 티켓 막대, 배포는 그 날짜에 표시{fields === null ? ' · 필드를 불러오는 중…' : ''}</span>
       </div>

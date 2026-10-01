@@ -106,6 +106,8 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
   // 프로젝트와 **날짜 규칙**이 질문이다 — 어느 쪽이 바뀌어도 새로 묻는다.
   const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}|${conn.releaseField?.id ?? ''}`;
   const ready = conn.connected && !!conn.site && conn.projects.length > 0;
+  // `날짜 기준` 단추의 툴팁 — 지금 무엇으로 그리고 있는지 열지 않고도 보이게.
+  const dateRuleTitle = `시작 ${conn.startField?.name ?? '없음'} · 끝 ${conn.endField?.name ?? '기한'} · 배포 ${conn.releaseField?.name ?? '표시 안 함'}`;
   const month = useWorkStatusData(from, to, projKey, ready);
   const availData = useWorkStatusData(range.from, range.to, projKey, ready && availOpen);
 
@@ -365,6 +367,16 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
               </div>
             )}
           </div>
+          {ready && (
+            // 날짜 기준(시작·끝·배포 필드) — 프로젝트 고르기 안에 묻혀 있어 찾기 어려웠다(요청 2026-10-01). 팝업을 날짜 칸으로 연다.
+            <button type="button" className="btn" data-ws-date-rule-btn title={dateRuleTitle} onClick={() => openJiraSetup(undefined, { focus: 'dates' })} style={{ height: 32, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px 0 10px', borderRadius: 999, border: '1px solid var(--mf-ws-line2)', background: 'var(--mf-ws-card)', color: 'var(--mf-ws-ink2)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2.5" />
+                <path d="M3 10h18M8 3v4M16 3v4M8 15h4" />
+              </svg>
+              날짜 기준
+            </button>
+          )}
           <RoundButton on={panelShow} label="오른쪽 패널" onClick={() => setVp((v) => ({ ...v, panelOpen: !panelShow }))} attrs={{ 'data-ws-panel-btn': '' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="3" y="4" width="18" height="16" rx="2.5" />
@@ -394,7 +406,7 @@ export function WorkStatusView({ isMobile, onOpenNav }: { isMobile: boolean; onO
                 // 텅 빈 달 — 대개 날짜가 비어 있거나 다른 필드에 적혀 있다(제보 2026-10-01). 고칠 자리로 바로 보낸다.
                 <div data-ws-nodata style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 20px 0', padding: '10px 14px', borderRadius: 12, background: 'var(--mf-ws-sunk)', color: 'var(--mf-ws-mut)', fontSize: 12.5, fontWeight: 600 }}>
                   이 달에 그릴 티켓이 없어요 · 담당자가 있고 날짜가 이 달에 걸린 티켓만 보여요
-                  <button type="button" className="btn" onClick={() => openJiraSetup()} style={{ marginLeft: 'auto', flexShrink: 0, border: 0, background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
+                  <button type="button" className="btn" onClick={() => openJiraSetup(undefined, { focus: 'dates' })} style={{ marginLeft: 'auto', flexShrink: 0, border: 0, background: 'transparent', color: 'var(--mf-ws-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
                     날짜 기준 바꾸기
                   </button>
                 </div>

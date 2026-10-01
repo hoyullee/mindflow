@@ -168,6 +168,18 @@ describe('작업 현황', () => {
     return user;
   }
 
+  it('상단 `날짜 기준` 단추 — 프로젝트 고르기를 날짜 칸으로 연다', async () => {
+    const user = await open();
+    const btn = q('[data-ws-date-rule-btn]')!;
+    expect(btn.title).toContain('시작 Start date');
+    await user.click(btn);
+    const sec = await wait(() => q('[data-jira-date-rule][data-focus]'));
+    expect(document.activeElement).toBe(sec.querySelector('select'));
+    // 팝업의 열림은 모듈 상태다 — 닫고 끝내야 다음 테스트가 가려지지 않는다.
+    await user.click(within(q('[data-jira-setup]')!).getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(q('[data-jira-setup]')).toBeNull());
+  });
+
   it('세 보기가 같은 데이터를 본다 — 달력 칩 · 타임라인 막대 · 집계 행', async () => {
     const user = await open();
     await user.click(screen.getByRole('radio', { name: '타임라인' }));
