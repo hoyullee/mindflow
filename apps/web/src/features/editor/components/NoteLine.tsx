@@ -1037,7 +1037,7 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
          * 다니면 언젠가 샌다). 주소가 있으면 링크까지 이어서 건다.
          */
         e.preventDefault();
-        pasteRuns(el, text, span.from, span.to, onChange, redraw);
+        pasteRuns(el, text, span.from, span.to, onChange, redraw, !codeBox);
         dirty.current = false;
       }}
       /**
@@ -1086,6 +1086,7 @@ function pasteRuns(
   to: number,
   onChange: (runs: RichRun[]) => void,
   redraw: (el: HTMLElement, value: { text: string; rich: RichRun[] | null }) => void,
+  autoLink = true,
 ): boolean {
   try {
     /**
@@ -1104,7 +1105,8 @@ function pasteRuns(
     const body = charsToRuns(next).filter((r) => r.t);
     const plain = { text: next.map((c) => c.ch).join(''), rich: body.length ? body : null };
     // 주소가 섞여 있으면 링크까지 이어서 건다 — 없으면 평문 그대로 다시 그린다.
-    const value = (/[.:]/.test(text) ? applyAutoLinks(plain) : null) ?? plain;
+    // 코드 블록은 평문이다 — 주소를 링크로 바꾸지 않는다(`codeHtml`은 서식을 그리지 않아 값에만 숨는다).
+    const value = (autoLink && /[.:]/.test(text) ? applyAutoLinks(plain) : null) ?? plain;
     redraw(el, value);
     const spot = pointAt(el, from + [...text].length);
     const range = document.createRange();

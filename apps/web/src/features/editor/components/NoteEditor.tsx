@@ -2454,6 +2454,13 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
           return true;
         }
       }
+      /**
+       * **코드 블록 안에서는 쪼개지 않는다**(제보: 여러 줄을 붙여넣으면 첫 줄만 코드 블록에
+       * 들어가고 나머지는 그 아래 새 블록이 됐다). 코드 블록의 줄바꿈은 **블록 안의 글자**다
+       * (Enter도 블록 안에서 줄을 바꾼다) — 블록을 벗어나는 길은 Shift+Enter·방향키·마우스뿐.
+       * `false`를 돌려주면 박스(`NoteLine`)가 글 그대로 제 안에 넣는다(줄바꿈 포함).
+       */
+      if (controller.notePage?.blocks.find((b) => b.id === blockIdOf(key))?.kind === 'code') return false;
       const lines = parseNoteText(text);
       if (lines.length <= 1 && !lines[0]?.kind) return false;
       const done = controller.pasteNoteText(key, from, to, text);
