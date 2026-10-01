@@ -24,13 +24,17 @@
 
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { knownName, knownNamesFor, rememberName } from './nameBook';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
 import { googleRemindersEnabled, notifyPermission, requestNotifyPermission } from '../../reminders/reminderPrefs';
 import { declinedRooms } from './googleCalendar';
 import type { GoogleRsvp, GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
 import { filterRooms, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { AnchoredList, listCard, rowDivider } from './AnchoredList';
+import { Modal } from '../../../components/Modal';
+import { Switch } from '../../../components/Switch';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { M_FONT } from '../mobile/parts';
 
 /** 이 묶음이 다루는 값 — 새 일정은 지역 상태, 상세는 구글에서 읽은 값이다. */
 export interface GoogleFieldsValue {
@@ -188,6 +192,15 @@ export function GoogleEventFields({
   useEffect(() => {
     directory?.loadRooms();
   }, [directory]);
+  /**
+   * 폰은 참석자·회의실을 **밀어 들어가는 화면**에서 고른다(모바일 홈 디자인 N3·N4). 검색 상자 곁에 뜨는 후보
+   * 툴팁(`AnchoredList`)과 세 줄 고정 상자는 폰에서 키보드에 반쯤 가려졌다 — 폼에는 요약 한 줄을 두고,
+   * 누르면 검색 · 결과 · 고른 것이 한 화면을 다 쓴다. 고르는 규칙(이름 조회 · 사용 중 확인 · 되묻기)은 그대로다.
+   */
+  const mobile = useIsMobile();
+  const [guestPage, setGuestPage] = useState(false);
+  const [roomPage, setRoomPage] = useState(false);
+  const backLabel = mode === 'create' ? '새 일정' : '일정';
   const visNote = VIS_OPTS.find((o) => o.v === value.visibility)?.note ?? '';
   /**
    * 주최자 이름(제보) — 구글이 `displayName`을 주지 않는 계정도 있다. 그때는
@@ -383,6 +396,35 @@ export function GoogleEventFields({
               ? '참석자 수가 너무 많아서 전체 참석자 명단이 숨겨졌습니다. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'
               : '이 일정은 참석자끼리 명단을 볼 수 없어요. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'}
           </span>
+        ) : mobile ? (
+          <>
+            <MobilePickRow
+              attr="data-gf-guest-open"
+              lead={
+                guests.length ? (
+                  <span aria-hidden style={{ display: 'inline-flex', flex: '0 0 auto' }}>
+                    {guests.slice(0, 3).map((email, i) => (
+                      <span key={email} style={{ marginLeft: i ? -7 : 0, borderRadius: 999, boxShadow: '0 0 0 2px var(--mf-card)', display: 'inline-flex' }}>
+                        <Avatar label={guestLabel(email, { ...knownNamesFor(guests), ...(value.names ?? {}) })} i={i} />
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <PickTile>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="9" cy="8" r="3.5" />
+                      <path d="M2.5 20a6.5 6.5 0 0 1 13 0M18 8v6M15 11h6" />
+                    </svg>
+                  </PickTile>
+                )
+              }
+              title={guests.length ? guestsLine(guests, { ...knownNamesFor(guests), ...(value.names ?? {}) }) : '참석자 추가'}
+              onClick={() => setGuestPage(true)}
+            />
+            <MobilePickPage open={guestPage} title="참석자" back={backLabel} onClose={() => setGuestPage(false)} done attrs={{ 'data-gf-guest-page': '' }}>
+              <Attendees page list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, hiddenGuests, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(value.rsvps ? { rsvps: value.rsvps } : {})} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+            </MobilePickPage>
+          </>
         ) : (
           <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, hiddenGuests, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(value.rsvps ? { rsvps: value.rsvps } : {})} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
         )}
@@ -393,7 +435,33 @@ export function GoogleEventFields({
           목록이 있을 때의 안내 문구는 두지 않는다(제보 #4) — 검색 상자와 목록이
           이미 무엇을 하는 자리인지 말한다. 라벨 옆 요약은 **예약한 것**만 알린다. */}
       <Field label="회의실" {...(value.rooms.length ? { sub: `${value.rooms.map(roomName).join(' · ')} 예약됨` } : {})}>
-        {rooms.length > 0 ? (
+        {rooms.length > 0 && mobile ? (
+          <>
+            <MobilePickRow
+              attr="data-gf-room-open"
+              lead={
+                <PickTile on={value.rooms.length > 0}>
+                  <RoomGlyph on={value.rooms.length > 0} size={16} />
+                </PickTile>
+              }
+              title={value.rooms.length ? value.rooms.map(roomName).join(' · ') : '회의실 고르기'}
+              {...(when ? { sub: windowLabel(when.fromIso, when.toIso) } : {})}
+              onClick={() => setRoomPage(true)}
+            />
+            <MobilePickPage open={roomPage} title="회의실" back={backLabel} onClose={() => setRoomPage(false)} attrs={{ 'data-gf-room-page': '' }}>
+              <Rooms
+                page
+                all={rooms}
+                picked={value.rooms}
+                onChange={(next) => onChange({ rooms: next })}
+                onDone={() => setRoomPage(false)}
+                {...(when ? { whenLabel: windowLabel(when.fromIso, when.toIso) } : {})}
+                {...(when && directory?.checkRoomBusy ? { when, check: directory.checkRoomBusy } : {})}
+                {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})}
+              />
+            </MobilePickPage>
+          </>
+        ) : rooms.length > 0 ? (
           <Rooms
           all={rooms}
           picked={value.rooms}
@@ -731,7 +799,7 @@ function GuestRow({ email, name, i, rsvp, onRemove }: { email: string; name: str
  * 카드 행(두 줄까지, 나머지는 `외 N명` 툴팁). 이름 검색이 없으면(선택 스코프 미승인)
  * 이메일 직접 입력으로 남는다. 초대 메일은 구글이 보낸다.
  */
-function Attendees({ list, onChange, search, seedNames, rsvps }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null>; seedNames?: Record<string, string>; rsvps?: Record<string, GoogleRsvp> }) {
+function Attendees({ list, onChange, search, seedNames, rsvps, page = false }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null>; seedNames?: Record<string, string>; rsvps?: Record<string, GoogleRsvp>; /** 폰의 전체 화면 판(N3) — 같은 상태·같은 조회, 그리는 판만 다르다. */ page?: boolean }) {
   const [draft, setDraft] = useState('');
   const [hits, setHits] = useState<DirectoryPerson[]>([]);
   const [active, setActive] = useState(0);
@@ -895,6 +963,128 @@ function Attendees({ list, onChange, search, seedNames, rsvps }: { list: string[
   };
   const add = (): void => addEmail(draft);
   const noHit = !!search && !!draft.trim() && settled === draft.trim() && hits.length === 0;
+
+  if (page) {
+    /**
+     * **폰 판**(N3) — 검색 → 결과에서 체크, 초대한 사람은 위의 칩. 후보는 툴팁이 아니라 화면의 목록이고
+     * (키보드가 화면 절반을 덮는 동안 툴팁은 그 뒤로 숨었다), 누르면 넣고 다시 누르면 뺀다. 검색어가 없으면
+     * 초대한 사람을 줄로 보여 준다(칩은 이름만 — 주소와 응답은 줄이 말한다).
+     *
+     * 데스크톱과 달리 **입력을 놓아도 적은 값을 넣지 않는다**(`onBlur` 커밋 없음) — 손가락은 결과를 고르려고
+     * 키보드를 내리는 일이 잦아서, 반쯤 적은 주소가 그대로 초대될 뻔했다. 넣는 길은 Enter와 「이메일로 초대」 줄.
+     */
+    const qq = draft.trim();
+    const typed = qq.toLowerCase();
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed);
+    const offerEmail = emailOk && !list.includes(typed) && !hits.some((h) => h.email.toLowerCase() === typed);
+    /**
+     * 결과에서 고르면 **검색어를 그대로 둔다**(데스크톱은 비운다) — 같은 검색에서 여럿을 체크하는 화면이다
+     * (디자인 N3: `eu`로 찾은 줄들에 체크가 나란히). 비우면 고를 때마다 다시 쳐야 했다.
+     */
+    const toggle = (email: string, name?: string): void => {
+      const e = email.trim().toLowerCase();
+      if (list.includes(e)) {
+        onChange(list.filter((x) => x !== e));
+        return;
+      }
+      if (name) {
+        setNames((m) => ({ ...m, [e]: name }));
+        rememberName(e, name);
+      }
+      onChange([...list, e]);
+    };
+    return (
+      <>
+        <label style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, margin: '0 16px', height: 46, padding: '0 14px', borderRadius: 12, background: 'var(--mf-m-card)', border: '1.5px solid var(--mf-m-btn-line)', boxSizing: 'border-box' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mf-m-faint)" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="m16 16 4 4" />
+          </svg>
+          <input
+            // 이 화면은 찾으려고 들어온다 — 키보드를 바로 올린다.
+            autoFocus
+            aria-label={search ? '참석자 이름 또는 이메일' : '참석자 이메일'}
+            data-gf-guest-input="1"
+            value={draft}
+            autoComplete="off"
+            enterKeyHint="done"
+            placeholder={search ? '이름 또는 이메일로 찾기' : '초대할 이메일 주소'}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              const pick = hits[0];
+              if (pick && !emailOk) toggle(pick.email, pick.name);
+              else add();
+            }}
+            style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 16, color: 'var(--mf-m-ink)', outline: 'none', padding: 0 }}
+          />
+          {search && <span style={{ flex: '0 0 auto', fontSize: 11.5, color: 'var(--mf-m-faint)', whiteSpace: 'nowrap' }}>이름 · 이메일</span>}
+        </label>
+        {list.length > 0 && (
+          <div data-gf-guest-chips className="mf-m-scroll" style={{ flex: '0 0 auto', display: 'flex', gap: 6, overflowX: 'auto', padding: '12px 16px 4px' }}>
+            {list.map((email, i) => (
+              <span key={email} data-gf-guest={email} style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 3px 0 3px', borderRadius: 99, background: 'var(--mf-m-card)', border: '1px solid var(--mf-m-btn-line)', fontSize: 13, fontWeight: 700, color: 'var(--mf-m-ink)', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+                <Avatar label={label(email)} i={i} />
+                <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', ...declinedText(rsvps?.[email]) }}>{label(email)}</span>
+                <button type="button" aria-label={`${email} 초대 취소`} onClick={() => onChange(list.filter((e) => e !== email))} style={{ width: 26, height: 26, border: 0, borderRadius: 99, background: 'transparent', color: 'var(--mf-m-faint)', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="mf-m-scroll" data-gf-guest-results style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '6px 16px 24px' }}>
+          {qq ? (
+            <>
+              {hits.map((p, i) => (
+                <PersonPickRow key={p.email} attr={{ 'data-gf-guest-hit': p.email }} i={i} name={p.name} email={p.email} q={qq} on={list.includes(p.email)} onClick={() => toggle(p.email, p.name)} />
+              ))}
+              {offerEmail && (
+                <button type="button" className="btn mf-m-press" data-gf-guest-email={typed} onClick={add} style={{ ...PICK_ROW, gap: 12 }}>
+                  <PickTile>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+                      <path d="m4 7 8 6 8-6" />
+                    </svg>
+                  </PickTile>
+                  <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--mf-m-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{typed}</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--mf-m-mut2)' }}>이메일로 초대</span>
+                  </span>
+                </button>
+              )}
+              {noHit && !offerEmail && <span style={PICK_HINT}>일치하는 사람이 없어요 · 이메일 주소를 다 적으면 바로 초대할 수 있어요</span>}
+              {!search && !offerEmail && <span style={PICK_HINT}>이메일 주소를 끝까지 적어 주세요</span>}
+            </>
+          ) : list.length ? (
+            <>
+              <span style={{ padding: '10px 4px 2px', fontSize: 12, fontWeight: 800, color: 'var(--mf-m-faint)' }}>
+                초대한 사람 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{list.length}</span>
+              </span>
+              {list.map((email, i) =>
+                resolving.includes(email) ? (
+                  <span key={email} style={{ ...PICK_ROW, cursor: 'default' }}>
+                    <span className="mf-skel" style={{ width: 36, height: 36, borderRadius: 99, flex: '0 0 auto' }} />
+                    <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <span className="mf-skel" style={{ width: '42%', height: 11, borderRadius: 6 }} />
+                      <span className="mf-skel" style={{ width: '64%', height: 9, borderRadius: 6 }} />
+                    </span>
+                  </span>
+                ) : (
+                  <PersonPickRow key={email} attr={{ 'data-gf-guest-row': email }} i={i} name={label(email)} email={email} on {...(rsvps?.[email] ? { rsvp: rsvps[email] } : {})} onClick={() => onChange(list.filter((e) => e !== email))} />
+                ),
+              )}
+            </>
+          ) : (
+            <span style={PICK_HINT}>{search ? '이름이나 이메일로 찾아 초대해요 · 초대 메일은 Google이 보내요' : '초대할 사람의 이메일 주소를 적어 주세요'}</span>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
@@ -1064,16 +1254,27 @@ function Rooms({
   when,
   check,
   search,
+  page = false,
+  whenLabel,
+  onDone,
 }: {
   all: readonly MeetingRoom[];
   picked: string[];
   onChange: (next: string[]) => void;
+  /** 폰의 전체 화면 판(N4) — 상태·확인 규칙은 같고 목록이 화면을 다 쓴다. */
+  page?: boolean;
+  /** 폰 판 머리의 시간 알약(`9.26 (토) 10:30–11:00`) — 무엇을 기준으로 비었다고 하는지. */
+  whenLabel?: string;
+  /** 폰 판 바닥의 「완료」. */
+  onDone?: () => void;
   when?: { fromIso: string; toIso: string; skipEventId?: string };
   check?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<RoomBusy | null>;
   /** 이름 검색(선택 스코프) — 주최자를 주소로만 준 경우 이름을 물어본다. */
   search?: (q: string) => Promise<DirectoryPerson[] | null>;
 }) {
   const [q, setQ] = useState('');
+  /** 폰 판의 「빈 곳만」 — 사용 가능으로 확인된 방만(예약한 방은 늘 남긴다 — 무엇을 잡았는지 사라지지 않게). */
+  const [onlyFree, setOnlyFree] = useState(false);
   /**
    * **그 시간에 비어 있는가**(요청 ③) — 구글 캘린더는 달력에 겹쳐 보여 주지만 우리는
    * 팝업이라 그럴 자리가 없다. 그래서 회의실 행 자체가 말한다.
@@ -1324,6 +1525,125 @@ function Rooms({
       </div>
     );
   };
+  if (page) {
+    /**
+     * **폰 판**(N4) — 검색 · [시간 알약 · 빈 곳만] · 묶음 목록(사용 가능 → 사용 중 → …) · 바닥의 「선택한 회의실 + 완료」.
+     * 세 줄 고정 상자와 그 위를 덮는 물음 카드는 폰에서 손가락 두 개 높이였다 — 목록이 화면을 다 쓰고, 사용 중인 방을
+     * 누르면 물음이 **그 줄 바로 아래** 펼쳐진다(그 시간에 그 방을 쓰는 일정을 보고 답한다).
+     */
+    const shownGroups = onlyFree ? groups.map((g) => ({ ...g, rooms: g.rooms.filter((r) => picked.includes(r.email) || busyFlag(r.email) === false) })).filter((g) => g.rooms.length > 0) : groups;
+    const pickedNames = all.filter((r) => picked.includes(r.email)).map((r) => r.name);
+    return (
+      <>
+        <label style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, margin: '0 16px', height: 46, padding: '0 14px', borderRadius: 12, background: 'var(--mf-m-card)', border: '1px solid var(--mf-m-btn-line)', boxSizing: 'border-box' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mf-m-faint)" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="m16 16 4 4" />
+          </svg>
+          <input aria-label="회의실 검색" data-gf-room-input="1" value={q} autoComplete="off" enterKeyHint="search" placeholder="회의실 이름 또는 층" onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 16, color: 'var(--mf-m-ink)', outline: 'none', padding: 0 }} />
+        </label>
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 4px' }}>
+          {whenLabel && (
+            <span data-gf-room-when style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 10px', borderRadius: 99, background: 'var(--mf-m-soft)', fontSize: 12, fontWeight: 700, color: 'var(--mf-m-ink2)', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+              {whenLabel}
+            </span>
+          )}
+          <span style={{ flex: 1 }} />
+          {when && check && (
+            <>
+              <span style={{ flex: '0 0 auto', fontSize: 12.5, fontWeight: 700, color: 'var(--mf-m-mut)', whiteSpace: 'nowrap' }}>빈 곳만</span>
+              <Switch checked={onlyFree} onCheckedChange={() => setOnlyFree((v) => !v)} label="빈 회의실만 보기" accent="var(--mf-accent)" track="var(--mf-m-btn-line)" knob="var(--mf-m-card)" />
+            </>
+          )}
+        </div>
+        <div className="mf-m-scroll" data-gf-room-list style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '4px 16px 110px' }}>
+          {!revealed ? (
+            <RoomsLoading />
+          ) : (
+            shownGroups.map((g) => (
+              <div key={g.key} data-gf-room-group={g.key} style={{ display: 'flex', flexDirection: 'column' }}>
+                {g.label && (
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '14px 4px 4px', fontSize: 12, fontWeight: 800, color: g.key === 'busy' ? 'var(--mf-danger)' : g.key === 'free' ? 'var(--mf-success-ink)' : 'var(--mf-m-faint)' }}>
+                    {g.label}
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, opacity: 0.75 }}>{g.rooms.length}</span>
+                  </span>
+                )}
+                {g.rooms.map((r) => {
+                  const on = picked.includes(r.email);
+                  const flag = busyFlag(r.email);
+                  const busyRow = flag === true;
+                  const sub = [r.where, r.capacity ? `${r.capacity}인` : null].filter(Boolean).join(' · ');
+                  return (
+                    <Fragment key={r.email}>
+                      <button
+                        type="button"
+                        className="btn mf-m-press"
+                        data-gf-room-hit={r.email}
+                        {...(on ? { 'data-gf-room': r.email } : {})}
+                        aria-pressed={on}
+                        onClick={() => {
+                          if (busyRow && !on) {
+                            setConfirm(confirm === r.email ? null : r.email);
+                            return;
+                          }
+                          pick(r.email);
+                        }}
+                        style={{ ...PICK_ROW, gap: 12 }}
+                      >
+                        <PickTile on={on}>
+                          <RoomGlyph on={on} size={16} />
+                        </PickTile>
+                        <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span data-gf-room-name style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.015em', color: on ? 'var(--mf-accent-strong)' : 'var(--mf-m-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(busyRow ? { textDecoration: 'line-through', textDecorationColor: 'var(--mf-danger)' } : {}) }}>{r.name}</span>
+                          {sub && <span style={{ fontSize: 12.5, color: 'var(--mf-m-mut2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
+                        </span>
+                        {on ? (
+                          <>
+                            {busyRow && <span data-gf-room-state="booked-busy" style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 700, color: 'var(--mf-danger)', whiteSpace: 'nowrap' }}>겹쳐 예약</span>}
+                            <CheckDot on />
+                          </>
+                        ) : flag === true ? (
+                          <span data-gf-room-state="busy" style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 700, color: 'var(--mf-danger)', whiteSpace: 'nowrap' }}>사용 중</span>
+                        ) : flag === false ? (
+                          <span data-gf-room-state="free" style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 700, color: 'var(--mf-success-ink)', whiteSpace: 'nowrap' }}>비어 있음</span>
+                        ) : null}
+                      </button>
+                      {confirm === r.email && (
+                        <div data-gf-room-busy data-gf-room-ask style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '8px 0', padding: '11px 13px', borderRadius: 12, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-danger-bg)', fontSize: 12.5, lineHeight: 1.5 }}>
+                          {noticeEntry(r, true)}
+                        </div>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </div>
+            ))
+          )}
+          {revealed && rows.length === 0 && <span style={PICK_HINT}>검색 결과가 없어요</span>}
+          {revealed && onlyFree && rows.length > 0 && shownGroups.length === 0 && <span style={PICK_HINT}>그 시간에 비어 있는 회의실이 없어요</span>}
+          {held.length > 0 && (
+            <div data-gf-room-busy style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12, padding: '11px 13px', borderRadius: 12, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-danger-bg)', fontSize: 12.5, lineHeight: 1.5 }}>
+              {held.map((room) => noticeEntry(room, false, held.length > 1))}
+            </div>
+          )}
+        </div>
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px max(18px, env(safe-area-inset-bottom))', background: 'linear-gradient(180deg, transparent, var(--mf-m-bg) 30%)' }}>
+          <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--mf-m-faint)' }}>선택한 회의실</span>
+            <span data-gf-room-picked style={{ fontSize: 14.5, fontWeight: 800, color: pickedNames.length ? 'var(--mf-m-ink)' : 'var(--mf-m-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pickedNames.length ? pickedNames.join(' · ') : '없음'}</span>
+          </span>
+          <button type="button" className="btn" data-gf-room-done onClick={onDone} style={{ flex: '0 0 auto', height: 44, padding: '0 20px', border: 0, borderRadius: 99, background: 'var(--mf-m-ink)', color: 'var(--mf-m-card)', fontFamily: 'inherit', fontSize: 14.5, fontWeight: 800, cursor: 'pointer' }}>
+            완료
+          </button>
+        </div>
+      </>
+    );
+  }
+
   if (!revealed) return <RoomsLoading />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
@@ -1499,9 +1819,9 @@ function RoomState({ on, busy }: { on: boolean; busy: boolean | null | undefined
 }
 
 /** 원본의 회의실(건물) 글리프 — 고른 행에서는 강조색으로. */
-function RoomGlyph({ on }: { on?: boolean }) {
+function RoomGlyph({ on, size = 12 }: { on?: boolean; size?: number }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={on ? 'var(--mf-accent-strong)' : 'var(--mf-faint)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: '0 0 auto' }} aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={on ? 'var(--mf-accent-strong)' : 'var(--mf-faint)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: '0 0 auto' }} aria-hidden="true">
       <path d="M4 20V6.5a1 1 0 0 1 .7-.95l9-2.7A1 1 0 0 1 15 3.8V20" />
       <path d="M15 9h4.3a1 1 0 0 1 1 1V20M3 20h18" />
       <path d="M11 12h.01" />
@@ -1517,4 +1837,140 @@ function MeetGlyph() {
       <path d="m14.5 11 6-3.4v8.8l-6-3.4z" />
     </svg>
   );
+}
+
+/* ── 폰의 고르기 화면(모바일 홈 디자인 N3·N4) ─────────────────────────────── */
+
+/** 고르기 화면의 한 줄(60px) — 결과·초대한 사람·회의실이 같은 높이로 선다(손가락 하나 높이). */
+const PICK_ROW = { flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, minHeight: 60, width: '100%', padding: '0 4px', border: 0, borderBottom: '1px solid var(--mf-m-line)', background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', boxSizing: 'border-box' } as const;
+const PICK_HINT = { padding: '18px 4px', fontSize: 13, lineHeight: 1.6, color: 'var(--mf-m-mut2)', wordBreak: 'keep-all' } as const;
+
+/**
+ * 밀어 들어가는 고르기 화면 — 새 일정(322)·일정 상세(321) **위에** 한 겹 더(330). 머리는 `‹ 새 일정 · 제목 · 완료`.
+ * 고른 것은 그 자리에서 초안에 들어가므로 「완료」는 닫기일 뿐이다(취소가 따로 없다 — 디자인 N3도 그렇다).
+ */
+function MobilePickPage({ open, title, back, onClose, done = false, attrs, children }: { open: boolean; title: string; back: string; onClose: () => void; done?: boolean; attrs: Record<string, string>; children: ReactNode }) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      label={title}
+      dim={{ zIndex: 330, alignItems: 'stretch', background: 'var(--mf-m-bg)' }}
+      card={{ position: 'relative', width: '100%', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', background: 'var(--mf-m-bg)', color: 'var(--mf-m-ink)', fontFamily: M_FONT, outline: 'none' }}
+      cardClass="mf-m-page"
+      cardAttrs={attrs}
+    >
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', height: 52, padding: '0 8px', paddingTop: 'env(safe-area-inset-top)' }}>
+        <button type="button" className="btn mf-m-press" data-gf-page-back aria-label={`${back}(으)로 돌아가기`} onClick={onClose} style={{ width: 92, display: 'inline-flex', alignItems: 'center', gap: 2, height: 40, padding: '0 8px', border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-m-mut)', fontFamily: 'inherit', fontSize: 15, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+          {back}
+        </button>
+        <span style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 800, letterSpacing: '-.02em', whiteSpace: 'nowrap' }}>{title}</span>
+        {done ? (
+          <button type="button" className="btn mf-m-press" data-gf-page-done onClick={onClose} style={{ width: 92, height: 40, padding: '0 12px', border: 0, borderRadius: 10, background: 'transparent', color: 'var(--mf-accent)', fontFamily: 'inherit', fontSize: 15, fontWeight: 800, cursor: 'pointer', textAlign: 'right' }}>
+            완료
+          </button>
+        ) : (
+          <span style={{ width: 92 }} />
+        )}
+      </div>
+      {children}
+    </Modal>
+  );
+}
+
+/** 폼의 요약 한 줄 — 누르면 고르기 화면으로(`›`). */
+function MobilePickRow({ attr, lead, title, sub, onClick }: { attr: string; lead: ReactNode; title: string; sub?: string; onClick: () => void }) {
+  return (
+    <button type="button" className="btn mf-m-press" {...{ [attr]: '' }} onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 52, padding: '8px 12px', borderRadius: 12, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', boxSizing: 'border-box' }}>
+      {lead}
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+        {sub && <span style={{ fontSize: 11.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
+      </span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+        <path d="m9 6 6 6-6 6" />
+      </svg>
+    </button>
+  );
+}
+
+function PickTile({ on = false, children }: { on?: boolean; children: ReactNode }) {
+  return (
+    <span aria-hidden style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 10, background: on ? 'var(--mf-accent-soft)' : 'var(--mf-m-soft)', color: on ? 'var(--mf-accent-strong)' : 'var(--mf-m-ink2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      {children}
+    </span>
+  );
+}
+
+/** 오른쪽 동그라미 체크(28px) — 고른 줄은 강조색으로 채운다. */
+function CheckDot({ on }: { on: boolean }) {
+  return (
+    <span aria-hidden style={{ width: 28, height: 28, flex: '0 0 auto', borderRadius: 99, boxSizing: 'border-box', border: on ? 0 : '1.5px solid var(--mf-m-faint2)', background: on ? 'var(--mf-accent)' : 'transparent', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      {on && (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m5 12 5 5L20 7" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+/** 검색어를 강조한 글 — 처음 걸린 자리 하나만(대소문자 무시). */
+function Hit({ text, q }: { text: string; q: string }) {
+  const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
+  if (i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <span style={{ color: 'var(--mf-accent-strong)', fontWeight: 700 }}>{text.slice(i, i + q.length)}</span>
+      {text.slice(i + q.length)}
+    </>
+  );
+}
+
+/** 사람 한 줄 — 얼굴 · 이름 · 주소(검색어 강조) · [거절] · 체크. */
+function PersonPickRow({ attr, i, name, email, q = '', on, rsvp, onClick }: { attr: Record<string, string>; i: number; name: string; email: string; q?: string; on: boolean; rsvp?: GoogleRsvp; onClick: () => void }) {
+  return (
+    <button type="button" className="btn mf-m-press" {...attr} aria-pressed={on} onClick={onClick} style={PICK_ROW}>
+      <span aria-hidden style={{ width: 36, height: 36, flex: '0 0 auto', borderRadius: 999, background: AV[i % AV.length], color: '#FFFDFB', fontSize: 13, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        {name.charAt(0).toUpperCase()}
+      </span>
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-m-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...declinedText(rsvp) }}>
+          <Hit text={name} q={q} />
+        </span>
+        <span style={{ fontSize: 12.5, color: 'var(--mf-m-mut2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <Hit text={email} q={q} />
+        </span>
+      </span>
+      <DeclinedChip {...(rsvp ? { rsvp } : {})} />
+      <CheckDot on={on} />
+    </button>
+  );
+}
+
+/** 요약 줄의 글 — `여은진, 이호율 외 2명`(둘까지 이름). */
+export function guestsLine(emails: readonly string[], names: Record<string, string>): string {
+  const head = emails.slice(0, 2).map((e) => guestLabel(e, names));
+  const rest = emails.length - head.length;
+  return rest > 0 ? `${head.join(', ')} 외 ${rest}명` : head.join(', ');
+}
+
+/** 회의실을 확인하는 구간을 사람의 말로 — `9.26 (토) 10:30–11:00` · 종일이면 `9.26 (토) 종일`. */
+export function windowLabel(fromIso: string, toIso: string): string {
+  const a = new Date(fromIso);
+  const b = new Date(toIso);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return '';
+  const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+  const day = (x: Date): string => `${x.getMonth() + 1}.${x.getDate()} (${DOW[x.getDay()]})`;
+  const hm = (x: Date): string => `${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
+  const midnight = (x: Date): boolean => x.getHours() === 0 && x.getMinutes() === 0;
+  if (midnight(a) && midnight(b) && b > a) {
+    const last = new Date(b.getTime() - 1);
+    return a.toDateString() === last.toDateString() ? `${day(a)} 종일` : `${day(a)} – ${day(last)}`;
+  }
+  return a.toDateString() === b.toDateString() ? `${day(a)} ${hm(a)}–${hm(b)}` : `${day(a)} ${hm(a)} – ${day(b)} ${hm(b)}`;
 }
