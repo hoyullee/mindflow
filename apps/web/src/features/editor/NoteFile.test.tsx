@@ -86,4 +86,25 @@ describe('공책 본문 · 첨부 파일', () => {
     await waitFor(() => expect(container.querySelector('[data-file-block="f1"][data-file-state="unfinished"]')).toBeTruthy());
     expect(container.querySelector('[data-file-sub]')?.textContent).toContain('올리기가 끝나지 않았어요');
   });
+
+  it('서버가 크기를 0으로 돌려줘도(옛 함수) 고른 파일에 내용이 있으면 그 크기를 보인다', async () => {
+    const { LocalFileStore } = await import('../../adapters/local/localFileStore');
+    const orig = LocalFileStore.prototype.upload;
+    LocalFileStore.prototype.upload = async function (this: InstanceType<typeof LocalFileStore>, ...args: Parameters<typeof orig>) {
+      const meta = await orig.apply(this, args);
+      return { ...meta, size: 0 };
+    };
+    try {
+      localStorage.setItem('mindflow_doc_nf5', JSON.stringify(noteWith([{ id: 'b1', kind: 'p', runs: [] }])));
+      const { container } = renderEditor('/editor?map=nf5&title=x');
+      await waitFor(() => expect(container.querySelector('[data-note-line="b1"]')).toBeTruthy());
+      const line = container.querySelector('[data-note-line="b1"]') as HTMLElement;
+      line.focus();
+      fireEvent.paste(line, { clipboardData: { getData: () => '', types: ['Files'], items: [], files: [new File(['# 스펙\n본문'], '스펙.md', { type: 'text/markdown' })] } });
+      await waitFor(() => expect(container.querySelector('[data-file-block="b1"][data-file-state="ready"]')).toBeTruthy());
+      expect(container.querySelector('[data-file-sub]')?.textContent).not.toContain('0B');
+    } finally {
+      LocalFileStore.prototype.upload = orig;
+    }
+  });
 });
