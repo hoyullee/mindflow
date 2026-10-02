@@ -3,6 +3,7 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import { Popover, TRIGGER_WIDTH } from '../../../components/Popover';
 import { ProfileAvatar } from './ProfileAvatar';
+import { planLabel, useFileQuota } from '../useFileQuota';
 
 interface Props {
   state: HomeState;
@@ -18,6 +19,7 @@ interface Props {
  * 바닥에 서므로 메뉴는 **위로** 열린다(아래로 열면 화면 밖이다).
  */
 export function SettingsPopover({ state, controller, userInitial }: Props) {
+  const fileQuota = useFileQuota(state.settingsOpen);
   // 세션이 아직 안 풀렸으면 프로필 블록은 스켈레톤 — 'mine'/'M' 플레이스홀더가
   // 실제 이름/아바타로 바뀌며 깜빡이던 것을 막는다(맵 그리드·스페이스 목록의
   // 스켈레톤과 같은 패턴). 같은 크기(아바타 30 + 이름 줄, padding 6/8)로 그려
@@ -107,9 +109,9 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
           {state.userEmail && <div style={{ fontSize: 11, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}
         </div>
-        {/* 유료 플랜이 없으니 **모든 계정이 무료 플랜**이다 — 사실을 적은 정적 알약. */}
+        {/* 플랜 이름은 서버의 것(0049 `plans`) — 지금은 모든 계정이 무료 플랜이다. 정적 알약. */}
         <span data-plan-pill style={{ flexShrink: 0, height: 22, padding: '0 9px', display: 'inline-flex', alignItems: 'center', borderRadius: 99, border: '1px solid var(--mf-border)', fontSize: 10.5, fontWeight: 800, color: 'var(--mf-muted)', boxSizing: 'border-box' }}>
-          무료 플랜
+          {planLabel(fileQuota)}
         </span>
       </div>
       <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 1 }}>

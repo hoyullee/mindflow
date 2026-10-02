@@ -856,6 +856,64 @@ export interface ImageStore {
   removeForDoc(docId: string): Promise<void>;
 }
 
+// ── Note files (첨부 파일 — 0049 · Cloudflare R2) ─────────────────────────
+
+/**
+ * 계정의 첨부 파일 한도 — **플랜마다 다르다**(지금은 `free` 하나: 200MB · 파일당 20MB).
+ * 숫자는 서버 표(`plans`)가 들고 있고, 업로드 허락도 서버가 한다 — 여기 값은 **보여 주기용**이다.
+ */
+export interface FileQuota {
+  plan: string;
+  planName: string;
+  /** 지금까지 올린 합(올리는 중인 것 포함), 바이트. */
+  used: number;
+  /** 계정 총량, 바이트. */
+  limit: number;
+  /** 파일 하나의 상한, 바이트. */
+  fileLimit: number;
+}
+
+/** 올리기를 막은 까닭 — 화면 문구가 이것으로 갈린다(`fileUploadMessage`). */
+export type FileUploadReason = 'too-large' | 'quota' | 'forbidden' | 'not-configured' | 'network' | 'missing' | 'aborted' | 'unknown';
+
+export class FileUploadError extends Error {
+  constructor(
+    readonly reason: FileUploadReason,
+    readonly detail: { fileLimit?: number; used?: number; limit?: number } = {},
+  ) {
+    super(reason);
+    this.name = 'FileUploadError';
+  }
+}
+
+export interface UploadedFile {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+}
+
+/**
+ * 첨부 파일의 실물을 두는 곳. 본문 블록(`kind: 'file'`)에는 `fileId`만 남는다.
+ *
+ * 왜 이미지(`ImageStore` · Supabase Storage)와 따로인가: 파일은 크고 내려받는 쪽이 많아
+ * **전송량(egress)**이 먼저 닿는다 — Supabase 무료 5GB는 DB·API와 함께 쓰는 통장이라
+ * 파일이 먹으면 앱 전체가 막힌다. R2는 전송량이 0원이다(`backend/28-note-files.md`).
+ */
+export interface FileStore {
+  /** 내 한도와 쓴 양. 모르면(서버 준비 전·오프라인) `null`. */
+  quota(): Promise<FileQuota | null>;
+  /**
+   * 파일을 올린다 — 허락 받기 → 브라우저가 R2로 직접 → 끝났다고 알리기. 진행률은 0..1.
+   * 막히면 `FileUploadError`를 던진다(까닭이 화면 문구를 정한다).
+   */
+  upload(docId: string, file: File, onProgress?: (ratio: number) => void, signal?: AbortSignal): Promise<UploadedFile>;
+  /** 지금 내려받을 수 있는 주소(몇 분짜리). `inline`이면 브라우저에서 바로 연다. 없으면 `null`. */
+  downloadUrl(fileId: string, inline?: boolean): Promise<string | null>;
+  /** 실물을 지운다(올린 사람·문서 주인). 블록을 지우는 것과는 따로다 — 되돌리기가 있어서. */
+  remove(fileId: string): Promise<void>;
+}
+
 // ── Backend bundle ───────────────────────────────────────────────────────
 
 // ── Calendar events (Geurio 일정 — 0033) ───────────────────────────────────
@@ -976,6 +1034,8 @@ export interface Backend {
   eventStore: EventStore;
   /** 공책 기록(0048). **선택 필드** — 테스트·옛 조립처럼 비어 있으면 이 기기의 로컬 판을 쓴다(`useNoteHistoryStore`). */
   noteHistory?: NoteHistoryStore;
+  /** 첨부 파일(0049 · R2). **선택 필드** — 비어 있으면 이 기기의 로컬 판(`useFileStore`). */
+  fileStore?: FileStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

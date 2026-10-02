@@ -23,3 +23,9 @@ verify_jwt = false
 # Jira 개인정보 보고(backend/26-jira.md) — pg_cron이 부르므로 사용자 JWT가 없다. `DIGEST_SECRET` 헤더로 잠근다.
 [functions.jira-privacy]
 verify_jwt = false
+
+# 공책 첨부 청소(backend/28-note-files.md) — pg_cron이 하루 한 번 부르므로 사용자 JWT가 없다.
+# 멘션 메일과 같은 `DIGEST_SECRET` 헤더로 잠근다. (첨부 함수 `files`는 로그인한 사용자가 부르므로
+# 기본값 verify_jwt = true 그대로 둔다.)
+[functions.files-sweep]
+verify_jwt = false

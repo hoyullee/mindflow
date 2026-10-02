@@ -10,9 +10,10 @@
 // the `backend` prop if a future test needs a mock Supabase-mode backend).
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import type { Backend, NoteHistoryStore } from './ports';
+import type { Backend, FileStore, NoteHistoryStore } from './ports';
 import { createBackend } from './factory';
 import { LocalNoteHistoryStore } from './local/localNoteHistoryStore';
+import { LocalFileStore } from './local/localFileStore';
 
 const defaultBackend = createBackend();
 
@@ -75,4 +76,12 @@ let fallbackNoteHistory: NoteHistoryStore | null = null;
 export function useNoteHistoryStore(): NoteHistoryStore {
   const backend = useBackend();
   return backend.noteHistory ?? (fallbackNoteHistory ??= new LocalNoteHistoryStore());
+}
+
+// 첨부 파일(0049)도 **선택 필드**다 — 비어 있으면 이 탭의 메모리 판(데모와 같은 것)으로.
+let fallbackFileStore: FileStore | null = null;
+
+export function useFileStore(): FileStore {
+  const backend = useBackend();
+  return backend.fileStore ?? (fallbackFileStore ??= new LocalFileStore());
 }

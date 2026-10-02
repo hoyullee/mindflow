@@ -35,6 +35,8 @@ import {
 } from '../../../../platform/desktopBridge';
 import { nativeNotificationsAvailable } from '../../../../platform/nativeNotifications';
 import { useBackend } from '../../../../adapters/BackendContext';
+import { planLabel, useFileQuota } from '../../useFileQuota';
+import { FileQuotaBar } from '../FileQuotaBar';
 import { DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs } from '../../../../adapters/ports';
 import { currentPushSubscription, pushAvailable, subscribePush, unsubscribePush } from '../../../../pwa/webPush';
 
@@ -47,6 +49,7 @@ interface Props {
  * Shows the signed-in account and hosts the destructive "회원 탈퇴" entry, kept
  * in its own bottom "계정 관리" section so it never sits next to routine actions. */
 export function AccountSettingsModal({ state, controller }: Props) {
+  const fileQuota = useFileQuota(state.accountSettingsOpen);
   // 연동 구획 — 구글 캘린더는 **설정에서만** 켜고 끈다(일정 화면은 결과만 그린다).
   // 여기서는 그릴 달이 없으므로 `list` 모드다(목록만), 그리고 **모달이 열려 있을 때만**
   // — 홈을 켤 때마다 캘린더 목록을 받아 오지 않는다(`accountSettingsOpen`).
@@ -922,17 +925,18 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <div style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-.03em', color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
               {state.userEmail && <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
             </div>
-            {/* 플랜 — 유료 플랜이 없으니 **모든 계정이 무료 플랜**이다. 스펙은 눌러서 플랜
-                안내로 가는 단추지만 **갈 화면이 없어** 사실을 적은 정적 알약으로 둔다(↗도
-                두지 않는다 — 어디로 데려갈 것처럼 보이면 안 된다). 유료가 생기면 이 자리가
-                그 단추가 된다. */}
+            {/* 플랜 — 서버의 플랜 이름(0049 `plans`). 지금은 모든 계정이 무료 플랜이다. 스펙은 눌러서
+                플랜 안내로 가는 단추지만 **갈 화면이 없어** 정적 알약으로 둔다(↗도 두지 않는다 —
+                어디로 데려갈 것처럼 보이면 안 된다). 유료가 생기면 이 자리가 그 단추가 된다. */}
             <span
               data-plan-badge
               style={{ flexShrink: 0, height: 30, padding: '0 12px', display: 'inline-flex', alignItems: 'center', borderRadius: 99, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: 800, boxSizing: 'border-box' }}
             >
-              무료 플랜
+              {planLabel(fileQuota)}
             </span>
           </div>
+          {/* 첨부 파일 저장 공간 — 서버가 한도를 알려 줄 때만(마이그레이션 전·오프라인이면 숨긴다). */}
+          {fileQuota && <FileQuotaBar quota={fileQuota} />}
 
           {/* ② 한 겹 안으로 들어가는 셋 — **타일 없는 선 아이콘 + 헤어라인 목록**(스펙). 구획
               라벨은 두지 않는다: 모달 제목이 이미 '설정'이라 한 번 더 쓰면 '설정 > 설정'으로

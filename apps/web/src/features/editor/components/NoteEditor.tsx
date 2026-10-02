@@ -35,7 +35,7 @@ import {
   displayUrl,
   fillAt,
 } from '@mindflow/mindmap-core';
-import type { EditorController, LinkTarget } from '../useEditorState';
+import type { EditorController, LinkTarget, NoteInsertAt } from '../useEditorState';
 import { consumePickingFile } from '../useEditorState';
 import { useDocStore } from '../../../adapters/BackendContext';
 import type { Theme } from '../theme';
@@ -50,6 +50,7 @@ import { useCommentParticipants } from './CommentPanel';
 import { NoteCommentWindow } from './NoteCommentWindow';
 import { NoteSchedBlock } from './NoteSchedBlock';
 import { NoteVideoBlock, focusVideoInputOnMount } from './NoteVideoBlock';
+import { NoteFileBlock } from './NoteFileBlock';
 import { parseVideoUrl } from '../noteVideo';
 import { NoteSchedPicker } from './NoteSchedPicker';
 import { NoteDatePop } from './NoteDatePop';
@@ -170,6 +171,8 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   // (요청: "칸반 보드 모양이라 이상해"). 문서 한 장 + 사슬 — 종류를 말하지 않으면서
   // "다른 문서로 간다"만 말한다. 인라인 링크(주소)와는 **문서 모양**으로 갈린다.
   { kind: 'link', name: '문서 링크', hint: '', desc: '맵 · 보드 · 칸반 · 공책으로', group: '넣기', icon: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" /><path d="M14 3v5h5" /><path d="M10.5 14.5a2.2 2.2 0 0 0 3.2.2l1.3-1.3a2.2 2.2 0 0 0-3.1-3.1l-.6.6" /><path d="M13.5 12.5a2.2 2.2 0 0 0-3.2-.2L9 13.6a2.2 2.2 0 0 0 3.1 3.1l.6-.6" /></>) },
+  // 파일 — 고르개부터(이미지와 같은 결). 여러 개를 고르면 파일마다 블록 하나(0049 · R2).
+  { kind: 'file', name: '파일', hint: '', desc: '문서 · 표 · 압축 파일을 첨부', group: '넣기', icon: (<><path d="M20.5 11.5 12.4 19.6a5 5 0 0 1-7.1-7.1l8.3-8.3a3.3 3.3 0 0 1 4.7 4.7l-8.3 8.3a1.7 1.7 0 0 1-2.4-2.4l7.6-7.6" /></>) },
   // 동영상 — 주소를 받는 빈 판이 선다(붙여 넣으면 바로 미리보기). 빈 문단에 주소를 통째로
   // 붙여 넣어도 같은 블록이 된다(`pasteText`).
   { kind: 'video', name: '동영상', hint: '', desc: 'YouTube · Vimeo · Loom · mp4 미리보기', group: '넣기', icon: (<><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m10 9.2 4.8 2.8-4.8 2.8Z" /></>) },
@@ -654,6 +657,7 @@ const INSERTS: { kind: NoteBlockKind; name: string; icon: JSX.Element }[] = [
   { kind: 'ck', name: '체크리스트', icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><rect x="3" y="14" width="7" height="7" rx="1.6" /><path d="M13 7.5h8M13 17.5h8" /></>) },
   { kind: 'table', name: '표', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 10h17M9.5 10v9M15 10v9" /></>) },
   { kind: 'img', name: '이미지', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5L14 17l3-3 3 3" /></>) },
+  { kind: 'file', name: '파일', icon: (<><path d="M20.5 11.5 12.4 19.6a5 5 0 0 1-7.1-7.1l8.3-8.3a3.3 3.3 0 0 1 4.7 4.7l-8.3 8.3a1.7 1.7 0 0 1-2.4-2.4l7.6-7.6" /></>) },
   { kind: 'hr', name: '구분선', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
   { kind: 'link', name: '문서 링크', icon: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" /><path d="M14 3v5h5" /><path d="M10.5 14.5a2.2 2.2 0 0 0 3.2.2l1.3-1.3a2.2 2.2 0 0 0-3.1-3.1l-.6.6" /><path d="M13.5 12.5a2.2 2.2 0 0 0-3.2-.2L9 13.6a2.2 2.2 0 0 0 3.1 3.1l.6-.6" /></>) },
 ];
@@ -2990,13 +2994,17 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
       const key = live?.getAttribute?.(NOTE_EDIT_ATTR);
       if (key === null || key === undefined) return;
       const file = firstImageFile(e.clipboardData);
-      if (!file) return;
+      // 그림이 아닌 파일(탐색기에서 복사한 PDF 등)은 **첨부 파일**로 — 같은 자리 규칙이다.
+      const others = file ? [] : Array.from(e.clipboardData?.files ?? []);
+      if (!file && !others.length) return;
       e.preventDefault();
       const id = blockIdOf(key);
       const cur = (controller.notePage?.blocks ?? []).find((b) => b.id === id);
       // 표의 칸은 블록 하나라 **그 칸을 그림으로 바꿀 수 없다** — 표 다음에 넣는다.
       const empty = !!cur && cur.kind === 'p' && blockText(cur) === '';
-      controller.insertNoteImage(file, empty ? { replace: id } : { after: id || undefined });
+      const at = empty ? { replace: id } : { after: id || undefined };
+      if (file) controller.insertNoteImage(file, at);
+      else controller.insertNoteFiles(others, at);
     };
     document.addEventListener('paste', onPasteImage);
     return () => document.removeEventListener('paste', onPasteImage);
@@ -3747,6 +3755,38 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
             ref={colRef}
             /** 본문 단 — 손가락 선택이 잠깐 승격되는 자리다(`promoteCol`). */
             data-note-col=""
+            /**
+             * **바탕화면·탐색기에서 끌어 온 파일**(0049) — 그림은 이미지 블록으로, 나머지는 첨부 파일로.
+             * 놓은 자리의 블록 **다음**에 넣는다(빈 문단이면 그 자리를 바꾼다). 본문 안의 블록 옮기기는
+             * 포인터 이벤트라 여기 오지 않는다 — `Files`가 실린 끌기만 받는다.
+             */
+            onDragOver={(e) => {
+              if (readOnly || !Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+            }}
+            onDrop={(e) => {
+              if (readOnly) return;
+              const files = Array.from(e.dataTransfer?.files ?? []);
+              if (!files.length) return;
+              e.preventDefault();
+              const host = (e.target as HTMLElement | null)?.closest?.('[data-note-block]') as HTMLElement | null;
+              const blocks = controller.notePage?.blocks ?? [];
+              const id = host?.getAttribute('data-note-block') ?? blocks[blocks.length - 1]?.id ?? '';
+              const cur = blocks.find((b) => b.id === id);
+              const empty = !!cur && cur.kind === 'p' && blockText(cur) === '';
+              const images = files.filter((f) => f.type.startsWith('image/'));
+              const others = files.filter((f) => !f.type.startsWith('image/'));
+              const after: NoteInsertAt = id ? { after: id } : {};
+              // 순서는 **그림들 → 파일들**. 넣는 길이 「자리 다음에」뿐이라 뒤에 올 것부터 넣는다.
+              const first = empty ? { replace: id } : after;
+              if (others.length) controller.insertNoteFiles(others, images.length ? after : first);
+              const rest = images.slice(1).reverse();
+              if (images[0]) {
+                for (const img of rest) controller.insertNoteImage(img, after);
+                controller.insertNoteImage(images[0], first);
+              }
+            }}
             onContextMenu={(e) => {
               if (readOnly) return;
               const el = e.target as HTMLElement | null;
@@ -4088,6 +4128,13 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                     // 목록의 **가운데 항목**에서 골랐으면 그 자리에서 가른다(요청 3).
                     const gap = listGapOf(page, slashFor);
                     controller.promptNoteImage(gap ? { after: gap.id, intoList: gap } : replaces ? { replace: id } : { after: id });
+                    closeSlash();
+                    return;
+                  }
+                  // 파일도 고르개부터 — 이미지와 같은 자리 규칙.
+                  if (kind === 'file') {
+                    const gap = listGapOf(page, slashFor);
+                    controller.promptNoteFiles(gap ? { after: gap.id, intoList: gap } : replaces ? { replace: id } : { after: id });
                     closeSlash();
                     return;
                   }
@@ -6177,6 +6224,10 @@ function FormatToolbar({
       controller.promptNoteImage({ ...(id ? { after: id } : {}) });
       return;
     }
+    if (kind === 'file') {
+      controller.promptNoteFiles({ ...(id ? { after: id } : {}) });
+      return;
+    }
     // 문서 링크도 같다(요청) — 빈 「문서 고르기」 블록을 세우지 않고 팝업으로 고른다.
     if (kind === 'link') {
       pickLinkDoc({ ...(id ? { after: id } : {}) });
@@ -7283,6 +7334,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   if (shape === 'sched') {
     // 일정 블록 — 글이 없는 위젯이라 캐럿이 서지 않는다(구분선·그림과 같은 갈래).
     return <NoteSchedBlock controller={controller} block={block} flow={blockFlow(block)} picked={picked} pickObject={pickObject} />;
+  }
+
+  if (shape === 'file') {
+    return <NoteFileBlock controller={controller} block={block} flow={blockFlow(block)} picked={picked} pickObject={pickObject} />;
   }
 
   if (shape === 'video') {

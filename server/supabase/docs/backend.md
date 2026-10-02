@@ -45,6 +45,7 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
 | §25 | [공책 태그 판 (0042 `note_tags`) — 계정에 딸린 한 벌](backend/25-note-tags.md) | 3KB |
 | §26 | [Jira 연결 (0044 `jira_credentials`·`user_tool_prefs` + Edge Function `jira`) — 도구 · 작업 현황](backend/26-jira.md) | 5KB |
 | §27 | [공책 페이지별 기록 (0048 `note_history`) — 누가·언제·무엇을 + 페이지 스냅샷](backend/27-note-history.md) | 4KB |
+| §28 | [공책 파일 첨부 (0049 `plans`·`user_plans`·`note_files` + Edge Function `files`·`files-sweep`) — 바이트는 R2, 장부는 Supabase](backend/28-note-files.md) | 10KB |
 
 ---
 
