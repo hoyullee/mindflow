@@ -3103,14 +3103,15 @@ describe('Home', () => {
       if (!el) throw new Error(`${sel} not rendered`);
       return el as HTMLElement;
     };
-    it('LNB·서랍·☰ 없이 하단 탭 네 개가 서고, 막대 높이를 떠 있는 카드에 내려 준다', async () => {
+    it('LNB·서랍·☰ 없이 하단 탭 다섯 개가 서고, 막대 높이를 떠 있는 카드에 내려 준다', async () => {
       const restore = mockMatchMedia(true);
       try {
         const { container } = renderHome();
         expect(container.querySelector('aside')).toBeNull();
         expect(screen.queryByRole('button', { name: /메뉴 열기/ })).toBeNull();
         const tabs = [...container.querySelectorAll('[data-m-tab]')].map((b) => b.getAttribute('data-m-tab'));
-        expect(tabs).toEqual(['space', 'cal', 'noti', 'more']);
+        // 도구(M4b)는 일정과 알림 사이 — 화면이 아니라 고르기 시트를 연다(`Tools.test.tsx`).
+        expect(tabs).toEqual(['space', 'cal', 'tools', 'noti', 'more']);
         expect(container.querySelector('[data-m-tab="space"]')!.getAttribute('aria-current')).toBe('page');
         // 설치 안내·오프라인 바가 탭 위로 올라서도록(`toastShell.ts`의 계약).
         expect(document.documentElement.style.getPropertyValue('--mf-bottom-bar')).toMatch(/px$/);

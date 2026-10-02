@@ -43,6 +43,7 @@ import { jiraReasonText } from '../tools/jira/jiraApi';
 import { ensureJiraStatus, onJiraConnected } from '../tools/jira/jiraStore';
 import { ensureToolPrefs } from '../tools/toolPrefsStore';
 import { MobileTabBar, type MobileTab } from './mobile/MobileTabBar';
+import { MobileToolsSheet } from './mobile/MobileToolsSheet';
 import { MobileSpaceView } from './mobile/MobileSpaceView';
 import { MobileNotificationsPage } from './mobile/MobileNotificationsPage';
 import { MobileMorePage } from './mobile/MobileMorePage';
@@ -86,6 +87,8 @@ export function Home() {
   const online = useOnline();
   /** 모바일의 알림·전체 탭 — 스페이스·일정·도구 화면 **위에** 덮는 화면(아래 설명). */
   const [mPanel, setMPanel] = useState<'noti' | 'more' | null>(null);
+  /** 모바일의 도구 탭(M4b) — 화면이 아니라 **고르기 시트**다. 어느 화면 위에서든 그 자리에서 올라온다. */
+  const [toolsSheet, setToolsSheet] = useState(false);
   // 로딩 스켈레톤의 모양 — 아직 착지 화면을 모르는 첫 프레임에 쓴다(`predictLanding`:
   // 이 탭이 기억한 화면 → 이 기기의 힌트). 일정으로 착지할 예정이면 일정 껍데기를
   // 그린다(제보: 스페이스 스켈레톤이 떴다가 통째로 갈아 끼워졌다). 시작 화면을 고를
@@ -161,14 +164,23 @@ export function Home() {
   };
   // 데스크톱 폭으로 넘어가면 모바일 탭 상태는 뜻을 잃는다(LNB가 다시 선다).
   useEffect(() => {
-    if (!isMobile) setMPanel(null);
+    if (!isMobile) {
+      setMPanel(null);
+      setToolsSheet(false);
+    }
   }, [isMobile]);
 
-  const mobileTab: MobileTab = mPanel ?? (state.activeTool ? 'more' : state.activeCal ? 'cal' : 'space');
+  // 도구 화면(작업 현황)은 이제 **도구 탭**의 것이다 — 예전에는 그 길이 전체 탭에만 있어 전체에 불이 켜졌다.
+  const mobileTab: MobileTab = mPanel ?? (state.activeTool ? 'tools' : state.activeCal ? 'cal' : 'space');
   const selectTab = (tab: MobileTab) => {
     // 고르던 것은 다른 탭으로 가면 놓는다 — 선택 바가 없는 화면에 선택만 남으면 다음 길게
     // 누르기가 "이미 모드 안"으로 읽혀 첫 항목을 잡지 못한다.
     if (state.selectMode) controller.exitSelectMode();
+    // 도구 — 지금 화면은 그대로 두고 시트만 올린다(도구가 하나여도 늘 시트 — 사용자 결정, `MobileToolsSheet`).
+    if (tab === 'tools') {
+      setToolsSheet(true);
+      return;
+    }
     if (tab === 'more' && state.activeTool) {
       backToMore();
       return;
@@ -341,6 +353,7 @@ export function Home() {
       </main>
 
       {isMobile && <MobileTabBar active={mobileTab} onSelect={selectTab} sharedNew={view.sharedUnread} />}
+      {isMobile && <MobileToolsSheet open={toolsSheet} onClose={() => setToolsSheet(false)} state={state} controller={controller} />}
 
       {/* 마퀴 — 화면 좌표라 `position: fixed`. 포인터를 가로채면 그 아래 카드가
           hover·drop 대상을 잃으므로 `pointer-events: none`. */}

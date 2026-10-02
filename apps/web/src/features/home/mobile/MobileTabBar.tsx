@@ -4,17 +4,19 @@ import { MONO_FONT } from '../chrome';
 import { useUnreadCount } from '../components/unreadCount';
 import { M_ICON } from './parts';
 
-export type MobileTab = 'space' | 'cal' | 'noti' | 'more';
+export type MobileTab = 'space' | 'cal' | 'tools' | 'noti' | 'more';
 
-const TABS: { key: MobileTab; label: string }[] = [
-  { key: 'space', label: '스페이스' },
-  { key: 'cal', label: '일정' },
-  { key: 'noti', label: '알림' },
-  { key: 'more', label: '전체' },
+const TABS: { key: MobileTab; label: string; icon: JSX.Element }[] = [
+  { key: 'space', label: '스페이스', icon: M_ICON.space },
+  { key: 'cal', label: '일정', icon: M_ICON.cal },
+  // 도구(M4b) — 화면이 아니라 **고르기 시트**를 연다(연결한 도구의 화면으로 가는 길 · 도구 연결·관리).
+  { key: 'tools', label: '도구', icon: M_ICON.link },
+  { key: 'noti', label: '알림', icon: M_ICON.noti },
+  { key: 'more', label: '전체', icon: M_ICON.more },
 ];
 
 /**
- * 모바일 홈의 **하단 탭 네 개**(모바일 홈 디자인) — 햄버거 서랍(LNB)을 대신한다.
+ * 모바일 홈의 **하단 탭 다섯 개**(모바일 홈 디자인 — 「도구」는 M4b에서 더해졌다) — 햄버거 서랍(LNB)을 대신한다.
  *
  * 서랍은 "어디로 갈 수 있는가"를 닫힌 문 뒤에 숨겨 두었다: 일정·알림으로 가려면 늘 문을
  * 먼저 열어야 했고, 알림이 왔다는 사실도 문 위의 점 하나로만 알 수 있었다. 탭은 갈 곳 넷을
@@ -50,7 +52,7 @@ export function MobileTabBar({ active, onSelect, sharedNew = 0 }: { active: Mobi
       style={{
         flex: '0 0 auto',
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
+        gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
         padding: '8px 10px max(10px, env(safe-area-inset-bottom))',
         borderTop: '1px solid var(--mf-m-line)',
         background: 'var(--mf-m-bg)',
@@ -92,7 +94,7 @@ export function MobileTabBar({ active, onSelect, sharedNew = 0 }: { active: Mobi
             }}
           >
             <svg width={23} height={23} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={on ? 2.3 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              {M_ICON[t.key]}
+              {t.icon}
             </svg>
             {t.label}
             {dot && (
