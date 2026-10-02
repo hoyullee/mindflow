@@ -1,6 +1,7 @@
 import { DateButton } from '../../home/calendar/DatePop';
 import { addDays, AVAIL_LABEL, dowOf, type AvailRow, type Dataset } from './model';
 import { Avatar, MONO } from './wsUi';
+import { LeaveBadge, UmbrellaIcon } from './WsLeave';
 
 const LEVEL = [
   { bg: '#EBF5EE', fg: '#2F7D57', bar: '#69B08A' },
@@ -29,7 +30,7 @@ export function quickRanges(today: string): { name: string; from: string; to: st
  * 일정 맞춰보기(스펙 §7) — 기간을 넣으면 그 안의 영업일에 누가 비어 있는지. 행을 누르면 그
  * 담당자 필터. 열려 있는 동안 달력에 기간이 초록으로 칠해진다(부모가 한다).
  */
-export function WsAvail({ from, to, onRange, rows, bizN, loading, data, onClose, onPickPerson }: { from: string; to: string; onRange: (from: string, to: string) => void; rows: AvailRow[]; bizN: number; loading: boolean; data: Dataset; onClose: () => void; onPickPerson: (id: string) => void }) {
+export function WsAvail({ from, to, onRange, rows, bizN, loading, data, onClose, onPickPerson, onLeave }: { from: string; to: string; onRange: (from: string, to: string) => void; rows: AvailRow[]; bizN: number; loading: boolean; data: Dataset; onClose: () => void; onPickPerson: (id: string) => void; /** 그 사람의 휴가 폼을 이 기간으로 채워 연다(휴가 스펙 §4). */ onLeave?: (id: string) => void }) {
   const today = new Date();
   const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const free = rows.filter((r) => r.level === 0).length;
@@ -70,11 +71,27 @@ export function WsAvail({ from, to, onRange, rows, bizN, loading, data, onClose,
         {rows.map((r) => {
           const L = LEVEL[r.level];
           return (
-            <button key={r.person.id} type="button" className="btn mf-ws-avail-row" data-ws-avail-row={r.person.id} onClick={() => onPickPerson(r.person.id)} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '8px', border: 0, borderRadius: 11, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+            // 행 안에 `휴가` 단추가 있어 행 자체는 button이 아니다(단추 안의 단추는 안 된다).
+            <div
+              key={r.person.id}
+              role="button"
+              tabIndex={0}
+              className="mf-ws-avail-row"
+              data-ws-avail-row={r.person.id}
+              onClick={() => onPickPerson(r.person.id)}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  onPickPerson(r.person.id);
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '8px', border: 0, borderRadius: 11, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', boxSizing: 'border-box' }}
+            >
               <Avatar ini={r.person.ini} c={r.person.c} size={22} />
               <span style={{ minWidth: 0, flex: '1 1 auto' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.person.name}</span>
+                  {r.leave > 0 && <LeaveBadge days={r.leave} height={17} font={9.5} attrs={{ 'data-ws-avail-leave': r.person.id }} />}
                   <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11.5, color: 'var(--mf-ws-ink2)' }}>
                     {r.free}/{r.total}
                   </span>
@@ -90,9 +107,26 @@ export function WsAvail({ from, to, onRange, rows, bizN, loading, data, onClose,
                     </span>
                   ))}
                   {r.conflicts.length > 3 && <span style={{ fontFamily: MONO, fontSize: 9.5, color: 'var(--mf-ws-faint)' }}>+{r.conflicts.length - 3}</span>}
+                  {onLeave && (
+                    <button
+                      type="button"
+                      className="btn mf-ws-leave-btn"
+                      data-on="0"
+                      data-ws-avail-leave-btn={r.person.id}
+                      aria-label={`${r.person.name} 님 이 기간 휴가 등록`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onLeave(r.person.id);
+                      }}
+                      style={{ flexShrink: 0, height: 18, padding: '0 6px', borderRadius: 99, border: '1px solid #EADFD3', background: 'transparent', color: '#8A8078', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}
+                    >
+                      <UmbrellaIcon size={9} />
+                      휴가
+                    </button>
+                  )}
                 </span>
               </span>
-            </button>
+            </div>
           );
         })}
       </div>

@@ -19,6 +19,14 @@ describe('보고할 계정 모으기', () => {
     expect(collectAccounts([row('gone', { extra: [{ id: 'x', name: 'X' }] })]).has('x')).toBe(true);
   });
 
+  it('담당자 휴가(0050)의 사람도 모은다 — 시각은 그 휴가 행을 마지막으로 쓴 때', () => {
+    const m = collectAccounts([row('u1', { extra: [{ id: 'a', name: 'A', at: '2026-09-20T00:00:00Z' }] })], [
+      { person: 'a', updated_at: '2026-09-02T00:00:00Z', created_by: 'u1' },
+      { person: 'q', updated_at: '2026-09-15T00:00:00Z', created_by: 'u2' },
+    ]);
+    expect(Object.fromEntries(m)).toEqual({ a: '2026-09-02T00:00:00.000Z', q: '2026-09-15T00:00:00.000Z' });
+  });
+
   it('90개씩 나누고 본문은 accountId·updatedAt', () => {
     const list = Array.from({ length: 181 }, (_, i) => [`id${i}`, '2026-09-01T00:00:00.000Z'] as [string, string]);
     expect(chunks(list).map((c) => c.length)).toEqual([REPORT_BATCH, REPORT_BATCH, 1]);

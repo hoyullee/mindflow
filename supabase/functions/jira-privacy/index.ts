@@ -18,7 +18,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { accessTokenFor, Fail, readCredential, type AppCtx, type Row } from '../_shared/jiraAuth.ts';
-import { applyReport, chunks, collectAccounts, parseReport, reportBody, type PrefsRow } from '../_shared/jiraPrivacy.ts';
+import { applyReport, chunks, collectAccounts, parseReport, reportBody, type LeaveRow, type PrefsRow } from '../_shared/jiraPrivacy.ts';
 
 const REPORT_URL = 'https://api.atlassian.com/app/report-accounts/';
 const PAGE = 1000;
@@ -67,6 +67,17 @@ async function readAllPrefs(ctx: AppCtx): Promise<PrefsRow[]> {
   }
 }
 
+/** 담당자 휴가(0050) — 그 사람의 accountId와 이름 스냅샷이 서버에 남는다. */
+async function readAllLeaves(ctx: AppCtx): Promise<LeaveRow[]> {
+  const out: LeaveRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await ctx.admin.from('jira_leaves').select('person,updated_at,created_by').order('id').range(from, from + PAGE - 1);
+    if (error) throw new Fail('read-failed', error.message);
+    out.push(...((data ?? []) as LeaveRow[]));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
 /** 보고에 쓸 토큰 — 연결된 사람을 차례로 시도한다(끊긴 토큰은 건너뛴다). */
 async function* tokens(ctx: AppCtx): AsyncGenerator<{ token: string; row: Row }> {
   const { data } = await ctx.admin.from('jira_credentials').select('user_id').order('updated_at', { ascending: false }).limit(50);
@@ -83,7 +94,8 @@ async function* tokens(ctx: AppCtx): AsyncGenerator<{ token: string; row: Row }>
 
 async function run(ctx: AppCtx) {
   const prefs = await readAllPrefs(ctx);
-  const accounts = [...collectAccounts(prefs)];
+  const leaves = await readAllLeaves(ctx);
+  const accounts = [...collectAccounts(prefs, leaves)];
   if (!accounts.length) return { ok: true, reported: 0, closed: 0, updated: 0 };
 
   const closed = new Set<string>();
@@ -113,7 +125,7 @@ async function run(ctx: AppCtx) {
       if (res.status === 429) {
         // 한도 — 남은 묶음은 다음 회차(주 2회라 7일 주기 안에 다시 온다).
         console.warn('[jira-privacy] 429 — Retry-After', res.headers.get('Retry-After'));
-        return await finish(ctx, prefs, closed, updatedIds, cur.value, { reported, pending: accounts.length - reported, cycle, limited: true });
+        return await finish(ctx, prefs, leaves, closed, updatedIds, cur.value, { reported, pending: accounts.length - reported, cycle, limited: true });
       }
       if (res.status === 204) break;
       if (!res.ok) throw new Fail('report-failed', `${res.status} ${(await res.text().catch(() => '')).slice(0, 300)}`);
@@ -124,11 +136,11 @@ async function run(ctx: AppCtx) {
     }
     reported += batch.length;
   }
-  return await finish(ctx, prefs, closed, updatedIds, cur.done ? null : cur.value, { reported, pending: 0, cycle, limited: false });
+  return await finish(ctx, prefs, leaves, closed, updatedIds, cur.done ? null : cur.value, { reported, pending: 0, cycle, limited: false });
 }
 
 /** 결과를 반영한다 — 닫힌 계정은 지우고, 바뀐 계정은 Jira에서 이름을 새로 받는다. */
-async function finish(ctx: AppCtx, prefs: PrefsRow[], closed: Set<string>, updatedIds: Set<string>, auth: { token: string; row: Row } | null, meta: Record<string, unknown>) {
+async function finish(ctx: AppCtx, prefs: PrefsRow[], leaves: LeaveRow[], closed: Set<string>, updatedIds: Set<string>, auth: { token: string; row: Row } | null, meta: Record<string, unknown>) {
   const renamed = new Map<string, string>();
   // 이름은 **그 담당자를 더한 사람의 사이트**에서 찾는다 — 담당자는 그 사람 조직의 Jira에 있다(보고에 쓴
   // 토큰의 사이트에는 없을 수 있다). 그 사람이 연결을 해제했으면 보고에 쓴 토큰으로 한 번 더 시도한다.
@@ -139,6 +151,8 @@ async function finish(ctx: AppCtx, prefs: PrefsRow[], closed: Set<string>, updat
     if (!Array.isArray(extra)) continue;
     for (const e of extra) if (typeof e?.id === 'string' && updatedIds.has(e.id)) owners.set(e.id, [...(owners.get(e.id) ?? []), p.owner]);
   }
+  // 휴가의 담당자는 그 휴가를 등록한 사람의 사이트에 있다.
+  for (const l of leaves) if (updatedIds.has(l.person)) owners.set(l.person, [...new Set([...(owners.get(l.person) ?? []), l.created_by])]);
   const tokenCache = new Map<string, { token: string; cloud: string } | null>();
   const authOf = async (uid: string) => {
     if (tokenCache.has(uid)) return tokenCache.get(uid) ?? null;
@@ -187,7 +201,21 @@ async function finish(ctx: AppCtx, prefs: PrefsRow[], closed: Set<string>, updat
       else rows++;
     }
   }
-  const summary = { ok: true, ...meta, closed: closed.size, updated: updatedIds.size, renamed: renamed.size, rows };
+  // 휴가 — 닫힌 계정의 휴가는 지우고, 새 이름은 스냅샷에 반영한다.
+  let leaveRows = 0;
+  const closedLeave = [...closed].filter((id) => leaves.some((l) => l.person === id));
+  for (const batch of chunks(closedLeave, 100)) {
+    const { error, count } = await ctx.admin.from('jira_leaves').delete({ count: 'exact' }).in('person', batch);
+    if (error) console.error('[jira-privacy] 휴가 지우기 실패', error.message);
+    else leaveRows += count ?? 0;
+  }
+  for (const [id, name] of renamed) {
+    if (!leaves.some((l) => l.person === id)) continue;
+    const { error, count } = await ctx.admin.from('jira_leaves').update({ person_name: name }, { count: 'exact' }).eq('person', id);
+    if (error) console.error('[jira-privacy] 휴가 이름 반영 실패', error.message);
+    else leaveRows += count ?? 0;
+  }
+  const summary = { ok: true, ...meta, closed: closed.size, updated: updatedIds.size, renamed: renamed.size, rows, leaveRows };
   console.log('[jira-privacy]', JSON.stringify(summary));
   return summary;
 }

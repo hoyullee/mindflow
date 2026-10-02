@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { JiraPerson } from '../jira/jiraApi';
 import { beginJiraConnect, useJiraConn } from '../jira/jiraStore';
+import { addLeave, deleteLeave, updateLeave, useJiraLeaves, type Leave, type LeaveInput } from '../jira/leavesStore';
+import { leaveRange, type LeaveDraft } from './WsLeave';
 import { openJiraSetup } from '../jira/JiraSetupModal';
 import { WsIssueModal } from './WsIssueModal';
 import { updateToolPrefs, useToolPrefs } from '../toolPrefsStore';
@@ -13,6 +15,8 @@ import {
   buildDataset,
   computeStats,
   foldSolo,
+  indexLeaves,
+  leaveDaysIn,
   monthBiz,
   monthDays,
   overlaps,
@@ -82,6 +86,8 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
   const [range, setRange] = useState(() => quickRanges(today)[0]!);
   const [holidayOpen, setHolidayOpen] = useState(false);
   const [rowW, setRowW] = useState(1400);
+  // 담당자 팝오버 안의 휴가 폼 — 한 번에 한 사람(휴가 스펙 §3.1). 팝오버가 닫히면 비운다.
+  const [leaveDraft, setLeaveDraft] = useState<LeaveDraft | null>(null);
 
   const conn = useJiraConn();
   const { prefs } = useToolPrefs();
@@ -138,6 +144,8 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
   }, [ready]);
 
   const rules = work;
+  // 담당자 휴가 — 같은 Jira 사이트를 연결한 사람 모두가 보는 값(0050). 데모는 이 기기.
+  const leaveSnap = useJiraLeaves(ready ? (conn.site?.id ?? null) : null);
   const data = useMemo(() => buildDataset(month.data?.epics ?? [], month.data?.tickets ?? [], work.extra), [month.data, work.extra]);
   const hidden = work.hidden;
   const peopleOn = data.people.filter((p) => !hidden.includes(p.id));
@@ -149,8 +157,14 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
   const biz = useMemo(() => monthBiz(y, m, rules), [y, m, rules]);
   // 집계는 에픽 없는 티켓을 한 열로 접는다(티켓마다 열이면 표가 티켓 수만큼 넓어진다).
   const folded = foldSolo(visibleEpics, tickets);
-  const stats = computeStats(visiblePeople, folded.epics, folded.tickets, biz.biz);
-  const worked = new Map(visiblePeople.map((p) => [p.id, workedDays(tickets, biz.biz, p.id)]));
+  // 휴가는 보이는 담당자 것만 그린다(끈 사람·필터 밖 사람의 휴가 줄은 칸만 차지한다). 계산은 사람별이라 전부 넘겨도 같다.
+  const allLeaves = leaveSnap.leaves;
+  const lv = useMemo(() => indexLeaves(allLeaves), [allLeaves]);
+  const visibleIds = new Set(visiblePeople.map((p) => p.id));
+  const shownLeaves = allLeaves.filter((l) => visibleIds.has(l.person));
+  const stats = computeStats(visiblePeople, folded.epics, folded.tickets, biz.biz, lv);
+  const worked = new Map(visiblePeople.map((p) => [p.id, workedDays(tickets, biz.biz, p.id, undefined, lv)]));
+  const leaveDays = new Map(visiblePeople.map((p) => [p.id, leaveDaysIn(lv, p.id, biz.biz)]));
   const monthCount = new Map<string, number>();
   data.tickets.filter((t) => overlaps(t, from, to)).forEach((t) => monthCount.set(t.person.id, (monthCount.get(t.person.id) ?? 0) + 1));
 
@@ -161,6 +175,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
     peopleOn,
     (availData.data?.tickets ?? []).filter((t) => !hidden.includes(t.person.id)),
     availBiz,
+    lv,
   );
 
   const addFilter = (type: FilterType, id: string) => {
@@ -214,6 +229,9 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
   const availRef = useRef<HTMLDivElement>(null);
   useDismiss(searchRef, sugOpen, useCallback(() => setSugOpen(false), []));
   useDismiss(memberRef, memberOpen, useCallback(() => setMemberOpen(false), []));
+  useEffect(() => {
+    if (!memberOpen) setLeaveDraft(null);
+  }, [memberOpen]);
   useDismiss(availRef, availOpen, useCallback(() => setAvailOpen(false), []));
 
   const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -236,8 +254,31 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
     <Empty title="볼 프로젝트를 골라 주세요" body="고른 프로젝트에서 담당자가 있는 티켓을 달력·타임라인·집계에 보여 줘요(에픽이 있으면 에픽별로)." action="프로젝트 고르기" onAction={() => openJiraSetup()} />
   ) : null;
 
+  const personName = (id: string) => data.pById.get(id)?.name ?? allLeaves.find((l) => l.person === id)?.personName ?? '';
+  const submitLeave = async (v: LeaveInput, editId?: string): Promise<boolean> => {
+    const err = editId ? await updateLeave(editId, v) : await addLeave(v);
+    if (err) {
+      toolToast(err);
+      return false;
+    }
+    setLeaveDraft(null);
+    toolToast(`${v.personName} 님 휴가를 ${editId ? '고쳤어요' : '등록했어요'} · ${leaveRange(v)}`);
+    return true;
+  };
+  const removeLeave = (l: Leave) => {
+    void deleteLeave(l.id).then((r) => toolToast(r.error ?? `${personName(l.person) || l.personName} 님 휴가를 지웠어요`));
+    if (leaveDraft?.editId === l.id) setLeaveDraft(null);
+  };
+  // 일정 맞춰보기의 `휴가` — 맞춰보기를 닫고 담당자 팝오버에서 그 기간을 채운 폼을 연다(휴가 스펙 §4).
+  const leaveFromAvail = (id: string) => {
+    setAvailOpen(false);
+    setMemberOpen(true);
+    setLeaveDraft({ person: id, start: range.from, end: range.to });
+  };
+
   const membersPanel = (
     <WsMembers
+      leave={{ leaves: allLeaves, today, rules, draft: leaveDraft, onDraft: setLeaveDraft, onSubmit: submitLeave, onDelete: removeLeave }}
       people={data.people}
       hidden={hidden}
       monthCount={monthCount}
@@ -260,7 +301,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
     />
   );
   const availPanel = (
-    <WsAvail from={range.from} to={range.to} onRange={(f, t) => setRange({ name: '', from: f, to: t })} rows={availRows} bizN={availBiz.length} loading={availData.loading} data={data} onClose={() => setAvailOpen(false)} onPickPerson={(id) => addFilter('person', id)} />
+    <WsAvail from={range.from} to={range.to} onRange={(f, t) => setRange({ name: '', from: f, to: t })} rows={availRows} bizN={availBiz.length} loading={availData.loading} data={data} onClose={() => setAvailOpen(false)} onPickPerson={(id) => addFilter('person', id)} onLeave={leaveFromAvail} />
   );
   const goThisMonth = () => {
     setYm({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) });
@@ -440,6 +481,8 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
                     people={visiblePeople}
                     epics={visibleEpics}
                     worked={worked}
+                  leaves={shownLeaves}
+                  leaveDays={leaveDays}
                     group={vp.tlGroup}
                     onGroup={(g) => setVp((v) => ({ ...v, tlGroup: g }))}
                     epicOpen={vp.epicOpen}
@@ -608,7 +651,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
                   Jira에서 불러오는 중…
                 </div>
               ) : vp.view === 'cal' ? (
-                <WsCalendar y={y} m={m} today={today} sel={sel} onPick={(d) => { setSel(d); if (!docked && vp.panelOpen !== true) setVp((v) => ({ ...v, panelOpen: true })); }} tickets={tickets} data={data} rules={rules} avail={availOpen ? range : null} onOpenIssue={openIssue} />
+                <WsCalendar y={y} m={m} today={today} sel={sel} onPick={(d) => { setSel(d); if (!docked && vp.panelOpen !== true) setVp((v) => ({ ...v, panelOpen: true })); }} tickets={tickets} data={data} rules={rules} avail={availOpen ? range : null} onOpenIssue={openIssue} leaves={shownLeaves} />
               ) : vp.view === 'tl' ? (
                 <WsTimeline
                   days={days}
@@ -619,6 +662,8 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
                   people={visiblePeople}
                   epics={visibleEpics}
                   worked={worked}
+                  leaves={shownLeaves}
+                  leaveDays={leaveDays}
                   group={vp.tlGroup}
                   onGroup={(g) => setVp((v) => ({ ...v, tlGroup: g }))}
                   epicOpen={vp.epicOpen}
@@ -641,7 +686,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
               aria-label="날짜별 작업"
               style={{ ...(docked ? { position: 'relative', flex: '0 0 300px', width: 300 } : { position: 'absolute', top: 0, right: 0, bottom: 0, width: 320, maxWidth: '88%', zIndex: 5, boxShadow: '-22px 0 44px -24px rgba(46,42,38,.5)' }), background: 'var(--mf-ws-card)', borderLeft: '1px solid var(--mf-ws-line)', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }}
             >
-              <WsSidePanel sel={sel} today={today} month={m} rules={rules} tickets={tickets} data={data} stats={stats} bizN={biz.biz.length} onOpenIssue={openIssue} onPickPerson={(id) => addFilter('person', id)} />
+              <WsSidePanel sel={sel} today={today} month={m} rules={rules} tickets={tickets} data={data} stats={stats} bizN={biz.biz.length} onOpenIssue={openIssue} onPickPerson={(id) => addFilter('person', id)} leaves={shownLeaves} />
             </aside>
           </>
         )}

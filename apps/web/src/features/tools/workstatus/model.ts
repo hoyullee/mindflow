@@ -229,6 +229,51 @@ export function passes(t: Ticket, filters: Filter[]): boolean {
 export const activeOn = (t: { start: string; end: string }, d: string) => t.start <= d && d <= t.end;
 export const overlaps = (t: { start: string; end: string }, from: string, to: string) => t.start <= to && t.end >= from;
 
+// ── 담당자 휴가(스펙 `작업 현황 · 담당자 휴가` §2) ─────────────────────────
+
+export type LeaveKind = 'full' | 'am' | 'pm';
+export const LEAVE_KIND: Record<LeaveKind, string> = { full: '종일', am: '오전 반차', pm: '오후 반차' };
+
+export interface LeaveLike {
+  person: string;
+  start: string;
+  end: string;
+  kind: LeaveKind;
+}
+
+/** 사람별로 묶은 휴가 — 계산마다 전체를 훑지 않게. */
+export type LeaveIndex = Map<string, LeaveLike[]>;
+
+export function indexLeaves(leaves: readonly LeaveLike[]): LeaveIndex {
+  const m: LeaveIndex = new Map();
+  for (const l of leaves) m.set(l.person, [...(m.get(l.person) ?? []), l]);
+  return m;
+}
+
+/** 그날 그 사람이 **일하는 몫** — 휴가 없음 1 · 반차 0.5 · 종일 0(같은 날 오전 + 오후 반차도 0). */
+export function leaveWeight(lv: LeaveIndex | undefined, person: string, d: string): number {
+  const list = lv?.get(person);
+  if (!list) return 1;
+  let off = 0;
+  for (const l of list) {
+    if (l.start > d || l.end < d) continue;
+    if (l.kind === 'full') return 0;
+    off += 0.5;
+  }
+  return Math.max(0, 1 - off);
+}
+
+/** 그 사람의 영업일(반차 0.5) — 진행률·맞춰보기의 분모. 회사 영업일(`biz.length`)과 다르다. */
+export const personBizDays = (lv: LeaveIndex | undefined, person: string, biz: readonly string[]) => biz.reduce((a, d) => a + leaveWeight(lv, person, d), 0);
+
+/** 그 영업일들 안의 휴가 일수(반차 0.5) — 주말·공휴일에 걸친 휴가는 세지 않는다. */
+export const leaveDaysIn = (lv: LeaveIndex | undefined, person: string, biz: readonly string[]) => biz.length - personBizDays(lv, person, biz);
+
+/** 그날 휴가인 사람들(종류와 함께) — 달력 휴가 줄·패널. */
+export function leavesOn<T extends LeaveLike>(leaves: readonly T[], d: string): T[] {
+  return leaves.filter((l) => l.start <= d && d <= l.end);
+}
+
 // ── 진행 일수 ────────────────────────────────────────────────────────
 
 const WORKED: TicketStatus[] = ['doing', 'done'];
@@ -237,11 +282,12 @@ const WORKED: TicketStatus[] = ['doing', 'done'];
  * 그 사람(과 그 에픽)의 **진행 중·완료 티켓이 걸친 영업일의 합집합**(스펙 §2.3).
  * 같은 날 여러 티켓은 1일이다.
  */
-export function workedDays(tickets: Ticket[], biz: string[], personId: string, epicKey?: string): number {
+export function workedDays(tickets: Ticket[], biz: string[], personId: string, epicKey?: string, lv?: LeaveIndex): number {
   const s = new Set<string>();
   for (const t of tickets) {
     if (t.person.id !== personId || (epicKey && t.epic !== epicKey) || !WORKED.includes(t.status)) continue;
-    for (const d of biz) if (activeOn(t, d)) s.add(d);
+    // 종일 휴가인 날은 일한 날이 아니다 — 반차는 1일로 센다(하루라도 일했다 · 휴가 스펙 §2.1).
+    for (const d of biz) if (activeOn(t, d) && leaveWeight(lv, personId, d) > 0) s.add(d);
   }
   return s.size;
 }
@@ -251,6 +297,10 @@ export interface StatRow {
   cells: { epic: Epic; days: number }[];
   total: number;
   pct: number;
+  /** 그 사람의 영업일(휴가를 뺀 — 반차 0.5) — `pct`의 분모. */
+  biz: number;
+  /** 그 달 휴가 일수(반차 0.5). */
+  leave: number;
 }
 
 export interface Stats {
@@ -262,11 +312,12 @@ export interface Stats {
   totalSum: number;
 }
 
-export function computeStats(people: Person[], epics: Epic[], tickets: Ticket[], biz: string[]): Stats {
+export function computeStats(people: Person[], epics: Epic[], tickets: Ticket[], biz: string[], lv?: LeaveIndex): Stats {
   const rows = people.map((person) => {
-    const cells = epics.map((epic) => ({ epic, days: workedDays(tickets, biz, person.id, epic.key) }));
-    const total = workedDays(tickets, biz, person.id);
-    return { person, cells, total, pct: biz.length ? Math.round((total / biz.length) * 100) : 0 };
+    const cells = epics.map((epic) => ({ epic, days: workedDays(tickets, biz, person.id, epic.key, lv) }));
+    const total = workedDays(tickets, biz, person.id, undefined, lv);
+    const own = personBizDays(lv, person.id, biz);
+    return { person, cells, total, pct: own ? Math.round((total / own) * 100) : 0, biz: own, leave: biz.length - own };
   });
   const foot = epics.map((_, i) => rows.reduce((a, r) => a + (r.cells[i]?.days ?? 0), 0));
   return { rows, foot, grand: foot.reduce((a, b) => a + b, 0), totalSum: rows.reduce((a, r) => a + r.total, 0) };
@@ -353,7 +404,10 @@ export const AVAIL_LABEL = ['전부 가능', '일부 겹침', '거의 불가', '
 
 export interface AvailRow {
   person: Person;
+  /** 그 사람이 일할 수 있는 날(기간 영업일 − 휴가일 — 반차일은 일할 수 있는 날로 남는다). */
   total: number;
+  /** 기간 안 휴가 일수(반차 0.5). */
+  leave: number;
   busy: number;
   free: number;
   ratio: number;
@@ -366,19 +420,21 @@ export interface AvailRow {
  * 레벨: 0 전부 가능(바쁨 0) / 1 일부 겹침(여유 ≥ 50%) / 2 거의 불가(여유 > 0) / 3 불가.
  * 정렬: 레벨 오름차순 → 여유 내림차순.
  */
-export function availability(people: Person[], tickets: Ticket[], biz: string[]): AvailRow[] {
+export function availability(people: Person[], tickets: Ticket[], biz: string[], lv?: LeaveIndex): AvailRow[] {
   const from = biz[0];
   const to = biz[biz.length - 1];
   return people
     .map((person) => {
+      // 분모는 그 사람이 쉬지 않는 날만(휴가 스펙 §2.1) — 바쁨도 그 안에서만 센다. 분모 0이면 불가.
+      const days = biz.filter((d) => leaveWeight(lv, person.id, d) > 0);
       const mine = from && to ? tickets.filter((t) => t.person.id === person.id && t.status !== 'done' && overlaps(t, from, to)) : [];
       const busySet = new Set<string>();
-      for (const t of mine) for (const d of biz) if (activeOn(t, d)) busySet.add(d);
+      for (const t of mine) for (const d of days) if (activeOn(t, d)) busySet.add(d);
       const busy = busySet.size;
-      const free = biz.length - busy;
-      const ratio = biz.length ? free / biz.length : 0;
-      const level: AvailLevel = busy === 0 ? 0 : ratio >= 0.5 ? 1 : ratio > 0 ? 2 : 3;
-      return { person, total: biz.length, busy, free, ratio, level, conflicts: mine.sort((a, b) => a.start.localeCompare(b.start)) };
+      const free = days.length - busy;
+      const ratio = days.length ? free / days.length : 0;
+      const level: AvailLevel = !days.length ? 3 : busy === 0 ? 0 : ratio >= 0.5 ? 1 : ratio > 0 ? 2 : 3;
+      return { person, total: days.length, leave: leaveDaysIn(lv, person.id, biz), busy, free, ratio, level, conflicts: mine.sort((a, b) => a.start.localeCompare(b.start)) };
     })
     .sort((a, b) => a.level - b.level || b.free - a.free || a.person.name.localeCompare(b.person.name, 'ko'));
 }

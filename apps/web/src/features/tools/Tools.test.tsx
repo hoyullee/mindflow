@@ -6,6 +6,7 @@ import { Home } from '../home/Home';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { resetToolPrefs } from './toolPrefsStore';
 import { resetJiraStore } from './jira/jiraStore';
+import { resetLeavesForTest } from './jira/leavesStore';
 import { monthBiz } from './workstatus/model';
 import { demoJira, shiftMonths } from './jira/jiraDemo';
 
@@ -46,6 +47,7 @@ beforeEach(() => {
   sessionStorage.clear();
   resetToolPrefs();
   resetJiraStore();
+  resetLeavesForTest();
   mockMatchMedia(false);
 });
 
@@ -218,6 +220,62 @@ describe('작업 현황', () => {
     await wait(() => q('[data-ws-issue="PAY-101"]'));
     await user.click(within(q('[data-ws-issue]')!).getByRole('button', { name: '닫기' }));
     await waitFor(() => expect(q('[data-ws-issue]')).toBeNull());
+  });
+
+  it('담당자 휴가 — 달력 휴가 줄 · 타임라인 띠와 겹침 경고 · 집계 분모 · 패널 「이 날 휴가」', async () => {
+    const user = await open();
+    const now = new Date();
+    const d = shiftMonths('2026-09-22', now.getFullYear() * 12 + now.getMonth() - (2026 * 12 + 8));
+    // 샘플(휴가 스펙 §11): 김서연 22~23 종일 — 달력 칸에 휴가 줄, 패널에 「이 날 휴가」
+    await wait(() => q(`[data-ws-leave-row="${d}"]`));
+    await user.click(q(`[data-ws-day="${d}"]`)!);
+    await wait(() => q('[data-ws-panel-leave-person="demo-p2"]'));
+    // 타임라인 — 김서연 행에 빗금 띠, 휴가와 겹치는 진행 중 PAY-104에 경고 테두리
+    await user.click(screen.getByRole('radio', { name: '타임라인' }));
+    await wait(() => q('[data-ws-tl-leave="demo-lv1"]'));
+    expect(q('[data-ws-bar="PAY-104"]')?.getAttribute('data-ws-bar-warn')).toBe('1');
+    expect(q('[data-ws-bar="PAY-104"]')?.title).toContain('휴가 기간과 겹쳐요');
+    expect(q('[data-ws-bar="PAY-103"]')?.getAttribute('data-ws-bar-warn')).toBeNull();
+    // 집계 — 그 사람의 영업일
+    await user.click(screen.getByRole('radio', { name: '집계' }));
+    // 샘플을 이번 달로 옮기므로 22·23일이 주말·공휴일일 수 있다 — 그 달의 영업일로 기대값을 센다(시계 의존 주의).
+    const biz = monthBiz(Number(d.slice(0, 4)), Number(d.slice(5, 7)), { country: 'KR', weekend: false, exceptions: [], company: [] }).biz;
+    const off = biz.filter((x) => x === d || x === shiftMonths('2026-09-23', now.getFullYear() * 12 + now.getMonth() - (2026 * 12 + 8))).length;
+    await wait(() => q('[data-ws-stats]'));
+    if (off) {
+      expect(q('[data-ws-stat-leave="demo-p2"]')?.textContent).toBe(`휴가 ${off}일 · 영업일 ${biz.length - off}`);
+      expect(q('[data-ws-stats-leave]')).toBeTruthy();
+    } else expect(q('[data-ws-stat-leave="demo-p2"]')).toBeNull();
+  });
+
+  it('담당자 휴가 — 맞춰보기의 `휴가`가 기간을 채운 폼을 열고, 내가 등록한 것만 고치고 지운다', async () => {
+    const user = await open();
+    await user.click(q('[data-ws-avail-btn]')!);
+    await user.click(await wait(() => q('[data-ws-avail-leave-btn="demo-p1"]')));
+    // 맞춰보기는 닫히고 담당자 팝오버에 그 사람의 폼이 기간을 채운 채
+    const form = await wait(() => q('[data-ws-leave-form="demo-p1"]'));
+    expect(q('[data-ws-avail]')).toBeNull();
+    expect(form.querySelector('[data-ws-leave-sum]')?.textContent).toMatch(/영업일 \d+일/);
+    await user.type(form.querySelector('[data-ws-leave-note]')!, '연차');
+    await user.click(form.querySelector('[data-ws-leave-submit]')!);
+    await waitFor(() => expect(q('[data-tool-toast]')?.textContent).toContain('이호율 님 휴가를 등록했어요'));
+    expect(q('[data-ws-leave-form]')).toBeNull();
+    const chip = await wait(() => q('[data-ws-leave-chips="demo-p1"] [data-ws-leave-chip]'));
+    expect(chip.getAttribute('data-mine')).toBe('1');
+    // 고치기 — 칩을 누르면 같은 폼이 그 값으로
+    await user.click(within(chip).getByRole('button', { name: /고치기/ }));
+    const edit = await wait(() => q('[data-ws-leave-form="demo-p1"]'));
+    expect((edit.querySelector('[data-ws-leave-note]') as HTMLInputElement).value).toBe('연차');
+    expect(edit.querySelector('[data-ws-leave-submit]')?.textContent).toBe('저장');
+    await user.clear(edit.querySelector('[data-ws-leave-note]')!);
+    await user.type(edit.querySelector('[data-ws-leave-note]')!, '가족 행사');
+    await user.click(edit.querySelector('[data-ws-leave-submit]')!);
+    await waitFor(() => expect(q('[data-tool-toast]')?.textContent).toContain('휴가를 고쳤어요'));
+    await waitFor(() => expect(q('[data-ws-leave-chips="demo-p1"]')?.textContent).toContain('가족 행사'));
+    // 지우기
+    await user.click(within(q('[data-ws-leave-chips="demo-p1"]')!).getByRole('button', { name: /지우기/ }));
+    await waitFor(() => expect(q('[data-ws-leave-chips="demo-p1"]')).toBeNull());
+    expect(q('[data-tool-toast]')?.textContent).toContain('이호율 님 휴가를 지웠어요');
   });
 
   it('세 보기가 같은 데이터를 본다 — 달력 칩 · 타임라인 막대 · 집계 행', async () => {
