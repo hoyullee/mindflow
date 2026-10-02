@@ -107,4 +107,13 @@ describe('공책 본문 · 첨부 파일', () => {
       LocalFileStore.prototype.upload = orig;
     }
   });
+
+  it('빈 「파일 고르기」 자리에 끌어 놓으면 **그 자리가** 파일이 된다(Enter로 고른 `/파일`)', async () => {
+    localStorage.setItem('mindflow_doc_nf6', JSON.stringify(noteWith([{ id: 'f0', kind: 'file' }, { id: 'b2', kind: 'p', runs: [{ t: '끝', b: false, c: null }] }])));
+    const { container } = renderEditor('/editor?map=nf6&title=x');
+    await waitFor(() => expect(container.querySelector('[data-file-pick]')).toBeTruthy());
+    fireEvent.drop(container.querySelector('[data-file-pick]')!, { dataTransfer: { files: [new File(['abc'], '회의록.docx')], types: ['Files'] } });
+    await waitFor(() => expect(container.querySelector('[data-file-block="f0"][data-file-state="ready"]')).toBeTruthy());
+    expect(container.querySelectorAll('[data-file-block]').length).toBe(1);
+  });
 });

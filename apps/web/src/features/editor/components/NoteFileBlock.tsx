@@ -74,6 +74,47 @@ export function NoteFileBlock({
     }
   };
 
+  /**
+   * **빈 자리**(이름도 id도 없다) — Enter로 고른 `/파일`이 세운 자리다(`placeNoteUpload`). 고르개를
+   * 마우스로 열게 한다(키보드로 곧장 열면 Windows에서 열기 창 위의 포인터가 숨는다). 여기에 끌어
+   * 놓아도 된다(본문의 끌어 놓기가 빈 자리를 바꾼다).
+   */
+  if (!upload && !block.fileId && !block.fileName) {
+    return (
+      <div data-note-block={block.id} data-note-kind="file" style={flow}>
+        <button
+          type="button"
+          data-file-pick
+          data-upload-pick
+          disabled={controller.readOnly}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => controller.promptNoteFiles({ replace: block.id })}
+          className="btn"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            width: '100%',
+            height: 64,
+            borderRadius: 12,
+            border: `1.5px dashed ${picked ? 'var(--mf-accent-mute)' : 'var(--mf-border)'}`,
+            background: 'transparent',
+            color: 'var(--mf-muted)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            cursor: controller.readOnly ? 'default' : 'pointer',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.5 11.5 12.4 19.6a5 5 0 0 1-7.1-7.1l8.3-8.3a3.3 3.3 0 0 1 4.7 4.7l-8.3 8.3a1.7 1.7 0 0 1-2.4-2.4l7.6-7.6" />
+          </svg>
+          파일 고르기 · 또는 여기로 끌어 놓기
+        </button>
+      </div>
+    );
+  }
+
   const sub = upload
     ? upload.error
       ? fileUploadMessage(upload.error as FileUploadError)
