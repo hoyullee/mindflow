@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEventStore } from '../../../adapters/BackendContext';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
-import { notifyCalendarChanged } from '../../reminders/calendarChanged';
+import { notifyCalendarChanged, onCalendarChanged } from '../../reminders/calendarChanged';
 import { gridRange } from './model';
 import { useLiveRefresh } from './useLiveRefresh';
 
@@ -68,6 +68,22 @@ export function useCalendarEvents(y: number, m: number, enabled = true): Calenda
   // 열어 둔 채 **다른 기기에서** 바뀐 일정도 잡는다(제보) — 탭 복귀·주기 갱신.
   useLiveRefresh(enabled, () => run(true));
 
+  // **같은 탭의 다른 화면이 고친 것**도 곧바로 받는다(제보: 일정 화면에서 이번 주 일정을
+  // 만들어도 LNB `일정` 부제는 다음 주기까지 그대로였다 — 이 훅은 화면마다 따로 산다).
+  // 내가 낸 신호는 넘긴다 — 쓰기는 이미 스스로 다시 받는다(`reload()`).
+  const selfRef = useRef(false);
+  useEffect(() => onCalendarChanged(() => {
+    if (!selfRef.current) run(true);
+  }), [run]);
+  const announce = (): void => {
+    selfRef.current = true;
+    try {
+      notifyCalendarChanged();
+    } finally {
+      selfRef.current = false;
+    }
+  };
+
   return {
     events,
     loading,
@@ -79,21 +95,21 @@ export function useCalendarEvents(y: number, m: number, enabled = true): Calenda
       const res = await eventStore.create(input);
       if (res.error) return res.error;
       reload();
-      notifyCalendarChanged();
+      announce();
       return null;
     },
     update: async (id, patch) => {
       const res = await eventStore.update(id, patch);
       if (res.error) return res.error;
       reload();
-      notifyCalendarChanged();
+      announce();
       return null;
     },
     remove: async (id) => {
       const res = await eventStore.remove(id);
       if (res.error) return res.error;
       reload();
-      notifyCalendarChanged();
+      announce();
       return null;
     },
   };

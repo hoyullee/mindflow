@@ -318,6 +318,21 @@ describe('일정 화면', () => {
     await waitFor(() => expect(document.querySelector('[data-cal-summary]')!.textContent).toBe('오늘 · 팀 워크숍'));
   });
 
+  it('LNB `일정` 부제는 일정 화면에서 방금 만든 일정을 **곧바로** 부른다 — 다음 주기를 기다리지 않는다(제보)', async () => {
+    renderHome([], {});
+    await openCalendar();
+    const sum = (): string => document.querySelector('[data-cal-summary]')!.textContent ?? '';
+    await waitFor(() => expect(sum()).toBe('이번 주 일정 없음'));
+    // 일정 화면의 훅과 LNB의 훅은 따로 산다 — 쓰기 신호(`notifyCalendarChanged`)가 LNB를 깨운다.
+    fireEvent.click(document.querySelector('[data-cal-new]')!);
+    await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeTruthy());
+    expect(document.querySelector('[data-new-allday]')!.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '방금 만든 워크숍' } });
+    fireEvent.click(document.querySelector('[data-new-submit]')!);
+    await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
+    await waitFor(() => expect(sum()).toBe('오늘 · 방금 만든 워크숍'));
+  });
+
   it('LNB `일정` 부제 — 칸반 마감도 일정도 없으면 「이번 주 일정 없음」', async () => {
     renderHome([], {});
     await waitFor(() => expect(document.querySelector('[data-cal-summary]')).toBeTruthy());

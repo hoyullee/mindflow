@@ -29,7 +29,7 @@ import { DateButton, PillButton } from './DatePop';
 import { SpanBar } from './SpanBar';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, hhmm, minutesOf, nextTimeSlot, timeLabel, todayISO } from './model';
-import { destChipStyle, destDotStyle, QUICK_MINUTES } from './NewEventModal';
+import { destChipStyle, destDotStyle, destNameStyle, QUICK_MINUTES } from './NewEventModal';
 import { ReminderField } from './GoogleEventFields';
 import { EventColorField, type EventColorOption } from './eventColor';
 import { MapLink } from './fieldBits';
@@ -484,9 +484,9 @@ export function EventDetail({
               <Label>저장할 캘린더</Label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                 {calendarChips.map((c) => (
-                  <span key={c.key} data-event-cal={c.key} aria-disabled={!c.on} style={{ ...destChipStyle(c.on, c.color), cursor: 'default', ...(c.on ? {} : { opacity: 0.5 }) }}>
+                  <span key={c.key} data-event-cal={c.key} aria-disabled={!c.on} title={c.name} style={{ ...destChipStyle(c.on, c.color), cursor: 'default', ...(c.on ? {} : { opacity: 0.5 }) }}>
                     <span style={destDotStyle(c.color)} />
-                    {c.name}
+                    <span style={destNameStyle}>{c.name}</span>
                   </span>
                 ))}
               </div>

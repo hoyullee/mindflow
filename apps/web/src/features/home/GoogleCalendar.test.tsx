@@ -23,7 +23,7 @@ import { gridRange, isoOf, partsOf } from './calendar/model';
 import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_DIRECTORY, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
 import { GOOGLE_EVENT_COLORS } from './calendar/googleCalendar';
 import { clearGoogleSessionCache, googlePrefsOf, useGoogleCalendar } from './calendar/useGoogleCalendar';
-import { onCalendarChanged } from '../reminders/calendarChanged';
+import { notifyCalendarChanged, onCalendarChanged } from '../reminders/calendarChanged';
 
 /**
  * 클라이언트 ID는 `import.meta.env`에서 오는데 Vite가 그 값을 **변환 시점에 굳혀**
@@ -885,6 +885,20 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(events[0]).toContain(`timeMin=${encodeURIComponent(`${from}T00:00:00Z`)}`);
     expect(events[0]).toContain(`timeMax=${encodeURIComponent(`${to}T23:59:59Z`)}`);
     expect(urls.length).toBe(urls.filter((u) => u.includes('/calendarList') || u.includes('/colors') || u.includes('/events?')).length);
+  });
+
+  it('다른 화면이 일정을 고치면(쓰기 신호) LNB도 이번 달 구글 일정을 곧바로 다시 받는다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const f = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    renderHome();
+    const eventCalls = (): number => f.mock.calls.filter(([u]) => String(u).includes('/events?')).length;
+    await waitFor(() => expect(eventCalls()).toBe(1));
+    // 일정 화면·공책의 쓰기는 이 신호를 낸다 — 예전에는 LNB가 다음 주기(60초)까지 그대로였다.
+    act(() => notifyCalendarChanged());
+    await waitFor(() => expect(eventCalls()).toBe(2));
   });
 
   it('블롭에는 고른 캘린더만 남는다 — "켰는가"는 키의 존재가 말한다', async () => {
@@ -2202,10 +2216,14 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
     await user.click(screen.getByText('새 일정'));
     await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
-    // **어느 것이 내 캘린더인지 칩이 말한다**(제보 1) — 구글은 주최자를 그 일정이 사는
-    // 캘린더의 주인으로 정하므로, 팀 캘린더를 골랐다는 것을 모르면 "주최자가 내가
-    // 아니다"가 된다. 쓸 수 있는 남의 캘린더도 목적지로 올라오기 때문이다.
-    expect(document.querySelector('[data-new-cal="me@example.com"] [data-new-cal-mine]')?.textContent).toBe('내 캘린더');
+    // **어느 것이 내 캘린더인지는 툴팁이 말한다**(제보 1) — 구글은 주최자를 그 일정이 사는
+    // 캘린더의 주인으로 정한다. 칩 안의 「내 캘린더」 글자는 긴 주소와 함께 칩을 깨뜨려
+    // 뺐다(요청) — 이름은 말줄임 상자에 담긴다.
+    const mine = document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!;
+    // (이 테스트의 주 캘린더 이름이 마침 「내 캘린더」라 글자가 아니라 덧붙던 배지로 본다.)
+    expect(mine.querySelector('[data-new-cal-mine]')).toBeNull();
+    expect(mine.getAttribute('title')).toMatch(/ · 내 캘린더$/);
+    expect((mine.lastElementChild as HTMLElement).style.textOverflow).toBe('ellipsis');
     await user.type(screen.getByLabelText('일정 제목'), '팀 회의');
     await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
     await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
