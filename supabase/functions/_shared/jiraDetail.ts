@@ -136,7 +136,7 @@ export function adfToText(doc: unknown): string {
       case 'mention':
         return str(attrs?.text) ?? '@';
       case 'emoji':
-        return str(attrs?.text) ?? str(attrs?.shortName) ?? '';
+        return emojiChar(attrs) ?? str(attrs?.shortName) ?? '';
       case 'inlineCard':
         return str(attrs?.url) ?? '';
       case 'status':
@@ -429,7 +429,9 @@ export function pruneAdf(doc: unknown, maxNodes = 3000): AdfNode | null {
       const attrs: Record<string, string | number | boolean> = {};
       for (const k of Object.keys(a)) {
         const v = a[k];
-        if (KEEP_ATTRS.has(k) && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) attrs[k] = typeof v === 'string' ? v.slice(0, 500) : v;
+        // 이모지의 `id`는 유니코드 번호(`2705`)나 Atlassian 이름이라 남긴다 — 다른 노드의 `id`(미디어·사용자)는 버린다.
+        const keep = KEEP_ATTRS.has(k) || (type === 'emoji' && k === 'id');
+        if (keep && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) attrs[k] = typeof v === 'string' ? v.slice(0, 500) : v;
       }
       if (Object.keys(attrs).length) out.attrs = attrs;
     }
@@ -441,4 +443,33 @@ export function pruneAdf(doc: unknown, maxNodes = 3000): AdfNode | null {
   };
   const r = walk(root);
   return r && r.content?.length ? r : null;
+}
+
+/**
+ * Atlassian **전용 이모지**(`atlassian-check_mark` · `:check_mark:`)를 같은 뜻의 유니코드로. 이들은 그림만 있고
+ * 유니코드 번호가 없어 문서에 이름만 온다(제보 2026-10-02: 표에 `:check_mark:` 글자가 그대로 보였다).
+ * 체크·엑스는 화면이 Jira와 같은 둥근 그림으로 따로 그린다(`AdfView`).
+ */
+export const ATLASSIAN_EMOJI: Record<string, string> = {
+  check_mark: '✅', cross_mark: '❌', error: '⛔', warning: '⚠️', info: 'ℹ️', question: '❓', question_mark: '❓',
+  light_bulb_on: '💡', light_bulb_off: '💡', flag_on: '🚩', flag_off: '🏳️', thumbs_up: '👍', thumbs_down: '👎',
+  plus: '➕', minus: '➖', yellow_star: '⭐', red_star: '⭐', green_star: '⭐', blue_star: '⭐', star_on: '⭐', star_off: '☆',
+  smile: '🙂', sad: '🙁', wink: '😉', tongue: '😛', laugh: '😄', biggrin: '😄', heart: '❤️', broken_heart: '💔',
+};
+
+/** 이모지 노드 → 글자. ① 원본 글(`text`) ② `id`의 유니코드 번호(`1f468-200d-1f4bb`) ③ Atlassian 이름. 모르면 null. */
+export function emojiChar(attrs: Record<string, unknown> | null | undefined): string | null {
+  const text = typeof attrs?.text === 'string' ? attrs.text : '';
+  // 원본 글이 실제 그림 글자면 그대로(`:name:` 꼴은 글자가 아니다).
+  if (text && !/^:[\w+-]+:$/.test(text)) return text;
+  const id = typeof attrs?.id === 'string' ? attrs.id : '';
+  if (/^[0-9a-f]{2,6}(-[0-9a-f]{2,6})*$/i.test(id)) {
+    try {
+      return String.fromCodePoint(...id.split('-').map((h) => parseInt(h, 16)));
+    } catch {
+      /* 잘못된 번호 — 아래로 */
+    }
+  }
+  const name = (id.startsWith('atlassian-') ? id.slice(10) : '') || (typeof attrs?.shortName === 'string' ? attrs.shortName.replace(/^:|:$/g, '') : '');
+  return ATLASSIAN_EMOJI[name] ?? null;
 }

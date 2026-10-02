@@ -5911,3 +5911,9 @@ main fast-forward(`c11feab`) 13초 전에 다른 세션의 main 푸시(`ee0c3f9`
 ### 트레이드오프
 - 시트를 열면 이번 달 Jira 조회가 한 번 돈다(5분 캐시 · 작업 현황과 공유 — 바로 들어가면 화면은 이미 받은 값을 쓴다).
 - 탭이 다섯이 되어 탭 폭이 74px로 줄었다(넷일 때 92px). 글자는 그대로 들어간다.
+
+## Jira 티켓 상세 — 본문의 이모지 (2026-10-02)
+
+**제보**: Jira에서 초록 체크(✔)로 보이는 칸이 `:check_mark:` 글자로 보인다. **원인**: ADF 이모지 노드는 `shortName`·`id`·`text`를 든다 — 일반 이모지는 `id`가 유니코드 번호(`1f44d`)지만 **Atlassian 전용 이모지**(`atlassian-check_mark`)는 그림만 있고 글자가 없어 `text`도 `:check_mark:`다. 우리는 `text ?? shortName`을 그대로 찍었고, 줄일 때 `id`까지 버렸다.
+**결정**: `pruneAdf`가 **이모지의 `id`만** 남긴다(다른 노드의 id — 미디어·사용자 — 는 여전히 버린다). `emojiChar`: ① 실제 그림 글자인 `text` ② `id`의 유니코드 번호(ZWJ 묶음 포함) ③ Atlassian 이름 → 같은 뜻의 유니코드(`check_mark ✅` · `cross_mark ❌` · `warning ⚠️` · `info ℹ️` · `light_bulb 💡` · `flag 🚩` · 별·엄지·웃음 등). 화면(`AdfView`)은 Atlassian **체크·엑스만** Jira와 같은 **둥근 그림**(초록/빨강 원 + 흰 표시, 글자 크기 따라감 — 유니코드 ✅는 네모라 달라 보인다). 줄글 대체 표시도 같은 함수. Atlassian 이모지 그림 자체는 받지 않는다(별도 이모지 API·권한이 필요하고, 사이트 고유 이모지는 이름만 남는다).
+**검증**: `jiraDetail.test.ts`(원본 글·번호·ZWJ·Atlassian 이름·모르는 이름 · 줄일 때 이모지 id만), `AdfView.test.tsx`(체크는 둥근 그림 · 👍는 글자). tools 97건 · lint · typecheck. **배포**: 함수 `jira` 재배포(이모지 `id`).

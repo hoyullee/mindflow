@@ -38,4 +38,10 @@ describe('AdfView', () => {
     expect(container.querySelector('th')?.textContent).toBe('머리');
     expect(container.textContent).toContain('나쁜');
   });
+  it('Atlassian 체크는 둥근 그림 · 일반 이모지는 글자', () => {
+    const doc: AdfNode = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '김윤명 ' }, { type: 'emoji', attrs: { id: 'atlassian-check_mark', shortName: ':check_mark:' } }, { type: 'emoji', attrs: { id: '1f44d', shortName: ':thumbsup:' } }] }] };
+    const { container } = render(<AdfView doc={doc} />);
+    expect(container.querySelector('svg[aria-label=":check_mark:"]')).toBeTruthy();
+    expect(container.textContent).toBe('김윤명 👍');
+  });
 });
