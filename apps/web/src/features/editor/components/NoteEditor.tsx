@@ -3774,7 +3774,10 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
               const blocks = controller.notePage?.blocks ?? [];
               const id = host?.getAttribute('data-note-block') ?? blocks[blocks.length - 1]?.id ?? '';
               const cur = blocks.find((b) => b.id === id);
-              const empty = !!cur && cur.kind === 'p' && blockText(cur) === '';
+              // 빈 문단 · 아직 아무것도 없는 이미지/파일 자리(Enter로 고른 `/이미지`·`/파일`)는 **그 자리를 바꾼다**.
+              const empty =
+                !!cur &&
+                ((cur.kind === 'p' && blockText(cur) === '') || (cur.kind === 'img' && !cur.src) || (cur.kind === 'file' && !cur.fileId && !cur.fileName));
               const images = files.filter((f) => f.type.startsWith('image/'));
               const others = files.filter((f) => !f.type.startsWith('image/'));
               const after: NoteInsertAt = id ? { after: id } : {};
@@ -4012,7 +4015,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 query={slashQuery}
                 inline={slashAtChar !== null}
                 onClose={closeSlash}
-                onPick={(kind) => {
+                onPick={(kind, viaKey) => {
                   /**
                    * **고른 뒤에도 남는 글**(요청) — `/질의`만 뺀 나머지다. 이미 쓰인 글
                    * 앞에서 열 수 있게 되면서 이 값이 판단의 기준이 됐다: 글을 담는
@@ -4124,18 +4127,30 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                    * 고른 뒤에 넣는다. 빈 줄에서 골랐으면 그 줄을 이미지로 바꾸고, 글이
                    * 있는 줄이면 그 **아래**에 넣는다(쓰던 글을 잃지 않는다).
                    */
-                  if (kind === 'img') {
-                    // 목록의 **가운데 항목**에서 골랐으면 그 자리에서 가른다(요청 3).
+                  if (kind === 'img' || kind === 'file') {
+                    // 목록의 **가운데 항목**에서 골랐으면 그 자리에서 가른다(요청 3). 파일도 같은 자리 규칙.
                     const gap = listGapOf(page, slashFor);
-                    controller.promptNoteImage(gap ? { after: gap.id, intoList: gap } : replaces ? { replace: id } : { after: id });
+                    const at = gap ? { after: gap.id, intoList: gap } : replaces ? { replace: id } : { after: id };
                     closeSlash();
-                    return;
-                  }
-                  // 파일도 고르개부터 — 이미지와 같은 자리 규칙.
-                  if (kind === 'file') {
-                    const gap = listGapOf(page, slashFor);
-                    controller.promptNoteFiles(gap ? { after: gap.id, intoList: gap } : replaces ? { replace: id } : { after: id });
-                    closeSlash();
+                    /**
+                     * **Enter로 골랐으면 고르개를 바로 열지 않는다**(제보 · 영상: 열기 창에서 마우스 포인터가
+                     * 안 보였다). Windows는 글을 치는 동안 포인터를 숨기고, 마우스가 움직여야 되살린다 — 그런데
+                     * 열기 창이 떠 있는 동안 앱 창은 마우스를 받지 못해 창을 닫을 때까지 숨은 채였다(프로필 사진은
+                     * 마우스로 눌러 여니 멀쩡했다). 그래서 「올리기」 단추가 든 빈 자리를 세우고 거기에 초점을 둔다 —
+                     * 마우스로 누르면 그 움직임이 포인터를 되살리고, 끌어 놓기·붙여넣기도 그 자리에 들어간다.
+                     * 마우스로 고른 경우는 예전처럼 곧바로 연다.
+                     */
+                    if (viaKey) {
+                      const made = controller.placeNoteUpload(kind, at);
+                      if (made) {
+                        const go = (): void => document.querySelector<HTMLElement>(`[data-note-block="${made}"] [data-upload-pick]`)?.focus({ preventScroll: true });
+                        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+                        else setTimeout(go, 0);
+                      }
+                      return;
+                    }
+                    if (kind === 'img') controller.promptNoteImage(at);
+                    else controller.promptNoteFiles(at);
                     return;
                   }
                   // 문서 링크도 **고르개부터**(요청) — 고르지 않으면 아무 자리도 만들지 않는다.
@@ -10861,6 +10876,7 @@ function ImageBlock({ controller, block, picked, onlyPicked, pickObject }: { con
         <button
           type="button"
           data-note-image-pick
+          data-upload-pick
           disabled={readOnly}
           /* 고르개는 **손으로 만들어** 연다 — 트리 안의 숨은 입력은 고르개가 떠 있는
              동안 본문이 다시 그려지면 갈려서 `change`가 닿지 않는다(`promptNoteImage`). */
@@ -11794,7 +11810,8 @@ function SlashMenu({
   query: string;
   /** 본문에서 `/`로 열렸는가 — 그때는 키보드가 본문에 있으므로 우리가 가로챈다. */
   inline: boolean;
-  onPick: (kind: SlashKind) => void;
+  /** `viaKey` — Enter·Tab으로 골랐는가(마우스면 false). 고르개를 여는 종류가 이것으로 갈린다. */
+  onPick: (kind: SlashKind, viaKey?: boolean) => void;
   onClose: () => void;
 }) {
   // 바깥을 누르면 닫힌다(제보) — 목록 안의 누름은 뿌리에서 막는다. **스크롤로는 닫지
@@ -11805,7 +11822,19 @@ function SlashMenu({
   const docked = useIsMobile();
   const kbInset = useKeyboardInset();
   const q = query.trim().toLowerCase();
-  const hits = SLASH_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q));
+  /**
+   * **이름이 맞은 것이 먼저**다(제보 곁가지: `/파일`을 치고 Enter를 누르면 「이미지」가 들어갔다 — 그 설명
+   * `파일을 올려 본문에`가 먼저 걸렸다). 이름이 그 글자로 시작 → 이름에 든다 → 설명에만 든다 순서이고,
+   * 같은 등급 안에서는 원래 목록 순서를 지킨다.
+   */
+  const rank = (t: (typeof SLASH_TYPES)[number]): number => {
+    const name = t.name.toLowerCase();
+    return name.startsWith(q) ? 0 : name.includes(q) ? 1 : 2;
+  };
+  const hits = SLASH_TYPES.filter((t) => !q || `${t.name}${t.desc}`.toLowerCase().includes(q))
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => (q ? rank(a.t) - rank(b.t) : 0) || a.i - b.i)
+    .map(({ t }) => t);
   // 묶음 머리 — 찾는 중에는 그리지 않는다(결과가 몇 개뿐인데 머리가 더 길어진다).
   const groups = q ? [{ name: '', items: hits }] : ['기본', '목록', '강조', '넣기', '일정'].map((name) => ({ name, items: hits.filter((t) => t.group === name) }));
   const [cursor, setCursor] = useState(0);
@@ -11854,7 +11883,7 @@ function SlashMenu({
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        onPick(flat[Math.min(cursor, flat.length - 1)]!.kind);
+        onPick(flat[Math.min(cursor, flat.length - 1)]!.kind, true);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();

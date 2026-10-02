@@ -1019,6 +1019,13 @@ export interface EditorController {
    * 끝나면 `fileId`가 붙는다. 진행률·실패는 `noteUploads`가 든다(문서에는 남지 않는다).
    */
   insertNoteFiles: (files: File[], at?: NoteInsertAt) => void;
+  /**
+   * 고르개를 **열지 않고** 빈 이미지·파일 블록(「올리기」 단추가 든 자리)만 세운다 — 키보드(Enter)로 고른
+   * `/이미지`·`/파일`의 길이다. Windows는 글을 치는 동안 마우스 포인터를 숨기는데, 그 상태로 OS 열기 창이
+   * 뜨면 창이 닫힐 때까지 앱 위에서 포인터가 돌아오지 않는다(제보 · 영상). 단추를 마우스로 누르게 하면
+   * 그 움직임이 포인터를 되살린다. 세운 블록 id를 돌려준다.
+   */
+  placeNoteUpload: (kind: 'img' | 'file', at?: NoteInsertAt) => string | null;
   /** 파일 고르개를 열고 고른 것들을 첨부한다(`/파일`). */
   promptNoteFiles: (at?: NoteInsertAt) => void;
   /** 실패한 올리기를 같은 파일로 다시. */
@@ -8415,6 +8422,18 @@ export function useEditorState(): EditorController {
     [addNoteBlock, commitBlock, moveNoteBlockIntoList, notePage, retypeNoteBlock, runNoteUpload],
   );
 
+  const placeNoteUpload = useCallback(
+    (kind: 'img' | 'file', at?: NoteInsertAt): string | null => {
+      if (readOnlyRef.current) return null;
+      const id = at?.replace ?? addNoteBlock(kind, at?.after);
+      if (!id) return null;
+      if (at?.replace) retypeNoteBlock(at.replace, kind);
+      if (at?.intoList) moveNoteBlockIntoList(id, at.intoList.id, at.intoList.at);
+      return id;
+    },
+    [addNoteBlock, moveNoteBlockIntoList, retypeNoteBlock],
+  );
+
   const promptNoteFiles = useCallback(
     (at?: NoteInsertAt) => {
       if (readOnlyRef.current) return;
@@ -9187,6 +9206,7 @@ export function useEditorState(): EditorController {
     insertNoteImage,
     insertNoteFiles,
     promptNoteFiles,
+    placeNoteUpload,
     retryNoteFile,
     noteUploads,
     promptNoteImage,

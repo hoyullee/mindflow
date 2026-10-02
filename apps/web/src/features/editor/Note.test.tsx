@@ -2270,6 +2270,56 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     expect(c.querySelector('[data-note-slash-panel]')!.textContent).not.toContain('블록 이름을 이어서 입력하세요');
   });
 
+  it('`/이미지`·`/파일`을 **Enter로** 고르면 고르개를 바로 열지 않고 「올리기」 자리에 초점 — Windows 포인터가 숨는 문제', async () => {
+    const opened = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      const c = await openEmpty('nqi');
+      slash(c, '/이미지');
+      await waitFor(() => expect(items(c)).toContain('img'));
+      fireEvent.keyDown(document, { key: 'Enter' });
+      await waitFor(() => expect(c.querySelector('[data-note-image-pick]')).toBeTruthy());
+      const pick = c.querySelector('[data-note-image-pick]') as HTMLElement;
+      await waitFor(() => expect(document.activeElement).toBe(pick));
+      expect(opened).not.toHaveBeenCalled();
+      // 그 자리를 **마우스로** 누르면 그제야 연다.
+      fireEvent.click(pick);
+      expect(opened).toHaveBeenCalledTimes(1);
+    } finally {
+      opened.mockRestore();
+    }
+  });
+
+  it('`/파일`도 Enter면 「파일 고르기」 자리 — 이름이 맞은 「파일」이 설명에만 든 「이미지」보다 먼저', async () => {
+    const opened = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      const c2 = await openEmpty('nqf');
+      slash(c2, '/파일');
+      // 이름이 맞은 「파일」이 먼저 — 설명에 `파일`이 든 「이미지」보다 앞이다.
+      await waitFor(() => expect(items(c2)[0]).toBe('file'));
+      fireEvent.keyDown(document, { key: 'Enter' });
+      await waitFor(() => expect(c2.querySelector('[data-file-pick]')).toBeTruthy());
+      const fpick = c2.querySelector('[data-file-pick]') as HTMLElement;
+      await waitFor(() => expect(document.activeElement).toBe(fpick));
+      expect(opened).not.toHaveBeenCalled();
+    } finally {
+      opened.mockRestore();
+    }
+  });
+
+  it('`/이미지`를 **마우스로** 고르면 예전처럼 곧바로 고르개', async () => {
+    const opened = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      const c = await openEmpty('nqm');
+      slash(c, '/이미지');
+      await waitFor(() => expect(c.querySelector('[data-note-slash-item="img"]')).toBeTruthy());
+      fireEvent.click(c.querySelector('[data-note-slash-item="img"]')!);
+      expect(opened).toHaveBeenCalledTimes(1);
+      expect(c.querySelector('[data-note-image-pick]')).toBeNull();
+    } finally {
+      opened.mockRestore();
+    }
+  });
+
   it('`/동영상`은 빈 줄을 주소 칸으로 갈고 거기에 초점 — 붙여 넣으면 바로 미리보기', async () => {
     const c = await openEmpty('nqv');
     slash(c, '/동영상');
