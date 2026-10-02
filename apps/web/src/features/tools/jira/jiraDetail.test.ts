@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adfToText, fieldOf, normalizeChildren, normalizeComments, normalizeDetail, pruneAdf, stamp } from '../../../../../../supabase/functions/_shared/jiraDetail';
+import { adfToText, emojiChar, fieldOf, normalizeChildren, normalizeComments, normalizeDetail, pruneAdf, stamp } from '../../../../../../supabase/functions/_shared/jiraDetail';
 import { ago, dueLabel } from '../workstatus/WsIssueModal';
 
 // 상세 팝업이 쓰는 순수한 부분 — Edge Function `jira`의 `issue` 동작이 같은 것을 쓴다.
@@ -125,5 +125,21 @@ describe('ADF 줄이기(원본 서식으로 그릴 문서)', () => {
     // 노드 수 상한
     const big = doc(...Array.from({ length: 50 }, (_, i) => p(t(String(i)))));
     expect(pruneAdf(big, 10)!.content!.length).toBeLessThan(10);
+  });
+});
+
+describe('이모지', () => {
+  it('원본 글 · 유니코드 번호 · Atlassian 전용 이름', () => {
+    expect(emojiChar({ text: '👍', shortName: ':thumbsup:', id: '1f44d' })).toBe('👍');
+    expect(emojiChar({ shortName: ':smile:', id: '1f604' })).toBe('😄');
+    expect(emojiChar({ id: '1f468-200d-1f4bb' })).toBe('👨‍💻');
+    expect(emojiChar({ shortName: ':check_mark:', id: 'atlassian-check_mark', text: ':check_mark:' })).toBe('✅');
+    expect(emojiChar({ shortName: ':cross_mark:' })).toBe('❌');
+    expect(emojiChar({ shortName: ':nope:' })).toBeNull();
+    expect(adfToText({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '김윤명 ' }, { type: 'emoji', attrs: { shortName: ':check_mark:', id: 'atlassian-check_mark', text: ':check_mark:' } }] }] })).toBe('김윤명 ✅');
+  });
+  it('줄일 때 이모지의 id만 남긴다', () => {
+    const d = pruneAdf({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'emoji', attrs: { id: 'atlassian-check_mark', shortName: ':check_mark:' } }, { type: 'mention', attrs: { id: 'acct', text: '@a' } }] }] });
+    expect(d!.content![0]!.content).toEqual([{ type: 'emoji', attrs: { id: 'atlassian-check_mark', shortName: ':check_mark:' } }, { type: 'mention', attrs: { text: '@a' } }]);
   });
 });

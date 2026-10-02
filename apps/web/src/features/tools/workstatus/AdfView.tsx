@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { listMarkers, type NoteListItem } from '@mindflow/mindmap-core';
-import type { AdfNode } from '../../../../../../supabase/functions/_shared/jiraDetail';
+import { emojiChar, type AdfNode } from '../../../../../../supabase/functions/_shared/jiraDetail';
 import { MONO } from './wsUi';
 
 /**
@@ -55,8 +55,13 @@ function Inline({ n }: { n: AdfNode }): ReactNode {
       return <br />;
     case 'mention':
       return <span style={{ padding: '0 4px', borderRadius: 5, background: 'var(--mf-ws-soft)', color: 'var(--mf-ws-ink)', fontWeight: 700 }}>{String(a.text ?? '@')}</span>;
-    case 'emoji':
-      return <>{String(a.text ?? a.shortName ?? '')}</>;
+    case 'emoji': {
+      // Atlassian 전용 체크·엑스는 Jira와 같은 **둥근 그림**으로(유니코드 ✅·❌는 네모라 다르게 보인다).
+      const name = String(a.id ?? '').replace(/^atlassian-/, '') || String(a.shortName ?? '').replace(/^:|:$/g, '');
+      const own = String(a.id ?? '').startsWith('atlassian-') || /^:(check_mark|cross_mark):$/.test(String(a.shortName ?? ''));
+      if (own && (name === 'check_mark' || name === 'cross_mark')) return <RoundMark ok={name === 'check_mark'} label={String(a.shortName ?? name)} />;
+      return <>{emojiChar(a) ?? String(a.shortName ?? '')}</>;
+    }
     case 'inlineCard': {
       const href = safeHref(a.url);
       return href ? (
@@ -76,6 +81,16 @@ function Inline({ n }: { n: AdfNode }): ReactNode {
     default:
       return <>{(n.content ?? []).map((k, i) => <Inline key={i} n={k} />)}</>;
   }
+}
+
+/** Atlassian의 `:check_mark:`·`:cross_mark:` — 초록·빨강 원 안의 흰 표시(글자 크기를 따른다). */
+function RoundMark({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <svg role="img" aria-label={label} width="1.15em" height="1.15em" viewBox="0 0 24 24" style={{ verticalAlign: '-0.2em', display: 'inline-block' }}>
+      <circle cx="12" cy="12" r="11" fill={ok ? '#22A06B' : '#E34935'} />
+      <path d={ok ? 'M7 12.5l3.2 3.2L17 9' : 'M8.5 8.5l7 7M15.5 8.5l-7 7'} fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 const Attach = () => <span style={{ display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 6, border: '1px solid var(--mf-ws-line2)', fontSize: 11.5, fontWeight: 700, color: 'var(--mf-ws-mut)' }}>첨부 파일 · Jira에서 보기</span>;
