@@ -143,3 +143,12 @@ describe('이모지', () => {
     expect(d!.content![0]!.content).toEqual([{ type: 'emoji', attrs: { id: 'atlassian-check_mark', shortName: ':check_mark:' } }, { type: 'mention', attrs: { text: '@a' } }]);
   });
 });
+
+describe('모든 필드의 순서', () => {
+  it('Jira 편집 화면(editmeta)의 순서를 따른다 · 없으면 받은 순서', () => {
+    const base = { key: 'SQA-1', names: { c1: '가', c2: '나', c3: '다' }, schema: { c1: { type: 'string' }, c2: { type: 'string' }, c3: { type: 'string' } }, fields: { summary: 's', c1: 'a', c2: 'b', c3: 'c' } };
+    expect(normalizeDetail(base, { start: null, end: 'duedate' })!.fields.map((x) => x.label)).toEqual(['가', '나', '다']);
+    const withMeta = { ...base, editmeta: { fields: { summary: {}, c3: {}, c1: {} } } };
+    expect(normalizeDetail(withMeta, { start: null, end: 'duedate' })!.fields.map((x) => x.label)).toEqual(['다', '가', '나']);
+  });
+});

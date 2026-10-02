@@ -6,9 +6,11 @@ import type { TicketStatus } from '../jira/jiraApi';
 export const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
 
 export const STATUS: Record<TicketStatus, { label: string; bg: string; fg: string }> = {
-  todo: { label: '예정', bg: '#F3EEE8', fg: '#8A8078' },
-  doing: { label: '진행 중', bg: '#FBEDE6', fg: '#D8794F' },
-  done: { label: '완료', bg: '#EBF5EE', fg: '#2F7D57' },
+  // 배경은 사용자 지정(2026-10-02) — 진행 중 #CFE1FD · 완료 #D3F1A7 · 해야 할 일(Ready·Holding 등 분류가 '할 일'인 것) #EFF1F1.
+  // 글자는 그 배경 위에서 읽히는 같은 계열의 짙은 색.
+  todo: { label: '예정', bg: '#EFF1F1', fg: '#5B6168' },
+  doing: { label: '진행 중', bg: '#CFE1FD', fg: '#1F4E99' },
+  done: { label: '완료', bg: '#D3F1A7', fg: '#3D6B12' },
 };
 
 export function Avatar({ ini, c, size, ring, font }: { ini: string; c: string; size: number; ring?: string; font?: number }) {

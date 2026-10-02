@@ -56,6 +56,9 @@ const TICKETS: JiraTicket[] = [
   T('DATA-55', 'DATA-50', PEOPLE.p5, '2026-09-28', '2026-09-30', 'todo', '품질 알림'),
 ];
 
+/** 데모의 배포 예정일 — 달력 칸·패널의 `배포` 표시를 데모에서도 보이게. */
+export const DEMO_RELEASE: Record<string, string> = { 'PAY-104': '2026-09-15', 'SRCH-8': '2026-09-24' };
+
 /** 샘플의 기준 달(2026-09)에서 오늘이 든 달까지 몇 달인가. */
 function monthOffset(now = new Date()): number {
   return now.getFullYear() * 12 + now.getMonth() - (2026 * 12 + 8);
@@ -132,7 +135,7 @@ export const demoJira: JiraSource = {
       const keys = new Set(s.projects.map((p) => p.key));
       const inProject = (key: string) => keys.has(key.split('-')[0] ?? '');
       const tickets = TICKETS.filter((t) => inProject(t.key))
-        .map((t) => ({ ...t, start: shiftMonths(t.start, n), end: shiftMonths(t.end, n) }))
+        .map((t) => ({ ...t, start: shiftMonths(t.start, n), end: shiftMonths(t.end, n), ...(DEMO_RELEASE[t.key] ? { release: shiftMonths(DEMO_RELEASE[t.key]!, n) } : {}) }))
         .filter((t) => t.start <= to && t.end >= from);
       const used = new Set(tickets.map((t) => t.epic));
       const epics = EPICS.filter((e) => used.has(e.key)).map((e) => ({ ...e, start: e.start && shiftMonths(e.start, n), end: e.end && shiftMonths(e.end, n) }));

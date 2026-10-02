@@ -128,9 +128,6 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
         <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 5, background: c, color: '#fff', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{d ? (d.type.epic ? 'E' : ini(d.type.name)) : ''}</span>
         {issueKey}
       </span>
-      {d && st && (
-        <span data-ws-issue-status style={{ height: 20, padding: '0 8px', borderRadius: 99, background: st.bg, color: st.fg, fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flexShrink: 0 }}>{d.status.name}</span>
-      )}
       {d && !isMobile && <span style={{ fontSize: 11.5, color: 'var(--mf-ws-faint)', whiteSpace: 'nowrap' }}>{d.type.name}</span>}
       {d?.epic && !isMobile && (
         <>
@@ -180,6 +177,12 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
 
   const meta = (
     <div className="lnb-scroll" data-ws-issue-meta style={{ minHeight: 0, overflowY: isMobile ? 'visible' : 'auto', padding: isMobile ? '16px 20px' : '20px 20px 22px', borderLeft: isMobile ? 0 : '1px solid var(--mf-ws-line)', borderTop: isMobile ? '1px solid var(--mf-ws-line)' : 0, borderBottom: isMobile ? '1px solid var(--mf-ws-line)' : 0, background: 'var(--mf-ws-bg)', display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* 상태는 머리가 아니라 여기 첫 줄(요청 2026-10-02 — Jira의 오른쪽 열처럼). */}
+      {st && (
+        <MetaRow label="상태">
+          <span data-ws-issue-status style={{ alignSelf: 'flex-start', height: 24, padding: '0 10px', borderRadius: 99, background: st.bg, color: st.fg, fontSize: 12, fontWeight: 800, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>{d.status.name}</span>
+        </MetaRow>
+      )}
       <MetaRow label="담당자">{d.assignee ? <PersonLine id={d.assignee.id} name={d.assignee.name} color={pColor} /> : <Dim>없음</Dim>}</MetaRow>
       <MetaRow label="보고자">{d.reporter ? <PersonLine id={d.reporter.id} name={d.reporter.name} color={pColor} /> : <Dim>없음</Dim>}</MetaRow>
       <div style={{ height: 1, background: 'var(--mf-ws-line)' }} />

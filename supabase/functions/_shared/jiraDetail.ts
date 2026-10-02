@@ -311,7 +311,12 @@ export function normalizeDetail(issue: unknown, dateFields: { start: string | nu
 
   const out: DetailField[] = [];
   let hidden = 0;
-  for (const id of Object.keys(f)) {
+  // 순서는 **Jira 화면의 필드 순서**(`expand=editmeta` — 그 이슈 유형의 편집 화면 배치)를 따른다(제보 2026-10-02:
+  // Jira와 순서가 다르다). 응답 `fields`의 키 순서는 뜻이 없다. 편집 권한이 없어 editmeta가 비면 받은 순서 그대로.
+  const order = Object.keys(obj(obj(it.editmeta)?.fields) ?? {});
+  const rank = new Map(order.map((k, i) => [k, i]));
+  const ids = Object.keys(f).sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
+  for (const id of ids) {
     if (SKIP.has(id) || used.has(id)) continue;
     const sc = obj(schema[id]);
     if (SKIP_CUSTOM.test(str(sc?.custom) ?? '')) continue;
