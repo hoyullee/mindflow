@@ -2270,6 +2270,18 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     expect(c.querySelector('[data-note-slash-panel]')!.textContent).not.toContain('블록 이름을 이어서 입력하세요');
   });
 
+  it('`/동영상`은 빈 줄을 주소 칸으로 갈고 거기에 초점 — 붙여 넣으면 바로 미리보기', async () => {
+    const c = await openEmpty('nqv');
+    slash(c, '/동영상');
+    await waitFor(() => expect(c.querySelector('[data-note-slash-item="video"]')).toBeTruthy());
+    fireEvent.click(c.querySelector('[data-note-slash-item="video"]')!);
+    const input = (await waitFor(() => c.querySelector('[data-video-input]'))) as HTMLInputElement;
+    expect(document.activeElement).toBe(input);
+    expect(c.querySelector('[data-note-line="b1"]')).toBeNull();
+    fireEvent.paste(input, { clipboardData: { getData: (t: string) => (t === 'text/plain' ? 'https://youtu.be/dQw4w9WgXcQ' : ''), types: ['text/plain'] } });
+    await waitFor(() => expect(c.querySelector('[data-video-provider="youtube"] [data-video-play]')).toBeTruthy());
+  });
+
   it('↑↓는 끝에서 멈추지 않고 **돈다**(스펙 §5의 모듈러 순환)', async () => {
     const c = await openEmpty('nq2');
     slash(c, '/');

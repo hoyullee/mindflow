@@ -49,6 +49,8 @@ import { liveEditValue, runsToHtml, setLinearSelection } from '../richtextDom';
 import { useCommentParticipants } from './CommentPanel';
 import { NoteCommentWindow } from './NoteCommentWindow';
 import { NoteSchedBlock } from './NoteSchedBlock';
+import { NoteVideoBlock, focusVideoInputOnMount } from './NoteVideoBlock';
+import { parseVideoUrl } from '../noteVideo';
 import { NoteSchedPicker } from './NoteSchedPicker';
 import { NoteDatePop } from './NoteDatePop';
 import { NoteEventOpenerContext, NoteEventPopups, type NoteEventOpen } from './NoteEventPopups';
@@ -168,6 +170,9 @@ const BLOCK_TYPES: { kind: NoteBlockKind; name: string; hint: string; desc: stri
   // (요청: "칸반 보드 모양이라 이상해"). 문서 한 장 + 사슬 — 종류를 말하지 않으면서
   // "다른 문서로 간다"만 말한다. 인라인 링크(주소)와는 **문서 모양**으로 갈린다.
   { kind: 'link', name: '문서 링크', hint: '', desc: '맵 · 보드 · 칸반 · 공책으로', group: '넣기', icon: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8" /><path d="M14 3v5h5" /><path d="M10.5 14.5a2.2 2.2 0 0 0 3.2.2l1.3-1.3a2.2 2.2 0 0 0-3.1-3.1l-.6.6" /><path d="M13.5 12.5a2.2 2.2 0 0 0-3.2-.2L9 13.6a2.2 2.2 0 0 0 3.1 3.1l.6-.6" /></>) },
+  // 동영상 — 주소를 받는 빈 판이 선다(붙여 넣으면 바로 미리보기). 빈 문단에 주소를 통째로
+  // 붙여 넣어도 같은 블록이 된다(`pasteText`).
+  { kind: 'video', name: '동영상', hint: '', desc: 'YouTube · Vimeo · Loom · mp4 미리보기', group: '넣기', icon: (<><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m10 9.2 4.8 2.8-4.8 2.8Z" /></>) },
   { kind: 'hr', name: '구분선', hint: '', desc: '섹션 나누기', group: '넣기', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
   // 일정(스펙 2-1) — 고르면 블록이 바로 서지 않고 **「일정 블록 고르기」 창**이 먼저
   // 뜬다(그림·문서 링크와 같은 결: 고르지 않으면 자리를 만들지 않는다).
@@ -2459,6 +2464,19 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
         }
       }
       /**
+       * **동영상 주소도 미리보기로**(요청) — 보드 주소와 같은 규칙: 빈 문단에 주소 하나를
+       * 통째로 붙였을 때만. 문장 속의 주소는 링크로 남는다(`pasteRuns`의 자동 링크).
+       */
+      if (parseVideoUrl(text)) {
+        const id = blockIdOf(key);
+        const cur = controller.notePage?.blocks.find((b) => b.id === id);
+        if (cur && cur.kind === 'p' && blockText(cur) === '' && from === 0 && to === 0) {
+          controller.retypeNoteBlock(id, 'video');
+          controller.setNoteVideo(id, text.trim());
+          return true;
+        }
+      }
+      /**
        * **코드 블록 안에서는 쪼개지 않는다**(제보: 여러 줄을 붙여넣으면 첫 줄만 코드 블록에
        * 들어가고 나머지는 그 아래 새 블록이 됐다). 코드 블록의 줄바꿈은 **블록 안의 글자**다
        * (Enter도 블록 안에서 줄을 바꾼다) — 블록을 벗어나는 길은 Shift+Enter·방향키·마우스뿐.
@@ -3972,6 +3990,19 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                    * 고르기」 창이 먼저 뜬다. 종류를 고른 뒤에 넣는다(그림·문서 링크와
                    * 같은 결: 고르지 않으면 자리를 만들지 않는다).
                    */
+                  /**
+                   * **동영상** — 주소 칸이 든 빈 판을 세우고 거기에 초점을 준다(빈 줄이었으면
+                   * 그 줄을 갈고, 글이 남아 있으면 아래에 새로). 붙여 넣으면 바로 미리보기가 된다.
+                   */
+                  if (kind === 'video') {
+                    const restNow = slashSpan ? slashRest(page, slashFor, slashSpan) : noteLineText(page, slashFor);
+                    if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
+                    const at = blockIdOf(slashFor ?? '');
+                    closeSlash();
+                    const id = !restNow.trim() ? controller.retypeNoteLine(slashFor ?? at, 'video') : controller.addNoteBlock('video', at);
+                    if (id) focusVideoInputOnMount(id);
+                    return;
+                  }
                   if (kind === 'sched') {
                     const restNow = slashSpan ? slashRest(page, slashFor, slashSpan) : noteLineText(page, slashFor);
                     if (slashAtChar !== null) dropSlashText(page, slashFor, slashAtChar, slashQuery, controller);
@@ -7252,6 +7283,11 @@ function BlockView({ controller, block, index, freshId, setFreshId, selectOut, s
   if (shape === 'sched') {
     // 일정 블록 — 글이 없는 위젯이라 캐럿이 서지 않는다(구분선·그림과 같은 갈래).
     return <NoteSchedBlock controller={controller} block={block} flow={blockFlow(block)} picked={picked} pickObject={pickObject} />;
+  }
+
+  if (shape === 'video') {
+    // 동영상 — 썸네일 + 재생 단추, 누르면 그 자리에서 튼다(위젯 블록 갈래).
+    return <NoteVideoBlock controller={controller} block={block} flow={blockFlow(block)} picked={picked} pickObject={pickObject} />;
   }
 
   if (shape === 'link') {

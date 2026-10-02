@@ -14,7 +14,7 @@ import type { NoteBlock, NoteBlockKind, NoteCover, NoteListItem, NotePage, RichR
 import { charsToRuns, isStyledRuns, runsToChars } from './richtext';
 
 /** 블록이 **어느 칸을 쓰는가** — 종류별 분기를 여기 한곳에 모은다. */
-export type NoteBlockShape = 'runs' | 'items' | 'table' | 'link' | 'img' | 'sched' | 'empty';
+export type NoteBlockShape = 'runs' | 'items' | 'table' | 'link' | 'img' | 'sched' | 'video' | 'empty';
 
 /**
  * 이 블록의 본문이 어디에 들어 있는가.
@@ -37,6 +37,8 @@ export function noteBlockShape(kind: NoteBlockKind): NoteBlockShape {
       return 'img';
     case 'sched':
       return 'sched';
+    case 'video':
+      return 'video';
     case 'hr':
       return 'empty';
     default:
@@ -172,7 +174,7 @@ export function retypeBlock(block: NoteBlock, kind: NoteBlockKind): NoteBlock {
     next.rows = block.rows ?? [[textRuns(blockText(block)), textRuns('')], [textRuns(''), textRuns('')]];
   } else if (to === 'link') {
     if (block.docId) next.docId = block.docId;
-  } else if (to === 'img') {
+  } else if (to === 'img' || to === 'video') {
     if (block.src) next.src = block.src;
   }
   return next;
