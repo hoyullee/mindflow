@@ -5858,3 +5858,7 @@ main fast-forward(`c11feab`) 13초 전에 다른 세션의 main 푸시(`ee0c3f9`
 **검증**: `AdfView.test.tsx`(중첩 번호 `2. a. i. b. 3.` · 글머리 `• ◦` · 위험한 링크는 글만 · 코드·표), `jiraDetail.test.ts`(`pruneAdf` — 속성 거르기·미디어/사용자 id 버림·상한), `Tools.test.tsx`(펼친 채 열림). tools 92건 · lint · typecheck.
 
 **배포**: Edge Function `jira` 재배포 필요(`descriptionDoc`·댓글 `doc`). 옛 함수면 지금처럼 줄글로 보인다.
+
+## Jira 티켓 상세 — 팝업을 크게 (2026-10-02)
+
+**요청**: 상세 팝업을 더 크게(너무 작게 둘 까닭이 없다). **결정**: 디자인의 860×680 고정 → 폭 `min(1160px, 92vw)` × 높이 `min(960px, 앱 높이 − 64px)`(작은 창은 기존 `앱 높이 − 32px` 상한 그대로). 오른쪽 메타 열 272 → 320px, 설명 접기 8 → 14줄 높이. 폰은 그대로 전체 화면. 검증: tools 92건 · lint · typecheck.

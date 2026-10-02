@@ -10,7 +10,7 @@ import { Avatar, MONO, STATUS } from './wsUi';
  * 누르면 연다. 보기 전용이다(상태 변경·댓글은 Jira에서). 에픽이면 하위 티켓 목록과 완료 진행률.
  *
  * - 머리: 유형 사각·키 · 상태 알약 · 유형 이름 · 상위 에픽 칩(누르면 그 에픽으로) · Jira에서 열기 · 닫기
- * - 본문 왼쪽: 제목 · 설명(8줄 접기) · 하위 티켓 · 최근 댓글 셋 / 오른쪽 272px: 담당자·보고자 · 기간(남은 날)
+ * - 본문 왼쪽: 제목 · 설명(14줄 접기) · 하위 티켓 · 최근 댓글 셋 / 오른쪽 320px: 담당자·보고자 · 기간(남은 날)
  *   · 우선순위 · 프로젝트 · 스프린트 · 「모든 필드」(접어 둔다 — 빈 필드는 개수만)
  * - 폰: 전체 화면, 오른쪽 열은 제목 아래로 내려온다.
  *
@@ -60,7 +60,9 @@ export function WsIssueModal({ stack, onClose, onBack, onOpen, data, siteUrl, de
       card={
         isMobile
           ? { outline: 'none', width: '100%', height: 'var(--mf-app-h)', display: 'flex', flexDirection: 'column', background: 'var(--mf-ws-card)', overflow: 'hidden' }
-          : { outline: 'none', width: 860, maxWidth: '100%', height: 680, maxHeight: 'calc(var(--mf-app-h) - 32px)', display: 'flex', flexDirection: 'column', borderRadius: 24, background: 'var(--mf-ws-card)', border: '1px solid var(--mf-ws-line)', boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', overflow: 'hidden', animation: 'mf-fade .2s ease' }
+          : // 크게 연다(요청 2026-10-02: 디자인의 860×680은 설명·필드가 많은 티켓에 좁았다) — 화면 폭의 92%(최대 1160) ×
+            // 위아래 32px씩 남긴 높이(최대 960). 작은 창에서는 막의 여백 16px 안쪽까지.
+            { outline: 'none', width: 'min(1160px, 92vw)', maxWidth: '100%', height: 'min(960px, calc(var(--mf-app-h) - 64px))', maxHeight: 'calc(var(--mf-app-h) - 32px)', display: 'flex', flexDirection: 'column', borderRadius: 24, background: 'var(--mf-ws-card)', border: '1px solid var(--mf-ws-line)', boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', overflow: 'hidden', animation: 'mf-fade .2s ease' }
       }
       cardAttrs={{ 'data-ws-issue': key ?? '' }}
     >
@@ -320,7 +322,7 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
       {isMobile ? (
         <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{main}</div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 272px' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px' }}>
           {main}
           {meta}
         </div>
@@ -362,8 +364,8 @@ export function ago(stampText: string, now: number): string {
   return `${m[1]}.${m[2]}.${m[3]}`;
 }
 
-/** 설명 접기 — 8줄 높이(13.5px × 1.7 × 8)를 넘으면 접고 `더 보기`. 서식이 든 문서라 줄 수 대신 높이로 잰다. */
-const CLAMP_H = Math.round(13.5 * 1.7 * 8);
+/** 설명 접기 — 14줄 높이(13.5px × 1.7 × 14 — 팝업을 키우며 8줄에서 늘렸다)를 넘으면 접고 `더 보기`. 서식이 든 문서라 줄 수 대신 높이로 잰다. */
+const CLAMP_H = Math.round(13.5 * 1.7 * 14);
 function Clamp({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [over, setOver] = useState(false);
