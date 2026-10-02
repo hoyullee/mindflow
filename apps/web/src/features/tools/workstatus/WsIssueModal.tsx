@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { AdfView } from './AdfView';
 import { Modal } from '../../../components/Modal';
 import { jiraReasonText, jiraSource, type DetailField, type JiraIssueDetail } from '../jira/jiraApi';
@@ -10,7 +10,7 @@ import { Avatar, MONO, STATUS } from './wsUi';
  * 누르면 연다. 보기 전용이다(상태 변경·댓글은 Jira에서). 에픽이면 하위 티켓 목록과 완료 진행률.
  *
  * - 머리: 유형 사각·키 · 상태 알약 · 유형 이름 · 상위 에픽 칩(누르면 그 에픽으로) · Jira에서 열기 · 닫기
- * - 본문 왼쪽: 제목 · 설명(14줄 접기) · 하위 티켓 · 최근 댓글 셋 / 오른쪽 320px: 담당자·보고자 · 기간(남은 날)
+ * - 본문 왼쪽: 제목 · 설명(전부) · 하위 티켓 · 최근 댓글 셋 / 오른쪽 320px: 담당자·보고자 · 기간(남은 날)
  *   · 우선순위 · 프로젝트 · 스프린트 · 「모든 필드」(접어 둔다 — 빈 필드는 개수만)
  * - 폰: 전체 화면, 오른쪽 열은 제목 아래로 내려온다.
  *
@@ -79,7 +79,6 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
   const [nonce, setNonce] = useState(0);
   // 「모든 필드」는 **펼쳐 둔다**(제보 2026-10-02: 채워진 필드까지 숨어 보였다 — 빈 필드는 처음부터 빠져 있다). 접으면 접힌다.
   const [allOpen, setAllOpen] = useState(true);
-  const [descOpen, setDescOpen] = useState(false);
 
   useEffect(() => {
     const c = cache.get(issueKey);
@@ -231,15 +230,16 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
       <span data-ws-issue-title style={{ fontSize: isMobile ? 20 : 21, fontWeight: 800, lineHeight: 1.35, letterSpacing: '-.03em', color: 'var(--mf-ws-ink)', wordBreak: 'keep-all' }}>{d.summary}</span>
       {isMobile && d.epic && <EpicChip epic={d.epic} c={c} onOpen={onOpen} />}
       {isMobile && meta}
+      {/* 본문은 **늘 전부** 보인다(요청 2026-10-02 — `더 보기` 접기를 걷었다). */}
       <Section title="설명">
         {d.description || d.descriptionDoc ? (
-          <Clamp open={descOpen} onToggle={() => setDescOpen((v) => !v)}>
+          <div data-ws-issue-desc style={{ minWidth: 0 }}>
             {d.descriptionDoc ? (
               <AdfView doc={d.descriptionDoc} style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--mf-ws-ink2)' }} />
             ) : (
               <span style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--mf-ws-ink2)', whiteSpace: 'pre-line', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>{d.description}</span>
             )}
-          </Clamp>
+          </div>
         ) : (
           <Dim>설명이 없어요</Dim>
         )}
@@ -362,35 +362,6 @@ export function ago(stampText: string, now: number): string {
   if (dd === 1) return '어제';
   if (dd < 7) return `${dd}일 전`;
   return `${m[1]}.${m[2]}.${m[3]}`;
-}
-
-/** 설명 접기 — 14줄 높이(13.5px × 1.7 × 14 — 팝업을 키우며 8줄에서 늘렸다)를 넘으면 접고 `더 보기`. 서식이 든 문서라 줄 수 대신 높이로 잰다. */
-const CLAMP_H = Math.round(13.5 * 1.7 * 14);
-function Clamp({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [over, setOver] = useState(false);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const read = () => setOver(el.scrollHeight > CLAMP_H + 4);
-    read();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return (
-    <>
-      <div ref={ref} data-ws-issue-desc style={{ minWidth: 0, ...(open ? {} : { maxHeight: CLAMP_H, overflow: 'hidden' }) }}>
-        {children}
-      </div>
-      {(over || open) && (
-        <button type="button" className="btn" onClick={onToggle} style={linkBtn}>
-          {open ? '접기' : '더 보기'}
-        </button>
-      )}
-    </>
-  );
 }
 
 const iconBtn = { width: 32, height: 32, flexShrink: 0, border: 0, borderRadius: 11, background: 'transparent', color: '#8A8078', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 } as const;
