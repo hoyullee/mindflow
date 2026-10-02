@@ -91,6 +91,9 @@ function linesOf(b: NoteBlock): NoteLineOut[] {
        * 태도다(베껴 적으면 내보낸 순간의 일정이 화석으로 굳는다).
        */
       return one('link', `일정 블록: ${SCHED_LABEL[b.sched ?? 'today']}`);
+    case 'video':
+      // 동영상은 **주소 그대로** — 붙인 사람의 그 주소가 어느 형식에서도 열린다.
+      return one('link', b.src ? `동영상: ${b.src}` : '동영상');
     default:
       return one('p', runsText(b.runs));
   }

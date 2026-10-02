@@ -337,7 +337,8 @@ export type NoteBlockKind =
   | 'callout'
   | 'toggle'
   | 'img'
-  | 'sched';
+  | 'sched'
+  | 'video';
 
 /** 콜아웃 어조 — 디자인의 `주의 · 결정 · 질문`. */
 export type NoteCalloutTone = 'warn' | 'decide' | 'ask';
@@ -455,7 +456,12 @@ export interface NoteBlock {
    * 보드의 **내용은 복사하지 않는다** — 언제나 원본을 다시 읽는다.
    */
   embed?: NoteEmbedView;
-  /** `img` — 이미지 참조(`mfimg:<경로>` 또는 데이터 URL. 맵의 규칙과 같다). */
+  /**
+   * `img` — 이미지 참조(`mfimg:<경로>` 또는 데이터 URL. 맵의 규칙과 같다).
+   * `video` — 붙여넣은 **동영상 주소 원문**(YouTube·Vimeo·Loom 또는 `.mp4` 같은 파일 주소).
+   * 재생 주소(embed)는 적지 않는다 — 원문에서 그때그때 만든다(`parseVideoUrl`). 원문을
+   * 들고 있어야 내보내기·「원본 열기」가 사람이 붙인 그 주소를 보여 준다.
+   */
   src?: string;
   /**
    * `sched` — **일정 블록이 보여 주는 것**(스펙 2절). 블록마다 따로 기억한다.

@@ -1020,6 +1020,8 @@ export interface EditorController {
    */
   promptNoteImage: (at?: NoteInsertAt) => void;
   setNoteLinkDoc: (blockId: string, docId: string) => void;
+  /** 동영상 블록의 주소(원문) — 빈 문자열이면 지운다(주소 입력 판으로 돌아간다). */
+  setNoteVideo: (blockId: string, src: string) => void;
   /**
    * 보드 임베드의 **보기 상태**를 문서에 적는다 — 크기(`sm`/`lg`)·고른 열·펼친 가지·프레임.
    *
@@ -8349,6 +8351,24 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
+  const setNoteVideo = useCallback(
+    (blockId: string, src: string) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const next = { ...b };
+          if (src) next.src = src;
+          else delete next.src;
+          return next;
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
   /** 보드 임베드의 보기 상태 — 내용이 아니라 "어떻게 보고 있나"만 적는다. */
   const setNoteEmbedView = useCallback(
     (blockId: string, patch: NoteEmbedPatch) => {
@@ -9061,6 +9081,7 @@ export function useEditorState(): EditorController {
     insertNoteImage,
     promptNoteImage,
     setNoteLinkDoc,
+    setNoteVideo,
     setNoteEmbedView,
     saveOtherDoc,
     linkTargets,

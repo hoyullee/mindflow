@@ -5959,3 +5959,14 @@ main fast-forward(`c11feab`) 13초 전에 다른 세션의 main 푸시(`ee0c3f9`
 - ④ 응답 `fields`의 키 순서는 뜻이 없다 → `expand=editmeta`로 그 이슈 유형의 **편집 화면 배치 순서**를 받아 「모든 필드」를 그 순서로(편집 권한이 없어 비면 받은 순서). Jira 이슈 화면의 오른쪽 「세부 정보」 배치(팀 관리 프로젝트의 이슈 레이아웃)는 REST로 주지 않아 완전히 같지는 않을 수 있다 — 위 칸(상태·담당자·보고자·기간·우선순위·프로젝트·스프린트)은 우리 고정.
 
 **검증**: `jiraDetail.test.ts`(editmeta 순서 · 없을 때 받은 순서), `Tools.test.tsx`(배포 예정 → 팝업). tools 99건 · lint · typecheck. **배포**: 함수 `jira` 재배포(editmeta).
+
+## 공책 — 동영상 주소 미리보기(동영상 블록 `video`)
+
+- **요청**: 동영상 URL을 넣으면 공책에서 미리보기. 추천안(썸네일 + 재생 단추, 누르면 그 자리에서 iframe · 파일 주소는 `<video>`)으로.
+- **모델(코어)**: `NoteBlockKind`에 `'video'`, 모양 `'video'`(`noteBlockShape`). 블록이 드는 것은 **붙인 주소 원문**(`src`)뿐 — 재생 주소·썸네일은 웹의 `parseVideoUrl`이 그때그때 만든다(서비스가 embed 모양을 바꿔도 한 곳만 고친다 · 「원본 열기」·내보내기가 사람이 붙인 그 주소를 쓴다). `retypeBlock`은 `src`를 들고 간다. 내보내기는 `동영상: <주소>` 한 줄(link).
+- **읽는 주소**(`noteVideo.ts`, 순수): YouTube(`watch?v=`·`youtu.be`·`shorts`·`embed`·`live` · `t=`/`start=` → `start`) → `youtube-nocookie.com/embed` + `i.ytimg.com/vi/<id>/hqdefault.jpg` / Vimeo(`/123`·비공개 해시 `/123/<h>`·`player.vimeo.com/video/123`) / Loom(`share`·`embed`) / `.mp4·.webm·.mov·.m4v·.ogv` 파일. 공백이 든 글(문장)·http(s) 밖·채널 주소는 `null`.
+- **화면**(`NoteVideoBlock`): 16:9 판 + 아래 띠(서비스 · 주소 · 「원본 열기 ↗」). 처음엔 썸네일(없거나 실패하면 어두운 판 + 서비스 이름)과 64px 재생 단추만 — **누른 뒤에야 iframe**(공책에 영상이 여럿이면 플레이어 스크립트를 페이지를 열 때마다 받지 않게) · `referrerPolicy=strict-origin-when-cross-origin`(YouTube는 출처가 없으면 오류 153). 파일은 `<video controls preload="metadata">`. 위젯 블록 갈래(구분선·그림·일정 블록) — 판·띠를 누르면 블록이 골라지고 지우기·옮기기는 같다. 재생 중엔 iframe이 누름을 삼키므로 **띠가 손잡이**다.
+- **넣는 길 둘**: ① 빈 문단에 주소 하나를 통째로 붙여넣기(보드 주소와 같은 규칙 — 문장 속 주소는 링크로 남는다) ② `/동영상`(넣기 묶음) — 빈 줄은 갈고 글이 있으면 아래에 새로, **주소 칸**에 초점(`focusVideoInputOnMount` — `autoFocus`로 두면 예전 빈 블록이 있는 공책을 열 때마다 초점을 빼앗는다) · 붙여 넣으면 바로 · 동영상이 아닌 주소는 그 자리에서 알린다.
+- **기록**: 요약 이름 `동영상`(`blockRef`·`phraseOf`).
+- **검증**: `noteVideo.test.ts`(4) · `NoteVideo.test.tsx`(3 — 붙여넣기 → 썸네일 판 → 누르면 iframe → 저장본 `{kind:'video',src}` / 문장 속 주소는 그대로 / mp4는 `<video>`·빈 블록 주소 칸·잘못된 주소 안내) · `Note.test.tsx`의 `/동영상`(초점·붙여넣기). Chromium 프로브(YouTube·Vimeo·빈 칸·붙여넣은 Loom, 클릭 뒤 iframe src) — 썸네일 호스트가 막힌 원격 세션이라 대체 판이 그려진 것도 함께 확인. lint·typecheck·build.
+- **트레이드오프**: Vimeo·Loom은 썸네일을 받으려면 oEmbed 호출이 필요해(CORS·지연) 이름 판으로 둔다. CSP가 없어 iframe 출처를 막는 설정은 없다 — 생기면 `frame-src`에 세 곳을 더한다.
