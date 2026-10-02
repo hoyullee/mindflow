@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { jiraReasonText, jiraSource, type JiraIssues } from '../jira/jiraApi';
-import { reportJiraSync } from '../jira/jiraStore';
+import { reportJiraSync, type JiraConn } from '../jira/jiraStore';
 
 /**
  * 한 기간의 에픽·티켓 — **기간 단위로 5분 캐시**(작업 현황 스펙 §12). 달을 넘겨 보고 돌아와도
@@ -11,8 +11,16 @@ import { reportJiraSync } from '../jira/jiraStore';
 
 const TTL_MS = 5 * 60 * 1000;
 
+/**
+ * 캐시 키의 **질문 부분** — 프로젝트와 날짜 규칙(유형·상태·배포 필드 포함). 어느 쪽이 바뀌어도 새로 묻는다.
+ * 작업 현황과 폰의 도구 시트(「오늘 N」)가 같은 키를 써야 한쪽이 받은 달을 다른 쪽이 다시 묻지 않는다.
+ */
+export function workStatusKey(conn: Pick<JiraConn, 'projects' | 'startField' | 'endField' | 'fillDates' | 'issueTypes' | 'releaseField' | 'issueStatuses'>): string {
+  return `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}|${conn.releaseField?.id ?? ''}|${(conn.issueStatuses ?? []).map((t) => t.id).join(',')}`;
+}
+
 /** 이 기기의 오늘 — 아직 안 끝난 티켓(해결된 날을 끝으로 고른 경우·날짜 채우기)을 여기까지 그린다. */
-const localToday = () => {
+export const localToday = () => {
   const n = new Date();
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
 };

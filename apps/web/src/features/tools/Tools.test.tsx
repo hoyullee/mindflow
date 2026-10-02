@@ -248,6 +248,53 @@ describe('작업 현황', () => {
   });
 });
 
+describe('폰 — 하단 탭 「도구」는 고르기 시트(모바일 홈 디자인 M4b)', () => {
+  it('작업 현황 줄(Jira · 사이트) · 오늘 N · 도구 연결·관리 — 줄을 누르면 시트가 닫히고 작업 현황이 열린다', async () => {
+    mockMatchMedia(true);
+    connectDemo();
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await wait(() => q('[data-m-tab="tools"]')));
+    const sheet = await wait(() => q('[data-m-tools-sheet]'));
+    expect(sheet.textContent).toContain('연결한 도구의 화면으로 바로 가요');
+    const row = await wait(() => q('[data-m-tool="jira"]'));
+    expect(row.textContent).toContain('작업 현황');
+    expect(row.textContent).toContain('Jira');
+    expect(q('[data-m-tools-manage]')!.textContent).toContain('도구 연결 · 관리');
+    // 디자인의 「회의실 예약(예시 · 추후 추가)」은 갈 화면이 없어 그리지 않는다.
+    expect(sheet.textContent).not.toContain('회의실 예약');
+    // 오늘 N — 작업 현황이 오늘을 골랐을 때의 목록과 같은 셈이다.
+    const badge = await wait(() => q('[data-m-tool-today]'));
+    const n = Number(/오늘\s*(\d+)/.exec(badge.textContent ?? '')?.[1]);
+    expect(n).toBeGreaterThan(0);
+
+    await user.click(row);
+    await wait(() => q('[data-ws-mobile]'));
+    await waitFor(() => expect(q('[data-m-tools-sheet]')).toBeNull());
+    expect(q('[data-m-tab="tools"]')!.getAttribute('aria-current')).toBe('page');
+    await waitFor(() => expect(document.querySelectorAll('[data-ws-mday-ticket]').length).toBe(n));
+
+    // 작업 현황 위에서 다시 누르면 시트가 그 자리에서 올라온다(도구가 하나여도 늘 시트 — 사용자 결정).
+    await user.click(q('[data-m-tab="tools"]')!);
+    await wait(() => q('[data-m-tools-sheet]'));
+    expect(q('[data-ws-mobile]')).toBeTruthy();
+  });
+
+  it('화면 있는 도구가 없으면 안내 한 줄 · 도구 연결·관리는 설정 › 계정 설정의 도구로 간다', async () => {
+    mockMatchMedia(true);
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await wait(() => q('[data-m-tab="tools"]')));
+    await wait(() => q('[data-m-tools-sheet]'));
+    expect(q('[data-m-tool="jira"]')).toBeNull();
+    expect(q('[data-m-tools-empty]')!.textContent).toContain('Jira를 연결하면');
+    expect(q('[data-m-tool-today]')).toBeNull();
+    await user.click(q('[data-m-tools-manage]')!);
+    await wait(() => q('[data-tools-settings]'));
+    await waitFor(() => expect(q('[data-m-tools-sheet]')).toBeNull());
+  });
+});
+
 describe('작업 현황 — 폰(모바일 디자인 W1~W5)', () => {
   async function openPhone() {
     mockMatchMedia(true);

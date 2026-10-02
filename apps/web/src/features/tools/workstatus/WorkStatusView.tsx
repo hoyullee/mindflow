@@ -22,7 +22,7 @@ import {
   type Filter,
   type FilterType,
 } from './model';
-import { clearWorkStatusCache, useWorkStatusData } from './useWorkStatusData';
+import { clearWorkStatusCache, localToday, useWorkStatusData, workStatusKey } from './useWorkStatusData';
 import { FilterChips, type ChipItem } from './FilterChips';
 import { WsCalendar } from './WsCalendar';
 import { WsTimeline } from './WsTimeline';
@@ -66,11 +66,6 @@ function loadView(): ViewPrefs {
   }
 }
 
-const localToday = () => {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-};
-
 /**
  * 도구 · **작업 현황**(작업 현황 스펙) — Jira 에픽·티켓을 한 달 단위로 본다(달력·타임라인·집계).
  * 홈 본문을 꽉 채우고(LNB는 그대로 — 도구 스펙 §5), 안에서 스스로 스크롤한다.
@@ -107,7 +102,7 @@ export function WorkStatusView({ isMobile, onOpenNav, onBack }: { isMobile: bool
   const from = days[0] as string;
   const to = days[days.length - 1] as string;
   // 프로젝트와 **날짜 규칙**이 질문이다 — 어느 쪽이 바뀌어도 새로 묻는다.
-  const projKey = `${conn.projects.map((p) => p.key).join(',')}|${conn.startField?.id ?? ''}|${conn.endField?.id ?? ''}|${conn.fillDates === false ? 0 : 1}|${(conn.issueTypes ?? []).map((t) => t.id).join(',')}|${conn.releaseField?.id ?? ''}|${(conn.issueStatuses ?? []).map((t) => t.id).join(',')}`;
+  const projKey = workStatusKey(conn);
   const ready = conn.connected && !!conn.site && conn.projects.length > 0;
   // `날짜 기준` 단추의 툴팁 — 지금 무엇으로 그리고 있는지 열지 않고도 보이게.
   const names = (xs: { name: string }[] | undefined) => [...new Set((xs ?? []).map((x) => x.name))].join(', ') || '전부';
