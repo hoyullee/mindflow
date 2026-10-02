@@ -64,7 +64,7 @@ import {
 import { checkRoom, fetchRooms, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
 import { useLiveRefresh } from './useLiveRefresh';
-import { notifyCalendarChanged } from '../../reminders/calendarChanged';
+import { notifyCalendarChanged, onCalendarChanged } from '../../reminders/calendarChanged';
 import { syncRoomConflictNotices } from './roomConflictInbox';
 
 export interface GoogleCalendarApi {
@@ -623,6 +623,19 @@ export function useGoogleCalendar(
   useLiveRefresh(available && enabled && mode === 'events', () => setReloadTick((n) => n + 1));
 
   /**
+   * **같은 탭의 다른 화면이 고친 것**도 곧바로 다시 받는다(제보: 일정 화면에서 이번 주
+   * 구글 일정을 만들어도 LNB `일정` 부제는 다음 주기까지 그대로였다 — 이 훅은 소비처마다
+   * 따로 살고 일정은 각자 든다). 내가 낸 신호는 넘긴다 — 쓰기가 이미 다시 받는다(`write`).
+   */
+  const selfWriteRef = useRef(false);
+  useEffect(() => {
+    if (!available || !enabled || mode !== 'events') return;
+    return onCalendarChanged(() => {
+      if (!selfWriteRef.current) setReloadTick((n) => n + 1);
+    });
+  }, [available, enabled, mode]);
+
+  /**
    * 이벤트 색 팔레트를 한 번 받는다(요청 ⑤) — 사용자가 그 일정에 지정한 색을
    * 그대로 보여 주려면 번호(`colorId`)를 hex로 풀어야 한다. 실패해도 폴백 표가
    * 있으니 조용히 넘어간다.
@@ -734,9 +747,14 @@ export function useGoogleCalendar(
         });
         if (!done) return '구글 권한이 없어요. 설정에서 다시 연결해 주세요.';
         if (aliveRef.current) setReloadTick((n) => n + 1);
-        // 알림 스케줄러도 다시 받는다(제보) — 화면과 따로 도는 그쪽은 5분 주기라
-        // 방금 건 알림이 그동안 없는 것이 된다(`reminders/calendarChanged.ts`).
-        notifyCalendarChanged();
+        // 알림 스케줄러·LNB 같은 다른 소비처도 다시 받는다(제보) — 화면과 따로 도는
+        // 그쪽은 주기를 기다리는 동안 방금 쓴 일정이 없는 것이 된다(`reminders/calendarChanged.ts`).
+        selfWriteRef.current = true;
+        try {
+          notifyCalendarChanged();
+        } finally {
+          selfWriteRef.current = false;
+        }
         return null;
       } catch (e) {
         return googleWriteError(e);

@@ -41,7 +41,8 @@ export interface GoogleTarget {
   name: string;
   color?: string;
   /**
-   * **내 캘린더인가**(구글의 `primary`) — 칩에 그 사실을 적는다(제보 1).
+   * **내 캘린더인가**(구글의 `primary`) — 칩의 툴팁이 그 사실을 말한다(제보 1 · 글자는
+   * 칩을 깨뜨려 뺐다).
    *
    * 구글은 일정의 **주최자를 그 일정이 사는 캘린더의 주인**으로 정한다. 남이 공유해
    * 준 캘린더나 팀 캘린더도 쓸 수 있으면 목적지로 올라오므로, 그쪽을 고르면 내가
@@ -284,7 +285,7 @@ export function NewEventModal({
                   {googleTargets.map((t) => (
                     <button key={t.id} type="button" data-new-cal-target={t.id} aria-pressed={dest === t.id} onClick={() => setDest(t.id)} style={{ ...destChipStyle(dest === t.id, t.color ?? 'var(--mf-info)'), height: 32 }}>
                       <span style={destDotStyle(t.color ?? 'var(--mf-info)')} />
-                      {t.name}
+                      <span style={destNameStyle}>{t.name}</span>
                     </button>
                   ))}
                 </div>
@@ -495,17 +496,15 @@ export function NewEventModal({
                     value: t.id,
                     label: `${t.name} (Google)`,
                     className: 'mf-ctl',
+                    // 「내 캘린더」 글자는 칩에 두지 않는다(요청 — 계정 주소가 길면 칩을 깨뜨렸다).
+                    // 어느 것이 내 캘린더인지는 마우스를 얹으면 말한다(제보 1의 뜻은 남긴다).
+                    title: t.primary ? `${t.name} · 내 캘린더` : t.name,
                     attrs: { 'data-new-cal': t.id },
                     style: (on: boolean) => destChipStyle(on, t.color ?? 'var(--mf-info)'),
                     children: (
                       <>
                         <span style={destDotStyle(t.color ?? 'var(--mf-info)')} />
-                        {t.name}
-                        {t.primary && (
-                          <span data-new-cal-mine style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: 'var(--mf-faint)' }}>
-                            내 캘린더
-                          </span>
-                        )}
+                        <span style={destNameStyle}>{t.name}</span>
                       </>
                     ),
                   })),
@@ -755,6 +754,13 @@ export function destChipStyle(on: boolean, dot: string): CSSProperties {
     ...(dot ? {} : {}),
   };
 }
+
+/**
+ * 칩 안의 이름 — **말줄임은 이 상자가 맡는다**. 칩(`destChipStyle`)은 `inline-flex`라 그
+ * 자신의 `text-overflow`가 안의 글자에 걸리지 않는다: 긴 계정 주소가 말줄임 없이 칩
+ * 오른쪽에서 잘려 나갔다(제보). 이름을 상자에 담아 줄어들 수 있게(`minWidth: 0`) 한다.
+ */
+export const destNameStyle: CSSProperties = { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 
 export function destDotStyle(color: string): CSSProperties {
   return { width: 7, height: 7, borderRadius: 999, background: color, display: 'block', flex: '0 0 auto' };
