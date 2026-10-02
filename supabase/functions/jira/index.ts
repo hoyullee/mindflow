@@ -471,7 +471,7 @@ async function issueDetail(ctx: Ctx, p: Record<string, unknown>) {
   if (!isIssueKey(key)) throw new Fail('bad-request');
   const rule = coerceRule(row.start_field, row.end_field, row.fill_dates, row.release_field);
   const token = await accessTokenFor(ctx, row);
-  const raw = await jiraGet(token, row.cloud_id, `/rest/api/3/issue/${encodeURIComponent(key)}?expand=names,schema&fields=*all`);
+  const raw = await jiraGet(token, row.cloud_id, `/rest/api/3/issue/${encodeURIComponent(key)}?expand=names,schema,editmeta&fields=*all`);
   const detail = normalizeDetail(raw, rule);
   if (!detail) throw new Fail('jira-error', 'bad issue');
   const tasks: Promise<void>[] = [];

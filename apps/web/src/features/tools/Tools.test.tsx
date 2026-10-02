@@ -7,7 +7,7 @@ import { mockMatchMedia } from '../../test/matchMedia';
 import { resetToolPrefs } from './toolPrefsStore';
 import { resetJiraStore } from './jira/jiraStore';
 import { monthBiz } from './workstatus/model';
-import { demoJira } from './jira/jiraDemo';
+import { demoJira, shiftMonths } from './jira/jiraDemo';
 
 // 도구(LNB 구획 · 도구 관리 · 작업 현황) — 로컬 모드라 Jira는 **데모 소스**가 답한다(`jiraDemo.ts`).
 
@@ -185,6 +185,17 @@ describe('작업 현황', () => {
     // 팝업의 열림은 모듈 상태다 — 닫고 끝내야 다음 테스트가 가려지지 않는다.
     await user.click(within(q('[data-jira-setup]')!).getByRole('button', { name: '닫기' }));
     await waitFor(() => expect(q('[data-jira-setup]')).toBeNull());
+  });
+
+  it('패널의 「이 날 배포 예정」 항목도 상세 팝업으로 연다(새 창이 아니다)', async () => {
+    const user = await open();
+    const now = new Date();
+    const d = shiftMonths('2026-09-15', now.getFullYear() * 12 + now.getMonth() - (2026 * 12 + 8));
+    await user.click(await wait(() => q(`[data-ws-day="${d}"]`)));
+    await user.click(await wait(() => q('[data-ws-panel-release-ticket="PAY-104"]')));
+    await wait(() => q('[data-ws-issue="PAY-104"]'));
+    await user.click(within(q('[data-ws-issue]')!).getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(q('[data-ws-issue]')).toBeNull());
   });
 
   it('티켓을 누르면 상세 팝업 — 에픽 칩으로 에픽(하위 티켓)으로 가고 ‹로 돌아온다', async () => {

@@ -28,7 +28,7 @@ export function WsSidePanel({ sel, today, month, rules, tickets, data, stats, bi
         <div data-ws-panel-release style={{ margin: '0 15px 10px', padding: '8px 10px', borderRadius: 10, background: '#EAF1FB' }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: '#3F67A8', marginBottom: 2 }}>이 날 배포 예정 {rel.length}건</div>
           {rel.map((t) => (
-            <button key={t.key} type="button" className="btn" onClick={() => onOpenIssue(t.key)} style={{ display: 'block', width: '100%', padding: '3px 0', border: 0, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <button key={t.key} type="button" className="btn" data-ws-panel-release-ticket={t.key} onClick={() => onOpenIssue(t.key)} style={{ display: 'block', width: '100%', padding: '3px 0', border: 0, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#3F67A8', marginRight: 6 }}>{t.key}</span>
               {t.summary}
             </button>
