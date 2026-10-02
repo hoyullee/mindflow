@@ -94,6 +94,9 @@ function linesOf(b: NoteBlock): NoteLineOut[] {
     case 'video':
       // 동영상은 **주소 그대로** — 붙인 사람의 그 주소가 어느 형식에서도 열린다.
       return one('link', b.src ? `동영상: ${b.src}` : '동영상');
+    case 'file':
+      // 첨부 파일의 실물은 형식 밖이다 — 이름만 남긴다(이미지와 같은 태도).
+      return one('link', b.fileName ? `첨부 파일: ${b.fileName}` : '첨부 파일');
     default:
       return one('p', runsText(b.runs));
   }

@@ -338,7 +338,8 @@ export type NoteBlockKind =
   | 'toggle'
   | 'img'
   | 'sched'
-  | 'video';
+  | 'video'
+  | 'file';
 
 /** 콜아웃 어조 — 디자인의 `주의 · 결정 · 질문`. */
 export type NoteCalloutTone = 'warn' | 'decide' | 'ask';
@@ -477,6 +478,17 @@ export interface NoteBlock {
   sched?: 'today' | 'week' | 'month' | 'next';
   /** `sched` + `month` — 달력에서 고른 날(`YYYY-MM-DD`). 없으면 오늘. */
   schedDay?: string;
+  /**
+   * `file` — **첨부 파일**의 서버 id(`note_files.id`). 실물은 R2에 있고 본문에는 참조만 남는다.
+   * 아직 올리는 중이거나 실패한 블록은 비어 있다(화면이 「올리는 중」·「끝나지 않음」을 그린다).
+   */
+  fileId?: string;
+  /** `file` — 보이는 이름(올린 파일 이름 그대로). 내려받을 때의 이름은 서버가 붙인다. */
+  fileName?: string;
+  /** `file` — 바이트 수. 목록에 `2.4MB`처럼 보인다. */
+  fileSize?: number;
+  /** `file` — MIME 형식(아이콘 갈래를 가른다). */
+  fileMime?: string;
   /**
    * `img` — **손으로 정한 너비**(px). 없으면 단 폭에 맞춘다(그림의 원래 폭이 상한).
    *

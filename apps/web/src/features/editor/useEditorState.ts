@@ -11,7 +11,8 @@ import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
 import type { CommentMention, DocComment, LoadedDoc, NoteHistoryActor, NoteHistoryEntry, NoteHistoryStore, SaveResult, ShareParticipant, ShareRole, ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
-import { useBackend, useCommentStore, useDocStore, useNoteHistoryStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
+import { useBackend, useCommentStore, useDocStore, useFileStore, useNoteHistoryStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
+import { FileUploadError } from '../../adapters/ports';
 import { NoteHistoryRecorder } from './noteHistoryRecorder';
 import { describePageChange, momentLabel, snapshotPage } from './noteHistory';
 import { useAuthUser } from '../../adapters/useAuthUser';
@@ -1014,6 +1015,17 @@ export interface EditorController {
    */
   insertNoteImage: (file: File | Blob, at?: NoteInsertAt) => void;
   /**
+   * **첨부 파일을 넣는다**(0049 · R2) — 파일마다 블록 하나. 블록은 곧바로 서고(이름·크기), 올리기가
+   * 끝나면 `fileId`가 붙는다. 진행률·실패는 `noteUploads`가 든다(문서에는 남지 않는다).
+   */
+  insertNoteFiles: (files: File[], at?: NoteInsertAt) => void;
+  /** 파일 고르개를 열고 고른 것들을 첨부한다(`/파일`). */
+  promptNoteFiles: (at?: NoteInsertAt) => void;
+  /** 실패한 올리기를 같은 파일로 다시. */
+  retryNoteFile: (blockId: string) => void;
+  /** 올리는 중인 블록들 — 블록 id → 진행률(0..1)·실패. 이 탭의 메모리에만 있다. */
+  noteUploads: Record<string, NoteUpload>;
+  /**
    * **이미지를 바로 넣는다**(요청) — 자리를 먼저 만들지 않고 파일 고르개부터 연다.
    * `replace`를 주면 그 블록을 이미지로 바꾸고, 아니면 `after` 뒤에 새로 만든다.
    * 고르지 않고 닫으면 아무 일도 없다(빈 자리가 남지 않는다).
@@ -1230,6 +1242,13 @@ function sameRuns(a: RichRun[] | undefined, b: RichRun[] | undefined): boolean {
 }
 
 /** 가장 늦게 고친 장 — `updatedAt`(ISO)이 없는 장은 가장 옛것으로 친다. 다 같으면 첫 장. */
+/** 올리는 중인 첨부 파일 하나(`EditorController.noteUploads`). `file`은 「다시 시도」를 위해 든다. */
+export interface NoteUpload {
+  progress: number;
+  error: FileUploadError | null;
+  file: File;
+}
+
 export function latestNotePage(pages: NotePage[]): NotePage | undefined {
   let best: NotePage | undefined;
   for (const pg of pages) {
@@ -8334,6 +8353,90 @@ export function useEditorState(): EditorController {
     [insertNoteImage],
   );
 
+  const fileStore = useFileStore();
+  const [noteUploads, setNoteUploads] = useState<Record<string, NoteUpload>>({});
+  /**
+   * 한 블록의 올리기 — 끝나면 `fileId`를 붙인다. 그 사이 블록이 지워졌거나(되돌리기) 다른 장으로
+   * 갔어도 `commitBlock`이 못 찾으면 아무 일도 없다(실물은 서버 정리 `files-sweep`이 거둔다).
+   */
+  const runNoteUpload = useCallback(
+    (pageId: string, blockId: string, file: File) => {
+      const docId = mapId;
+      const put = (patch: Partial<NoteUpload> | null) =>
+        setNoteUploads((u) => {
+          if (!patch) {
+            if (!(blockId in u)) return u;
+            const next = { ...u };
+            delete next[blockId];
+            return next;
+          }
+          return { ...u, [blockId]: { ...(u[blockId] ?? { progress: 0, error: null, file }), ...patch } };
+        });
+      put({ progress: 0, error: null, file });
+      if (!docId) {
+        put({ error: new FileUploadError('unknown') });
+        return;
+      }
+      let last = 0;
+      fileStore
+        .upload(docId, file, (r) => {
+          // 진행률은 **2%마다** 한 번만 그린다 — XHR은 수십 번 알리고, 그때마다 본문 전체가 다시 그려진다.
+          if (r - last < 0.02 && r < 1) return;
+          last = r;
+          put({ progress: r });
+        })
+        .then((meta) => {
+          commitBlock(pageId, blockId, (b) => (b.kind === 'file' ? { ...b, fileId: meta.id, fileName: meta.name, fileSize: meta.size, fileMime: meta.mime } : b), false);
+          put(null);
+        })
+        .catch((e: unknown) => put({ error: e instanceof FileUploadError ? e : new FileUploadError('unknown') }));
+    },
+    [commitBlock, fileStore, mapId],
+  );
+
+  const insertNoteFiles = useCallback(
+    (files: File[], at?: NoteInsertAt) => {
+      if (readOnlyRef.current || !notePage || !files.length) return;
+      let after = at?.after;
+      files.forEach((file, i) => {
+        const replace = i === 0 ? at?.replace : undefined;
+        const id = replace ?? addNoteBlock('file', after);
+        if (!id) return;
+        if (replace) retypeNoteBlock(replace, 'file');
+        if (i === 0 && at?.intoList) moveNoteBlockIntoList(id, at.intoList.id, at.intoList.at);
+        after = id;
+        commitBlock(notePage.id, id, (b) => ({ ...b, fileName: file.name, fileSize: file.size, fileMime: file.type || 'application/octet-stream' }), false);
+        runNoteUpload(notePage.id, id, file);
+      });
+    },
+    [addNoteBlock, commitBlock, moveNoteBlockIntoList, notePage, retypeNoteBlock, runNoteUpload],
+  );
+
+  const promptNoteFiles = useCallback(
+    (at?: NoteInsertAt) => {
+      if (readOnlyRef.current) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.onchange = () => {
+        const files = Array.from(input.files ?? []);
+        if (files.length) insertNoteFiles(files, at);
+      };
+      markPickingFile(input);
+      input.click();
+    },
+    [insertNoteFiles],
+  );
+
+  const retryNoteFile = useCallback(
+    (blockId: string) => {
+      const up = noteUploads[blockId];
+      if (!up || !notePage) return;
+      runNoteUpload(notePage.id, blockId, up.file);
+    },
+    [notePage, noteUploads, runNoteUpload],
+  );
+
   /**
    * 보드 링크 블록이 가리킬 문서.
    *
@@ -9079,6 +9182,10 @@ export function useEditorState(): EditorController {
     setNoteTagColor,
     setNoteImage,
     insertNoteImage,
+    insertNoteFiles,
+    promptNoteFiles,
+    retryNoteFile,
+    noteUploads,
     promptNoteImage,
     setNoteLinkDoc,
     setNoteVideo,

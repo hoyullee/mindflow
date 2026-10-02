@@ -83,6 +83,8 @@ function blockRef(block: NoteBlock, page: NotePage): string {
       return '일정 블록';
     case 'video':
       return '동영상';
+    case 'file':
+      return block.fileName ? `${quote(block.fileName)} 파일` : '첨부 파일';
     case 'hr':
       return '구분선';
     default:
@@ -126,7 +128,9 @@ function phraseOf(blocks: NoteBlock[]): string {
                               ? '일정 블록'
                               : b.kind === 'video'
                                 ? '동영상'
-                                : '블록';
+                                : b.kind === 'file'
+                                  ? '첨부 파일'
+                                  : '블록';
     // 체크리스트는 **항목 수**로 센다 — "체크리스트 3개"는 할 일 셋이다(스펙의 예).
     const n = b.kind === 'ck' ? Math.max(1, b.items?.length ?? 1) : 1;
     count.set(name, (count.get(name) ?? 0) + n);

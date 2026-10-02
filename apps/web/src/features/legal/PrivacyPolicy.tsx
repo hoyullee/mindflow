@@ -29,7 +29,7 @@ import { LegalPage, LegalSection, legalListStyle } from './LegalPage';
  */
 export function PrivacyPolicy() {
   return (
-    <LegalPage title="개인정보처리방침" updated="2026년 9월 3일">
+    <LegalPage title="개인정보처리방침" updated="2026년 10월 2일">
       <p>
         Geurio(이하 &ldquo;서비스&rdquo;)는 이용자의 개인정보를 소중하게 생각하며, 아래와 같이 최소한의 정보만을
         수집·이용합니다. 본 방침은 서비스가 어떤 정보를 왜 수집하고, 어디에 보관하며, 언제 삭제하는지를 설명합니다.
@@ -76,6 +76,10 @@ export function PrivacyPolicy() {
           </li>
           <li>
             <strong>Vercel</strong> — 웹 애플리케이션 호스팅
+          </li>
+          <li>
+            <strong>Cloudflare</strong> — 공책에 첨부한 파일의 저장(R2). 파일 이름·크기·형식과 올린 사람은 Supabase에
+            함께 기록되며, 파일은 그 공책을 열 수 있는 사람에게만 몇 분짜리 주소로 내려집니다.
           </li>
           <li>
             <strong>Google</strong> — Google 계정 로그인(OAuth) 처리 및 이용자가 직접 켠 경우의 Google 캘린더 연동
@@ -193,7 +197,7 @@ export function PrivacyPolicy() {
             <strong> HTTPS(TLS)</strong>로만 이루어집니다. 암호화되지 않은 경로로 개인정보를 주고받지 않습니다.
           </li>
           <li>
-            <strong>저장 중 암호화</strong> — 데이터베이스와 파일 저장소에 보관되는 데이터는 수탁사(Supabase)의 인프라에서
+            <strong>저장 중 암호화</strong> — 데이터베이스와 파일 저장소에 보관되는 데이터는 수탁사(Supabase · 첨부 파일은 Cloudflare R2)의 인프라에서
             <strong> 저장 시 암호화(encryption at rest)</strong>된 상태로 보관됩니다. 비밀번호는 평문으로 보관하지 않으며
             인증 공급자가 단방향 해시로만 저장합니다.
           </li>
