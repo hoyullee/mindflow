@@ -195,10 +195,10 @@ describe('작업 현황', () => {
     await wait(() => q('[data-ws-issue-title]'));
     expect(modal.textContent).toContain('결제 수단 선택 화면');
     expect(modal.textContent).toContain('보기 전용이에요');
-    // 모든 필드는 접혀 있다가 펼친다
-    expect(q('[data-ws-issue-fields]')).toBeNull();
-    await user.click(q('[data-ws-issue-all]')!);
+    // 모든 필드는 펼친 채로 열린다(채워진 필드가 숨지 않게) — 누르면 접힌다
     expect(q('[data-ws-issue-field="QA 담당"]')).toBeTruthy();
+    await user.click(q('[data-ws-issue-all]')!);
+    expect(q('[data-ws-issue-fields]')).toBeNull();
     // 상위 에픽으로
     await user.click(q('[data-ws-issue-epic="PAY-100"]')!);
     await wait(() => q('[data-ws-issue="PAY-100"] [data-ws-issue-children]'));

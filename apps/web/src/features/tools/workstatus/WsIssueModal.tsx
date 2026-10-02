@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { AdfView } from './AdfView';
 import { Modal } from '../../../components/Modal';
 import { jiraReasonText, jiraSource, type DetailField, type JiraIssueDetail } from '../jira/jiraApi';
 import { EPIC_PALETTE, PERSON_PALETTE, type Dataset } from './model';
@@ -58,8 +59,8 @@ export function WsIssueModal({ stack, onClose, onBack, onOpen, data, siteUrl, de
       dim={isMobile ? { zIndex: 95, background: 'var(--mf-ws-card)' } : { zIndex: 95, background: 'rgba(58,52,46,.32)', backdropFilter: 'blur(5px)', padding: 16 }}
       card={
         isMobile
-          ? { width: '100%', height: 'var(--mf-app-h)', display: 'flex', flexDirection: 'column', background: 'var(--mf-ws-card)', overflow: 'hidden' }
-          : { width: 860, maxWidth: '100%', height: 680, maxHeight: 'calc(var(--mf-app-h) - 32px)', display: 'flex', flexDirection: 'column', borderRadius: 24, background: 'var(--mf-ws-card)', border: '1px solid var(--mf-ws-line)', boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', overflow: 'hidden', animation: 'mf-fade .2s ease' }
+          ? { outline: 'none', width: '100%', height: 'var(--mf-app-h)', display: 'flex', flexDirection: 'column', background: 'var(--mf-ws-card)', overflow: 'hidden' }
+          : { outline: 'none', width: 860, maxWidth: '100%', height: 680, maxHeight: 'calc(var(--mf-app-h) - 32px)', display: 'flex', flexDirection: 'column', borderRadius: 24, background: 'var(--mf-ws-card)', border: '1px solid var(--mf-ws-line)', boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)', overflow: 'hidden', animation: 'mf-fade .2s ease' }
       }
       cardAttrs={{ 'data-ws-issue': key ?? '' }}
     >
@@ -74,7 +75,8 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
   const [err, setErr] = useState<string | null>(null);
   const [at, setAt] = useState<number>(hit?.at ?? Date.now());
   const [nonce, setNonce] = useState(0);
-  const [allOpen, setAllOpen] = useState(false);
+  // 「모든 필드」는 **펼쳐 둔다**(제보 2026-10-02: 채워진 필드까지 숨어 보였다 — 빈 필드는 처음부터 빠져 있다). 접으면 접힌다.
+  const [allOpen, setAllOpen] = useState(true);
   const [descOpen, setDescOpen] = useState(false);
 
   useEffect(() => {
@@ -174,7 +176,6 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
   const kids = d.children ?? [];
   const doneN = kids.filter((k) => k.status === 'done').length;
   const pct = kids.length ? Math.round((doneN / kids.length) * 100) : 0;
-  const longDesc = d.description.split('\n').length > 8 || d.description.length > 420;
 
   const meta = (
     <div className="lnb-scroll" data-ws-issue-meta style={{ minHeight: 0, overflowY: isMobile ? 'visible' : 'auto', padding: isMobile ? '16px 20px' : '20px 20px 22px', borderLeft: isMobile ? 0 : '1px solid var(--mf-ws-line)', borderTop: isMobile ? '1px solid var(--mf-ws-line)' : 0, borderBottom: isMobile ? '1px solid var(--mf-ws-line)' : 0, background: 'var(--mf-ws-bg)', display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -223,20 +224,20 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
   );
 
   const main = (
-    <div className="lnb-scroll" style={{ minHeight: 0, overflowY: isMobile ? 'visible' : 'auto', padding: isMobile ? '18px 20px 20px' : '22px 26px 26px 28px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+    // 가로로는 굴리지 않는다 — 긴 주소·넓은 표가 본문을 옆으로 밀어 Shift+휠·드래그에 본문이 비껴 보였다(제보 2026-10-02).
+    <div className="lnb-scroll" style={{ minHeight: 0, minWidth: 0, overflowX: 'hidden', overflowY: isMobile ? 'visible' : 'auto', padding: isMobile ? '18px 20px 20px' : '22px 26px 26px 28px', display: 'flex', flexDirection: 'column', gap: 22 }}>
       <span data-ws-issue-title style={{ fontSize: isMobile ? 20 : 21, fontWeight: 800, lineHeight: 1.35, letterSpacing: '-.03em', color: 'var(--mf-ws-ink)', wordBreak: 'keep-all' }}>{d.summary}</span>
       {isMobile && d.epic && <EpicChip epic={d.epic} c={c} onOpen={onOpen} />}
       {isMobile && meta}
       <Section title="설명">
-        {d.description ? (
-          <>
-            <span data-ws-issue-desc style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--mf-ws-ink2)', whiteSpace: 'pre-line', wordBreak: 'keep-all', ...(descOpen ? {} : { display: '-webkit-box', WebkitLineClamp: 8, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }) }}>{d.description}</span>
-            {longDesc && (
-              <button type="button" className="btn" onClick={() => setDescOpen((v) => !v)} style={linkBtn}>
-                {descOpen ? '접기' : '더 보기'}
-              </button>
+        {d.description || d.descriptionDoc ? (
+          <Clamp open={descOpen} onToggle={() => setDescOpen((v) => !v)}>
+            {d.descriptionDoc ? (
+              <AdfView doc={d.descriptionDoc} style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--mf-ws-ink2)' }} />
+            ) : (
+              <span style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--mf-ws-ink2)', whiteSpace: 'pre-line', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>{d.description}</span>
             )}
-          </>
+          </Clamp>
         ) : (
           <Dim>설명이 없어요</Dim>
         )}
@@ -297,7 +298,7 @@ function Body({ issueKey, canBack, onBack, onClose, onOpen, data, siteUrl, demo,
                   <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--mf-ws-ink)' }}>{cm.author.name}</span>
                   <span style={{ fontSize: 11, color: 'var(--mf-ws-faint)' }}>{ago(cm.created, at)}</span>
                 </span>
-                <span style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--mf-ws-ink2)', wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>{cm.text}</span>
+                {cm.doc ? <AdfView doc={cm.doc} style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--mf-ws-ink2)' }} /> : <span style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--mf-ws-ink2)', wordBreak: 'keep-all', whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>{cm.text}</span>}
               </span>
             </div>
           ))
@@ -359,6 +360,35 @@ export function ago(stampText: string, now: number): string {
   if (dd === 1) return '어제';
   if (dd < 7) return `${dd}일 전`;
   return `${m[1]}.${m[2]}.${m[3]}`;
+}
+
+/** 설명 접기 — 8줄 높이(13.5px × 1.7 × 8)를 넘으면 접고 `더 보기`. 서식이 든 문서라 줄 수 대신 높이로 잰다. */
+const CLAMP_H = Math.round(13.5 * 1.7 * 8);
+function Clamp({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => setOver(el.scrollHeight > CLAMP_H + 4);
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <>
+      <div ref={ref} data-ws-issue-desc style={{ minWidth: 0, ...(open ? {} : { maxHeight: CLAMP_H, overflow: 'hidden' }) }}>
+        {children}
+      </div>
+      {(over || open) && (
+        <button type="button" className="btn" onClick={onToggle} style={linkBtn}>
+          {open ? '접기' : '더 보기'}
+        </button>
+      )}
+    </>
+  );
 }
 
 const iconBtn = { width: 32, height: 32, flexShrink: 0, border: 0, borderRadius: 11, background: 'transparent', color: '#8A8078', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 } as const;

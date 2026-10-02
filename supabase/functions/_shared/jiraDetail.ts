@@ -37,6 +37,21 @@ export interface DetailComment {
   author: JiraPerson;
   created: string;
   text: string;
+  /** 원본 서식 그대로 그릴 문서(줄인 ADF) — 없으면 `text`. */
+  doc?: AdfNode | null;
+}
+
+/**
+ * 화면이 그릴 **줄인 ADF** — 노드 종류·글·서식(marks)·필요한 속성만 남긴다(`pruneAdf`).
+ * 원본 서식(목록 단계·번호·굵게·링크·표…)을 살리려고 줄글 대신 구조를 보낸다(제보 2026-10-02:
+ * 번호 매기기·글머리 기호가 사라졌다).
+ */
+export interface AdfNode {
+  type: string;
+  text?: string;
+  marks?: { type: string; attrs?: Record<string, string | number> }[];
+  attrs?: Record<string, string | number | boolean>;
+  content?: AdfNode[];
 }
 
 export interface DetailChild {
@@ -62,8 +77,10 @@ export interface JiraIssueDetail {
   priority: { id: string; name: string } | null;
   project: { key: string; name: string };
   sprint: string | null;
-  /** 설명 — ADF를 줄글로(목록은 `- `, 표는 ` | `). */
+  /** 설명 — ADF를 줄글로(목록은 `- `, 표는 ` | `). 검색·대체 표시용. */
   description: string;
+  /** 설명의 원본 서식(줄인 ADF) — 화면은 이것을 그린다. */
+  descriptionDoc?: AdfNode | null;
   commentTotal: number;
   /** 최근 댓글 몇 개 — 오래된 것부터. */
   comments: DetailComment[];
@@ -328,6 +345,7 @@ export function normalizeDetail(issue: unknown, dateFields: { start: string | nu
     project: { key: str(proj?.key) ?? key!.split('-')[0]!, name: str(proj?.name) ?? str(proj?.key) ?? '' },
     sprint: sprintOf(f, names, schema),
     description: f.description ? adfToText(f.description) : '',
+    descriptionDoc: pruneAdf(f.description),
     commentTotal: 0,
     comments: [],
     fields: out,
@@ -346,7 +364,7 @@ export function normalizeComments(body: unknown, max = 3): { total: number; comm
     .map((c) => {
       const o = obj(c);
       const author = personOf(o?.author) ?? { id: '', name: '알 수 없음' };
-      return { author, created: stamp(o?.created) ?? '', text: adfToText(o?.body).slice(0, 1200) };
+      return { author, created: stamp(o?.created) ?? '', text: adfToText(o?.body).slice(0, 1200), doc: pruneAdf(o?.body, 400) };
     })
     .reverse();
   return { total, comments };
@@ -371,4 +389,56 @@ export function normalizeChildren(issues: unknown, dateFields: { start: string |
     });
   }
   return out;
+}
+
+/** 남길 속성 — 목록 시작 번호·제목 단계·링크·멘션 글·패널 종류·할 일 상태·표 칸 너비 등. */
+const KEEP_ATTRS = new Set(['title', 'level', 'order', 'url', 'text', 'shortName', 'language', 'timestamp', 'panelType', 'state', 'colspan', 'rowspan', 'color', 'localId']);
+const KEEP_MARK_ATTRS = new Set(['href', 'color']);
+
+/**
+ * ADF를 화면이 그릴 만큼만 줄인다 — 노드 수 상한(`maxNodes`), 글은 그대로, 서식은 종류 + `href`·`color`만,
+ * 속성은 위 목록만(미디어 id·사용자 id 같은 것은 버린다). 문서가 아니면 null.
+ */
+export function pruneAdf(doc: unknown, maxNodes = 3000): AdfNode | null {
+  const root = obj(doc);
+  if (!root || root.type !== 'doc') return null;
+  let left = maxNodes;
+  const walk = (n: unknown): AdfNode | null => {
+    const o = obj(n);
+    const type = str(o?.type);
+    if (!o || !type || left <= 0) return null;
+    left -= 1;
+    const out: AdfNode = { type };
+    if (typeof o.text === 'string') out.text = o.text.slice(0, 4000);
+    if (Array.isArray(o.marks)) {
+      const marks = o.marks
+        .map((m) => {
+          const mo = obj(m);
+          const mt = str(mo?.type);
+          if (!mo || !mt) return null;
+          const ma = obj(mo.attrs);
+          const attrs: Record<string, string | number> = {};
+          for (const k of Object.keys(ma ?? {})) if (KEEP_MARK_ATTRS.has(k) && (typeof ma![k] === 'string' || typeof ma![k] === 'number')) attrs[k] = ma![k] as string | number;
+          return Object.keys(attrs).length ? { type: mt, attrs } : { type: mt };
+        })
+        .filter((m): m is NonNullable<typeof m> => !!m);
+      if (marks.length) out.marks = marks;
+    }
+    const a = obj(o.attrs);
+    if (a) {
+      const attrs: Record<string, string | number | boolean> = {};
+      for (const k of Object.keys(a)) {
+        const v = a[k];
+        if (KEEP_ATTRS.has(k) && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) attrs[k] = typeof v === 'string' ? v.slice(0, 500) : v;
+      }
+      if (Object.keys(attrs).length) out.attrs = attrs;
+    }
+    if (Array.isArray(o.content)) {
+      const kids = o.content.map(walk).filter((k): k is AdfNode => !!k);
+      if (kids.length) out.content = kids;
+    }
+    return out;
+  };
+  const r = walk(root);
+  return r && r.content?.length ? r : null;
 }
