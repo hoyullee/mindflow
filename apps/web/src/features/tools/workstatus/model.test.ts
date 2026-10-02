@@ -15,6 +15,11 @@ import {
   SOLO_KEY,
   gridDays,
   heatLevel,
+  indexLeaves,
+  leaveDaysIn,
+  leaveWeight,
+  leavesOn,
+  personBizDays,
   holidayOf,
   layLanes,
   monthBiz,
@@ -280,5 +285,65 @@ describe('달력 줄 — 이어지는 같은 묶음은 같은 줄', () => {
     const plan = planWeek(ts, week, all, mk(ts));
     expect(plan.rows[2]!.length).toBe(2);
     expect(plan.more[2]).toBe(2);
+  });
+});
+
+describe('담당자 휴가', () => {
+  const biz = bizDaysIn('2026-10-12', '2026-10-16', KR); // 월~금 5일
+  const lv = indexLeaves([
+    { person: 'p', start: '2026-10-13', end: '2026-10-14', kind: 'full' },
+    { person: 'q', start: '2026-10-15', end: '2026-10-15', kind: 'pm' },
+    { person: 'r', start: '2026-10-12', end: '2026-10-12', kind: 'am' },
+    { person: 'r', start: '2026-10-12', end: '2026-10-12', kind: 'pm' },
+    { person: 's', start: '2026-10-10', end: '2026-10-12', kind: 'full' }, // 주말에 걸친 휴가
+  ]);
+
+  it('일하는 몫 — 없음 1 · 반차 0.5 · 종일 0 · 같은 날 오전+오후 0', () => {
+    expect(leaveWeight(lv, 'p', '2026-10-12')).toBe(1);
+    expect(leaveWeight(lv, 'p', '2026-10-13')).toBe(0);
+    expect(leaveWeight(lv, 'q', '2026-10-15')).toBe(0.5);
+    expect(leaveWeight(lv, 'r', '2026-10-12')).toBe(0);
+    expect(leaveWeight(undefined, 'p', '2026-10-13')).toBe(1);
+  });
+
+  it('담당자 영업일과 휴가 일수 — 주말에 걸친 휴가는 세지 않는다', () => {
+    expect(personBizDays(lv, 'p', biz)).toBe(3);
+    expect(leaveDaysIn(lv, 'q', biz)).toBe(0.5);
+    expect(leaveDaysIn(lv, 's', biz)).toBe(1);
+    expect(leaveDaysIn(lv, 'x', biz)).toBe(0);
+  });
+
+  it('진행 일수 — 종일 휴가일은 빼고 반차일은 1일', () => {
+    const ts = [T('A-1', 'E', 'p', '2026-10-12', '2026-10-16'), T('A-2', 'E', 'q', '2026-10-12', '2026-10-16')];
+    expect(workedDays(ts, biz, 'p', undefined, lv)).toBe(3);
+    expect(workedDays(ts, biz, 'q', undefined, lv)).toBe(5);
+  });
+
+  it('집계 % 분모는 그 사람의 영업일', () => {
+    const data = buildDataset([{ key: 'E', name: 'e', start: null, end: null, status: 'doing' }], [T('A-1', 'E', 'p', '2026-10-12', '2026-10-16'), T('A-2', 'E', 'q', '2026-10-12', '2026-10-16')], []);
+    const s = computeStats(data.people, data.epics, data.tickets, biz, lv);
+    const p = s.rows.find((r) => r.person.id === 'p')!;
+    const q = s.rows.find((r) => r.person.id === 'q')!;
+    expect([p.total, p.biz, p.leave, p.pct]).toEqual([3, 3, 2, 100]);
+    expect([q.total, q.biz, q.leave, q.pct]).toEqual([5, 4.5, 0.5, 111]);
+  });
+
+  it('일정 맞춰보기 — 휴가일은 분모에서 빠지고, 전부 휴가면 불가', () => {
+    const data = buildDataset([{ key: 'E', name: 'e', start: null, end: null, status: 'doing' }], [T('A-1', 'E', 'p', '2026-10-12', '2026-10-12', 'todo'), T('A-2', 'E', 'z', '2026-10-01', '2026-10-01', 'done')], []);
+    const all = indexLeaves([{ person: 'z', start: '2026-10-12', end: '2026-10-16', kind: 'full' }, { person: 'p', start: '2026-10-13', end: '2026-10-14', kind: 'full' }]);
+    const rows = availability(data.people, data.tickets, biz, all);
+    const p = rows.find((r) => r.person.id === 'p')!;
+    const z = rows.find((r) => r.person.id === 'z')!;
+    expect([p.total, p.busy, p.free, p.leave, p.level]).toEqual([3, 1, 2, 2, 1]);
+    expect([z.total, z.level]).toEqual([0, 3]);
+  });
+
+  it('그날 휴가인 사람', () => {
+    const list = [
+      { person: 'p', start: '2026-10-13', end: '2026-10-14', kind: 'full' as const },
+      { person: 'q', start: '2026-10-15', end: '2026-10-15', kind: 'pm' as const },
+    ];
+    expect(leavesOn(list, '2026-10-14').map((l) => l.person)).toEqual(['p']);
+    expect(leavesOn(list, '2026-10-16')).toEqual([]);
   });
 });

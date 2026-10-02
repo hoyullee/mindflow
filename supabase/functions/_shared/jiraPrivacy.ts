@@ -4,6 +4,7 @@
 // 우리가 저장하는 Atlassian 사용자 정보는 `user_tool_prefs.data.work`의 두 칸뿐이다:
 //   - `extra`  — 작업 현황에서 **직접 더한 담당자** `{ id, name, at? }`(accountId · 표시 이름 · 받은 시각)
 //   - `hidden` — 이 화면에서 **끈 담당자**의 accountId
+// 그리고 **담당자 휴가**(`jira_leaves` — 0050)의 `person`(accountId)과 그 이름 스냅샷 `person_name`.
 // 티켓 내용·담당자 이름은 저장하지 않는다(조회할 때마다 받는다). 연결을 해제한 사람의 설정에도
 // 이 두 칸이 남는다(재연결 때 되살리려고 — 결정 2026-09-30) — 그래서 보고는 **모든 행**을 본다.
 
@@ -25,7 +26,14 @@ const iso = (v: unknown): string | null => (typeof v === 'string' && !Number.isN
  * 같은 사람이 여러 행에 있으면 **가장 오래된** 시각을 보낸다(가장 낡은 사본이 갱신 대상인가가 질문이다).
  * `hidden`처럼 시각이 없는 id는 그 행의 `updated_at`으로 둔다.
  */
-export function collectAccounts(rows: PrefsRow[]): Map<string, string> {
+/** 휴가 한 건 중 보고에 필요한 칸(`jira_leaves`). */
+export interface LeaveRow {
+  person: string;
+  updated_at: string;
+  created_by: string;
+}
+
+export function collectAccounts(rows: PrefsRow[], leaves: LeaveRow[] = []): Map<string, string> {
   const out = new Map<string, string>();
   const put = (id: unknown, at: string | null) => {
     if (typeof id !== 'string' || !id || id.length > 128) return;
@@ -40,6 +48,8 @@ export function collectAccounts(rows: PrefsRow[]): Map<string, string> {
     if (Array.isArray(work.extra)) for (const p of work.extra) put(obj(p)?.id, iso(obj(p)?.at) ?? rowAt);
     if (Array.isArray(work.hidden)) for (const id of work.hidden) put(id, rowAt);
   }
+  // 휴가의 이름은 그 행을 마지막으로 쓴 때 받은 것이다(이름을 고치면 `updated_at`이 함께 간다).
+  for (const l of leaves) put(l.person, iso(l.updated_at));
   return out;
 }
 

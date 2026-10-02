@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { activeOn, DOW, dowOf, gridDays, holidayOf, planWeek, releasesOn, shortDate, type CalCapacity, type Dataset, type Epic, type HolidayRules, type MonthBiz, type Stats, type Ticket } from './model';
 import { bizBreakdown } from './WsStats';
 import { Avatar, MONO, StatusBadge } from './wsUi';
+import { LeaveBadge } from './WsLeave';
 
 // 작업 현황의 **폰 판**(모바일 디자인 A — W1 달력 · W3 집계). 데스크톱의 7×6 칩 격자와 담당자 × 프로젝트 표는
 // 390px에서 글자가 칸을 못 넘는다. 같은 데이터(`planWeek` · `computeStats`)를 손가락 판으로 다시 그린다.
@@ -211,13 +212,18 @@ export function WsMobileStats({ stats, biz, month, onOpenHoliday }: { stats: Sta
         {!rows.length && <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 13, color: 'var(--mf-ws-faint)' }}>조건에 맞는 담당자가 없어요</div>}
         {rows.map((r, i) => {
           const on = open === r.person.id;
-          const hot = bizN ? r.total / bizN > 0.9 : false;
+          // 분모는 그 사람의 영업일(휴가를 뺀 — 휴가 스펙 §7).
+          const own = r.biz;
+          const hot = own ? r.total / own > 0.9 : false;
           const parts = segs(r.cells);
           return (
             <button key={r.person.id} type="button" className="btn" data-ws-mstat={r.person.id} aria-expanded={on} onClick={() => setOpen(on ? null : r.person.id)} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', border: 0, borderTop: i ? '1px solid var(--mf-ws-line)' : 0, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
                 <Avatar ini={r.person.ini} c={r.person.c} size={26} />
-                <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.person.name}</span>
+                <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ minWidth: 0, fontSize: 14, fontWeight: 700, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.person.name}</span>
+                  {r.leave > 0 && <LeaveBadge days={r.leave} height={18} font={10} />}
+                </span>
                 <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: hot ? '#C0563A' : r.total ? 'var(--mf-ws-ink)' : 'var(--mf-ws-faint)' }}>
                   {r.total}
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mf-ws-mut)', marginLeft: 2 }}>일</span>
@@ -229,7 +235,7 @@ export function WsMobileStats({ stats, biz, month, onOpenHoliday }: { stats: Sta
               </span>
               <span aria-hidden="true" style={{ display: 'flex', width: '100%', height: 5, borderRadius: 99, background: 'var(--mf-ws-soft)', overflow: 'hidden' }}>
                 {parts.map((c) => (
-                  <span key={c.epic.key} style={{ display: 'block', width: `${bizN ? (c.days / bizN) * 100 : 0}%`, background: c.epic.c }} />
+                  <span key={c.epic.key} style={{ display: 'block', width: `${own ? (c.days / own) * 100 : 0}%`, background: c.epic.c }} />
                 ))}
               </span>
               {on && (

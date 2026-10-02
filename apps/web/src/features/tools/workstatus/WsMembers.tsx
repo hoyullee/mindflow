@@ -1,14 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Switch } from '../../../components/Switch';
 import { jiraSource, type JiraPerson } from '../jira/jiraApi';
-import { initialOf, PERSON_PALETTE, type Person } from './model';
+import { initialOf, PERSON_PALETTE, type HolidayRules, type Person } from './model';
 import { Avatar, MONO } from './wsUi';
+import type { Leave, LeaveInput } from '../jira/leavesStore';
+import { LeaveButton, LeaveChip, LeaveForm, type LeaveDraft } from './WsLeave';
+
+/** 담당자 팝오버의 휴가 몫(휴가 스펙 §3) — 없으면 휴가 단추를 그리지 않는다. */
+export interface MembersLeave {
+  leaves: Leave[];
+  today: string;
+  rules: HolidayRules;
+  draft: LeaveDraft | null;
+  onDraft: (d: LeaveDraft | null) => void;
+  onSubmit: (v: LeaveInput, editId?: string) => Promise<boolean>;
+  onDelete: (l: Leave) => void;
+}
 
 /**
  * 담당자 팝오버(스펙 §4.3-1) — 이 화면에서 볼 사람을 켜고 끈다(Jira 배정은 그대로). 바닥에서
  * Jira 사용자를 찾아 더하면 티켓이 없어도 목록과 일정 맞춰보기에 선다.
  */
-export function WsMembers({ people, hidden, monthCount, onToggle, onAdd, onRemove }: { people: Person[]; hidden: string[]; monthCount: Map<string, number>; onToggle: (id: string) => void; onAdd: (p: JiraPerson) => void; onRemove: (id: string) => void }) {
+export function WsMembers({ people, hidden, monthCount, onToggle, onAdd, onRemove, leave }: { people: Person[]; hidden: string[]; monthCount: Map<string, number>; onToggle: (id: string) => void; onAdd: (p: JiraPerson) => void; onRemove: (id: string) => void; leave?: MembersLeave }) {
   const [q, setQ] = useState('');
   const [found, setFound] = useState<JiraPerson[] | null>(null);
   useEffect(() => {
@@ -38,12 +51,16 @@ export function WsMembers({ people, hidden, monthCount, onToggle, onAdd, onRemov
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--mf-ws-ink)' }}>담당자</div>
         <div style={{ fontSize: 11.5, color: 'var(--mf-ws-mut2)', marginTop: 2 }}>끄면 이 화면에서만 숨겨져요 · Jira 배정은 그대로</div>
       </div>
-      <div className="lnb-scroll" style={{ maxHeight: 300, overflowY: 'auto', padding: '0 8px 6px' }}>
+      <div className="lnb-scroll" style={{ maxHeight: leave ? 'min(440px, 62vh)' : 300, overflowY: 'auto', padding: '0 8px 6px' }}>
         {people.map((p) => {
           const on = !hidden.includes(p.id);
           const cnt = monthCount.get(p.id) ?? 0;
+          // 휴가 칩은 오늘 이후 것만(지난 휴가도 달력·집계에는 계속 반영된다 — 스펙 §10).
+          const upcoming = leave ? leave.leaves.filter((l) => l.person === p.id && l.end >= leave.today) : [];
+          const draft = leave?.draft?.person === p.id ? leave.draft : null;
           return (
-            <div key={p.id} data-ws-member={p.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 10, opacity: on ? 1 : 0.45 }}>
+            <div key={p.id}>
+            <div data-ws-member={p.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 10, opacity: on ? 1 : 0.45 }}>
               <Avatar ini={p.ini} c={p.c} size={24} />
               <span style={{ minWidth: 0, flex: '1 1 auto' }}>
                 <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
@@ -56,7 +73,17 @@ export function WsMembers({ people, hidden, monthCount, onToggle, onAdd, onRemov
                   </svg>
                 </button>
               )}
+              {leave && <LeaveButton on={!!draft} label={`${p.name} 님 휴가 등록`} onClick={() => leave.onDraft(draft ? null : { person: p.id })} />}
               <Switch checked={on} onCheckedChange={() => onToggle(p.id)} label={`${p.name} 보기`} accent="#E85E33" track="#DDD3C8" knob="#FFFFFF" />
+            </div>
+            {leave && upcoming.length > 0 && (
+              <div data-ws-leave-chips={p.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 8px 6px 41px' }}>
+                {upcoming.map((l) => (
+                  <LeaveChip key={l.id} l={l} editing={draft?.editId === l.id} onEdit={() => leave.onDraft(draft?.editId === l.id ? null : { person: p.id, start: l.start, end: l.end, kind: l.kind, note: l.note, editId: l.id })} onDelete={() => leave.onDelete(l)} />
+                ))}
+              </div>
+            )}
+            {leave && draft && <LeaveForm key={`${draft.editId ?? ''}|${draft.start ?? ''}|${draft.end ?? ''}`} draft={draft} person={p} rules={leave.rules} onCancel={() => leave.onDraft(null)} onSubmit={leave.onSubmit} />}
             </div>
           );
         })}

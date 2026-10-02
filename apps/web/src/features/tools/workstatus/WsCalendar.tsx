@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { calCapacity, CAL_LANES, DOW, dowOf, gridDays, holidayOf, planWeek, releasesOn, type Dataset, type HolidayRules, type Ticket } from './model';
+import { calCapacity, CAL_LANES, DOW, dowOf, gridDays, holidayOf, leavesOn, planWeek, releasesOn, type Dataset, type HolidayRules, type Ticket } from './model';
 import { AvatarStack, MONO } from './wsUi';
+import type { Leave } from '../jira/leavesStore';
+import { HATCH, LeaveAvatar, leaveLabel } from './WsLeave';
 
 /**
  * 달력 보기(스펙 §5) — 7×6 격자. 칸마다 그날 걸친 티켓을 **에픽별 칩**으로 묶고, 셋을 넘으면
  * 둘 + `+N개 프로젝트`. 칸을 누르면 오른쪽 패널의 날짜가 바뀐다.
  */
-export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, avail, onOpenIssue }: { y: number; m: number; today: string; sel: string; onPick: (d: string) => void; tickets: Ticket[]; data: Dataset; rules: HolidayRules; avail: { from: string; to: string } | null; onOpenIssue?: (key: string) => void }) {
+export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, avail, onOpenIssue, leaves = [] }: { y: number; m: number; today: string; sel: string; onPick: (d: string) => void; tickets: Ticket[]; data: Dataset; rules: HolidayRules; avail: { from: string; to: string } | null; onOpenIssue?: (key: string) => void; /** 보이는 담당자의 휴가(휴가 스펙 §5). */ leaves?: Leave[] }) {
   const month = `${y}-${String(m).padStart(2, '0')}`;
   const cells = gridDays(y, m);
   // 칸 하나가 담는 줄 수는 **칸 높이를 재서** 정한다(일정 페이지와 같은 방식) — 창 크기·패널 접기에 따라 달라진다.
@@ -24,9 +26,14 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
   // 아직 못 쟀으면(첫 프레임·레이아웃 없는 환경) 스펙의 기본(셋/둘).
   const cap = cellH > 0 ? calCapacity(cellH) : CAL_LANES;
   // 주마다 줄을 배정한다 — 이어지는 같은 묶음이 칸마다 위아래로 흔들리지 않게(일정 페이지와 같은 규칙).
+  // 휴가 줄은 칩 한 줄 자리를 쓴다 — 그 주에 휴가가 하나라도 있으면 **그 주 전체**가 한 줄 덜 담는다
+  // (칸마다 따로 줄이면 이어지는 띠가 그 칸에서만 한 칸 밀린다 · 셀 높이 유지 — 스펙 §5).
+  const dayLeaves = cells.map((d) => (d.startsWith(month) ? onePerPerson(leavesOn(leaves, d).filter((l) => data.pById.has(l.person))) : []));
   const plans = Array.from({ length: cells.length / 7 }, (_, w) => {
     const week = cells.slice(w * 7, w * 7 + 7);
-    return planWeek(tickets, week, week.map((d) => d.startsWith(month)), data, cap);
+    const withLeave = dayLeaves.slice(w * 7, w * 7 + 7).some((ls) => ls.length > 0);
+    const c = withLeave ? { rows: Math.max(1, cap.rows - 1), withMore: Math.max(1, cap.withMore - 1) } : cap;
+    return { ...planWeek(tickets, week, week.map((d) => d.startsWith(month)), data, c), withLeave };
   });
   return (
     <div data-ws-calendar style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', boxSizing: 'border-box', background: 'var(--mf-cal-frame)', borderTop: '1px solid var(--mf-ws-line)', maxWidth: '100%', overflow: 'hidden' }}>
@@ -96,6 +103,7 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
                 )}
                 {busy > 0 && <span style={{ marginLeft: 'auto', flexShrink: 0, fontFamily: MONO, fontSize: 9.5, color: 'var(--mf-ws-faint)' }}>{busy}명</span>}
               </div>
+              {plan.withLeave && <LeaveRow d={d} list={dayLeaves[i]!} data={data} />}
               {pieces.map((pc, li) => {
                 if (!pc) return <div key={`gap${li}`} aria-hidden="true" style={{ height: 18, flexShrink: 0 }} />;
                 const c = pc.chip;
@@ -140,4 +148,36 @@ export function WsCalendar({ y, m, today, sel, onPick, tickets, data, rules, ava
       </div>
     </div>
   );
+}
+
+/** 칸의 휴가 줄 — 점선 빗금 위에 `휴가` + 아바타(반차는 반만 채움). 그 주에 휴가가 있는데 이 칸엔 없으면 빈 자리. */
+function LeaveRow({ d, list, data }: { d: string; list: Leave[]; data: Dataset }) {
+  if (!list.length) return <div aria-hidden="true" style={{ height: 18, flexShrink: 0 }} />;
+  const shown = list.slice(0, 4);
+  return (
+    <div data-ws-leave-row={d} title={list.map((l) => `${data.pById.get(l.person)?.name ?? l.personName} · ${leaveLabel(l)}`).join('\n')} style={{ height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '0 5px', borderRadius: 5, border: '1px dashed #D9CFC3', background: HATCH, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden' }}>
+      <span style={{ fontSize: 9.5, fontWeight: 800, color: '#8A8078', flexShrink: 0 }}>휴가</span>
+      <span style={{ display: 'inline-flex', minWidth: 0 }}>
+        {shown.map((l, i) => {
+          const p = data.pById.get(l.person)!;
+          return (
+            <span key={l.id} style={{ marginLeft: i ? -3 : 0, zIndex: 4 - i, display: 'inline-flex' }}>
+              <LeaveAvatar p={p} kind={l.kind} size={13} />
+            </span>
+          );
+        })}
+      </span>
+      {list.length > 4 && <span style={{ fontFamily: MONO, fontSize: 9, color: '#8A8078', flexShrink: 0 }}>+{list.length - 4}</span>}
+    </div>
+  );
+}
+
+/** 같은 날 오전 + 오후 반차 둘은 한 사람의 종일로 그린다(아바타 하나). */
+function onePerPerson(list: Leave[]): Leave[] {
+  const m = new Map<string, Leave>();
+  for (const l of list) {
+    const had = m.get(l.person);
+    m.set(l.person, had ? { ...had, kind: 'full', note: [had.note, l.note].filter(Boolean).join(', ') } : l);
+  }
+  return [...m.values()];
 }

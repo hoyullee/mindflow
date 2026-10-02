@@ -86,3 +86,18 @@
   background: #fbf1ee !important;
   color: #c0563a !important;
 }
+
+/* 담당자 휴가(휴가 스펙 §3) */
+.mf-ws-leave-btn[data-on='0']:hover {
+  border-color: #e7c7b4 !important;
+  color: #c0563a !important;
+}
+.mf-ws-leave-x:hover {
+  color: #c0563a !important;
+}
+.mf-ws-leave-note:focus {
+  border-color: #e8a25f !important;
+}
+.mf-ws-leave-row:hover {
+  background: rgba(255, 253, 251, 0.8) !important;
+}

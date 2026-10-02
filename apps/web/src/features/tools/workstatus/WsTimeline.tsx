@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { DOW, dowOf, holidayOf, layLanes, overlaps, type Dataset, type Epic, type HolidayRules, type Person, type Ticket } from './model';
 import { Avatar, MONO, Seg, StatusBadge } from './wsUi';
+import type { Leave } from '../jira/leavesStore';
+import { fmtDays, HATCH, leaveLabel } from './WsLeave';
 
 const LEFT = 172;
 const COL = 30;
@@ -26,6 +28,10 @@ interface Props {
    * 고르기는 표 위로 올라가고(`WorkStatusView`), 이름 열 머리는 무엇의 줄인지만 적는다.
    */
   compact?: boolean;
+  /** 보이는 담당자의 휴가 — 담당자별 묶음에서만 띠와 겹침 경고를 그린다(휴가 스펙 §6). */
+  leaves?: Leave[];
+  /** 담당자별 그 달 휴가 일수(반차 0.5). */
+  leaveDays?: Map<string, number>;
 }
 
 /**
@@ -83,20 +89,37 @@ export function WsTimeline(p: Props) {
       const mine = p.tickets.filter((t) => t.person.id === person.id);
       const { bars, lanes } = layLanes(mine, p.days);
       const h = 16 + Math.max(1, lanes) * 26;
+      const lv = (p.leaves ?? []).filter((l) => l.person === person.id && overlaps(l, first, last));
+      const full = lv.filter((l) => l.kind === 'full');
+      // 종일 휴가와 겹치는 미완료 티켓 — 코랄 테두리 + 툴팁 마지막 줄(반차는 경고하지 않는다).
+      const clash = (t: Ticket) => t.status !== 'done' && full.some((l) => overlaps(t, l.start, l.end));
+      const lvDays = p.leaveDays?.get(person.id) ?? 0;
       rows.push(
         <Row key={person.id} lw={LW} h={h} offs={offs} left={
           <button type="button" className="btn" onClick={() => p.onPickPerson(person.id)} style={leftBtn}>
             <Avatar ini={person.ini} c={person.c} size={26} />
             <span style={{ minWidth: 0 }}>
               <span style={nameStyle(13, 700)}>{person.name}</span>
-              <span style={subStyle}>티켓 {mine.filter((t) => overlaps(t, first, last)).length} · 진행 {p.worked.get(person.id) ?? 0}일</span>
+              <span style={subStyle}>
+                티켓 {mine.filter((t) => overlaps(t, first, last)).length} · 진행 {p.worked.get(person.id) ?? 0}일{lvDays > 0 ? ` · 휴가 ${fmtDays(lvDays)}일` : ''}
+              </span>
             </span>
           </button>
         }>
+          {lv.map((l) => {
+            const b = layLanes([l], p.days).bars[0];
+            if (!b) return null;
+            return (
+              <span key={`lv:${l.id}`} data-ws-tl-leave={l.id} aria-hidden="true" title={`${person.name} · ${leaveLabel(l)}`} style={{ position: 'absolute', top: 3, bottom: 3, left: `${(b.s / n) * 100}%`, width: `calc(${((b.e - b.s + 1) / n) * 100}% - 2px)`, borderRadius: 6, border: '1px dashed #D9CFC3', background: HATCH, boxSizing: 'border-box', pointerEvents: 'none', zIndex: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: '0 5px 2px', overflow: 'hidden' }}>
+                <span style={{ fontSize: 9, fontWeight: 800, color: '#A29B90', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{leaveLabel(l)}</span>
+              </span>
+            );
+          })}
           {bars.map((b) => <ReleaseMark key={`r:${b.item.key}`} t={b.item} days={p.days} top={8 + b.lane * 26} />)}
           {bars.map((b) => {
             const ep = p.data.eByKey.get(b.item.epic);
-            return <BarEl key={b.item.key} n={n} s={b.s} e={b.e} top={8 + b.lane * 26} c={ep?.c ?? '#B7ACA1'} bg={ep?.bg ?? '#F3EEE8'} code={b.item.key} text={b.item.summary} dim={b.item.status === 'todo'} title={barTitle(b.item, ep && !ep.solo ? ep.name : '')} onClick={() => p.onOpenIssue(b.item.key)} />;
+            const warn = clash(b.item);
+            return <BarEl key={b.item.key} n={n} s={b.s} e={b.e} top={8 + b.lane * 26} c={ep?.c ?? '#B7ACA1'} bg={ep?.bg ?? '#F3EEE8'} code={b.item.key} text={b.item.summary} dim={b.item.status === 'todo'} warn={warn} title={`${barTitle(b.item, ep && !ep.solo ? ep.name : '')}${warn ? '\n⚠ 휴가 기간과 겹쳐요' : ''}`} onClick={() => p.onOpenIssue(b.item.key)} />;
           })}
         </Row>,
       );
@@ -195,15 +218,16 @@ function Row({ lw, h, offs, left, leftBg, children }: { lw: number; h: number; o
   );
 }
 
-function BarEl({ n, s, e, top, c, bg, code, text, dim, title, onClick, fill }: { n: number; s: number; e: number; top: number; c: string; bg: string; code: string; text: string; dim: boolean; title: string; onClick: () => void; fill?: boolean }) {
+function BarEl({ n, s, e, top, c, bg, code, text, dim, title, onClick, fill, warn }: { n: number; s: number; e: number; top: number; c: string; bg: string; code: string; text: string; dim: boolean; title: string; onClick: () => void; fill?: boolean; /** 종일 휴가와 겹치는 미완료 티켓(휴가 스펙 §6). */ warn?: boolean }) {
   return (
     <button
       type="button"
       className="btn mf-ws-bar"
       data-ws-bar={code}
+      data-ws-bar-warn={warn ? '1' : undefined}
       title={title}
       onClick={onClick}
-      style={{ position: 'absolute', top, left: `${(s / n) * 100}%`, width: `calc(${((e - s + 1) / n) * 100}% - 3px)`, height: 22, display: 'flex', alignItems: 'center', gap: 5, padding: '0 7px', border: 0, borderLeft: `3px solid ${c}`, borderRadius: '4px 7px 7px 4px', background: bg, opacity: dim ? 0.6 : 1, fontFamily: 'inherit', cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', boxSizing: 'border-box', zIndex: 1 }}
+      style={{ position: 'absolute', top, left: `${(s / n) * 100}%`, width: `calc(${((e - s + 1) / n) * 100}% - 3px)`, height: 22, display: 'flex', alignItems: 'center', gap: 5, padding: '0 7px', border: 0, borderLeft: `3px solid ${c}`, borderRadius: '4px 7px 7px 4px', background: bg, opacity: dim ? 0.6 : 1, boxShadow: warn ? 'inset 0 0 0 1.5px #E8845C' : undefined, fontFamily: 'inherit', cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap', boxSizing: 'border-box', zIndex: 1 }}
     >
       <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: fill ? '#FFFDFB' : c, flexShrink: 0 }}>{code}</span>
       <span style={{ fontSize: 11, fontWeight: 600, color: fill ? '#FFFDFB' : '#3A352F', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{text}</span>

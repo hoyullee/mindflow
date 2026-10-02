@@ -1,10 +1,13 @@
-import { activeOn, DOW, dowOf, holidayOf, releasesOn, shortDate, type Dataset, type HolidayRules, type Stats, type Ticket } from './model';
+import { activeOn, DOW, dowOf, holidayOf, LEAVE_KIND, leavesOn, releasesOn, shortDate, type Dataset, type HolidayRules, type Stats, type Ticket } from './model';
 import { Avatar, MONO, StatusBadge } from './wsUi';
+import type { Leave } from '../jira/leavesStore';
+import { HATCH, leaveRange, LeaveAvatar } from './WsLeave';
 
 /**
  * 오른쪽 패널(스펙 §8) — 고른 날의 진행 작업(에픽별) + 이달 진행 일수 순위(상위 6).
  */
-export function WsSidePanel({ sel, today, month, rules, tickets, data, stats, bizN, onOpenIssue, onPickPerson }: { sel: string; today: string; month: number; rules: HolidayRules; tickets: Ticket[]; data: Dataset; stats: Stats; bizN: number; onOpenIssue: (key: string) => void; onPickPerson: (id: string) => void }) {
+export function WsSidePanel({ sel, today, month, rules, tickets, data, stats, bizN, onOpenIssue, onPickPerson, leaves = [] }: { sel: string; today: string; month: number; rules: HolidayRules; tickets: Ticket[]; data: Dataset; stats: Stats; bizN: number; onOpenIssue: (key: string) => void; onPickPerson: (id: string) => void; leaves?: Leave[] }) {
+  const off = leavesOn(leaves, sel).filter((l) => data.pById.has(l.person));
   const day = tickets.filter((t) => activeOn(t, sel));
   const groups = new Map<string, Ticket[]>();
   for (const t of day) groups.set(t.epic, [...(groups.get(t.epic) ?? []), t]);
@@ -24,6 +27,23 @@ export function WsSidePanel({ sel, today, month, rules, tickets, data, stats, bi
         </div>
         {h && <div style={{ fontSize: 11.5, fontWeight: 700, color: '#C4614C', marginTop: 3 }}>{h.company ? '회사 휴일' : '공휴일'} · {h.name}</div>}
       </div>
+      {off.length > 0 && (
+        <div data-ws-panel-leave style={{ margin: '0 15px 10px', padding: 10, borderRadius: 10, background: HATCH, border: '1px dashed #D9CFC3' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', color: '#8A8078', marginBottom: 4 }}>이 날 휴가</div>
+          {off.map((l) => {
+            const p = data.pById.get(l.person)!;
+            return (
+              <button key={l.id} type="button" className="btn mf-ws-leave-row" data-ws-panel-leave-person={l.person} onClick={() => onPickPerson(l.person)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 4px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0 }}>
+                <LeaveAvatar p={p} kind={l.kind} size={22} />
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-ws-ink)', whiteSpace: 'nowrap' }}>{p.name}</span>
+                <span style={{ fontSize: 11, color: '#8A8078', whiteSpace: 'nowrap' }}>{LEAVE_KIND[l.kind]}</span>
+                {l.note && <span style={{ fontSize: 11, color: '#B7ACA1', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {l.note}</span>}
+                {l.start !== l.end && <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 10, color: '#A29B90', flexShrink: 0 }}>{leaveRange(l)}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {rel.length > 0 && (
         <div data-ws-panel-release style={{ margin: '0 15px 10px', padding: '8px 10px', borderRadius: 10, background: '#EAF1FB' }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: '#3F67A8', marginBottom: 2 }}>이 날 배포 예정 {rel.length}건</div>
@@ -87,7 +107,7 @@ export function WsSidePanel({ sel, today, month, rules, tickets, data, stats, bi
                 {r.cells
                   .filter((c) => c.days > 0)
                   .map((c) => (
-                    <span key={c.epic.key} style={{ width: `${bizN ? (c.days / bizN) * 100 : 0}%`, background: c.epic.c }} />
+                    <span key={c.epic.key} style={{ width: `${r.biz ? (c.days / r.biz) * 100 : 0}%`, background: c.epic.c }} />
                   ))}
               </span>
             </span>

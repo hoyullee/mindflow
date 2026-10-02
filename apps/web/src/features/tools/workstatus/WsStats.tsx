@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { heatLevel, type Epic, type MonthBiz, type Stats } from './model';
 import { Avatar, MONO } from './wsUi';
+import { fmtDays, LeaveBadge } from './WsLeave';
 
 const HEAT = ['var(--mf-ws-card)', '#FBF3EA', '#F8E6D5', '#F4D6BF', '#EFC5A6'] as const;
 
@@ -11,6 +12,7 @@ const HEAT = ['var(--mf-ws-card)', '#FBF3EA', '#F8E6D5', '#F4D6BF', '#EFC5A6'] a
 export function WsStats({ stats, epics, biz, month, filteredIds, onPickPerson, onOpenHoliday }: { stats: Stats; epics: Epic[]; biz: MonthBiz; month: number; filteredIds: string[]; onPickPerson: (id: string) => void; onOpenHoliday: () => void }) {
   const cols = `200px repeat(${epics.length}, minmax(120px, 1fr)) 150px`;
   const bizN = biz.biz.length;
+  const leaveSum = stats.rows.reduce((a, r) => a + r.leave, 0);
   return (
     <div data-ws-stats style={{ padding: '20px 32px 32px', background: 'var(--mf-ws-card)', borderTop: '1px solid var(--mf-ws-line)', minHeight: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12, marginBottom: 14 }}>
@@ -22,6 +24,7 @@ export function WsStats({ stats, epics, biz, month, filteredIds, onPickPerson, o
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--mf-ws-ink)' }}>{month}월 영업일</span>
           <span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 800, color: 'var(--mf-ws-ink)' }}>{bizN}</span>
           <span style={{ fontSize: 12.5, color: 'var(--mf-ws-mut)' }}>일 · {bizBreakdown(biz)}</span>
+          {leaveSum > 0 && <span style={{ alignSelf: 'center' }}><LeaveBadge days={leaveSum} height={20} font={11} attrs={{ 'data-ws-stats-leave': '' }} /></span>}
         </div>
       </div>
       <div className="lnb-scroll" style={{ border: '1px solid var(--mf-ws-line)', borderRadius: 12, overflowX: 'auto' }}>
@@ -37,12 +40,20 @@ export function WsStats({ stats, epics, biz, month, filteredIds, onPickPerson, o
             <Head end>합계 / 영업일</Head>
           </div>
           {stats.rows.map((r) => {
-            const hot = bizN ? r.total / bizN > 0.9 : false;
+            // 비율의 분모는 **그 사람의** 영업일(휴가를 뺀 — 휴가 스펙 §7).
+            const hot = r.biz ? r.total / r.biz > 0.9 : false;
             return (
               <div key={r.person.id} role="row" data-ws-stat-row={r.person.id} onClick={() => onPickPerson(r.person.id)} className="mf-tool-row" style={{ display: 'grid', gridTemplateColumns: cols, height: 48, borderTop: '1px solid var(--mf-ws-line)', background: filteredIds.includes(r.person.id) ? '#FBF6F0' : undefined, cursor: 'pointer' }}>
                 <div role="cell" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0 16px', minWidth: 0 }}>
                   <Avatar ini={r.person.ini} c={r.person.c} size={24} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.person.name}</span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--mf-ws-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.person.name}</span>
+                    {r.leave > 0 && (
+                      <span data-ws-stat-leave={r.person.id} style={{ display: 'block', fontSize: 10, color: '#A29B90', whiteSpace: 'nowrap' }}>
+                        휴가 {fmtDays(r.leave)}일 · 영업일 {fmtDays(r.biz)}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 {r.cells.map((c) => {
                   const lv = heatLevel(c.days);
@@ -78,6 +89,7 @@ export function WsStats({ stats, epics, biz, month, filteredIds, onPickPerson, o
       </div>
       <p style={{ margin: '12px 2px 0', fontSize: 12, color: 'var(--mf-ws-mut2)', lineHeight: 1.6 }}>
         합계는 그 사람의 진행 중·완료 티켓이 걸친 영업일 수(같은 날은 한 번), 프로젝트 합계는 프로젝트별 값을 더한 인일이에요.
+        {leaveSum > 0 && ' 담당자 휴가는 그 사람의 영업일에서만 뺐어요(반차는 0.5일).'}
         {stats.grand !== stats.totalSum && ` 한 사람이 같은 날 두 프로젝트에 걸치면 두 곳에 모두 세므로, 인일 합계(${stats.grand})가 담당자 합계의 총합(${stats.totalSum})보다 클 수 있어요.`}{' '}
         <button type="button" className="btn" onClick={onOpenHoliday} style={{ border: 0, background: 'transparent', padding: 0, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#C0563A', cursor: 'pointer', textDecoration: 'underline' }}>
           휴일 설정
