@@ -8386,7 +8386,10 @@ export function useEditorState(): EditorController {
           put({ progress: r });
         })
         .then((meta) => {
-          commitBlock(pageId, blockId, (b) => (b.kind === 'file' ? { ...b, fileId: meta.id, fileName: meta.name, fileSize: meta.size, fileMime: meta.mime } : b), false);
+          // 크기는 서버가 잰 값이 먼저다. 다만 서버가 0을 주는데 고른 파일엔 내용이 있으면 **이 기기의 값**을
+          // 보인다 — 옛 함수(크기 헤더가 빠진 응답을 0으로 읽던 판)가 아직 배포돼 있어도 `0B`로 보이지 않게.
+          const size = meta.size || file.size;
+          commitBlock(pageId, blockId, (b) => (b.kind === 'file' ? { ...b, fileId: meta.id, fileName: meta.name, fileSize: size, fileMime: meta.mime } : b), false);
           put(null);
         })
         .catch((e: unknown) => put({ error: e instanceof FileUploadError ? e : new FileUploadError('unknown') }));

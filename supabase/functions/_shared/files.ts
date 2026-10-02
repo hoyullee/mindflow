@@ -70,14 +70,43 @@ export async function presign(
   return signed.url.replace(/\+/g, '%20');
 }
 
-/** 실제 객체의 크기를 잰다. 없으면 null, 그 밖의 실패는 던진다(없음과 장애를 섞지 않는다). */
+/** 크기 헤더 하나를 읽는다 — **없으면 null**(`Number(null)`은 0이라 그대로 쓰면 "0바이트"가 된다). */
+export function lengthOf(raw: string | null): number | null {
+  if (raw === null || raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** `Content-Range: bytes 0-0/12345` → 12345. 모르면 null. */
+export function totalOfRange(raw: string | null): number | null {
+  const m = raw ? /\/(\d+)\s*$/.exec(raw) : null;
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * 실제 객체의 크기를 잰다. 없으면 null, 그 밖의 실패는 던진다(없음과 장애를 섞지 않는다).
+ *
+ * **크기 헤더가 빠진 응답을 0으로 읽지 않는다**(제보: md 파일이 `0B`로 보였다). 글자 형식(`text/*`)은
+ * 압축된 채로 오면 길이를 미리 알 수 없어 `Content-Length`가 빠지고, Deno의 fetch는 압축을 풀면서 그
+ * 헤더를 지운다 — 예전 코드는 `Number(null)` = 0을 그대로 크기로 적었다. 그래서 ① 압축하지 말라고
+ * 묻고(`Accept-Encoding: identity`) ② 그래도 없으면 첫 바이트만 받아 `Content-Range`의 전체 길이를 읽는다.
+ */
 export async function headObjectSize(cfg: R2Config, key: string): Promise<number | null> {
-  const res = await cfg.client.fetch(objectUrl(cfg, key).toString(), { method: 'HEAD' });
+  const url = objectUrl(cfg, key).toString();
+  const res = await cfg.client.fetch(url, { method: 'HEAD', headers: { 'Accept-Encoding': 'identity' } });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`R2 HEAD ${res.status}`);
-  const n = Number(res.headers.get('content-length'));
-  if (!Number.isFinite(n) || n < 0) throw new Error('R2 HEAD without content-length');
-  return n;
+  const n = lengthOf(res.headers.get('content-length'));
+  if (n !== null) return n;
+  const part = await cfg.client.fetch(url, { method: 'GET', headers: { 'Accept-Encoding': 'identity', Range: 'bytes=0-0' } });
+  await part.body?.cancel();
+  if (part.status === 404) return null;
+  // 0바이트 파일은 범위를 줄 수 없어 416(또는 200 + 길이 0)이 온다 — 그때만 진짜 0이다.
+  if (part.status === 416) return 0;
+  if (!part.ok) throw new Error(`R2 GET range ${part.status}`);
+  const total = totalOfRange(part.headers.get('content-range')) ?? (part.status === 200 ? lengthOf(part.headers.get('content-length')) : null);
+  if (total === null) throw new Error('R2 object size unknown');
+  return total;
 }
 
 /** 객체를 지운다. 이미 없으면(404) 지운 것으로 친다 — 재시도가 안전하도록. */
