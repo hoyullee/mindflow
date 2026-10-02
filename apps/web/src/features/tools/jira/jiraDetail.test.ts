@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adfToText, fieldOf, normalizeChildren, normalizeComments, normalizeDetail, stamp } from '../../../../../../supabase/functions/_shared/jiraDetail';
+import { adfToText, fieldOf, normalizeChildren, normalizeComments, normalizeDetail, pruneAdf, stamp } from '../../../../../../supabase/functions/_shared/jiraDetail';
 import { ago, dueLabel } from '../workstatus/WsIssueModal';
 
 // 상세 팝업이 쓰는 순수한 부분 — Edge Function `jira`의 `issue` 동작이 같은 것을 쓴다.
@@ -102,5 +102,28 @@ describe('팝업 표기', () => {
   it('댓글 시각', () => {
     const now = new Date(2026, 8, 30, 14, 0).getTime();
     expect([ago('2026-09-30 10:00', now), ago('2026-09-29 10:00', now), ago('2026-09-26 10:00', now), ago('2026-09-01 10:00', now)]).toEqual(['4시간 전', '어제', '4일 전', '2026.09.01']);
+  });
+});
+
+describe('ADF 줄이기(원본 서식으로 그릴 문서)', () => {
+  it('종류·글·서식·필요한 속성만 — 미디어 id·사용자 id는 버린다', () => {
+    const d = doc(
+      { type: 'orderedList', attrs: { order: 3, localId: 'x' }, content: [{ type: 'listItem', content: [p({ type: 'text', text: '굵게', marks: [{ type: 'strong' }, { type: 'link', attrs: { href: 'https://a.b', __confluenceMetadata: { x: 1 } } }] })] }] },
+      { type: 'mediaSingle', content: [{ type: 'media', attrs: { id: 'secret-media-id', collection: 'c', type: 'file' } }] },
+      p({ type: 'mention', attrs: { id: 'account-id', text: '@이호율', accessLevel: '' } }),
+    );
+    expect(pruneAdf(d)).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'orderedList', attrs: { order: 3, localId: 'x' }, content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '굵게', marks: [{ type: 'strong' }, { type: 'link', attrs: { href: 'https://a.b' } }] }] }] }] },
+        { type: 'mediaSingle', content: [{ type: 'media' }] },
+        { type: 'paragraph', content: [{ type: 'mention', attrs: { text: '@이호율' } }] },
+      ],
+    });
+    expect(pruneAdf('글')).toBeNull();
+    expect(pruneAdf(doc())).toBeNull();
+    // 노드 수 상한
+    const big = doc(...Array.from({ length: 50 }, (_, i) => p(t(String(i)))));
+    expect(pruneAdf(big, 10)!.content!.length).toBeLessThan(10);
   });
 });
