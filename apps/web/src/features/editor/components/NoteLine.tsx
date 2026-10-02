@@ -13,6 +13,7 @@
 // 서식 버튼처럼 **우리가** 내용을 갈아야 할 때는 에디터가 `applyNoteFormat`으로 직접 그린다.
 
 import { clipText } from '../clipText';
+import { arrowAt } from '../noteArrows';
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { RichRun } from '@mindflow/mindmap-core';
@@ -427,6 +428,23 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
      */
     cb(at, text.slice(at + back));
     return true;
+  };
+
+  /** 캐럿 바로 앞의 `->`·`<-`·`←>`를 화살표 한 글자로 — 같은 글 조각 안에서만(서식 경계를 넘지 않는다). */
+  const replaceArrowAtCaret = (): void => {
+    const sel = window.getSelection();
+    const node = sel?.anchorNode;
+    if (!sel || !sel.isCollapsed || !node || node.nodeType !== Node.TEXT_NODE) return;
+    if (!ref.current?.contains(node) || node.parentElement?.closest('code')) return;
+    const text = node as Text;
+    const hit = arrowAt(text.data, sel.anchorOffset);
+    if (!hit) return;
+    text.replaceData(hit.start, hit.len, hit.to);
+    const range = document.createRange();
+    range.setStart(text, hit.start + hit.to.length);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
   };
 
   const commit = (final = false): void => {
@@ -943,6 +961,12 @@ export function NoteLine({ runs, onChange, placeholder, style, readOnly, selecti
         dirty.current = true;
         // 조합 중인 코드 조각은 **칠하기로** 흉내 낸다(아래 `paintArmedCode`).
         if (composing.current) paintArmedCode();
+        /**
+         * **화살표 자동 바꿈**(요청) — `->`·`<-`를 치는 순간 `→`·`←`로(`noteArrows`). 커밋 **전에**
+         * 화면의 글자를 바꿔 값과 화면이 같은 것을 말하게 한다. 코드(블록·인라인)·조합 중은 그대로.
+         */
+        const typed = (e.nativeEvent as InputEvent).data;
+        if (!composing.current && !codeBox && (typed === '>' || typed === '-')) replaceArrowAtCaret();
         commit();
         /**
          * **코드 알약을 지운 자리의 예약**(제보 11) — 커밋이 끝난 **뒤**에 건다.

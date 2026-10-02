@@ -11462,3 +11462,61 @@ describe('공책 92판 — 접기 내용 줄에 번호·기호(요청 1)', () =>
     await waitFor(() => expect(bodyText('tl4')).toEqual(['첫 글']));
   });
 });
+
+describe('공책 — 화살표 자동 바꿈 · 마지막으로 고친 장으로 연다', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 한 글자를 친 것처럼 — 박스에 글을 넣고 캐럿을 끝에 둔 뒤 `data`를 실은 input을 보낸다. */
+  function typeChar(box: HTMLElement, before: string, ch: string): void {
+    box.textContent = before + ch;
+    box.focus();
+    const text = box.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(text, text.length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.input(box, { data: ch, inputType: 'insertText' });
+  }
+
+  it('`->`·`<-`를 치면 화살표가 된다 — 코드 블록에서는 그대로(요청)', async () => {
+    const doc = { ...NOTE, pages: [{ id: 'p1', title: '화살표', blocks: [{ id: 'a1', kind: 'p', runs: [] }, { id: 'a2', kind: 'code', runs: [] }] }] };
+    localStorage.setItem('mindflow_doc_ar1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ar1&title=x');
+    const line = (await waitFor(() => container.querySelector('[data-note-line="a1"]'))) as HTMLElement;
+    typeChar(line, '가-', '>');
+    expect(line.textContent).toBe('가→');
+    typeChar(line, '가→ 나<', '-');
+    expect(line.textContent).toBe('가→ 나←');
+    typeChar(line, '가→ 나←', '>');
+    expect(line.textContent).toBe('가→ 나↔');
+    saveNow();
+    await waitFor(() => expect(saved('ar1').pages[0].blocks[0].runs.map((r: { t: string }) => r.t).join('')).toBe('가→ 나↔'));
+
+    const code = container.querySelector('[data-note-line="a2"]') as HTMLElement;
+    typeChar(code, 'a-', '>');
+    expect(code.textContent).toBe('a->');
+  });
+
+  it('공책을 열면 **마지막으로 고친 장**이 고른 장이다(요청)', async () => {
+    const doc = {
+      ...NOTE,
+      pages: [
+        { id: 'p1', title: '첫 장', blocks: [{ id: 'x1', kind: 'p', runs: [{ t: '첫', b: false, c: null }] }], updatedAt: '2026-09-01T00:00:00.000Z' },
+        { id: 'p2', title: '어제 고친 장', blocks: [{ id: 'x2', kind: 'p', runs: [{ t: '둘', b: false, c: null }] }], updatedAt: '2026-10-01T09:00:00.000Z' },
+        { id: 'p3', title: '셋째', blocks: [{ id: 'x3', kind: 'p', runs: [{ t: '셋', b: false, c: null }] }] },
+      ],
+    };
+    localStorage.setItem('mindflow_doc_lp1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=lp1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-line="x2"]')).toBeTruthy());
+    expect(container.querySelector('[data-note-line="x1"]')).toBeNull();
+  });
+});
+
