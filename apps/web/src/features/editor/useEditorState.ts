@@ -1227,6 +1227,15 @@ function sameRuns(a: RichRun[] | undefined, b: RichRun[] | undefined): boolean {
   return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
+/** 가장 늦게 고친 장 — `updatedAt`(ISO)이 없는 장은 가장 옛것으로 친다. 다 같으면 첫 장. */
+export function latestNotePage(pages: NotePage[]): NotePage | undefined {
+  let best: NotePage | undefined;
+  for (const pg of pages) {
+    if (!best || (pg.updatedAt ?? '') > (best.updatedAt ?? '')) best = pg;
+  }
+  return best;
+}
+
 export function useEditorState(): EditorController {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -6856,8 +6865,26 @@ export function useEditorState(): EditorController {
     pageParamUsed.current = true;
     setNotePageId(wantPageId);
   }, [wantPageId, doc.pages]);
-  /** 없는 페이지를 가리키고 있으면(삭제·첫 진입) 첫 장으로 떨어진다. */
-  const notePage = notePages.find((pg) => pg.id === notePageId) ?? notePages[0] ?? null;
+  /**
+   * **처음 열면 마지막으로 고친 장**(요청) — 아직 고른 장이 없으면 `updatedAt`이 가장 늦은 장, 그것도
+   * 없으면 첫 장. 없는 장을 가리키고 있으면(삭제) 같은 규칙으로 떨어진다.
+   */
+  const notePage = notePages.find((pg) => pg.id === notePageId) ?? latestNotePage(notePages) ?? null;
+  /**
+   * 그 장을 **문서를 받은 뒤 한 번** 못박는다 — 그대로 두면 다른 기기가 다른 장을 고친 판을 채택하는
+   * 순간(`refreshFromServer`) 보던 장이 저절로 넘어간다. 주소의 `page=`가 이미 골랐으면 건드리지 않는다.
+   */
+  useEffect(() => {
+    let alive = true;
+    void initialLoadRef.current.then(() => {
+      if (!alive) return;
+      const pick = latestNotePage(docRef.current.pages ?? []);
+      if (pick) setNotePageId((cur) => cur ?? pick.id);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /**
    * **기록 미리보기**(기록 패널 스펙 §6.1) — 고른 항목의 페이지를 본문 자리에 **읽기 전용**으로 띄운다.
