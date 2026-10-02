@@ -52,9 +52,10 @@ export function AvatarStack({ people, size, max, overlap, ring }: { people: { id
   );
 }
 
-export function StatusBadge({ status, height }: { status: TicketStatus; height: number }) {
+/** 상태 알약 — 글은 Jira의 상태 이름(있으면), 색은 분류. 이름이 없으면(옛 함수·데모) 분류 이름. */
+export function StatusBadge({ status, height, name }: { status: TicketStatus; height: number; name?: string }) {
   const s = STATUS[status];
-  return <span style={{ flexShrink: 0, height, padding: '0 6px', borderRadius: 999, background: s.bg, color: s.fg, fontSize: height <= 15 ? 9 : 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>{s.label}</span>;
+  return <span style={{ flexShrink: 0, height, padding: '0 6px', borderRadius: 999, background: s.bg, color: s.fg, fontSize: height <= 15 ? 9 : 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }} title={name || s.label}>{name || s.label}</span>;
 }
 
 /** 가라앉은 트랙 위의 세그먼트(보기 전환·묶음·국가·반복). */

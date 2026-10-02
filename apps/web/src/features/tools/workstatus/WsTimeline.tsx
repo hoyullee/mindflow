@@ -62,7 +62,7 @@ export function WsTimeline(p: Props) {
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
               {!nested && <span style={{ width: 8, height: 8, borderRadius: 2, background: ep.c, flexShrink: 0 }} />}
               <span style={nameStyle(12, 700)}>{t.summary}</span>
-              <StatusBadge status={t.status} height={15} />
+              <StatusBadge status={t.status} name={t.statusName} height={15} />
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
               {person && <PersonChip person={person} />}

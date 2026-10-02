@@ -5970,3 +5970,6 @@ main fast-forward(`c11feab`) 13초 전에 다른 세션의 main 푸시(`ee0c3f9`
 - **기록**: 요약 이름 `동영상`(`blockRef`·`phraseOf`).
 - **검증**: `noteVideo.test.ts`(4) · `NoteVideo.test.tsx`(3 — 붙여넣기 → 썸네일 판 → 누르면 iframe → 저장본 `{kind:'video',src}` / 문장 속 주소는 그대로 / mp4는 `<video>`·빈 블록 주소 칸·잘못된 주소 안내) · `Note.test.tsx`의 `/동영상`(초점·붙여넣기). Chromium 프로브(YouTube·Vimeo·빈 칸·붙여넣은 Loom, 클릭 뒤 iframe src) — 썸네일 호스트가 막힌 원격 세션이라 대체 판이 그려진 것도 함께 확인. lint·typecheck·build.
 - **트레이드오프**: Vimeo·Loom은 썸네일을 받으려면 oEmbed 호출이 필요해(CORS·지연) 이름 판으로 둔다. CSP가 없어 iframe 출처를 막는 설정은 없다 — 생기면 `frame-src`에 세 곳을 더한다.
+## Jira 작업 현황 — 목록의 상태도 Jira 이름으로 (2026-10-02)
+
+**제보**: 상세 팝업은 `품질점검 완료`인데 날짜 칸을 고르면 오른쪽 패널의 같은 티켓이 `진행 중`. **원인**: 목록(패널·타임라인·폰 고른 날)은 상태 **분류**의 이름(`STATUS[cat].label`)을 썼고, 상세는 Jira의 **상태 이름**을 썼다 — 그 사이트의 `품질점검 완료`는 분류가 '진행 중'(indeterminate)이다. **결정**: 티켓에 `statusName`(Jira 상태 이름 · 60자)을 싣고 `StatusBadge`는 이름이 있으면 그것을, 색은 늘 분류로(상세·Jira와 같다 — Jira도 분류로 칠한다). 이름이 없으면(옛 함수·데모) 분류 이름. 긴 이름은 140px에서 말줄임 + 툴팁. 검증: `jiraShared.test.ts`(`품질점검 완료` → doing + 이름), tools 99건 · lint · typecheck. **배포**: 함수 `jira` 재배포(`statusName`).

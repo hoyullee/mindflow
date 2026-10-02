@@ -43,6 +43,8 @@ export interface JiraTicket {
   filled?: boolean;
   /** 배포 예정일(`DateRule.release`로 고른 필드) — 막대와 따로 표시만 한다. */
   release?: string;
+  /** Jira의 **상태 이름**(`품질점검 완료`) — 알약에 쓴다. 색은 `status`(분류)로(상세 팝업과 같게 — 제보 2026-10-02). */
+  statusName?: string;
 }
 
 /**
@@ -254,6 +256,7 @@ export function normalizeTicket(issue: unknown, rule: DateRule = DEFAULT_RULE, t
     start: s,
     end: e,
     status,
+    ...(str(obj(f.status)?.name) ? { statusName: str(obj(f.status)?.name)!.slice(0, 60) } : {}),
     startMissing: !filled && !st,
     endMissing: !filled && !en && !openEnd,
     ...(filled ? { filled: true } : {}),

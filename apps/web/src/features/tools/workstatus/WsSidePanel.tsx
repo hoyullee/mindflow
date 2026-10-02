@@ -60,7 +60,7 @@ export function WsSidePanel({ sel, today, month, rules, tickets, data, stats, bi
                         {t.release ? ` · 배포 ${shortDate(t.release)}` : ''}
                       </span>
                     </span>
-                    <StatusBadge status={t.status} height={18} />
+                    <StatusBadge status={t.status} name={t.statusName} height={18} />
                   </button>
                 );
               })}

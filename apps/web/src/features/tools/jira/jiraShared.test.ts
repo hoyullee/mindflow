@@ -67,6 +67,8 @@ describe('정리', () => {
   it('시작일이 없으면 기한 하루로', () => {
     const t = normalizeTicket(issue({ duedate: '2026-09-10' }), R('customfield_10015'));
     expect(t).toMatchObject({ start: '2026-09-10', end: '2026-09-10', startMissing: true, endMissing: false, status: 'doing', epic: 'PAY-100' });
+    // 상태 이름은 Jira 것 그대로(분류가 진행 중인 `품질점검 완료` 같은 이름 — 상세 팝업과 같게)
+    expect(normalizeTicket(issue({ duedate: '2026-09-10', status: { name: '품질점검 완료', statusCategory: { key: 'indeterminate' } } }), R(null))).toMatchObject({ status: 'doing', statusName: '품질점검 완료' });
   });
   it('시작·기한이 뒤바뀐 입력은 순서를 바로잡는다', () => {
     const t = normalizeTicket(issue({ duedate: '2026-09-01', customfield_10015: '2026-09-05' }), R('customfield_10015'));
