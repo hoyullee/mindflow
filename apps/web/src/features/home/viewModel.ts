@@ -5,7 +5,8 @@ import type { PreviewSurface } from './mapPreview';
 import { docSearchHits, docSearchText, matchesQuery, snippetAround } from './searchIndex';
 import type { SearchHitKind } from './searchIndex';
 import { calendarEntries, type CalendarEntry, type CalendarSource } from './calendar/entries';
-import { calendarBrief, calendarBriefLine, daysBetween, partsOf, todayISO, weekEndISO, type CalendarBrief } from './calendar/model';
+import { calendarBrief, calendarBriefLine, compareInDay, daysBetween, partsOf, todayISO, weekEndISO, type CalendarBrief } from './calendar/model';
+import { chipTimeLabel, isDeclined } from './calendar/chips';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
 import type { Doc, NoteSketch } from '@mindflow/mindmap-core';
@@ -233,7 +234,8 @@ export interface HomeViewModel {
   recentCollapsed: boolean;
   /** LNB `일정` 행의 개수 — 다가오는 마감(오늘 포함) 수. */
   calendarBrief: CalendarBrief;
-  /** LNB `일정` 행의 부제가 이름을 부를 **이번 주의 다음 마감**(오늘 포함) — 없으면 null. */
+  /** LNB `일정` 행의 부제가 이름을 부를 **이번 주의 다음 칸반 마감**(오늘 포함) — 없으면 null.
+   *  Geurio·구글 일정은 LNB(`CalendarNavSection`)가 직접 받아 이 값과 합친다(`earlierNext`). */
   calendarNext: CalendarNext | null;
   /** 폴더 안일 때만 — 그리드 첫 칸의 "상위 폴더" 타일. */
   parentTile: ParentTileViewData | null;
@@ -1062,21 +1064,53 @@ function calendarBriefOf(state: HomeState): { calendarBrief: CalendarBrief; cale
   return { calendarBrief: calendarBrief(entries, today), calendarNext: calendarNextOf(entries, today) };
 }
 
-/** LNB `일정` 행이 부를 마감 하나 — 이번 주(오늘 ~ 토요일) 안에서 **가장 이른 것**. */
+/** LNB `일정` 행이 부를 항목 하나 — 이번 주(오늘 ~ 토요일) 안에서 **가장 이른 것**. */
 export interface CalendarNext {
+  /** 그 항목이 놓이는 날 — 칸반은 마감일, 일정은 **시작하는 날**. */
   due: string;
   title: string;
+  /** 시각 있는 일정의 `HH:MM` — 부제가 `오후 2시`로 함께 부른다. 마감·종일은 없다. */
+  startTime?: string;
 }
 
-export function calendarNextOf(entries: readonly CalendarEntry[], todayIso: string): CalendarNext | null {
+/**
+ * 이번 주의 다음 항목 — 칸반 마감·Geurio 일정·구글 일정을 가리지 않는다(요청: 오후 2시에
+ * 일정이 있는데 LNB가 「이번 주 일정 없음」이었다 — 예전에는 칸반 마감만 셌다).
+ *
+ * - 일정은 **시작하는 날**에 놓는다: 기간 일정이 끝나는 날에 다시 불리지 않게, 이미
+ *   시작한(어제부터 이어지는) 일정은 "다가오는 것"이 아니므로 빠진다. 칸반은 예전처럼 마감일.
+ * - 오늘의 시각 있는 일정은 **끝났으면** 빠진다(`nowHm` — 끝 시각이 없으면 시작 시각).
+ *   진행 중인 회의는 남는다.
+ * - 내가 거절한 구글 일정은 부르지 않는다(달력에서는 취소선으로 남는다).
+ * - 같은 날이면 종일·마감이 먼저, 그다음 시각 순(`compareInDay` — 달력 칸과 같은 순서),
+ *   그래도 같으면 먼저 모인 것.
+ */
+export function calendarNextOf(entries: readonly CalendarEntry[], todayIso: string, nowHm = ''): CalendarNext | null {
   const end = weekEndISO(todayIso);
   let best: CalendarEntry | null = null;
+  let bestDay = '';
   for (const e of entries) {
-    if (e.due < todayIso || e.due > end) continue;
-    // 같은 날이면 먼저 모인 것(수집 순 — 달력 칸의 순서와 같다)을 지킨다.
-    if (!best || e.due < best.due) best = e;
+    const isEvent = !!(e.event || e.google);
+    const day = isEvent ? (e.start ?? e.due) : e.due;
+    if (day < todayIso || day > end) continue;
+    if (isDeclined(e)) continue;
+    if (day === todayIso && e.startTime && nowHm && (e.endTime ?? e.startTime) <= nowHm) continue;
+    if (!best || day < bestDay || (day === bestDay && compareInDay(e, best) < 0)) {
+      best = e;
+      bestDay = day;
+    }
   }
-  return best ? { due: best.due, title: best.title } : null;
+  return best ? { due: bestDay, title: best.title, ...(best.startTime ? { startTime: best.startTime } : {}) } : null;
+}
+
+/** 두 후보 중 이른 것 — 칸반(홈 상태)과 일정(LNB가 받아 온 것)을 따로 구해 합친다. */
+export function earlierNext(a: CalendarNext | null, b: CalendarNext | null): CalendarNext | null {
+  if (!a || !b) return a ?? b;
+  if (a.due !== b.due) return a.due < b.due ? a : b;
+  // 같은 날 — 종일·마감이 먼저, 그다음 시각 순(같으면 앞의 것).
+  if (!a.startTime) return a;
+  if (!b.startTime) return b;
+  return b.startTime < a.startTime ? b : a;
 }
 
 const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토'] as const;
@@ -1101,5 +1135,7 @@ export function calendarRowLine(brief: CalendarBrief, next: CalendarNext | null,
   if (!next) return { text: '이번 주 일정 없음', urgent: false };
   const gap = daysBetween(todayIso, next.due);
   const day = gap <= 0 ? '오늘' : gap === 1 ? '내일' : `${weekdayKo(next.due)}요일`;
-  return { text: `${day} · ${next.title.trim() || '제목 없는 카드'}`, urgent: false };
+  // 시각 있는 일정은 시각을 함께(달력 칩과 같은 `오후 2시`). 제목이 비면 그 종류의 말로.
+  const time = next.startTime ? `${chipTimeLabel(next.startTime)} ` : '';
+  return { text: `${day} · ${time}${next.title.trim() || (next.startTime ? '제목 없는 일정' : '제목 없는 카드')}`, urgent: false };
 }

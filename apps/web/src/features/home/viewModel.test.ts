@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calendarNextOf, calendarRowLine, deriveHomeView, weekdayKo } from './viewModel';
+import { calendarNextOf, calendarRowLine, deriveHomeView, earlierNext, weekdayKo } from './viewModel';
 import type { CalendarEntry } from './calendar/entries';
 import { initialHomeState } from './types';
 
@@ -503,6 +503,43 @@ describe('LNB 일정 부제 — 이번 주의 다음 마감', () => {
     expect(calendarRowLine(brief(), { due: '2026-10-02', title: '배포' }, TODAY).text).toBe('금요일 · 배포');
     expect(calendarRowLine(brief(), { due: '2026-10-02', title: '  ' }, TODAY).text).toBe('금요일 · 제목 없는 카드');
     expect(calendarRowLine(brief(), null, TODAY)).toEqual({ text: '이번 주 일정 없음', urgent: false });
+  });
+
+  // ── Geurio·구글 일정도 부른다(요청: 오후 2시 일정이 있는데 「이번 주 일정 없음」) ──
+  const ev = (day: string, title: string, startTime?: string, endTime?: string, end = day): CalendarEntry =>
+    ({ ...entry(end, title), docId: '', cardId: `e-${day}-${title}`, ...(end > day ? { start: day } : {}), event: { id: title } as never, ...(startTime ? { startTime } : {}), ...(endTime ? { endTime } : {}) }) as CalendarEntry;
+  const gev = (day: string, title: string, startTime: string, rsvp?: string): CalendarEntry =>
+    ({ ...entry(day, title), docId: '', cardId: `g-${title}`, startTime, google: { id: title, selfEmail: 'me@x', ...(rsvp ? { rsvps: { 'me@x': rsvp } } : {}) } as never }) as CalendarEntry;
+
+  it('일정은 시각과 함께 — 오늘 끝난 회의는 넘기고 진행 중인 것은 남는다', () => {
+    const list = [ev(TODAY, '아침 회의', '09:00', '10:00'), ev(TODAY, '인수인계 논의', '14:00', '15:00'), ev('2026-09-30', '내일 회의', '10:00')];
+    expect(calendarNextOf(list, TODAY, '11:30')).toEqual({ due: TODAY, title: '인수인계 논의', startTime: '14:00' });
+    // 진행 중(14:30)이면 그 회의가 남는다 · 끝나면(15:00) 내일로 넘어간다.
+    expect(calendarNextOf(list, TODAY, '14:30')!.title).toBe('인수인계 논의');
+    expect(calendarNextOf(list, TODAY, '15:00')!.title).toBe('내일 회의');
+    // 끝 시각이 없으면 시작 시각이 지나면 넘긴다.
+    expect(calendarNextOf([ev(TODAY, '시작만', '09:00'), ev(TODAY, '저녁', '19:00')], TODAY, '09:00')!.title).toBe('저녁');
+    expect(calendarRowLine(brief(), { due: TODAY, title: '인수인계 논의', startTime: '14:00' }, TODAY).text).toBe('오늘 · 오후 2시 인수인계 논의');
+    expect(calendarRowLine(brief(), { due: '2026-10-02', title: '', startTime: '10:30' }, TODAY).text).toBe('금요일 · 오전 10:30 제목 없는 일정');
+  });
+
+  it('같은 날은 종일·마감이 먼저, 그다음 시각 순 — 기간 일정은 시작하는 날에만, 거절한 구글 일정은 빼고', () => {
+    expect(calendarNextOf([ev(TODAY, '오후', '15:00'), ev(TODAY, '오전', '10:00'), entry(TODAY, '마감')], TODAY, '08:00')!.title).toBe('마감');
+    expect(calendarNextOf([ev(TODAY, '오후', '15:00'), ev(TODAY, '오전', '10:00')], TODAY, '08:00')!.title).toBe('오전');
+    // 어제 시작해 이번 주에 끝나는 기간 일정은 "다가오는 것"이 아니다.
+    expect(calendarNextOf([ev('2026-09-28', '캠핑', undefined, undefined, '2026-09-30')], TODAY)).toBeNull();
+    // 금요일에 시작하는 기간 일정은 금요일로(끝나는 다음 주 월요일이 아니라).
+    expect(calendarNextOf([ev('2026-10-02', '여행', undefined, undefined, '2026-10-05')], TODAY)).toEqual({ due: '2026-10-02', title: '여행' });
+    expect(calendarNextOf([gev(TODAY, '거절함', '16:00', 'declined'), gev(TODAY, '수락함', '17:00', 'accepted')], TODAY, '08:00')!.title).toBe('수락함');
+  });
+
+  it('칸반 후보와 일정 후보 중 이른 것 — 날짜, 같은 날이면 종일·마감, 그다음 시각', () => {
+    const card = { due: '2026-09-30', title: '카드' };
+    expect(earlierNext(card, null)).toBe(card);
+    expect(earlierNext(null, card)).toBe(card);
+    expect(earlierNext(card, { due: TODAY, title: '회의', startTime: '14:00' })!.title).toBe('회의');
+    expect(earlierNext(card, { due: '2026-09-30', title: '회의', startTime: '09:00' })!.title).toBe('카드');
+    expect(earlierNext({ due: TODAY, title: 'A', startTime: '14:00' }, { due: TODAY, title: 'B', startTime: '09:00' })!.title).toBe('B');
   });
 
   it('**지난 마감이 있으면 그쪽이 먼저**다 — 다음 마감의 이름이 "이미 늦은 것"을 가리지 않게', () => {

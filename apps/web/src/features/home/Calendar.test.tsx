@@ -311,6 +311,19 @@ describe('일정 화면', () => {
     seedSpaces();
   });
 
+  it('LNB `일정` 부제는 Geurio 일정도 부른다 — 칸반 마감이 없어도 「이번 주 일정 없음」이 아니다(요청)', async () => {
+    // 종일 일정 — 시각 있는 일정은 테스트가 도는 시각에 따라 "끝났음"이 갈린다(F5).
+    await new LocalEventStore().create({ title: '팀 워크숍', startDate: todayISO(), endDate: todayISO(), allDay: true });
+    renderHome([], {});
+    await waitFor(() => expect(document.querySelector('[data-cal-summary]')!.textContent).toBe('오늘 · 팀 워크숍'));
+  });
+
+  it('LNB `일정` 부제 — 칸반 마감도 일정도 없으면 「이번 주 일정 없음」', async () => {
+    renderHome([], {});
+    await waitFor(() => expect(document.querySelector('[data-cal-summary]')).toBeTruthy());
+    expect(document.querySelector('[data-cal-summary]')!.textContent).toBe('이번 주 일정 없음');
+  });
+
   it('LNB `일정`은 알림과 함께 오늘 묶음이다 — 지난 마감이 있으면 그것부터, 경고색으로(제보·스펙 2.3)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();

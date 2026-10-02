@@ -15,10 +15,12 @@
 //   ③ 권한이 만료됨 → `다시 연결`. 고른 캘린더는 그대로다.
 //   ④ 연동됨 → `보여 줄 캘린더` 체크 목록(설정 화면의 그 목록과 같은 값·같은 동작).
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
-import { todayISO, type CalendarBrief } from '../calendar/model';
+import { gridRange, partsOf, todayISO, type CalendarBrief } from '../calendar/model';
+import { eventEntries, googleEntries } from '../calendar/entries';
+import { useCalendarEvents } from '../calendar/useCalendarEvents';
 import { CalendarGlyph } from '../calendar/CalendarView';
 import { isManagedHolidayId } from '../calendar/googleCalendar';
 import { googlePrefsOf, useGoogleCalendar } from '../calendar/useGoogleCalendar';
@@ -26,23 +28,34 @@ import { CalendarColorPicker } from '../calendar/CalendarColorPicker';
 import { NavCard } from './NavCard';
 import { LnbCollapse, LnbRail } from './LnbSection';
 import { MONO_FONT } from '../chrome';
-import { calendarRowLine, weekdayKo, type CalendarNext } from '../viewModel';
+import { calendarNextOf, calendarRowLine, earlierNext, weekdayKo, type CalendarNext } from '../viewModel';
 
 export function CalendarNavSection({ state, controller, isMobile, brief, next }: { state: HomeState; controller: HomeController; isMobile: boolean; brief: CalendarBrief; next: CalendarNext | null }) {
   const active = state.activeCal;
+  // 「지금」 — 오늘의 끝난 회의를 부제에서 빼려면 분 단위로 다시 그려야 한다(1분 주기).
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const today = todayISO();
-  const { text: line, urgent } = calendarRowLine(brief, next, today);
+  const { y: ty, m: tm } = partsOf(today)!;
   /** 보여 줄 캘린더를 펼쳤는가 — **기본 접힘**(스펙). 서랍(폰)이 닫히면 함께 잊는다. */
   const [open, setOpen] = useState(false);
-  // 목록만 필요하다(`list`) — 일정은 일정 화면의 훅이 받는다. 하위 메뉴가 접혀
-  // 있으면 `off`라 조회가 아예 나가지 않는다.
-  const google = useGoogleCalendar(
-    1970,
-    1,
-    googlePrefsOf(state.google),
-    controller.setGoogleCalendars,
-    open ? 'list' : 'off',
-  );
+  // **이번 달의 일정까지 받는다**(요청: 오후 2시에 일정이 있는데 부제가 「이번 주 일정
+  // 없음」이었다 — 예전에는 목록만 받고 칸반 마감만 셌다). 이번 주(일~토)는 언제나
+  // 이번 달 격자(`gridRange` 6주) 안에 든다 — 달 끝 주의 다음 달 며칠까지 격자가 덮는다.
+  // 구글은 같은 달을 보는 일정 화면과 기억(`eventCache`)을 나눠 쓴다. 이 행은 데스크톱
+  // LNB에만 있다(폰은 LNB가 없다 — `Home.tsx`).
+  const google = useGoogleCalendar(ty, tm, googlePrefsOf(state.google), controller.setGoogleCalendars, 'events');
+  const geurio = useCalendarEvents(ty, tm);
+  const eventNext = useMemo(() => {
+    const d = new Date(nowTick);
+    const nowHm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    // 반복 일정은 이번 달 격자에서 회차로 펼친다(일정 화면과 같은 구간).
+    return calendarNextOf([...eventEntries(geurio.events, gridRange(ty, tm)), ...googleEntries(google.events)], today, nowHm);
+  }, [geurio.events, google.events, ty, tm, today, nowTick]);
+  const { text: line, urgent } = calendarRowLine(brief, earlierNext(next, eventNext), today);
 
   // 연동 상태 — 켜져 있고 끊긴 바 없으면 초록, 권한이 만료되면 경고.
   const linkTone: 'ok' | 'warn' | null = !google.available

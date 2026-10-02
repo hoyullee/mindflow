@@ -19,7 +19,7 @@ import { LocalNotificationStore } from '../../adapters/local/localNotificationSt
 import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore } from '../../adapters/ports';
-import { isoOf, partsOf } from './calendar/model';
+import { gridRange, isoOf, partsOf } from './calendar/model';
 import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_DIRECTORY, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
 import { GOOGLE_EVENT_COLORS } from './calendar/googleCalendar';
 import { clearGoogleSessionCache, googlePrefsOf, useGoogleCalendar } from './calendar/useGoogleCalendar';
@@ -344,6 +344,11 @@ async function openCalendarDetail(user: ReturnType<typeof userEvent.setup>) {
   await user.click(row);
 }
 
+/** 달력의 칩 하나 — LNB `일정` 부제도 다음 일정의 제목을 부르므로 그 행은 빼고 고른다. */
+function calChip(text: RegExp): HTMLElement {
+  return screen.getAllByText(text).filter((n) => !n.closest('[data-cal-nav]'))[0] as HTMLElement;
+}
+
 describe('구글 캘린더 겹치기(PR5)', () => {
   beforeEach(() => mockMatchMedia(false));
 
@@ -644,7 +649,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
   async function openGoogleChip(container: HTMLElement, user: ReturnType<typeof userEvent.setup>, text: RegExp): Promise<HTMLElement> {
     await openCalendar(container, user);
     const chip = await waitFor(() => {
-      const el = screen.getAllByText(text)[0];
+      // LNB `일정` 부제도 다음 일정의 제목을 부른다 — 달력의 칩만 고른다.
+      const el = screen.getAllByText(text).filter((n) => !n.closest('[data-cal-nav]'))[0];
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
@@ -793,7 +799,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const { container } = renderHome();
     await openCalendar(container, user);
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
-    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+    await user.click(calChip(/구글 회의/)!);
     await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
 
     await user.clear(screen.getByLabelText('일정 제목'));
@@ -856,7 +862,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.querySelector('[data-cal-detail]')).toBeNull();
   });
 
-  it('연동을 켜 두어도 설정을 열기 전에는 아무 요청도 하지 않는다 — 조회는 공짜가 아니다', async () => {
+  it('홈에서는 LNB `일정`이 **이번 달 일정 한 번**만 받는다 — 조회는 공짜가 아니다', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -864,9 +870,21 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     clientId = 'test-client.apps.googleusercontent.com';
     renderHome();
     await screen.findByRole('button', { name: '계정 메뉴' });
-    // 홈(스페이스 화면)은 달력을 그리지 않는다 — 캘린더 목록도 일정도 받지 않는다
+    // 홈(스페이스 화면)은 달력을 그리지 않지만 LNB `일정` 부제가 이번 주의 다음 일정을
+    // 부른다(요청 — 예전에는 아무것도 받지 않아 「이번 주 일정 없음」이었다). 그래서
+    // 캘린더 목록·색 팔레트·**고른 캘린더마다 이번 달 격자 한 번** — 그 밖은 없다.
     await new Promise((r) => setTimeout(r, 60));
-    expect(f.mock.calls.filter(([u]) => String(u).includes('googleapis.com')).length).toBe(0);
+    const urls = f.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('googleapis.com'));
+    const { from, to } = gridRange(...((): [number, number] => {
+      const n = new Date();
+      return [n.getFullYear(), n.getMonth() + 1];
+    })());
+    expect(urls.filter((u) => u.includes('/calendarList')).length).toBe(1);
+    const events = urls.filter((u) => u.includes('/events?'));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toContain(`timeMin=${encodeURIComponent(`${from}T00:00:00Z`)}`);
+    expect(events[0]).toContain(`timeMax=${encodeURIComponent(`${to}T23:59:59Z`)}`);
+    expect(urls.length).toBe(urls.filter((u) => u.includes('/calendarList') || u.includes('/colors') || u.includes('/events?')).length);
   });
 
   it('블롭에는 고른 캘린더만 남는다 — "켰는가"는 키의 존재가 말한다', async () => {
@@ -2449,7 +2467,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
 
     // 이미 등록된 구글 일정도 같다 — 어느 캘린더인지는 "저장할 캘린더" 줄이 말한다.
-    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+    await user.click(calChip(/구글 회의/)!);
     const badge = await waitFor(() => {
       const el = document.querySelector('[data-event-badge]');
       expect(el).toBeTruthy();
@@ -2502,7 +2520,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const { container } = renderHome();
     await openCalendar(container, user);
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
-    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+    await user.click(calChip(/구글 회의/)!);
 
     const side = await waitFor(() => {
       const el = document.querySelector('[data-event-side]');
@@ -2556,7 +2574,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const { container } = renderHome();
     await openCalendar(container, user);
     await waitFor(() => expect(screen.getAllByText(/종일 워크숍/).length).toBeGreaterThan(0));
-    await user.click(screen.getAllByText(/종일 워크숍/)[0]!);
+    await user.click(calChip(/종일 워크숍/)!);
     await waitFor(() => expect(document.querySelector('[data-event-main]')).toBeTruthy());
 
     // 그리오와 **같은 규칙**: 종일이면 못 고른다(우리 칩은 전부 "N분 전"인데 종일의
@@ -2581,7 +2599,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const { container } = renderHome();
     await openCalendar(container, user);
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
-    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+    await user.click(calChip(/구글 회의/)!);
 
     // 예전에는 만들 때만 토글이고 수정할 때는 링크 행뿐이라, 뒤늦게 붙일 길이 없었다.
     const meet = await waitFor(() => {
@@ -4783,8 +4801,10 @@ describe('구글 캘린더 색 바꾸기(요청)', () => {
     return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
   }
   /** 그 캘린더의 색 점이 지금 그리는 색. */
+  // 설정의 목록에서 고른다 — LNB `일정`의 접힌 하위 목록에도 같은 점이 있다(그쪽은
+  // 이제 이번 달 일정을 받으려고 캘린더 목록도 늘 받아 둔다).
   function dotColor(id: string): string {
-    return (document.querySelector(`[data-cal-color="${id}"] span`) as HTMLElement | null)?.style.background ?? '';
+    return (document.querySelector(`[data-google-section] [data-cal-color="${id}"] span`) as HTMLElement | null)?.style.background ?? '';
   }
 
   async function openIntegration(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
@@ -4815,7 +4835,7 @@ describe('구글 캘린더 색 바꾸기(요청)', () => {
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
 
     // 점이 곧 단추다 — 이름이 있어야 글자 없는 동그라미를 스크린리더가 읽는다.
-    const dot = document.querySelector('[data-cal-color="me@example.com"]') as HTMLElement;
+    const dot = document.querySelector('[data-google-section] [data-cal-color="me@example.com"]') as HTMLElement;
     expect(dot).toBeTruthy();
     expect(dot.getAttribute('aria-label')).toBe('내 캘린더 색 바꾸기');
     await user.click(dot);
@@ -4846,7 +4866,7 @@ describe('구글 캘린더 색 바꾸기(요청)', () => {
     await openIntegration(user);
     await waitFor(() => expect(dotColor('me@example.com')).toBe(rgb(PICK)));
 
-    await user.click(document.querySelector('[data-cal-color="me@example.com"]') as HTMLElement);
+    await user.click(document.querySelector('[data-google-section] [data-cal-color="me@example.com"]') as HTMLElement);
     const panel = await waitFor(() => {
       const el = document.querySelector('[data-cal-color-panel="me@example.com"]');
       expect(el).toBeTruthy();
@@ -4927,7 +4947,7 @@ describe('구글 일정 상세 — 막을 누르면 닫힌다(제보)', () => {
     const user = userEvent.setup();
     const { container } = renderHome();
     await openCalendar(container, user);
-    await user.click(await waitFor(() => screen.getAllByText(/구글 회의/)[0] as HTMLElement));
+    await user.click(await waitFor(() => calChip(/구글 회의/) as HTMLElement));
     const pop = await waitFor(() => {
       const el = document.querySelector('[data-google-detail]');
       expect(el).toBeTruthy();
