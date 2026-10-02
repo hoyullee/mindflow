@@ -170,7 +170,7 @@ function WsMobileDay({ sel, today, rules, tickets, data, onOpenIssue }: { sel: s
                       {t.filled ? ' · 날짜 없음' : t.startMissing ? ' · 시작일 없음' : t.endMissing ? ' · 기한 없음' : ''}
                     </span>
                   </span>
-                  <StatusBadge status={t.status} height={19} />
+                  <StatusBadge status={t.status} name={t.statusName} height={19} />
                 </button>
               );
             })}
