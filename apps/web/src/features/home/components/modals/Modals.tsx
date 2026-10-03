@@ -167,7 +167,13 @@ export function Modals({ state, controller }: Props) {
           </svg>
         }
         heading="로그아웃하시겠습니까?"
-        body="로그아웃하면 로그인 페이지로 이동합니다."
+        body={
+          state.logoutPending > 0
+            ? `이 기기에만 있고 아직 서버에 올라가지 않은 편집이 ${state.logoutPending}개 있어요. 로그아웃하면 이 기기의 문서 사본과 함께 지워져요.`
+            : state.logoutWipes
+              ? '로그아웃하면 로그인 페이지로 이동하고, 이 기기에 남은 문서 사본도 지워요.'
+              : '로그아웃하면 로그인 페이지로 이동합니다.'
+        }
         cancelLabel="취소"
         confirmLabel="로그아웃"
         confirmColor="var(--mf-danger)"

@@ -4015,7 +4015,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 query={slashQuery}
                 inline={slashAtChar !== null}
                 onClose={closeSlash}
-                onPick={(kind, viaKey) => {
+                onPick={(kind) => {
                   /**
                    * **고른 뒤에도 남는 글**(요청) — `/질의`만 뺀 나머지다. 이미 쓰인 글
                    * 앞에서 열 수 있게 되면서 이 값이 판단의 기준이 됐다: 글을 담는
@@ -4133,24 +4133,18 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                     const at = gap ? { after: gap.id, intoList: gap } : replaces ? { replace: id } : { after: id };
                     closeSlash();
                     /**
-                     * **Enter로 골랐으면 고르개를 바로 열지 않는다**(제보 · 영상: 열기 창에서 마우스 포인터가
-                     * 안 보였다). Windows는 글을 치는 동안 포인터를 숨기고, 마우스가 움직여야 되살린다 — 그런데
-                     * 열기 창이 떠 있는 동안 앱 창은 마우스를 받지 못해 창을 닫을 때까지 숨은 채였다(프로필 사진은
-                     * 마우스로 눌러 여니 멀쩡했다). 그래서 「올리기」 단추가 든 빈 자리를 세우고 거기에 초점을 둔다 —
-                     * 마우스로 누르면 그 움직임이 포인터를 되살리고, 끌어 놓기·붙여넣기도 그 자리에 들어간다.
-                     * 마우스로 고른 경우는 예전처럼 곧바로 연다.
+                     * 고르개는 **곧바로** 연다(요청). 고르지 않고 닫으면 그 자리에 「이미지 올리기」·「파일
+                     * 고르기 · 또는 여기로 끌어 놓기」 단추를 남겨 초점을 준다 — 다시 누르거나 끌어 놓으면 된다.
                      */
-                    if (viaKey) {
+                    const leaveSpot = (): void => {
                       const made = controller.placeNoteUpload(kind, at);
-                      if (made) {
-                        const go = (): void => document.querySelector<HTMLElement>(`[data-note-block="${made}"] [data-upload-pick]`)?.focus({ preventScroll: true });
-                        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
-                        else setTimeout(go, 0);
-                      }
-                      return;
-                    }
-                    if (kind === 'img') controller.promptNoteImage(at);
-                    else controller.promptNoteFiles(at);
+                      if (!made) return;
+                      const go = (): void => document.querySelector<HTMLElement>(`[data-note-block="${made}"] [data-upload-pick]`)?.focus({ preventScroll: true });
+                      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
+                      else setTimeout(go, 0);
+                    };
+                    if (kind === 'img') controller.promptNoteImage(at, leaveSpot);
+                    else controller.promptNoteFiles(at, leaveSpot);
                     return;
                   }
                   // 문서 링크도 **고르개부터**(요청) — 고르지 않으면 아무 자리도 만들지 않는다.
@@ -11810,8 +11804,7 @@ function SlashMenu({
   query: string;
   /** 본문에서 `/`로 열렸는가 — 그때는 키보드가 본문에 있으므로 우리가 가로챈다. */
   inline: boolean;
-  /** `viaKey` — Enter·Tab으로 골랐는가(마우스면 false). 고르개를 여는 종류가 이것으로 갈린다. */
-  onPick: (kind: SlashKind, viaKey?: boolean) => void;
+  onPick: (kind: SlashKind) => void;
   onClose: () => void;
 }) {
   // 바깥을 누르면 닫힌다(제보) — 목록 안의 누름은 뿌리에서 막는다. **스크롤로는 닫지
@@ -11883,7 +11876,7 @@ function SlashMenu({
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        onPick(flat[Math.min(cursor, flat.length - 1)]!.kind, true);
+        onPick(flat[Math.min(cursor, flat.length - 1)]!.kind);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();

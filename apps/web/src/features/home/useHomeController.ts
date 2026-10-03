@@ -18,6 +18,7 @@ import { calendarHiddenOf } from './calendar/entries';
 import { coerceCalendarColors, coerceExtraCalendars, holidayCountryOf } from './calendar/googleCalendar';
 import { moveInList } from './listOrder';
 import { forgetSignedIn } from '../auth/sessionNotice';
+import { clearAccountCache, pendingLocalEdits } from '../auth/accountCache';
 import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
 import { useBackend } from '../../adapters/BackendContext';
@@ -1002,7 +1003,8 @@ export function useHomeController() {
       cancelProfileName();
     }
   };
-  const logout = () => patch({ settingsOpen: false, confirmLogout: true });
+  /** 확인 창이 "아직 서버에 못 올라간 편집"을 알리도록 그 수를 함께 싣는다(서버 모드에서만 — 데모는 지우지 않는다). */
+  const logout = () => patch({ settingsOpen: false, confirmLogout: true, logoutWipes: backendMode === 'supabase', logoutPending: backendMode === 'supabase' ? pendingLocalEdits() : 0 });
   const cancelLogout = () => patch({ confirmLogout: false });
   /** 로그아웃 실행 — 범위만 다르고 나머지(로더·이동)는 같다.
    * `forgetSignedIn()`으로 "이 기기에서 로그인한 적 있다" 마커를 지운다: 직접
@@ -1012,6 +1014,9 @@ export function useHomeController() {
     patch({ confirmLogout: false, confirmLogoutAll: false, creatingMap: true, loaderMsg: scope === 'global' ? '모든 기기에서 로그아웃하고 있어요' : '로그아웃하고 있어요' });
     clearTimeout(loaderTimer.current);
     forgetSignedIn();
+    // 이 기기에 남은 **계정 데이터 사본**(문서·기록·일정·알림 캐시)을 지운다(요청 — 공용 PC). 원본은 서버에
+    // 있다. 데모(로컬) 모드는 localStorage가 유일한 원본이라 건드리지 않는다(`accountCache.ts`).
+    if (backendMode === 'supabase') clearAccountCache();
     // `LocalAuth.signOut()` resolves instantly (demo, no network), so this
     // still lands on /login after the same ~900ms loader beat as before.
     void auth.signOut(scope);

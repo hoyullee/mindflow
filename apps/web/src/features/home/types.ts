@@ -160,6 +160,10 @@ export interface HomeState {
   /** Draft name in that popup — committed to `userName` on 변경, discarded on 취소. */
   profileNameDraft: string;
   confirmLogout: boolean;
+  /** 로그아웃 확인 창을 열 때의 「서버에 아직 못 올라간 편집」 수(서버 모드) — 확인 창이 경고한다. */
+  logoutPending: number;
+  /** 로그아웃이 이 기기의 사본을 지우는가(서버 모드 — 데모는 localStorage가 원본이라 지우지 않는다). */
+  logoutWipes: boolean;
   /** '모든 기기에서 로그아웃' 확인창 — 다른 기기의 세션까지 해지한다(세션 정책 ①). */
   confirmLogoutAll: boolean;
   /** 비밀번호 변경 모달(설정 → 계정 관리). 현재 비밀번호로 본인을 확인한 뒤 바꾼다. */
@@ -475,6 +479,8 @@ export function initialHomeState(): HomeState {
     profileNameOpen: false,
     profileNameDraft: '',
     confirmLogout: false,
+    logoutPending: 0,
+    logoutWipes: false,
     confirmLogoutAll: false,
     changePwOpen: false,
     changePwCur: '',
