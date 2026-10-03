@@ -86,6 +86,7 @@ import { parseTableClip, readTableClip, tableClipboard, tableGridOf, type TableR
 import { absorbDocTags, addNoteTag, noteTagBoard, noteTagInk, noteTagOptions, onNoteTagsChange, removeNoteTag } from '../noteTags';
 import { useIsMobile, useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { LONG_PRESS_MS, cancelTouchMenu, installTouchMenuGate, isTouchPointer, registerTouchMenuCloser } from '../noteTouchMenu';
+import { pointerHidesWhileTyping } from '../pickerPointer';
 
 interface Props {
   controller: EditorController;
@@ -4143,9 +4144,17 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                       if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
                       else setTimeout(go, 0);
                     };
-                    // Enter로 골랐으면 Windows에서는 마우스가 움직인 뒤에 연다(숨은 포인터 — `pickerPointer.ts`).
-                    if (kind === 'img') controller.promptNoteImage(at, leaveSpot, viaKey);
-                    else controller.promptNoteFiles(at, leaveSpot, viaKey);
+                    /**
+                     * **Windows에서 Enter로 골랐으면 열지 않는다**(제보) — 「입력하는 동안 포인터 숨기기」로 숨은
+                     * 포인터가 열기 창 위에서 돌아오지 않는다(`pickerPointer.ts`). Notion처럼 「올리기」 자리만 넣고
+                     * 그 단추를 마우스로 누르게 한다. 단추에 초점은 주지 않는다 — Enter로 다시 열면 또 숨는다.
+                     */
+                    if (viaKey && pointerHidesWhileTyping()) {
+                      controller.placeNoteUpload(kind, at);
+                      return;
+                    }
+                    if (kind === 'img') controller.promptNoteImage(at, leaveSpot);
+                    else controller.promptNoteFiles(at, leaveSpot);
                     return;
                   }
                   // 문서 링크도 **고르개부터**(요청) — 고르지 않으면 아무 자리도 만들지 않는다.
@@ -11805,7 +11814,7 @@ function SlashMenu({
   query: string;
   /** 본문에서 `/`로 열렸는가 — 그때는 키보드가 본문에 있으므로 우리가 가로챈다. */
   inline: boolean;
-  /** `viaKey` — Enter·Tab으로 골랐다(마우스가 아니라). 이미지·파일 고르개가 쓴다(`pickerPointer.ts`). */
+  /** `viaKey` — Enter·Tab으로 골랐다(마우스가 아니라). Windows에서는 이미지·파일 고르개를 열지 않고 자리만 넣는다(`pickerPointer.ts`). */
   onPick: (kind: SlashKind, viaKey?: boolean) => void;
   onClose: () => void;
 }) {
