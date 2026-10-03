@@ -2270,53 +2270,70 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     expect(c.querySelector('[data-note-slash-panel]')!.textContent).not.toContain('블록 이름을 이어서 입력하세요');
   });
 
-  it('`/이미지`·`/파일`을 **Enter로** 고르면 고르개를 바로 열지 않고 「올리기」 자리에 초점 — Windows 포인터가 숨는 문제', async () => {
-    const opened = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+  /** 고르개 대신 — 연 `<input type=file>`을 잡아 둔다(취소·고르기를 손으로 쏘려고). */
+  function spyPicker() {
+    const inputs: HTMLInputElement[] = [];
+    const spy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      if (this.type === 'file') inputs.push(this);
+    });
+    return { inputs, restore: () => spy.mockRestore() };
+  }
+
+  it('`/이미지`는 Enter로 골라도 **곧바로** 고르개 — 취소하면 그 자리에 「이미지 올리기」가 남고 초점', async () => {
+    const pk = spyPicker();
     try {
       const c = await openEmpty('nqi');
       slash(c, '/이미지');
       await waitFor(() => expect(items(c)).toContain('img'));
       fireEvent.keyDown(document, { key: 'Enter' });
+      expect(pk.inputs).toHaveLength(1);
+      expect(c.querySelector('[data-note-image-pick]')).toBeNull();
+      // 고르지 않고 닫았다.
+      pk.inputs[0]!.dispatchEvent(new Event('cancel'));
       await waitFor(() => expect(c.querySelector('[data-note-image-pick]')).toBeTruthy());
       const pick = c.querySelector('[data-note-image-pick]') as HTMLElement;
       await waitFor(() => expect(document.activeElement).toBe(pick));
-      expect(opened).not.toHaveBeenCalled();
-      // 그 자리를 **마우스로** 누르면 그제야 연다.
+      // 그 단추를 누르면 다시 연다.
       fireEvent.click(pick);
-      expect(opened).toHaveBeenCalledTimes(1);
+      expect(pk.inputs).toHaveLength(2);
     } finally {
-      opened.mockRestore();
+      pk.restore();
     }
   });
 
-  it('`/파일`도 Enter면 「파일 고르기」 자리 — 이름이 맞은 「파일」이 설명에만 든 「이미지」보다 먼저', async () => {
-    const opened = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+  it('`/파일`도 곧바로 고르개 — 취소하면 「파일 고르기」 자리 · 이름이 맞은 「파일」이 설명에만 든 「이미지」보다 먼저', async () => {
+    const pk = spyPicker();
     try {
       const c2 = await openEmpty('nqf');
       slash(c2, '/파일');
-      // 이름이 맞은 「파일」이 먼저 — 설명에 `파일`이 든 「이미지」보다 앞이다.
       await waitFor(() => expect(items(c2)[0]).toBe('file'));
       fireEvent.keyDown(document, { key: 'Enter' });
+      expect(pk.inputs).toHaveLength(1);
+      expect(pk.inputs[0]!.multiple).toBe(true);
+      pk.inputs[0]!.dispatchEvent(new Event('cancel'));
       await waitFor(() => expect(c2.querySelector('[data-file-pick]')).toBeTruthy());
       const fpick = c2.querySelector('[data-file-pick]') as HTMLElement;
       await waitFor(() => expect(document.activeElement).toBe(fpick));
-      expect(opened).not.toHaveBeenCalled();
     } finally {
-      opened.mockRestore();
+      pk.restore();
     }
   });
 
-  it('`/이미지`를 **마우스로** 고르면 예전처럼 곧바로 고르개', async () => {
-    const opened = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+  it('고르면 그 자리에 바로 들어가고 「올리기」 자리는 남지 않는다', async () => {
+    const pk = spyPicker();
     try {
       const c = await openEmpty('nqm');
-      slash(c, '/이미지');
-      await waitFor(() => expect(c.querySelector('[data-note-slash-item="img"]')).toBeTruthy());
-      fireEvent.click(c.querySelector('[data-note-slash-item="img"]')!);
-      expect(opened).toHaveBeenCalledTimes(1);
-      expect(c.querySelector('[data-note-image-pick]')).toBeNull();
+      slash(c, '/파일');
+      await waitFor(() => expect(c.querySelector('[data-note-slash-item="file"]')).toBeTruthy());
+      fireEvent.click(c.querySelector('[data-note-slash-item="file"]')!);
+      expect(pk.inputs).toHaveLength(1);
+      const input = pk.inputs[0]!;
+      Object.defineProperty(input, 'files', { value: [new File(['x'], '자료.zip', { type: 'application/zip' })] });
+      input.dispatchEvent(new Event('change'));
+      await waitFor(() => expect(c.querySelector('[data-file-state="ready"]')).toBeTruthy());
+      expect(c.querySelector('[data-file-pick]')).toBeNull();
     } finally {
-      opened.mockRestore();
+      pk.restore();
     }
   });
 

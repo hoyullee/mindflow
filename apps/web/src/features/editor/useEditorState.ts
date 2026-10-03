@@ -132,6 +132,30 @@ function markPickingFile(input: HTMLInputElement): void {
   input.addEventListener('cancel', done, { once: true });
 }
 
+/**
+ * 고르개를 **고르지 않고 닫았는지** 알려 준다(블록 넣기: 그때 「올리기」 자리를 남긴다 — 요청).
+ *
+ * `cancel` 이벤트(Chrome 113+·Electron)가 본길이고, 그것을 쏘지 않는 브라우저를 위해 **창이 초점을
+ * 되찾은 뒤 잠시 기다려도 고른 파일이 없으면** 취소로 본다. 둘 중 먼저 온 것 한 번만 친다.
+ */
+function watchPickerCancel(input: HTMLInputElement, onCancel?: () => void): void {
+  if (!onCancel) return;
+  let settled = false;
+  const finish = (cancelled: boolean): void => {
+    if (settled) return;
+    settled = true;
+    window.removeEventListener('focus', onFocus);
+    if (cancelled) onCancel();
+  };
+  const picked = (): boolean => !!input.files && input.files.length > 0;
+  const onFocus = (): void => {
+    setTimeout(() => finish(!picked()), 800);
+  };
+  input.addEventListener('change', () => finish(!picked()), { once: true });
+  input.addEventListener('cancel', () => finish(true), { once: true });
+  window.addEventListener('focus', onFocus);
+}
+
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.4;
 const FIT_PADDING = 90;
@@ -1020,14 +1044,13 @@ export interface EditorController {
    */
   insertNoteFiles: (files: File[], at?: NoteInsertAt) => void;
   /**
-   * 고르개를 **열지 않고** 빈 이미지·파일 블록(「올리기」 단추가 든 자리)만 세운다 — 키보드(Enter)로 고른
-   * `/이미지`·`/파일`의 길이다. Windows는 글을 치는 동안 마우스 포인터를 숨기는데, 그 상태로 OS 열기 창이
-   * 뜨면 창이 닫힐 때까지 앱 위에서 포인터가 돌아오지 않는다(제보 · 영상). 단추를 마우스로 누르게 하면
-   * 그 움직임이 포인터를 되살린다. 세운 블록 id를 돌려준다.
+   * 빈 이미지·파일 블록(「올리기」 단추가 든 자리)을 세운다 — 블록 넣기에서 고르개를 **고르지 않고
+   * 닫았을 때**의 길이다(요청: 고르개는 곧바로, 취소하면 그 자리에 단추). 세운 블록 id를 돌려준다.
    */
   placeNoteUpload: (kind: 'img' | 'file', at?: NoteInsertAt) => string | null;
   /** 파일 고르개를 열고 고른 것들을 첨부한다(`/파일`). */
-  promptNoteFiles: (at?: NoteInsertAt) => void;
+  /** `onCancel` — 고르지 않고 닫았을 때(블록 넣기는 그때 「파일 고르기」 자리를 남긴다). */
+  promptNoteFiles: (at?: NoteInsertAt, onCancel?: () => void) => void;
   /** 실패한 올리기를 같은 파일로 다시. */
   retryNoteFile: (blockId: string) => void;
   /** 올리는 중인 블록들 — 블록 id → 진행률(0..1)·실패. 이 탭의 메모리에만 있다. */
@@ -1037,7 +1060,7 @@ export interface EditorController {
    * `replace`를 주면 그 블록을 이미지로 바꾸고, 아니면 `after` 뒤에 새로 만든다.
    * 고르지 않고 닫으면 아무 일도 없다(빈 자리가 남지 않는다).
    */
-  promptNoteImage: (at?: NoteInsertAt) => void;
+  promptNoteImage: (at?: NoteInsertAt, onCancel?: () => void) => void;
   setNoteLinkDoc: (blockId: string, docId: string) => void;
   /** 동영상 블록의 주소(원문) — 빈 문자열이면 지운다(주소 입력 판으로 돌아간다). */
   setNoteVideo: (blockId: string, src: string) => void;
@@ -8345,7 +8368,7 @@ export function useEditorState(): EditorController {
   );
 
   const promptNoteImage = useCallback(
-    (at?: NoteInsertAt) => {
+    (at?: NoteInsertAt, onCancel?: () => void) => {
       if (readOnlyRef.current) return;
       const input = document.createElement('input');
       input.type = 'file';
@@ -8355,6 +8378,7 @@ export function useEditorState(): EditorController {
         if (file) insertNoteImage(file, at);
       };
       markPickingFile(input);
+      watchPickerCancel(input, onCancel);
       input.click();
     },
     [insertNoteImage],
@@ -8435,7 +8459,7 @@ export function useEditorState(): EditorController {
   );
 
   const promptNoteFiles = useCallback(
-    (at?: NoteInsertAt) => {
+    (at?: NoteInsertAt, onCancel?: () => void) => {
       if (readOnlyRef.current) return;
       const input = document.createElement('input');
       input.type = 'file';
@@ -8445,6 +8469,7 @@ export function useEditorState(): EditorController {
         if (files.length) insertNoteFiles(files, at);
       };
       markPickingFile(input);
+      watchPickerCancel(input, onCancel);
       input.click();
     },
     [insertNoteFiles],
