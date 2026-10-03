@@ -6052,3 +6052,15 @@ RLS가 걸러 0행이면 오류가 없으므로 `.select('id')`의 행 수로 "�
 - **원인(추정 · 근거는 갈린 두 경로)**: 「이미지 올리기」 단추에서 연 고르개(#838 — 초점이 단추)는 멀쩡했고 프로필 사진(단추)도 멀쩡했다. 블록 넣기 목록에서 연 고르개는 초점이 **본문의 글 상자**(캐럿·한글 입력기가 붙은 contenteditable)에 남은 채 OS 창이 뜬다 — 그 상태에서 Windows가 포인터를 숨긴 채로 둔다. 원격 세션엔 Windows가 없어 실기기 재현은 못 했다.
 - **결정**: `promptNoteImage`·`promptNoteFiles`가 `input.click()` 직전에 `releaseEditFocus()` — 글 상자(contenteditable·input·textarea)의 초점을 `blur`하고 선택을 거둔다. 넣을 자리는 이미 `at`이 들고 있어 캐럿이 없어도 된다. 단추에서 연 것과 같은 상태가 된다. 블록 넣기·툴바·「올리기」 단추 모두 같은 길.
 - **검증**: `Note.test.tsx`(고르기 직전 초점이 글 상자인 전제 + 열린 뒤 글 상자 초점·선택 없음) — jsdom은 Enter 뒤 스스로 초점을 잃어 이 단언만으로는 수정 전후가 갈리지 않는다(정직하게 적어 둔다). 공책·첨부 542건 · lint·typecheck. 실기기 확인은 사용자.
+
+## 공책 1건 — Enter로 고른 이미지·파일 고르개는 마우스가 움직인 뒤에 연다 (Windows 포인터, 3판)
+
+**제보**: #841(고르개 열기 전 글 편집 초점 놓기) 뒤로 블록 넣기 목록을 **마우스로** 고르면 포인터가 보이지만, **방향키 + Enter**로 고르면 열기 창 위에서 여전히 포인터가 사라진다(앱 밖으로 나가면 다시 보인다).
+
+**원인(추정 — 실기기 없음)**: Windows의 「입력하는 동안 포인터 숨기기」를 Chromium(Chrome·Edge·Electron)이 최근 따르기 시작했다 — 글을 치면 포인터를 숨기고 **마우스가 움직이면** 다시 보인다. 키보드로만 고르면 포인터가 숨은 채로 열기 창이 앱을 막고, 그 뒤의 움직임은 막힌 앱 창에 닿지 않아 포인터가 앱 위에서 돌아오지 못한다. 마우스로 고르면 고르기 전에 이미 움직였으므로 멀쩡했다 — 제보의 갈림과 정확히 같다.
+
+**결정**: `features/editor/pickerPointer.ts` — `pointerHidesWhileTyping()`(Windows UA + `any-pointer: fine`) · `openAfterPointerMoves(open, giveUp)`. 블록 넣기 목록이 `onPick(kind, viaKey)`로 Enter·Tab을 알리고, `promptNoteImage/promptNoteFiles(at, onCancel, viaKey)` → `openPicker`가 키보드 + Windows면 **첫 진짜 마우스 이동(movementX/Y ≠ 0, isTrusted)·마우스 누름**에서 고르개를 연다(이동이 앱에 먼저 닿아 포인터가 돌아온 뒤에 창이 뜬다 — Enter의 사용자 활성화 5초 안이라 `click()`이 막히지 않는다). 기다리는 동안 Enter를 다시 누르면 바로 연다(마우스를 쓰지 않는 사람), Esc·다른 키·3초 경과는 고르지 않고 닫은 것과 같다(「올리기」 자리 + 초점 — 그 단추에서 Enter면 바로 연다). 마우스로 고른 길·macOS·폰은 그대로 곧바로 연다.
+
+**검증**: `pickerPointer.test.ts`(3 — Windows 판정 · 제자리/손가락/흉내 이동 거름 · 누름·Enter=열기, Esc·다른 키·시간=그만두기, 끝난 뒤 무반응) · `Note.test.tsx` 1건(Windows UA + 정밀 포인터에서 Enter → 열지 않음 → Enter 다시 → 열림 / Esc → 「파일 고르기」 자리). 기존 Note·NoteFile 스위트 통과 · lint · typecheck · vite build. 실제 Windows 포인터는 여기서 볼 수 없어 사용자 확인이 필요하다.
+
+**트레이드오프**: Windows에서 키보드로 고르면 마우스를 건드리는 순간 창이 뜬다(아주 짧은 지연). 키보드만 쓰는 사람은 Enter를 한 번 더 — 그때는 포인터가 숨어 있어도 키보드로 다루므로 문제가 없다.

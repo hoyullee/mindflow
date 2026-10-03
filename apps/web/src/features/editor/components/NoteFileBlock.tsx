@@ -75,9 +75,8 @@ export function NoteFileBlock({
   };
 
   /**
-   * **빈 자리**(이름도 id도 없다) — Enter로 고른 `/파일`이 세운 자리다(`placeNoteUpload`). 고르개를
-   * 마우스로 열게 한다(키보드로 곧장 열면 Windows에서 열기 창 위의 포인터가 숨는다). 여기에 끌어
-   * 놓아도 된다(본문의 끌어 놓기가 빈 자리를 바꾼다).
+   * **빈 자리**(이름도 id도 없다) — 블록 넣기의 `/파일`에서 고르개를 고르지 않고 닫았을 때 남는 자리다
+   * (`placeNoteUpload`). 눌러서 다시 열거나, 여기에 끌어 놓아도 된다(본문의 끌어 놓기가 빈 자리를 바꾼다).
    */
   if (!upload && !block.fileId && !block.fileName) {
     return (
