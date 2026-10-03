@@ -3774,7 +3774,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
               const blocks = controller.notePage?.blocks ?? [];
               const id = host?.getAttribute('data-note-block') ?? blocks[blocks.length - 1]?.id ?? '';
               const cur = blocks.find((b) => b.id === id);
-              // 빈 문단 · 아직 아무것도 없는 이미지/파일 자리(Enter로 고른 `/이미지`·`/파일`)는 **그 자리를 바꾼다**.
+              // 빈 문단 · 아직 아무것도 없는 이미지/파일 자리(블록 넣기에서 고르개를 닫은 `/이미지`·`/파일`)는 **그 자리를 바꾼다**.
               const empty =
                 !!cur &&
                 ((cur.kind === 'p' && blockText(cur) === '') || (cur.kind === 'img' && !cur.src) || (cur.kind === 'file' && !cur.fileId && !cur.fileName));
@@ -4015,7 +4015,7 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                 query={slashQuery}
                 inline={slashAtChar !== null}
                 onClose={closeSlash}
-                onPick={(kind) => {
+                onPick={(kind, viaKey) => {
                   /**
                    * **고른 뒤에도 남는 글**(요청) — `/질의`만 뺀 나머지다. 이미 쓰인 글
                    * 앞에서 열 수 있게 되면서 이 값이 판단의 기준이 됐다: 글을 담는
@@ -4143,8 +4143,9 @@ export function NoteEditor({ controller, pagesOpen = false, onClosePages }: Prop
                       if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go);
                       else setTimeout(go, 0);
                     };
-                    if (kind === 'img') controller.promptNoteImage(at, leaveSpot);
-                    else controller.promptNoteFiles(at, leaveSpot);
+                    // Enter로 골랐으면 Windows에서는 마우스가 움직인 뒤에 연다(숨은 포인터 — `pickerPointer.ts`).
+                    if (kind === 'img') controller.promptNoteImage(at, leaveSpot, viaKey);
+                    else controller.promptNoteFiles(at, leaveSpot, viaKey);
                     return;
                   }
                   // 문서 링크도 **고르개부터**(요청) — 고르지 않으면 아무 자리도 만들지 않는다.
@@ -11804,7 +11805,8 @@ function SlashMenu({
   query: string;
   /** 본문에서 `/`로 열렸는가 — 그때는 키보드가 본문에 있으므로 우리가 가로챈다. */
   inline: boolean;
-  onPick: (kind: SlashKind) => void;
+  /** `viaKey` — Enter·Tab으로 골랐다(마우스가 아니라). 이미지·파일 고르개가 쓴다(`pickerPointer.ts`). */
+  onPick: (kind: SlashKind, viaKey?: boolean) => void;
   onClose: () => void;
 }) {
   // 바깥을 누르면 닫힌다(제보) — 목록 안의 누름은 뿌리에서 막는다. **스크롤로는 닫지
@@ -11876,7 +11878,7 @@ function SlashMenu({
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        onPick(flat[Math.min(cursor, flat.length - 1)]!.kind);
+        onPick(flat[Math.min(cursor, flat.length - 1)]!.kind, true);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();
