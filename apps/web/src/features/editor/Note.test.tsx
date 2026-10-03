@@ -2283,11 +2283,17 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     const pk = spyPicker();
     try {
       const c = await openEmpty('nqi');
+      (c.querySelector('[data-note-line="b1"]') as HTMLElement).focus();
       slash(c, '/이미지');
       await waitFor(() => expect(items(c)).toContain('img'));
+      // 전제: 고르기 직전 초점은 본문의 글 상자에 있다.
+      expect(document.activeElement?.getAttribute('data-note-line')).toBe('b1');
       fireEvent.keyDown(document, { key: 'Enter' });
       expect(pk.inputs).toHaveLength(1);
       expect(c.querySelector('[data-note-image-pick]')).toBeNull();
+      // 고르개를 띄우기 전에 글 상자의 초점·캐럿을 거뒀다(Windows 포인터 — `releaseEditFocus`).
+      expect(document.activeElement?.getAttribute('contenteditable')).not.toBe('true');
+      expect(window.getSelection()?.rangeCount ?? 0).toBe(0);
       // 고르지 않고 닫았다.
       pk.inputs[0]!.dispatchEvent(new Event('cancel'));
       await waitFor(() => expect(c.querySelector('[data-note-image-pick]')).toBeTruthy());

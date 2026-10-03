@@ -133,6 +133,25 @@ function markPickingFile(input: HTMLInputElement): void {
 }
 
 /**
+ * 고르개를 띄우기 **직전에 글 편집 초점을 놓는다**(제보 · Windows: 공책에서 이미지·파일 고르개를 띄우면
+ * 창이 늦게 뜨는 동안과 뜬 뒤에도 마우스 포인터가 앱 위에서 사라졌다).
+ *
+ * 갈린 자리는 **초점이 어디 있었나**였다 — 「이미지 올리기」 단추(초점이 단추)에서 연 고르개는 멀쩡했고,
+ * 블록 넣기 목록(초점이 본문의 글 상자 — 캐럿·한글 입력기가 붙어 있다)에서 연 고르개는 포인터가 숨었다.
+ * 프로필 사진 고르기도 단추에서 연다. 그래서 고르개를 열기 전에 글 상자의 초점과 캐럿을 거둬
+ * 단추에서 연 것과 같은 상태로 만든다. 고른 뒤의 자리는 이미 정해 둔 `at`이 들고 있어 캐럿이 없어도 된다.
+ */
+function releaseEditFocus(): void {
+  try {
+    const live = document.activeElement as HTMLElement | null;
+    if (live && (live.isContentEditable || live.getAttribute('contenteditable') === 'true' || live.tagName === 'INPUT' || live.tagName === 'TEXTAREA')) live.blur();
+    window.getSelection()?.removeAllRanges();
+  } catch {
+    /* 초점을 못 놓아도 고르개는 연다 */
+  }
+}
+
+/**
  * 고르개를 **고르지 않고 닫았는지** 알려 준다(블록 넣기: 그때 「올리기」 자리를 남긴다 — 요청).
  *
  * `cancel` 이벤트(Chrome 113+·Electron)가 본길이고, 그것을 쏘지 않는 브라우저를 위해 **창이 초점을
@@ -8379,6 +8398,7 @@ export function useEditorState(): EditorController {
       };
       markPickingFile(input);
       watchPickerCancel(input, onCancel);
+      releaseEditFocus();
       input.click();
     },
     [insertNoteImage],
@@ -8470,6 +8490,7 @@ export function useEditorState(): EditorController {
       };
       markPickingFile(input);
       watchPickerCancel(input, onCancel);
+      releaseEditFocus();
       input.click();
     },
     [insertNoteFiles],
