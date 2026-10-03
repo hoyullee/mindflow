@@ -6064,3 +6064,11 @@ RLS가 걸러 0행이면 오류가 없으므로 `.select('id')`의 행 수로 "�
 **검증**: `pickerPointer.test.ts`(3 — Windows 판정 · 제자리/손가락/흉내 이동 거름 · 누름·Enter=열기, Esc·다른 키·시간=그만두기, 끝난 뒤 무반응) · `Note.test.tsx` 1건(Windows UA + 정밀 포인터에서 Enter → 열지 않음 → Enter 다시 → 열림 / Esc → 「파일 고르기」 자리). 기존 Note·NoteFile 스위트 통과 · lint · typecheck · vite build. 실제 Windows 포인터는 여기서 볼 수 없어 사용자 확인이 필요하다.
 
 **트레이드오프**: Windows에서 키보드로 고르면 마우스를 건드리는 순간 창이 뜬다(아주 짧은 지연). 키보드만 쓰는 사람은 Enter를 한 번 더 — 그때는 포인터가 숨어 있어도 키보드로 다루므로 문제가 없다.
+
+## 공책 1건 — Windows에서 Enter로 고른 `/이미지`·`/파일`은 고르개를 열지 않고 「올리기」 자리만 (Notion 방식, 4판)
+
+**제보**: 3판(#842 — Enter로 고르면 첫 마우스 움직임에서 연다)은 ① 마우스를 움직이기 전엔 창이 뜨지 않아 어색하고 ② Enter를 한 번 더 눌러 열면 여전히 포인터가 숨었다. Notion은 블록 넣기에서 파일을 고르면 「파일 업로드 또는 임베드」 자리 + 「파일을 선택하세요」 단추를 띄우고 창을 바로 열지 않는다. 어려우면 자리 먼저(클릭 유도)로 돌려 달라는 요청.
+
+**결정**: 키보드로 연 열기 창의 숨은 포인터는 웹에서 되살릴 길이 없다(Windows 「입력하는 동안 포인터 숨기기」 — 움직임이 막힌 앱 창에 닿지 않는다). 그래서 **Windows(`pointerHidesWhileTyping` — UA + `any-pointer: fine`)에서 Enter·Tab으로 고르면** `placeNoteUpload`로 「이미지 올리기」·「파일 고르기」 자리만 넣고, **단추에 초점을 주지 않는다**(Enter로 열면 또 숨는다 — 마우스로 누르게). 마우스로 고르면 지금처럼 곧바로 열고 취소하면 자리를 남긴다. macOS·폰은 Enter도 곧바로. 3판의 `openAfterPointerMoves`와 `promptNote*`의 `viaKey`는 걷었다(`pickerPointer.ts`엔 판정 하나만).
+
+**검증**: `pickerPointer.test.ts`(Windows 판정) · `Note.test.tsx` 1건 교체(Windows + 정밀 포인터: Enter → 고르개 0 · 「파일 고르기」 자리 · 초점 없음 · 누르면 열림 / 마우스로 고른 `/이미지`는 곧바로) · Note·NoteFile 스위트 · lint · typecheck · vite build. 실제 Windows 포인터는 사용자 확인.

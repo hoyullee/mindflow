@@ -2325,7 +2325,7 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
     }
   });
 
-  it('Windows에서 Enter로 고른 `/파일`은 마우스를 기다린다 — 다시 Enter면 열고, Esc면 「파일 고르기」 자리', async () => {
+  it('Windows에서 Enter로 고른 `/파일`·`/이미지`는 고르개를 열지 않고 「올리기」 자리만 — 마우스로 누르면 연다', async () => {
     const pk = spyPicker();
     const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0');
     // 마우스가 달린 기기 — 폭 질의는 그대로 데스크톱.
@@ -2336,18 +2336,23 @@ describe('공책 19판 — `/` 블록 넣기 스펙', () => {
       slash(c, '/파일');
       await waitFor(() => expect(items(c)[0]).toBe('file'));
       fireEvent.keyDown(document, { key: 'Enter' });
-      // 아직 열지 않는다 — 숨은 포인터가 돌아오도록 마우스 움직임을 기다린다.
       expect(pk.inputs).toHaveLength(0);
-      // 마우스를 쓰지 않는 사람: Enter를 한 번 더 누르면 바로 연다.
-      fireEvent.keyDown(document, { key: 'Enter' });
+      const fpick = (await waitFor(() => {
+        const el = c.querySelector('[data-file-pick]');
+        expect(el).toBeTruthy();
+        return el;
+      })) as HTMLElement;
+      // 단추에 초점을 주지 않는다 — Enter로 열면 포인터가 또 숨는다.
+      expect(document.activeElement).not.toBe(fpick);
+      fireEvent.click(fpick);
       expect(pk.inputs).toHaveLength(1);
 
-      slash(c, '/파일');
-      await waitFor(() => expect(items(c)[0]).toBe('file'));
-      fireEvent.keyDown(document, { key: 'Enter' });
-      fireEvent.keyDown(document, { key: 'Escape' });
-      expect(pk.inputs).toHaveLength(1);
-      await waitFor(() => expect(c.querySelector('[data-file-pick]')).toBeTruthy());
+      // 마우스로 고르면 지금처럼 곧바로.
+      const c2 = await openEmpty('nqw2');
+      slash(c2, '/이미지');
+      await waitFor(() => expect(c2.querySelector('[data-note-slash-item="img"]')).toBeTruthy());
+      fireEvent.click(c2.querySelector('[data-note-slash-item="img"]')!);
+      expect(pk.inputs).toHaveLength(2);
     } finally {
       window.matchMedia = mm;
       ua.mockRestore();

@@ -47,7 +47,6 @@ import { exportPdf } from './pdf';
 import * as mutations from './mutations';
 import { createIdFactory } from './mutations';
 import { clipboardCount, collectClipboard, pasteClipboard, type ClipboardPayload, type PasteTarget } from './clipboard';
-import { openAfterPointerMoves, pointerHidesWhileTyping } from './pickerPointer';
 import type {
   AttachTarget,
   ContextMenuState,
@@ -176,23 +175,12 @@ function watchPickerCancel(input: HTMLInputElement, onCancel?: () => void): void
   window.addEventListener('focus', onFocus);
 }
 
-/**
- * 고르개를 띄운다 — 표식·취소 감시·초점 놓기 뒤 `click()`. **키보드로 골랐고** 이 기기가 「입력하는 동안
- * 포인터 숨기기」에 걸리면(Windows) 마우스가 움직인 뒤에 띄운다(`pickerPointer.ts` — 숨은 포인터가 열기
- * 창 뒤에서 돌아오지 못한다). 기다리다 그만두면(Esc·시간 초과) 고르지 않고 닫은 것과 같다(`onCancel`).
- */
-function openPicker(input: HTMLInputElement, onCancel?: () => void, viaKey?: boolean): void {
-  const launch = (): void => {
-    markPickingFile(input);
-    watchPickerCancel(input, onCancel);
-    releaseEditFocus();
-    input.click();
-  };
-  if (viaKey && pointerHidesWhileTyping()) {
-    openAfterPointerMoves(launch, () => onCancel?.());
-    return;
-  }
-  launch();
+/** 고르개를 띄운다 — 표식·취소 감시·글 편집 초점 놓기 뒤 `click()`. */
+function openPicker(input: HTMLInputElement, onCancel?: () => void): void {
+  markPickingFile(input);
+  watchPickerCancel(input, onCancel);
+  releaseEditFocus();
+  input.click();
 }
 
 const MIN_ZOOM = 0.25;
@@ -1089,8 +1077,7 @@ export interface EditorController {
   placeNoteUpload: (kind: 'img' | 'file', at?: NoteInsertAt) => string | null;
   /** 파일 고르개를 열고 고른 것들을 첨부한다(`/파일`). */
   /** `onCancel` — 고르지 않고 닫았을 때(블록 넣기는 그때 「파일 고르기」 자리를 남긴다). */
-  /** `viaKey` — 키보드(Enter)로 골랐다: Windows에서는 마우스가 움직인 뒤에 연다(`openAfterPointerMoves`). */
-  promptNoteFiles: (at?: NoteInsertAt, onCancel?: () => void, viaKey?: boolean) => void;
+  promptNoteFiles: (at?: NoteInsertAt, onCancel?: () => void) => void;
   /** 실패한 올리기를 같은 파일로 다시. */
   retryNoteFile: (blockId: string) => void;
   /** 올리는 중인 블록들 — 블록 id → 진행률(0..1)·실패. 이 탭의 메모리에만 있다. */
@@ -1100,7 +1087,7 @@ export interface EditorController {
    * `replace`를 주면 그 블록을 이미지로 바꾸고, 아니면 `after` 뒤에 새로 만든다.
    * 고르지 않고 닫으면 아무 일도 없다(빈 자리가 남지 않는다).
    */
-  promptNoteImage: (at?: NoteInsertAt, onCancel?: () => void, viaKey?: boolean) => void;
+  promptNoteImage: (at?: NoteInsertAt, onCancel?: () => void) => void;
   setNoteLinkDoc: (blockId: string, docId: string) => void;
   /** 동영상 블록의 주소(원문) — 빈 문자열이면 지운다(주소 입력 판으로 돌아간다). */
   setNoteVideo: (blockId: string, src: string) => void;
@@ -8408,7 +8395,7 @@ export function useEditorState(): EditorController {
   );
 
   const promptNoteImage = useCallback(
-    (at?: NoteInsertAt, onCancel?: () => void, viaKey?: boolean) => {
+    (at?: NoteInsertAt, onCancel?: () => void) => {
       if (readOnlyRef.current) return;
       const input = document.createElement('input');
       input.type = 'file';
@@ -8417,7 +8404,7 @@ export function useEditorState(): EditorController {
         const file = input.files?.[0];
         if (file) insertNoteImage(file, at);
       };
-      openPicker(input, onCancel, viaKey);
+      openPicker(input, onCancel);
     },
     [insertNoteImage],
   );
@@ -8497,7 +8484,7 @@ export function useEditorState(): EditorController {
   );
 
   const promptNoteFiles = useCallback(
-    (at?: NoteInsertAt, onCancel?: () => void, viaKey?: boolean) => {
+    (at?: NoteInsertAt, onCancel?: () => void) => {
       if (readOnlyRef.current) return;
       const input = document.createElement('input');
       input.type = 'file';
@@ -8506,7 +8493,7 @@ export function useEditorState(): EditorController {
         const files = Array.from(input.files ?? []);
         if (files.length) insertNoteFiles(files, at);
       };
-      openPicker(input, onCancel, viaKey);
+      openPicker(input, onCancel);
     },
     [insertNoteFiles],
   );
